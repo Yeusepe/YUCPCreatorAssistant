@@ -100,7 +100,7 @@ export interface VerificationModeConfig {
 export const GUMROAD_CONFIG: VerificationModeConfig = {
   authUrl: 'https://gumroad.com/oauth/authorize',
   tokenUrl: 'https://api.gumroad.com/oauth/token',
-  scopes: ['view_user', 'view_products', 'view_sales'],
+  scopes: ['view_profile', 'view_sales'],
   callbackPath: '/api/verification/callback/gumroad',
 };
 
@@ -321,8 +321,11 @@ export function createVerificationSessionManager(
       const codeChallenge = await computeCodeChallenge(codeVerifier);
       const verifierHash = await hashVerifier(codeVerifier);
 
-      // Generate state: {tenantId}:{random} for callback lookup
-      const state = `${input.tenantId}:${generateSecureRandom(48)}`;
+      // Generate state for callback lookup
+      // Use verify_gumroad: prefix to distinguish from connect_gumroad:
+      const state = input.mode === 'gumroad'
+        ? `verify_gumroad:${input.tenantId}:${generateSecureRandom(48)}`
+        : `${input.tenantId}:${generateSecureRandom(48)}`;
 
       // Build OAuth URL
       const authUrl = new URL(modeConfig.authUrl);
@@ -330,7 +333,12 @@ export function createVerificationSessionManager(
       authUrl.searchParams.set('state', state);
       authUrl.searchParams.set('code_challenge', codeChallenge);
       authUrl.searchParams.set('code_challenge_method', 'S256');
-      authUrl.searchParams.set('redirect_uri', `${config.baseUrl}${modeConfig.callbackPath}`);
+
+      // For Gumroad, use the unified callback URI to comply with Gumroad's single redirect URI limit
+      const redirectUri = input.mode === 'gumroad'
+        ? `${config.baseUrl}/api/connect/gumroad/callback`
+        : `${config.baseUrl}${modeConfig.callbackPath}`;
+      authUrl.searchParams.set('redirect_uri', redirectUri);
 
       // Add mode-specific parameters
       switch (input.mode) {
@@ -458,12 +466,17 @@ export function createVerificationSessionManager(
         };
       }
 
-      // Parse tenantId from state: {tenantId}:{random}
-      const colonIdx = state.indexOf(':');
-      if (colonIdx < 1) {
+      // Parse tenantId from state. Format can be:
+      // - {tenantId}:{random}
+      // - {prefix}:{tenantId}:{random} (e.g., verify_gumroad:{tenantId}:{random})
+      const parts = state.split(':');
+      if (parts.length < 2) {
         return { success: false, error: 'Invalid state parameter' };
       }
-      const tenantId = state.slice(0, colonIdx);
+
+      // If 3 parts, the middle one is tenantId (e.g., prefix:tenantId:random)
+      // If 2 parts, the first one is tenantId (e.g., tenantId:random)
+      const tenantId = parts.length >= 3 ? parts[1] : parts[0];
 
       const convex = getConvexClientFromUrl(config.convexUrl);
       const apiSecret = config.convexApiSecret;
@@ -485,7 +498,9 @@ export function createVerificationSessionManager(
       }
 
       // Exchange code for tokens
-      const redirectUri = `${config.baseUrl}${modeConfig.callbackPath}`;
+      const redirectUri = mode === 'gumroad'
+        ? `${config.baseUrl}/api/connect/gumroad/callback`
+        : `${config.baseUrl}${modeConfig.callbackPath}`;
       const tokenParams = new URLSearchParams({
         grant_type: 'authorization_code',
         code,
@@ -559,16 +574,14 @@ export function createVerificationSessionManager(
       let profileUrl: string | undefined;
 
       if (provider === 'gumroad') {
-        const meRes = await fetch('https://api.gumroad.com/me', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
+        const meRes = await fetch(`https://api.gumroad.com/v2/user?access_token=${encodeURIComponent(accessToken)}`);
         if (!meRes.ok) {
           return { success: false, error: 'Failed to fetch Gumroad user' };
         }
-        const me = (await meRes.json()) as { id?: string; name?: string; email?: string };
-        providerUserId = me.id ?? '';
-        username = me.name;
-        email = me.email;
+        const me = (await meRes.json()) as { success?: boolean; user?: { user_id?: string; name?: string; email?: string } };
+        providerUserId = me.user?.user_id ?? '';
+        username = me.user?.name;
+        email = me.user?.email;
       } else if (provider === 'discord') {
         const meRes = await fetch('https://discord.com/api/users/@me', {
           headers: { Authorization: `Bearer ${accessToken}` },

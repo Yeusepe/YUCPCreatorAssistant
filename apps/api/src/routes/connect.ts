@@ -39,6 +39,8 @@ function generateSecureRandom(length: number): string {
 
 export interface ConnectConfig {
   baseUrl: string;
+  /** Convex .site URL for direct auth (e.g. https://rare-squid-409.convex.site) */
+  convexSiteUrl: string;
   discordClientId: string;
   discordClientSecret: string;
   convexApiSecret: string;
@@ -57,19 +59,38 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     const url = new URL(request.url);
     const guildId = url.searchParams.get('guild_id');
     const token = url.searchParams.get('token');
+    const ott = url.searchParams.get('ott');
 
     if (!guildId) {
       return new Response('Missing guild_id', { status: 400 });
     }
 
+    // Step 1: If we have a one-time-token (from OAuth callback), exchange it for a session.
+    if (ott) {
+      const { session, setCookieHeaders } = await auth.exchangeOTT(ott);
+      if (session && setCookieHeaders.length > 0) {
+        // Redirect back to self without the ott param, setting session cookies.
+        const redirectUrl = new URL(url);
+        redirectUrl.searchParams.delete('ott');
+        const headers = new Headers({ Location: redirectUrl.toString() });
+        for (const cookie of setCookieHeaders) {
+          headers.append('Set-Cookie', cookie);
+        }
+        return new Response(null, { status: 302, headers });
+      }
+      // OTT exchange failed — fall through to show sign-in page
+      logger.warn('OTT exchange failed, showing sign-in page', { guildId });
+    }
+
+    // Step 2: Check for existing session.
     const session = await auth.getSession(request);
 
     if (!session) {
-      // Use Better Auth client via sign-in-redirect.html (same design system as connect).
+      // Serve sign-in redirect page. The page talks directly to Convex for OAuth.
       const callbackUrl = `${config.baseUrl}/connect?guild_id=${encodeURIComponent(guildId)}`;
       const filePath = `${import.meta.dir}/../../public/sign-in-redirect.html`;
       let html = await Bun.file(filePath).text();
-      html = html.replace('__BASE_URL__', JSON.stringify(config.baseUrl));
+      html = html.replace('__CONVEX_SITE_URL__', JSON.stringify(config.convexSiteUrl));
       html = html.replace('__CALLBACK_URL__', JSON.stringify(callbackUrl));
       return new Response(html, {
         status: 200,
@@ -124,6 +145,11 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
         const data = JSON.parse(raw) as { discordUserId: string };
         discordUserId = data.discordUserId;
       }
+    }
+
+    // Fallback: get Discord ID from the Better Auth linked accounts
+    if (!discordUserId) {
+      discordUserId = await auth.getDiscordUserId(request);
     }
 
     const convex = getConvexClient();
@@ -199,26 +225,32 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     }
 
     let discordUserId: string | null = null;
+    const convex = getConvexClient();
+
     if (token) {
       const store = getStateStore();
       const raw = await store.get(`${CONNECT_TOKEN_PREFIX}${token}`);
       if (raw) {
+        await store.delete(`${CONNECT_TOKEN_PREFIX}${token}`);
         const data = JSON.parse(raw) as { discordUserId: string };
         discordUserId = data.discordUserId;
       }
+    } else if (session?.user?.id) {
+      // Look up the linked Discord account via the Better Auth API (cross-domain pattern)
+      discordUserId = await auth.getDiscordUserId(request);
     }
 
-    const convex = getConvexClient();
     const apiSecret = getConvexApiSecret();
     const existing = await convex.query('tenants:getTenantByOwnerAuth' as any, {
       ownerAuthUserId: session.user.id,
     });
 
+    // 4. If we STILL don't have a discordUserId and no existing tenant, we can't create one
     if (!existing && !discordUserId) {
-      return Response.json(
-        { error: 'Session expired. Please sign in again from Discord.' },
-        { status: 400 }
-      );
+      return Response.json({
+        error: 'Session expired or Discord link lost. Please sign in again from Discord.',
+        details: 'Cannot create tenant: missing Discord ID'
+      }, { status: 400 });
     }
 
     try {
@@ -289,7 +321,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     authUrl.searchParams.set('client_id', config.gumroadClientId);
     authUrl.searchParams.set('redirect_uri', `${config.baseUrl}/api/connect/gumroad/callback`);
     authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('scope', 'view_user view_products view_sales');
+    authUrl.searchParams.set('scope', 'view_profile view_sales');
     authUrl.searchParams.set('state', state);
 
     return Response.redirect(authUrl.toString(), 302);
@@ -367,17 +399,15 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
         );
       }
 
-      const meRes = await fetch('https://api.gumroad.com/me', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const meRes = await fetch(`https://api.gumroad.com/v2/user?access_token=${encodeURIComponent(accessToken)}`);
       if (!meRes.ok) {
         return Response.redirect(
           `${config.baseUrl}/connect?guild_id=${guildId}&error=failed_to_fetch_user`,
           302
         );
       }
-      const me = (await meRes.json()) as { id?: string };
-      const gumroadUserId = me.id ?? '';
+      const me = (await meRes.json()) as { success?: boolean; user?: { user_id?: string; name?: string; email?: string } };
+      const gumroadUserId = me.user?.user_id ?? '';
 
       const accessEncrypted = await encrypt(accessToken, config.encryptionSecret);
       const refreshEncrypted = refreshToken
