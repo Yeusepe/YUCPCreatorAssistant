@@ -47,9 +47,9 @@ describe('Crypto Utilities', () => {
     });
 
     it('generates unique values', () => {
-        const verifier1 = generateCodeVerifier();
-        const verifier2 = generateCodeVerifier();
-        expect(verifier1).not.toBe(verifier2);
+      const verifier1 = generateCodeVerifier();
+      const verifier2 = generateCodeVerifier();
+      expect(verifier1).not.toBe(verifier2);
     });
   });
 
@@ -57,10 +57,10 @@ describe('Crypto Utilities', () => {
     it('computes correct S256 code challenge', async () => {
       const verifier = generateCodeVerifier();
       const challenge = await computeCodeChallenge(verifier);
-      
+
       // SHA-256 produces 32 bytes, base64url encoded is 43 characters
       expect(challenge.length).toBe(43);
-      
+
       // Base64url should not contain +, /, or =
       expect(challenge).not.toMatch(/\+/);
       expect(challenge).not.toMatch(/\//);
@@ -70,7 +70,7 @@ describe('Crypto Utilities', () => {
     it('produces base64url encoded output', async () => {
       const verifier = generateCodeVerifier();
       const challenge = await computeCodeChallenge(verifier);
-      
+
       // Base64url should not contain +, /, or =
       expect(challenge).not.toMatch(/\+/);
       expect(challenge).not.toMatch(/\//);
@@ -82,7 +82,7 @@ describe('Crypto Utilities', () => {
     it('produces SHA-256 hash of verifier', async () => {
       const verifier = 'test-verifier-string';
       const hash = await hashVerifier(verifier);
-      
+
       // SHA-256 produces 64 hex characters
       expect(hash.length).toBe(64);
       expect(/^[0-9a-f]+$/.test(hash)).toBe(true);
@@ -147,8 +147,7 @@ describe('Verification Config', () => {
     });
 
     it('has correct scopes', () => {
-      expect(GUMROAD_CONFIG.scopes).toContain('view_user');
-      expect(GUMROAD_CONFIG.scopes).toContain('view_products');
+      expect(GUMROAD_CONFIG.scopes).toContain('view_profile');
       expect(GUMROAD_CONFIG.scopes).toContain('view_sales');
     });
   });
