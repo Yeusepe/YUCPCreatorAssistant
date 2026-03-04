@@ -1,9 +1,6 @@
-# YUCP Creator Assistant
-
+![YUCP Creator Assistant](https://github.com/user-attachments/assets/ae39c943-3fa2-40ec-b91c-88fea1daf69a)
 
 ---
-
-
 **YUCP Creator Assistant** gives creators who sell on Gumroad, Jinxxy, or other storefronts a simple way to gate Discord access (or other benefits) for paying customers. Customers sign in once with Gumroad, Discord, or a single license verification for Gumroad or Jinxxy; the system then verifies all past and future purchases automatically. No repeated license entry. Discord-based verification can also confirm that a user is already verified in another server, so you can reuse that trust for avatar edits, distribution, or cross-server perks.
 
 **What problem it solves**
@@ -21,8 +18,6 @@
 5. **Supports multiple creators**: The backend is multi-tenant: many Discord guilds (creators) can use the same deployment, each with their own products, role mappings, and policies.
 
 **In short:** buy on Gumroad (or another supported store) → verify in Discord → get the right role. The bot, API, Convex backend, and policy engine handle webhooks, entitlements, and role assignment so creators don’t have to build this themselves.
-
----
 
 ## Summary
 
