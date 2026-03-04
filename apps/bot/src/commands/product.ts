@@ -29,7 +29,7 @@ import type {
 import type { Id } from '../../../../convex/_generated/dataModel';
 import type { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
-import { Emoji } from '../lib/emojis';
+import { E, Emoji } from '../lib/emojis';
 import { canBotManageRole } from '../lib/roleHierarchy';
 import { track } from '../lib/posthog';
 import { resolveGumroadProductId } from '@yucp/providers';
@@ -115,7 +115,7 @@ export async function handleProductAddInteractive(
         .setLabel('License Key Only')
         .setDescription('Manual license codes (Gumroad or Jinxxy)')
         .setValue('license')
-        .setEmoji(Emoji.Key),
+        .setEmoji(Emoji.PersonKey),
       new StringSelectMenuOptionBuilder()
         .setLabel('Discord Role (Other Server)')
         .setDescription('User has a specific role in another server')
@@ -143,7 +143,7 @@ export async function handleProductTypeSelect(
 
   if (!session || Date.now() > session.expiresAt) {
     await interaction.update({
-      content: 'Session expired. Please run `/creator-admin product add` again.',
+      content: `${E.Timer} Session expired. Please run \`/creator-admin product add\` again.`,
       components: [],
     });
     return;
@@ -266,7 +266,7 @@ export async function handleProductUrlModal(
 
   if (!session || Date.now() > session.expiresAt) {
     await interaction.reply({
-      content: 'Session expired. Please run `/creator-admin product add` again.',
+      content: `${E.Timer} Session expired. Please run \`/creator-admin product add\` again.`,
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -300,7 +300,7 @@ export async function handleProductDiscordModal(
 
   if (!session || Date.now() > session.expiresAt) {
     await interaction.reply({
-      content: 'Session expired. Please run `/creator-admin product add` again.',
+      content: `${E.Timer} Session expired. Please run \`/creator-admin product add\` again.`,
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -334,7 +334,7 @@ export async function handleProductDiscordRoleDone(
 
   if (!session || Date.now() > session.expiresAt) {
     await interaction.update({
-      content: 'Session expired. Please run `/creator-admin product add` again.',
+      content: `${E.Timer} Session expired. Please run \`/creator-admin product add\` again.`,
       components: [],
     });
     return;
@@ -421,7 +421,7 @@ export async function handleProductRoleSelect(
 
   if (!session || Date.now() > session.expiresAt) {
     await interaction.update({
-      content: 'Session expired. Please run `/creator-admin product add` again.',
+      content: `${E.Timer} Session expired. Please run \`/creator-admin product add\` again.`,
       components: [],
     });
     return;
@@ -491,7 +491,7 @@ export async function handleProductConfirmAdd(
 
   if (!session || Date.now() > session.expiresAt) {
     await interaction.update({
-      content: 'Session expired. Please run `/creator-admin product add` again.',
+      content: `${E.Timer} Session expired. Please run \`/creator-admin product add\` again.`,
       components: [],
       embeds: [],
     });

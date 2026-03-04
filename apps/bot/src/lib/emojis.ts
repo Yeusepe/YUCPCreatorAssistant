@@ -25,6 +25,13 @@ export const E = {
   World: '<:World:1478732161644363797>',
   CreditCard: '<:CreditCard:1478740002816135268>',
   Refresh: '<:Refresh:1478740004569223198>',
+  ClapStars: '<:ClapStars:1478760445429944465>',
+  GiftCard: '<:GiftCard:1478760446495293473>',
+  PersonKey: '<:PersonKey:1478760448097521744>',
+  ThumbsUp: '<:ThumbsUp:1478760449196687380>',
+  Timer: '<:Timer:1478760450740195449>',
+  Touch: '<:Touch:1478760451612344412>',
+  X_: '<:X_:1478760454108090539>',
 } as const;
 
 /** Shape accepted by discord.js setEmoji() for custom emojis. */
@@ -50,4 +57,11 @@ export const Emoji = {
   World: customEmoji('1478732161644363797', 'World'),
   CreditCard: customEmoji('1478740002816135268', 'CreditCard'),
   Refresh: customEmoji('1478740004569223198', 'Refresh'),
+  ClapStars: customEmoji('1478760445429944465', 'ClapStars'),
+  GiftCard: customEmoji('1478760446495293473', 'GiftCard'),
+  PersonKey: customEmoji('1478760448097521744', 'PersonKey'),
+  ThumbsUp: customEmoji('1478760449196687380', 'ThumbsUp'),
+  Timer: customEmoji('1478760450740195449', 'Timer'),
+  Touch: customEmoji('1478760451612344412', 'Touch'),
+  X_: customEmoji('1478760454108090539', 'X_'),
 } as const;

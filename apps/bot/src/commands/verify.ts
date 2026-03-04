@@ -115,6 +115,7 @@ function buildStatusContainer(
   guildId: string,
   apiBaseUrl: string | undefined,
   userId?: string,
+  bannerMessage?: string,
 ): ContainerBuilder {
   const { state, linkedAccounts, productIds, hasGumroad, hasDiscord } = data;
 
@@ -125,14 +126,24 @@ function buildStatusContainer(
 
   const container = new ContainerBuilder().setAccentColor(accentColor);
 
+  // Optional banner (e.g. success/error) — must use TextDisplay when using MessageFlags.IsComponentsV2
+  if (bannerMessage) {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(bannerMessage),
+    );
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+    );
+  }
+
   // Title
   if (state === 'verified') {
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('## 🎉 You\'re Verified!'),
+      new TextDisplayBuilder().setContent(`## ${E.ClapStars} You're verified!`),
     );
   } else {
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('## <:Key:1478609887012585492> Your Verification Status'),
+      new TextDisplayBuilder().setContent(`## ${E.PersonKey} Your verification status`),
     );
   }
 
@@ -190,7 +201,7 @@ function buildStatusContainer(
 
   if (state === 'nothing') {
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('👇 Choose how to verify your purchase:'),
+      new TextDisplayBuilder().setContent(`${E.Touch} Choose how to verify your purchase:`),
     );
 
     const buttons: ButtonBuilder[] = [];
@@ -275,6 +286,7 @@ function buildStatusContainer(
       new ButtonBuilder()
         .setCustomId(`${VERIFY_PREFIX}disconnect:${a.provider}`)
         .setLabel(`Disconnect ${providerLabel(a.provider)}`)
+        .setEmoji(Emoji.X_)
         .setStyle(ButtonStyle.Danger),
     );
     if (disconnectButtons.length > 0) {
@@ -290,20 +302,18 @@ function buildStatusContainer(
       ),
     );
 
-    const providerEmoji = (p: string) =>
-      p === 'gumroad' ? Emoji.Gumorad : p === 'discord' ? Emoji.Discord : p === 'jinxxy' ? Emoji.Jinxxy : Emoji.Key;
     const activeProviders = linkedAccounts.filter((a) => a.status === 'active');
     const primaryButtons = [
       new ButtonBuilder()
         .setCustomId(`${VERIFY_PREFIX}add_more:${tenantId}`)
         .setLabel('Add another account')
-        .setEmoji(Emoji.Link)
+        .setEmoji(Emoji.Refresh)
         .setStyle(ButtonStyle.Secondary),
       ...activeProviders.map((a) =>
         new ButtonBuilder()
           .setCustomId(`${VERIFY_PREFIX}disconnect:${a.provider}`)
           .setLabel(`Disconnect ${providerLabel(a.provider)}`)
-          .setEmoji(providerEmoji(a.provider))
+          .setEmoji(Emoji.X_)
           .setStyle(ButtonStyle.Danger),
       ),
     ];
@@ -340,7 +350,7 @@ export async function handleCreatorCommand(
       components: [container],
     });
   } catch (err) {
-    await interaction.editReply({ content: 'An error occurred. Please try again.' });
+    await interaction.editReply({ content: `${E.X_} An error occurred. Please try again.` });
   }
 }
 
@@ -367,7 +377,7 @@ export async function handleVerifyStartButton(
       components: [container],
     });
   } catch (err) {
-    await interaction.editReply({ content: 'An error occurred. Please try again.' });
+    await interaction.editReply({ content: `${E.X_} An error occurred. Please try again.` });
   }
 }
 
@@ -396,7 +406,7 @@ export async function handleVerifyAddMore(
       components: [container],
     });
   } catch (err) {
-    await interaction.editReply({ content: 'An error occurred. Please try again.' });
+    await interaction.editReply({ content: `${E.X_} An error occurred. Please try again.` });
   }
 }
 
@@ -529,7 +539,7 @@ export async function handleLicenseModalSubmit(
 
     if (!result.success) {
       await interaction.editReply({
-        content: `❌ We couldn't find a matching purchase. Make sure you're using the license key from your purchase confirmation.\n\n${result.error ?? 'Verification failed.'}`,
+        content: `${E.X_} We couldn't find a matching purchase. Make sure you're using the license key from your purchase confirmation.\n\n${result.error ?? 'Verification failed.'}`,
       });
       track(interaction.user.id, 'verification_failed', { error: result.error, tenantId });
       return;
@@ -539,11 +549,11 @@ export async function handleLicenseModalSubmit(
 
     await interaction.editReply({
       content:
-        '🎉 **Verified!** Your roles will be updated shortly.\n\nWelcome to the community!',
+        `${E.ClapStars} **Verified!** Your roles will be updated shortly.\n\nWelcome to the community!`,
     });
   } catch (err) {
     await interaction.editReply({
-      content: `An error occurred during verification. Please try again.\n\`${err instanceof Error ? err.message : 'Unknown error'}\``,
+      content: `${E.X_} An error occurred during verification. Please try again.\n\`${err instanceof Error ? err.message : 'Unknown error'}\``,
     });
   }
 }
@@ -623,13 +633,14 @@ export async function handleVerifyDisconnectButton(
       guildId,
       apiBaseUrl,
       interaction.user.id,
+      `✅ Disconnected your ${providerLabel(provider)} account. Existing roles may take a moment to be removed.`,
     );
     await interaction.editReply({
-      content: `✅ Disconnected your ${providerLabel(provider)} account. Existing roles may take a moment to be removed.`,
       flags: MessageFlags.IsComponentsV2,
       components: [container],
     });
   } catch (err) {
+    // Error path: use plain content (no IsComponentsV2) — legacy content is allowed
     await interaction.editReply({
       content: `Error disconnecting: ${err instanceof Error ? err.message : 'Unknown error'}`,
     });

@@ -378,11 +378,11 @@ export async function handleLicenseKeyModal(
 
         await interaction.editReply({
             content:
-                `${emoji} **${providerLabel} license verified!**\n` +
+                `${E.ClapStars} ${emoji} **${providerLabel} license verified!**\n` +
                 `Your account has been linked. Run \`/creator\` to see your updated verification status.`,
         });
     } catch (err) {
         logger.error('License key verification request failed', { err });
-        await interaction.editReply({ content: '❌ An error occurred. Please try again.' });
+        await interaction.editReply({ content: `${E.X_} An error occurred. Please try again.` });
     }
 }
