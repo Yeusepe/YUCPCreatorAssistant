@@ -154,6 +154,89 @@ export const ingestBackfillPurchaseFactsBatch = mutation({
 // ============================================================================
 
 /**
+ * Internal action: Trigger backfill for tenant's Gumroad products, then sync past purchases.
+ * Used when a Gumroad buyer connects and purchase_facts may be empty (backfill not yet run).
+ * Ensures purchase_facts is populated before syncPastPurchasesForSubject runs.
+ */
+export const triggerBackfillThenSyncForGumroadBuyer = internalAction({
+  args: {
+    tenantId: v.id('tenants'),
+    subjectId: v.id('subjects'),
+    providerUserId: v.string(),
+    emailHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const products = await ctx.runQuery(
+      internal.backgroundSync.getGumroadProductsForTenant,
+      { tenantId: args.tenantId }
+    );
+
+    for (const p of products) {
+      await ctx.runAction(internal.backgroundSync.backfillProductPurchases, {
+        tenantId: args.tenantId,
+        productId: p.productId,
+        provider: 'gumroad',
+        providerProductRef: p.providerProductRef,
+      });
+    }
+
+    await ctx.runAction(internal.backgroundSync.syncPastPurchasesForSubject, {
+      subjectId: args.subjectId,
+      provider: 'gumroad',
+      providerUserId: args.providerUserId,
+      emailHash: args.emailHash,
+    });
+  },
+});
+
+/**
+ * Public mutation: Schedule backfill + sync when a Gumroad buyer connects.
+ * Call from API verification callback to ensure purchase_facts is populated before sync.
+ */
+export const scheduleBackfillThenSyncForGumroadBuyer = mutation({
+  args: {
+    apiSecret: v.string(),
+    tenantId: v.id('tenants'),
+    subjectId: v.id('subjects'),
+    providerUserId: v.string(),
+    emailHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    await ctx.scheduler.runAfter(0, internal.backgroundSync.triggerBackfillThenSyncForGumroadBuyer, {
+      tenantId: args.tenantId,
+      subjectId: args.subjectId,
+      providerUserId: args.providerUserId,
+      emailHash: args.emailHash,
+    });
+  },
+});
+
+/** Internal query: Get Gumroad products for a tenant */
+export const getGumroadProductsForTenant = internalQuery({
+  args: { tenantId: v.id('tenants') },
+  returns: v.array(
+    v.object({
+      productId: v.string(),
+      providerProductRef: v.string(),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const catalog = await ctx.db
+      .query('product_catalog')
+      .withIndex('by_tenant', (q) => q.eq('tenantId', args.tenantId))
+      .filter((q) => q.eq(q.field('provider'), 'gumroad'))
+      .filter((q) => q.eq(q.field('status'), 'active'))
+      .collect();
+
+    return catalog.map((c) => ({
+      productId: c.productId,
+      providerProductRef: c.providerProductRef,
+    }));
+  },
+});
+
+/**
  * Internal action: Sync past purchases for a subject who just linked Gumroad/Jinxxy.
  * Queries purchase_facts by emailHash, resolves productId, grants entitlements.
  */

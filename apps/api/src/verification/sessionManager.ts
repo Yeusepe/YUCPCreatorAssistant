@@ -47,6 +47,15 @@ export function generateCodeVerifier(): string {
   return generateSecureRandom(64);
 }
 
+async function sha256Hex(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 /**
  * Computes PKCE code challenge from verifier
  * code_challenge = BASE64URL(SHA256(code_verifier))
@@ -681,6 +690,27 @@ export function createVerificationSessionManager(
           subjectId: syncResult.subjectId,
           externalAccountId: syncResult.externalAccountId,
         });
+      }
+
+      // For Gumroad: ensure purchase_facts is populated, then sync past purchases.
+      // syncPastPurchasesForSubject (from syncUserFromProvider) may find 0 if backfill
+      // hasn't run. Trigger backfill for tenant's products, then sync again.
+      if (mode === 'gumroad' && email) {
+        const normalizedEmail = email.trim().toLowerCase();
+        const emailHash = await sha256Hex(normalizedEmail);
+        try {
+          await convex.mutation('backgroundSync:scheduleBackfillThenSyncForGumroadBuyer' as any, {
+            apiSecret,
+            tenantId,
+            subjectId: syncResult.subjectId,
+            providerUserId,
+            emailHash,
+          });
+        } catch (backfillErr) {
+          logger.warn('[verification] Failed to schedule backfill+sync (non-fatal)', {
+            error: backfillErr instanceof Error ? backfillErr.message : String(backfillErr),
+          });
+        }
       }
 
       // For discord_role: guild member lookup, role check, entitlement grant
