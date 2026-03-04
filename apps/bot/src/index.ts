@@ -26,7 +26,7 @@ async function main() {
     if (client.isReady()) {
       resolve();
     } else {
-      client.once('ready', () => resolve());
+      client.once('clientReady', () => resolve());
     }
   });
 
