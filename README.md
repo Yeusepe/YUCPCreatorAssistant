@@ -1,7 +1,5 @@
 ![YUCP Creator Assistant](https://github.com/user-attachments/assets/5a8e13f1-aca0-4c7d-b3e0-c0d4cc328b69)
-
-# YUCP Creator Assistant
-
+---
 **YUCP Creator Assistant** gives creators who sell on Gumroad, Jinxxy, or other storefronts a simple way to gate Discord access (or other benefits) for paying customers. Customers sign in once with Gumroad, Discord, or a single license verification for Gumroad or Jinxxy; the system then verifies all past and future purchases automatically. No repeated license entry. Discord-based verification can also confirm that a user is already verified in another server, so you can reuse that trust for avatar edits, distribution, or cross-server perks.
 
 **What problem it solves**
