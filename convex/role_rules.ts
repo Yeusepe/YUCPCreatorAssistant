@@ -69,6 +69,68 @@ export const getByGuild = query({
 });
 
 /**
+ * Get unique products for a guild with display names for autocomplete.
+ * For catalog products: uses canonicalSlug or providerProductRef from product_catalog.
+ * For Discord role products: displayName is null (bot fetches role name from Discord).
+ */
+export const getByGuildWithProductNames = query({
+  args: {
+    tenantId: v.id('tenants'),
+    guildId: v.string(),
+  },
+  returns: v.array(
+    v.object({
+      productId: v.string(),
+      displayName: v.union(v.string(), v.null()),
+      sourceGuildId: v.optional(v.string()),
+      requiredRoleId: v.optional(v.string()),
+      verifiedRoleId: v.optional(v.string()),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const rules = await ctx.db
+      .query('role_rules')
+      .withIndex('by_tenant_guild', (q) =>
+        q.eq('tenantId', args.tenantId).eq('guildId', args.guildId)
+      )
+      .order('asc')
+      .collect();
+
+    const seen = new Set<string>();
+    const result: Array<{
+      productId: string;
+      displayName: string | null;
+      sourceGuildId?: string;
+      requiredRoleId?: string;
+      verifiedRoleId?: string;
+    }> = [];
+
+    for (const r of rules) {
+      if (seen.has(r.productId)) continue;
+      seen.add(r.productId);
+
+      let displayName: string | null = null;
+      if (r.catalogProductId) {
+        const catalog = await ctx.db.get(r.catalogProductId);
+        if (catalog) {
+          displayName = catalog.canonicalSlug ?? catalog.providerProductRef ?? r.productId;
+        }
+      }
+
+      result.push({
+        productId: r.productId,
+        displayName,
+        sourceGuildId: r.sourceGuildId,
+        requiredRoleId: r.requiredRoleId,
+        verifiedRoleId: r.verifiedRoleId,
+      });
+    }
+
+    return result;
+  },
+});
+
+/**
  * Get role rules for a specific product.
  * Used by the role sync service to determine which roles to add.
  */

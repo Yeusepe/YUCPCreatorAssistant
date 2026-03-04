@@ -711,9 +711,33 @@ export async function handleProductRemove(
     });
   }
 
-  await interaction.editReply({
-    content: `Removed ${matching.length} rule(s) for product \`${productId}\`.`,
-  });
+  let content: string;
+  const isDiscordRole = productId.startsWith('discord_role:');
+  if (isDiscordRole && matching.length > 0) {
+    const r = matching[0] as { sourceGuildId?: string; requiredRoleId?: string; verifiedRoleId?: string };
+    let sourceRoleName = '?';
+    let targetRoleName = '?';
+    try {
+      if (r.sourceGuildId && r.requiredRoleId) {
+        const sourceGuild = await interaction.client.guilds.fetch(r.sourceGuildId).catch(() => null);
+        const role = sourceGuild ? await sourceGuild.roles.fetch(r.requiredRoleId!).catch(() => null) : null;
+        sourceRoleName = role?.name ?? '?';
+      }
+      if (r.verifiedRoleId && interaction.guild) {
+        const targetRole = await interaction.guild.roles.fetch(r.verifiedRoleId).catch(() => null);
+        targetRoleName = targetRole?.name ?? '?';
+      }
+    } catch {
+      /* use fallbacks */
+    }
+    content =
+      `**Removed Discord role rule** (${matching.length} mapping${matching.length > 1 ? 's' : ''})\n\n` +
+      `Users with **${sourceRoleName}** in the source server will no longer receive **${targetRoleName}** here.`;
+  } else {
+    content = `Removed ${matching.length} rule(s) for product \`${productId}\`.`;
+  }
+
+  await interaction.editReply({ content });
 }
 
 // Legacy handleProductAdd kept for backwards compat (maps to interactive flow)

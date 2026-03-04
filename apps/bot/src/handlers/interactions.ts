@@ -117,44 +117,42 @@ async function handleAutocomplete(
       });
       if (!guildLink) { await interaction.respond([]); return; }
 
-      const rules = await ctx.convex.query(api.role_rules.getByGuild as any, {
+      const products = await ctx.convex.query(api.role_rules.getByGuildWithProductNames as any, {
         tenantId: guildLink.tenantId,
         guildId,
       });
 
       const query = focused.value.toLowerCase();
-      const rulesWithProductId = rules.map((r: any) => ({
-        productId: r.productId as string,
-        sourceGuildId: r.sourceGuildId as string | undefined,
-        requiredRoleId: r.requiredRoleId as string | undefined,
-      }));
-      const seen = new Set<string>();
-      const unique = rulesWithProductId.filter((r) => {
-        if (seen.has(r.productId)) return false;
-        seen.add(r.productId);
-        return true;
-      });
-
-      const filtered = unique
-        .filter((r) => {
-          const searchLabel = r.productId.startsWith('discord_role:')
-            ? 'discord role other server'
-            : r.productId.toLowerCase();
-          return !query || searchLabel.includes(query);
+      const filtered = products
+        .filter((p: { productId: string; displayName: string | null }) => {
+          const searchLabel = (p.displayName ?? p.productId).toLowerCase();
+          const discordLabel = p.productId.startsWith('discord_role:') ? 'discord role' : '';
+          return !query || searchLabel.includes(query) || discordLabel.includes(query);
         })
         .slice(0, 25);
 
-      await interaction.respond(
-        filtered.map((r) => {
-          const label = r.productId.startsWith('discord_role:')
-            ? 'Discord Role (other server)'
-            : r.productId;
-          return {
-            name: label.slice(0, 100),
-            value: r.productId.slice(0, 100),
-          };
-        }),
+      // Resolve Discord role names for discord_role products (bot must be in source guild)
+      const currentGuild = interaction.guild;
+      const choices = await Promise.all(
+        filtered.map(async (p: { productId: string; displayName: string | null; sourceGuildId?: string; requiredRoleId?: string; verifiedRoleId?: string }) => {
+          let label = p.displayName ?? p.productId;
+          if (p.productId.startsWith('discord_role:') && p.sourceGuildId && p.requiredRoleId) {
+            try {
+              const sourceGuild = await interaction.client.guilds.fetch(p.sourceGuildId).catch(() => null);
+              const sourceRole = sourceGuild ? await sourceGuild.roles.fetch(p.requiredRoleId).catch(() => null) : null;
+              const targetRole = currentGuild && p.verifiedRoleId ? await currentGuild.roles.fetch(p.verifiedRoleId).catch(() => null) : null;
+              const sourceName = sourceRole?.name ?? '?';
+              const targetName = targetRole?.name ?? '?';
+              label = `Discord Role: ${sourceName} → ${targetName}`;
+            } catch {
+              label = 'Discord Role (cross-server)';
+            }
+          }
+          return { name: label.slice(0, 100), value: p.productId.slice(0, 100) };
+        })
       );
+
+      await interaction.respond(choices);
     } catch {
       await interaction.respond([]);
     }
