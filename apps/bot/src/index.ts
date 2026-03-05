@@ -1,6 +1,7 @@
 // Discord bot entrypoint
 
 import { createLogger } from '@yucp/shared';
+import { setDefaultResultOrder } from 'node:dns';
 import { ConvexHttpClient } from 'convex/browser';
 import { loadEnvAsync, validateBotEnv } from './lib/env';
 import { startBot } from './client';
@@ -27,6 +28,60 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
   }
 }
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function discordPreflight(token: string): Promise<void> {
+  const headers = {
+    Authorization: `Bot ${token}`,
+    'Content-Type': 'application/json',
+  };
+
+  // Validates egress + bot token before gateway login.
+  const meResponse = await fetchWithTimeout(
+    'https://discord.com/api/v10/users/@me',
+    { method: 'GET', headers },
+    10_000,
+  );
+  if (!meResponse.ok) {
+    const body = (await meResponse.text()).slice(0, 300);
+    throw new Error(
+      `Discord preflight /users/@me failed: HTTP ${meResponse.status} ${meResponse.statusText}; body=${body}`,
+    );
+  }
+
+  const gatewayResponse = await fetchWithTimeout(
+    'https://discord.com/api/v10/gateway/bot',
+    { method: 'GET', headers },
+    10_000,
+  );
+  if (!gatewayResponse.ok) {
+    const body = (await gatewayResponse.text()).slice(0, 300);
+    throw new Error(
+      `Discord preflight /gateway/bot failed: HTTP ${gatewayResponse.status} ${gatewayResponse.statusText}; body=${body}`,
+    );
+  }
+
+  logger.info('Discord preflight passed', {
+    meStatus: meResponse.status,
+    gatewayStatus: gatewayResponse.status,
+  });
+}
+
 async function main() {
   const env = await loadEnvAsync();
   validateBotEnv(env);
@@ -36,6 +91,17 @@ async function main() {
     infisicalUrl: env.INFISICAL_URL,
     infisicalEnv: process.env.INFISICAL_ENV ?? 'dev (default)',
   });
+
+  try {
+    setDefaultResultOrder('ipv4first');
+    logger.info('DNS resolution order set', { order: 'ipv4first' });
+  } catch (err) {
+    logger.warn('Failed to set DNS resolution order', {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  await discordPreflight(env.DISCORD_BOT_TOKEN!);
 
   const LOGIN_TIMEOUT_MS = Number.parseInt(process.env.BOT_LOGIN_TIMEOUT_MS ?? '30000', 10);
   const client = await withTimeout(
