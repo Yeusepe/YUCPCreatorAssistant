@@ -37,6 +37,14 @@ export interface SessionData {
 export function createAuth(config: AuthConfig) {
   const convexAuthBase = `${config.convexSiteUrl.replace(/\/$/, '')}/api/auth`;
 
+  function summarizeCookieNames(cookieHeader: string): string[] {
+    return cookieHeader
+      .split(';')
+      .map((part) => part.trim().split('=')[0])
+      .filter(Boolean)
+      .slice(0, 10);
+  }
+
   return {
     /** Get session by calling Convex get-session directly with the request cookies. */
     async getSession(request: Request): Promise<SessionData | null> {
@@ -52,6 +60,7 @@ export function createAuth(config: AuthConfig) {
         });
 
         if (!res.ok) {
+          const responseBody = await res.text().catch(() => '');
           logger.warn('Better Auth get-session returned non-OK', {
             status: res.status,
             statusText: res.statusText,
@@ -59,6 +68,10 @@ export function createAuth(config: AuthConfig) {
             requestHost: request.headers.get('host'),
             hasCookieHeader: Boolean(cookie),
             cookieLength: cookie.length,
+            cookieNames: summarizeCookieNames(cookie),
+            responseBodyPreview: responseBody.slice(0, 300),
+            setCookieHeader: res.headers.get('set-cookie'),
+            setBetterAuthCookieHeader: res.headers.get('set-better-auth-cookie'),
           });
           return null;
         }
@@ -71,6 +84,9 @@ export function createAuth(config: AuthConfig) {
             requestHost: request.headers.get('host'),
             hasCookieHeader: Boolean(cookie),
             cookieLength: cookie.length,
+            cookieNames: summarizeCookieNames(cookie),
+            setCookieHeader: res.headers.get('set-cookie'),
+            setBetterAuthCookieHeader: res.headers.get('set-better-auth-cookie'),
           });
         }
         return json ?? null;
