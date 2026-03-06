@@ -173,7 +173,10 @@ async function main() {
     try {
       await handleInteraction(interaction as any, interactionCtx);
     } catch (err) {
-      logger.error('Unhandled interaction error', { err });
+      logger.error('Unhandled interaction error', {
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
     }
   });
 

@@ -35,7 +35,11 @@ export async function runSetupStart(
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const { apiInternal, apiPublic } = getApiUrls();
-  const apiBase = apiPublic ?? apiInternal ?? 'http://localhost:3001';
+  if (!apiPublic) {
+    throw new Error('API_BASE_URL is not configured for the bot service');
+  }
+
+  const apiBase = apiPublic;
   const apiForFetch = apiInternal ?? apiBase;
 
   // Create a secure setup session via the API (use internal URL when on Zeabur)
