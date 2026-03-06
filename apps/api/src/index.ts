@@ -285,9 +285,25 @@ async function routeRequest(request: Request): Promise<Response> {
       });
     }
 
+    let discordRedirectUri: string | null = null;
+    let discordClientId: string | null = null;
+    let discordScope: string | null = null;
+    try {
+      const parsedRedirect = new URL(redirectUrl);
+      discordRedirectUri = parsedRedirect.searchParams.get('redirect_uri');
+      discordClientId = parsedRedirect.searchParams.get('client_id');
+      discordScope = parsedRedirect.searchParams.get('scope');
+    } catch {
+      // Ignore parse failures; keep the raw redirect URL preview below.
+    }
+
     logger.info('Discord sign-in bridge redirecting', {
       callbackURL,
       redirectOrigin: new URL(redirectUrl).origin,
+      redirectUri: discordRedirectUri,
+      clientId: discordClientId,
+      scope: discordScope,
+      redirectUrlPreview: redirectUrl.slice(0, 500),
     });
 
     return Response.redirect(redirectUrl, 302);
