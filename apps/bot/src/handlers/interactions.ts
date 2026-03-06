@@ -345,7 +345,11 @@ async function handleSlashCommand(
       });
     }
   } catch (err) {
-    logger.error('Command handler error', { err, command: subcommand });
+    logger.error('Command handler error', {
+      command: subcommand,
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     track(interaction.user.id, 'command_error', {
       command: subcommand,
       error: String(err),
