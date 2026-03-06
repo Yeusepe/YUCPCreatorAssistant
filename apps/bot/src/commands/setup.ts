@@ -32,6 +32,8 @@ export async function runSetupStart(
   apiSecret: string,
   ctx: SetupContext,
 ): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const { apiInternal, apiPublic } = getApiUrls();
   const apiBase = apiPublic ?? apiInternal ?? 'http://localhost:3001';
   const apiForFetch = apiInternal ?? apiBase;
@@ -94,10 +96,9 @@ export async function runSetupStart(
       .setURL(jinxxyUrl),
   );
 
-  await interaction.reply({
+  await interaction.editReply({
     embeds: [embed],
     components: [row],
-    flags: MessageFlags.Ephemeral,
   });
 
   track(interaction.user.id, 'setup_started', {
