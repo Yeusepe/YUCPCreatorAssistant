@@ -14,6 +14,8 @@
     <link rel="stylesheet" href="./tokens.css">
 
     <style>
+        
+
         body {
             background-color: var(--bg-color);
             color: var(--accent-blue);
@@ -23,7 +25,10 @@
             min-height: 100vh;
         }
 
-        h1, h2, h3, .display-text {
+        h1,
+        h2,
+        h3,
+        .display-text {
             font-family: 'Plus Jakarta Sans', sans-serif;
             font-weight: 800;
             letter-spacing: -0.04em;
@@ -35,7 +40,7 @@
             backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.13);
             border-radius: 28px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255,255,255,0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.1);
             margin-bottom: 24px;
         }
 
@@ -58,7 +63,7 @@
             position: absolute;
             inset: 0;
             border-radius: 20px;
-            background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 60%);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, transparent 60%);
             pointer-events: none;
         }
 
@@ -161,7 +166,7 @@
             background: white;
             border-radius: 50%;
             transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
         }
 
         .toggle-switch.active::after {
@@ -281,8 +286,8 @@
         .collab-avatar {
             width: 36px;
             height: 36px;
-            background: linear-gradient(135deg, rgba(14,165,233,0.4), rgba(88,101,242,0.4));
-            border: 1.5px solid rgba(255,255,255,0.2);
+            background: linear-gradient(135deg, rgba(14, 165, 233, 0.4), rgba(88, 101, 242, 0.4));
+            border: 1.5px solid rgba(255, 255, 255, 0.2);
             border-radius: 10px;
             display: flex;
             align-items: center;
@@ -338,16 +343,22 @@
             display: inline-block;
         }
 
-        .webhook-dot.ok { background: #4ade80; box-shadow: 0 0 4px rgba(74,222,128,0.6); }
-        .webhook-dot.warn { background: #facc15; }
+        .webhook-dot.ok {
+            background: #4ade80;
+            box-shadow: 0 0 4px rgba(74, 222, 128, 0.6);
+        }
+
+        .webhook-dot.warn {
+            background: #facc15;
+        }
 
         .collab-remove-btn {
             margin-left: auto;
             font-size: 11px;
             font-weight: 700;
             background: transparent;
-            border: 1.5px solid rgba(255,255,255,0.12);
-            color: rgba(255,255,255,0.5);
+            border: 1.5px solid rgba(255, 255, 255, 0.12);
+            color: rgba(255, 255, 255, 0.5);
             border-radius: 8px;
             padding: 5px 12px;
             cursor: pointer;
@@ -357,8 +368,8 @@
         }
 
         .collab-remove-btn:hover {
-            background: rgba(239,68,68,0.15);
-            border-color: rgba(239,68,68,0.4);
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.4);
             color: #f87171;
         }
 
@@ -377,12 +388,12 @@
             border: none;
             cursor: pointer;
             transition: all 0.2s;
-            box-shadow: 0 4px 12px rgba(14,165,233,0.3);
+            box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
         }
 
         .btn-primary:hover {
             background: #0284c7;
-            box-shadow: 0 6px 20px rgba(14,165,233,0.4);
+            box-shadow: 0 6px 20px rgba(14, 165, 233, 0.4);
             transform: translateY(-1px);
         }
 
@@ -421,12 +432,12 @@
         .modal-box {
             background: rgba(10, 30, 90, 0.85);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255,255,255,0.15);
+            border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 28px;
             padding: 36px;
             max-width: 420px;
             width: calc(100% - 32px);
-            box-shadow: 0 24px 80px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
         }
 
         .modal-box h3 {
@@ -439,7 +450,7 @@
         .modal-box p {
             font-size: 14px;
             font-family: 'DM Sans', sans-serif;
-            color: rgba(255,255,255,0.75);
+            color: rgba(255, 255, 255, 0.75);
             line-height: 1.6;
             margin: 0 0 24px;
         }
@@ -453,7 +464,7 @@
         .btn-ghost {
             padding: 12px;
             border-radius: 14px;
-            border: 1.5px solid rgba(255,255,255,0.12);
+            border: 1.5px solid rgba(255, 255, 255, 0.12);
             background: transparent;
             color: #fff;
             font-family: 'Plus Jakarta Sans', sans-serif;
@@ -463,7 +474,9 @@
             transition: all 0.2s;
         }
 
-        .btn-ghost:hover { background: rgba(255,255,255,0.08); }
+        .btn-ghost:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
 
         .btn-danger {
             padding: 12px;
@@ -478,17 +491,19 @@
             transition: all 0.2s;
         }
 
-        .btn-danger:hover { background: #0284c7; }
+        .btn-danger:hover {
+            background: #0284c7;
+        }
 
         /* ── Invite URL box ────────────────────────────────────────────────── */
         .invite-url-box {
-            background: rgba(0,0,0,0.3);
-            border: 1.5px solid rgba(255,255,255,0.1);
+            background: rgba(0, 0, 0, 0.3);
+            border: 1.5px solid rgba(255, 255, 255, 0.1);
             border-radius: 12px;
             padding: 12px 14px;
             font-family: 'DM Mono', monospace;
             font-size: 11px;
-            color: rgba(255,255,255,0.8);
+            color: rgba(255, 255, 255, 0.8);
             word-break: break-all;
             line-height: 1.5;
             margin-bottom: 12px;
@@ -506,19 +521,67 @@
             animation: page-loading-spin 0.8s linear infinite;
         }
 
-        @keyframes page-loading-spin { to { transform: rotate(360deg); } }
-
-        /* ── Animations ────────────────────────────────────────────────────── */
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(16px); }
-            to { opacity: 1; transform: translateY(0); }
+        @keyframes page-loading-spin {
+            to {
+                transform: rotate(360deg);
+            }
         }
 
-        .animate-in { animation: fadeInUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-        .animate-in-delay-1 { animation-delay: 0.08s; opacity: 0; }
-        .animate-in-delay-2 { animation-delay: 0.16s; opacity: 0; }
-        .animate-in-delay-3 { animation-delay: 0.24s; opacity: 0; }
-        .animate-in-delay-4 { animation-delay: 0.32s; opacity: 0; }
+        /* ── Animations ─────────────────────────────────────────── */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-in {
+            animation: fadeInUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        .animate-in-delay-1 {
+            animation-delay: 0.08s;
+            opacity: 0;
+        }
+
+        .animate-in-delay-2 {
+            animation-delay: 0.16s;
+            opacity: 0;
+        }
+
+        .animate-in-delay-3 {
+            animation-delay: 0.24s;
+            opacity: 0;
+        }
+
+        .animate-in-delay-4 {
+            animation-delay: 0.32s;
+            opacity: 0;
+        }
+
+        /* ── Flash fix ─────────────────────────────────────────────────────── */
+        #page-loading-overlay {
+            transition: opacity 0.35s ease;
+        }
+
+        #page-loading-overlay.is-hiding {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #page-content {
+            opacity: 0;
+            transition: opacity 0.3s ease 0.05s;
+        }
+
+        #page-content.is-visible {
+            opacity: 1;
+        }
     </style>
 
     <link rel="stylesheet" href="/assets/site/site.css">
@@ -526,7 +589,8 @@
 </head>
 
 <body class="pb-32">
-    <div id="page-loading-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center" style="background-color: var(--bg-color);">
+    <div id="page-loading-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center"
+        style="background-color: var(--bg-color);">
         <img src="__API_BASE__/Icons/MainLogo.png" alt="Creator Assistant" class="h-10 mb-8" />
         <div class="page-loading-spinner"></div>
         <p class="mt-4 text-sm font-semibold" style="color: rgba(255,255,255,0.6);">Loading your dashboard...</p>
@@ -535,27 +599,38 @@
     <div id="page-content" style="display: none;">
 
         <!-- Background canvas -->
-        <div id="bg-canvas-root" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -20; pointer-events: none;"></div>
+        <div id="bg-canvas-root"
+            style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -20; pointer-events: none;">
+        </div>
 
         <main class="max-w-5xl mx-auto px-6 mt-12 pb-12">
 
             <!-- Holographic Stickers -->
-            <div id="holo-world-0" class="absolute top-10 right-20 w-28 opacity-70 sticker pointer-events-auto z-0 h-28" style="animation-delay: -1s;"></div>
-            <div id="holo-gumorad-1" class="absolute bottom-20 left-10 w-24 opacity-60 sticker pointer-events-auto z-0 h-24" style="animation-delay: -4s;"></div>
-            <div id="holo-checkmark-2" class="absolute top-1/2 right-10 w-20 opacity-50 sticker pointer-events-auto z-0 h-20" style="animation-delay: -2s;"></div>
+            <div id="holo-world-0" class="absolute top-10 right-20 w-28 opacity-70 sticker pointer-events-auto z-0 h-28"
+                style="animation-delay: -1s;"></div>
+            <div id="holo-gumorad-1"
+                class="absolute bottom-20 left-10 w-24 opacity-60 sticker pointer-events-auto z-0 h-24"
+                style="animation-delay: -4s;"></div>
+            <div id="holo-checkmark-2"
+                class="absolute top-1/2 right-10 w-20 opacity-50 sticker pointer-events-auto z-0 h-20"
+                style="animation-delay: -2s;"></div>
 
             <!-- Header -->
             <header class="mb-10 animate-in relative z-10">
                 <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                     <div class="relative">
-                        <img src="__API_BASE__/Icons/Assistant.png" class="absolute -top-10 -left-12 w-16 sticker pointer-events-none hidden md:block" alt="">
-                        <div class="inline-block px-4 py-1 bg-white/15 text-white rounded-full text-[10px] font-black uppercase tracking-widest mb-4 backdrop-blur-md border border-white/25">
+                        <img src="__API_BASE__/Icons/Assistant.png"
+                            class="absolute -top-10 -left-12 w-16 sticker pointer-events-none hidden md:block" alt="">
+                        <div
+                            class="inline-block px-4 py-1 bg-white/15 text-white rounded-full text-[10px] font-black uppercase tracking-widest mb-4 backdrop-blur-md border border-white/25">
                             Server Dashboard
                         </div>
-                        <h1 class="text-5xl md:text-6xl tracking-tight mb-2 font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-blue-200">
+                        <h1
+                            class="text-5xl md:text-6xl tracking-tight mb-2 font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-blue-200">
                             Settings
                         </h1>
-                        <p class="text-white/80 font-medium text-base max-w-sm" style="font-family: 'DM Sans', sans-serif;">
+                        <p class="text-white/80 font-medium text-base max-w-sm"
+                            style="font-family: 'DM Sans', sans-serif;">
                             Manage your integrations and server preferences.
                         </p>
                     </div>
@@ -573,7 +648,8 @@
                 <!-- ── Connected Platforms ────────────────────────────────────────── -->
                 <section class="section-card p-7 animate-in animate-in-delay-1">
                     <div class="flex items-center gap-3 mb-6">
-                        <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: rgba(255,235,59,0.15);">
+                        <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+                            style="background: rgba(255,235,59,0.15);">
                             <img src="__API_BASE__/Icons/Link.png" class="w-4 h-4 object-contain" alt="">
                         </div>
                         <h2 class="text-lg font-black">Connected Platforms</h2>
@@ -584,21 +660,25 @@
                         <!-- Discord (always connected) -->
                         <div class="platform-card connected">
                             <div class="flex items-start justify-between">
-                                <div class="w-10 h-10 bg-[#5865F2] rounded-xl flex items-center justify-center overflow-hidden">
-                                    <img src="__API_BASE__/Icons/Discord.png" class="w-6 h-6 object-contain" alt="Discord">
+                                <div
+                                    class="w-10 h-10 bg-[#5865F2] rounded-xl flex items-center justify-center overflow-hidden">
+                                    <img src="__API_BASE__/Icons/Discord.png" class="w-6 h-6 object-contain"
+                                        alt="Discord">
                                 </div>
                                 <span class="status-pill connected">Connected</span>
                             </div>
                             <div>
                                 <h3 class="font-bold text-base mb-0.5">Discord</h3>
-                                <p class="text-xs text-white/60" style="font-family:'DM Sans',sans-serif;">Bot access active</p>
+                                <p class="text-xs text-white/60" style="font-family:'DM Sans',sans-serif;">Bot access
+                                    active</p>
                             </div>
                         </div>
 
                         <!-- Gumroad -->
                         <div id="gumroad-card" class="platform-card disconnected">
                             <div class="flex items-start justify-between">
-                                <div class="w-10 h-10 bg-black rounded-xl flex items-center justify-center overflow-hidden">
+                                <div
+                                    class="w-10 h-10 bg-black rounded-xl flex items-center justify-center overflow-hidden">
                                     <img class="w-6 h-6 rounded object-cover"
                                         src="https://cdn.brandfetch.io/idMw8qr5lW/w/400/h/400/theme/dark/icon.png?c=1bxid64Mup7aczewSAYMX&t=1667593186460"
                                         alt="Gumroad">
@@ -607,7 +687,8 @@
                             </div>
                             <div>
                                 <h3 class="font-bold text-base mb-0.5">Gumroad</h3>
-                                <p class="text-xs text-white/60" style="font-family:'DM Sans',sans-serif;">Import sales &amp; buyers</p>
+                                <p class="text-xs text-white/60" style="font-family:'DM Sans',sans-serif;">Import sales
+                                    &amp; buyers</p>
                             </div>
                             <button id="gumroad-btn" class="card-action-btn link" onclick="navigateGumroad()">
                                 Link Account
@@ -617,7 +698,8 @@
                         <!-- Jinxxy -->
                         <div id="jinxxy-card" class="platform-card disconnected">
                             <div class="flex items-start justify-between">
-                                <div class="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center" style="background:#9146FF;">
+                                <div class="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center"
+                                    style="background:#9146FF;">
                                     <img class="w-6 h-6 rounded object-cover"
                                         src="https://cdn.brandfetch.io/id5SOeZxOy/w/400/h/400/theme/dark/icon.jpeg?c=1bxid64Mup7aczewSAYMX&t=1770481661483"
                                         alt="Jinxxy">
@@ -626,7 +708,8 @@
                             </div>
                             <div>
                                 <h3 class="font-bold text-base mb-0.5">Jinxxy</h3>
-                                <p class="text-xs text-white/60" style="font-family:'DM Sans',sans-serif;">Import sales &amp; buyers</p>
+                                <p class="text-xs text-white/60" style="font-family:'DM Sans',sans-serif;">Import sales
+                                    &amp; buyers</p>
                             </div>
                             <button id="jinxxy-btn" class="card-action-btn link" onclick="navigateJinxxy()">
                                 Link Account
@@ -639,13 +722,15 @@
                 <!-- ── Server Settings ─────────────────────────────────────────────── -->
                 <section class="section-card p-7 animate-in animate-in-delay-2">
                     <div class="flex items-center gap-3 mb-1">
-                        <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: rgba(88,101,242,0.2);">
+                        <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+                            style="background: rgba(88,101,242,0.2);">
                             <img src="__API_BASE__/Icons/Wrench.png" class="w-4 h-4 object-contain" alt="">
                         </div>
                         <h2 class="text-lg font-black">Server Settings</h2>
                         <span id="save-indicator" class="save-indicator ml-2">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
-                                <path d="M5 13l4 4L19 7"/>
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3"
+                                viewBox="0 0 24 24">
+                                <path d="M5 13l4 4L19 7" />
                             </svg>
                             Saved
                         </span>
@@ -665,11 +750,15 @@
                                             <img src="__API_BASE__/Icons/World.png" alt="">
                                         </div>
                                         <div>
-                                            <span class="font-bold text-sm text-white block">Allow Mismatched Emails</span>
-                                            <span class="text-xs text-white/55" style="font-family:'DM Sans',sans-serif;">Verify with a different email than Discord.</span>
+                                            <span class="font-bold text-sm text-white block">Allow Mismatched
+                                                Emails</span>
+                                            <span class="text-xs text-white/55"
+                                                style="font-family:'DM Sans',sans-serif;">Verify with a different email
+                                                than Discord.</span>
                                         </div>
                                     </div>
-                                    <div id="toggle-allowMismatchedEmails" class="toggle-switch" onclick="toggleSetting('allowMismatchedEmails')"></div>
+                                    <div id="toggle-allowMismatchedEmails" class="toggle-switch"
+                                        onclick="toggleSetting('allowMismatchedEmails')"></div>
                                 </div>
 
                                 <div class="setting-row">
@@ -679,10 +768,13 @@
                                         </div>
                                         <div>
                                             <span class="font-bold text-sm text-white block">Auto-Verify on Join</span>
-                                            <span class="text-xs text-white/55" style="font-family:'DM Sans',sans-serif;">Automatically verify members when they join.</span>
+                                            <span class="text-xs text-white/55"
+                                                style="font-family:'DM Sans',sans-serif;">Automatically verify members
+                                                when they join.</span>
                                         </div>
                                     </div>
-                                    <div id="toggle-autoVerifyOnJoin" class="toggle-switch" onclick="toggleSetting('autoVerifyOnJoin')"></div>
+                                    <div id="toggle-autoVerifyOnJoin" class="toggle-switch"
+                                        onclick="toggleSetting('autoVerifyOnJoin')"></div>
                                 </div>
 
                                 <div class="setting-row">
@@ -692,10 +784,13 @@
                                         </div>
                                         <div>
                                             <span class="font-bold text-sm text-white block">Share Across Servers</span>
-                                            <span class="text-xs text-white/55" style="font-family:'DM Sans',sans-serif;">Allow verification to carry over between servers.</span>
+                                            <span class="text-xs text-white/55"
+                                                style="font-family:'DM Sans',sans-serif;">Allow verification to carry
+                                                over between servers.</span>
                                         </div>
                                     </div>
-                                    <div id="toggle-shareVerificationWithServers" class="toggle-switch" onclick="toggleSetting('shareVerificationWithServers')"></div>
+                                    <div id="toggle-shareVerificationWithServers" class="toggle-switch"
+                                        onclick="toggleSetting('shareVerificationWithServers')"></div>
                                 </div>
 
                                 <div class="setting-row">
@@ -704,11 +799,15 @@
                                             <img src="__API_BASE__/Icons/PersonKey.png" alt="">
                                         </div>
                                         <div>
-                                            <span class="font-bold text-sm text-white block">Cross-Server Role Checks</span>
-                                            <span class="text-xs text-white/55" style="font-family:'DM Sans',sans-serif;">Check roles from other Discord servers.</span>
+                                            <span class="font-bold text-sm text-white block">Cross-Server Role
+                                                Checks</span>
+                                            <span class="text-xs text-white/55"
+                                                style="font-family:'DM Sans',sans-serif;">Check roles from other Discord
+                                                servers.</span>
                                         </div>
                                     </div>
-                                    <div id="toggle-enableDiscordRoleFromOtherServers" class="toggle-switch" onclick="toggleSetting('enableDiscordRoleFromOtherServers')"></div>
+                                    <div id="toggle-enableDiscordRoleFromOtherServers" class="toggle-switch"
+                                        onclick="toggleSetting('enableDiscordRoleFromOtherServers')"></div>
                                 </div>
                             </div>
                         </div>
@@ -724,10 +823,13 @@
                                         </div>
                                         <div>
                                             <span class="font-bold text-sm text-white block">Verification Scope</span>
-                                            <span class="text-xs text-white/55" style="font-family:'DM Sans',sans-serif;">How verifications are scoped for buyers.</span>
+                                            <span class="text-xs text-white/55"
+                                                style="font-family:'DM Sans',sans-serif;">How verifications are scoped
+                                                for buyers.</span>
                                         </div>
                                     </div>
-                                    <select id="select-verificationScope" class="setting-select" onchange="selectSetting('verificationScope', this.value)">
+                                    <select id="select-verificationScope" class="setting-select"
+                                        onchange="selectSetting('verificationScope', this.value)">
                                         <option value="account">Account</option>
                                         <option value="license">License</option>
                                     </select>
@@ -739,11 +841,15 @@
                                             <img src="__API_BASE__/Icons/ClapStars.png" alt="">
                                         </div>
                                         <div>
-                                            <span class="font-bold text-sm text-white block">Duplicate Verifications</span>
-                                            <span class="text-xs text-white/55" style="font-family:'DM Sans',sans-serif;">What happens when a user verifies twice.</span>
+                                            <span class="font-bold text-sm text-white block">Duplicate
+                                                Verifications</span>
+                                            <span class="text-xs text-white/55"
+                                                style="font-family:'DM Sans',sans-serif;">What happens when a user
+                                                verifies twice.</span>
                                         </div>
                                     </div>
-                                    <select id="select-duplicateVerificationBehavior" class="setting-select" onchange="selectSetting('duplicateVerificationBehavior', this.value)">
+                                    <select id="select-duplicateVerificationBehavior" class="setting-select"
+                                        onchange="selectSetting('duplicateVerificationBehavior', this.value)">
                                         <option value="allow">Allow</option>
                                         <option value="notify">Notify</option>
                                         <option value="block">Block</option>
@@ -757,10 +863,13 @@
                                         </div>
                                         <div>
                                             <span class="font-bold text-sm text-white block">Suspicious Accounts</span>
-                                            <span class="text-xs text-white/55" style="font-family:'DM Sans',sans-serif;">How to handle potentially fraudulent accounts.</span>
+                                            <span class="text-xs text-white/55"
+                                                style="font-family:'DM Sans',sans-serif;">How to handle potentially
+                                                fraudulent accounts.</span>
                                         </div>
                                     </div>
-                                    <select id="select-suspiciousAccountBehavior" class="setting-select" onchange="selectSetting('suspiciousAccountBehavior', this.value)">
+                                    <select id="select-suspiciousAccountBehavior" class="setting-select"
+                                        onchange="selectSetting('suspiciousAccountBehavior', this.value)">
                                         <option value="notify">Notify</option>
                                         <option value="quarantine">Quarantine</option>
                                         <option value="revoke">Revoke</option>
@@ -775,12 +884,14 @@
                 <section class="section-card p-7 animate-in animate-in-delay-3" id="collab-section">
                     <div class="flex items-center justify-between mb-1">
                         <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: rgba(145,70,255,0.2);">
+                            <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+                                style="background: rgba(145,70,255,0.2);">
                                 <img src="__API_BASE__/Icons/CreditCard.png" class="w-4 h-4 object-contain" alt="">
                             </div>
                             <h2 class="text-lg font-black">Collaborating Creators</h2>
                         </div>
-                        <button id="invite-btn" class="btn-primary" onclick="generateCollabInvite()" style="font-size:12px;padding:8px 16px;" id="invite-btn">
+                        <button id="invite-btn" class="btn-primary" onclick="generateCollabInvite()"
+                            style="font-size:12px;padding:8px 16px;" id="invite-btn">
                             <img src="__API_BASE__/Icons/Link.png" class="w-3.5 h-3.5 object-contain" alt="">
                             Invite a Creator
                         </button>
@@ -795,12 +906,14 @@
                     <!-- Empty state -->
                     <div id="collab-empty" class="empty-state hidden">
                         <img src="__API_BASE__/Icons/World.png" alt="">
-                        <p class="text-sm text-white/50 font-semibold" style="font-family:'DM Sans',sans-serif;">No collaborators yet.<br>Invite a creator to share license verification.</p>
+                        <p class="text-sm text-white/50 font-semibold" style="font-family:'DM Sans',sans-serif;">No
+                            collaborators yet.<br>Invite a creator to share license verification.</p>
                     </div>
 
                     <!-- Loading state -->
                     <div id="collab-loading" class="text-center py-8">
-                        <div class="inline-block w-5 h-5 border-2 border-white/20 border-t-sky-400 rounded-full" style="animation: page-loading-spin 0.8s linear infinite;"></div>
+                        <div class="inline-block w-5 h-5 border-2 border-white/20 border-t-sky-400 rounded-full"
+                            style="animation: page-loading-spin 0.8s linear infinite;"></div>
                     </div>
                 </section>
 
@@ -811,7 +924,8 @@
         <div id="disconnectModal" class="modal-overlay">
             <div class="modal-box">
                 <h3>Confirm Disconnect</h3>
-                <p>Are you sure you want to disconnect your <strong id="platformName" class="text-white">Platform</strong> account? This will remove all associated syncing.</p>
+                <p>Are you sure you want to disconnect your <strong id="platformName"
+                        class="text-white">Platform</strong> account? This will remove all associated syncing.</p>
                 <div class="modal-btn-row">
                     <button onclick="closeModal()" class="btn-ghost">Cancel</button>
                     <button id="confirmDisconnectBtn" class="btn-danger">Confirm</button>
@@ -823,12 +937,14 @@
         <div id="inviteModal" class="modal-overlay">
             <div class="modal-box">
                 <div class="flex items-center gap-3 mb-5">
-                    <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:rgba(145,70,255,0.25);">
+                    <div class="w-9 h-9 rounded-xl flex items-center justify-center"
+                        style="background:rgba(145,70,255,0.25);">
                         <img src="__API_BASE__/Icons/Link.png" class="w-4 h-4 object-contain" alt="">
                     </div>
                     <h3 style="margin:0;">Collaborator Invite Link</h3>
                 </div>
-                <p style="margin-bottom:12px;">Share this link with the creator you'd like to invite. <span id="invite-expiry" class="font-semibold text-white/70"></span></p>
+                <p style="margin-bottom:12px;">Share this link with the creator you'd like to invite. <span
+                        id="invite-expiry" class="font-semibold text-white/70"></span></p>
                 <div id="invite-url-display" class="invite-url-box"></div>
                 <div class="flex gap-3">
                     <button id="copy-invite-btn" class="btn-primary flex-1" onclick="copyInviteUrl()">
@@ -1145,7 +1261,7 @@
             status.textContent = '';
 
             try {
-                    if (guildId) {
+                if (guildId) {
                     const res = await apiFetch(`${apiBase}/api/connect/complete`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1354,8 +1470,31 @@
         }
     </script>
 
-    </body>
+    <script>
+        // Smooth overlay fade: intercepts site.js instant display:none
+        (function () {
+            var overlay = document.getElementById('page-loading-overlay');
+            var content = document.getElementById('page-content');
+            if (!overlay) return;
+            var observer = new MutationObserver(function () {
+                if (overlay.style.display === 'none') {
+                    overlay.style.display = '';
+                    setTimeout(function() {
+                        overlay.classList.add('is-hiding');
+                        if (content) {
+                        requestAnimationFrame(function () {
+                            requestAnimationFrame(function () { content.classList.add('is-visible'); });
+                        });
+                    }
+                    setTimeout(function () { overlay.style.display = 'none'; }, 370);
+                    }, 500);
+                    observer.disconnect();
+                }
+            });
+            observer.observe(overlay, { attributes: true, attributeFilter: ['style'] });
+        })();
+    </script>
+
+</body>
 
 </html>
-
-
