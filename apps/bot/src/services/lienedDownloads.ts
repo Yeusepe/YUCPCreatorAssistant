@@ -18,6 +18,7 @@ import {
   type Client,
   type ForumChannel,
   type Message,
+  type MessageSnapshot,
   type TextBasedChannel,
   type ThreadChannel,
 } from 'discord.js';
@@ -130,6 +131,43 @@ async function fetchAttachmentBuffer(url: string): Promise<Buffer> {
   return Buffer.from(arrayBuffer);
 }
 
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchAttachmentBufferWithRetry(
+  attachment: Attachment,
+  stage: 'archive' | 'relay',
+): Promise<Buffer> {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await fetchAttachmentBuffer(attachment.url);
+    } catch (error) {
+      lastError = error;
+      logger.warn('Liened Downloads attachment fetch failed', {
+        stage,
+        attempt,
+        attachmentId: attachment.id,
+        filename: attachment.name ?? 'attachment.bin',
+        contentType: attachment.contentType ?? 'unknown',
+        size: attachment.size ?? null,
+        url: attachment.url,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      if (attempt < 2) {
+        await delay(350);
+      }
+    }
+  }
+
+  throw new Error(
+    `Failed to fetch attachment for ${stage}: ${attachment.name ?? attachment.id} (${lastError instanceof Error ? lastError.message : String(lastError)})`,
+  );
+}
+
 async function buildRelayFiles(message: Message, matchedFiles: MatchedFile[]): Promise<AttachmentBuilder[]> {
   const securedAttachmentIds = new Set(matchedFiles.map(({ attachment }) => attachment.id));
   const relayAttachments = [...message.attachments.values()].filter(
@@ -138,10 +176,67 @@ async function buildRelayFiles(message: Message, matchedFiles: MatchedFile[]): P
 
   return await Promise.all(
     relayAttachments.map(async (attachment) => {
-      const buffer = await fetchAttachmentBuffer(attachment.url);
+      const buffer = await fetchAttachmentBufferWithRetry(attachment, 'relay');
       return new AttachmentBuilder(buffer, { name: attachment.name ?? 'attachment.bin' });
     }),
   );
+}
+
+function shouldReplaceOriginalMessage(message: Message, matchedFiles: MatchedFile[]): boolean {
+  if (matchedFiles.length === 0) return false;
+
+  const hasVisibleText = message.content.trim().length > 0;
+  if (hasVisibleText) return false;
+
+  const securedAttachmentIds = new Set(matchedFiles.map(({ attachment }) => attachment.id));
+  const hasNonProtectedAttachments = [...message.attachments.values()].some(
+    (attachment) => !securedAttachmentIds.has(attachment.id),
+  );
+  if (hasNonProtectedAttachments) return false;
+
+  if (message.stickers.size > 0) return false;
+  if (message.embeds.length > 0) return false;
+
+  return true;
+}
+
+function describeReplacementDecision(message: Message, matchedFiles: MatchedFile[]) {
+  const securedAttachmentIds = new Set(matchedFiles.map(({ attachment }) => attachment.id));
+  const extraAttachments = [...message.attachments.values()]
+    .filter((attachment) => !securedAttachmentIds.has(attachment.id))
+    .map((attachment) => attachment.name ?? attachment.id);
+
+  return {
+    hasVisibleText: message.content.trim().length > 0,
+    totalAttachments: message.attachments.size,
+    matchedAttachments: matchedFiles.map(({ attachment }) => attachment.name ?? attachment.id),
+    extraAttachments,
+    stickerCount: message.stickers.size,
+    embedCount: message.embeds.length,
+  };
+}
+
+function getForwardedSnapshot(message: Message): MessageSnapshot | null {
+  return message.messageSnapshots.first() ?? null;
+}
+
+function getProtectedFilesFromForwardedMessage(message: Message): Array<{
+  filename: string;
+  url: string;
+  size?: number;
+  contentType?: string;
+  extension: string;
+}> {
+  const snapshot = getForwardedSnapshot(message);
+  const attachments = snapshot?.attachments ?? message.attachments;
+
+  return [...attachments.values()].map((attachment) => ({
+    filename: attachment.name ?? 'download.bin',
+    url: attachment.url,
+    size: attachment.size,
+    contentType: attachment.contentType ?? undefined,
+    extension: getExtension(attachment.name ?? '') ?? 'bin',
+  }));
 }
 
 function truncateText(value: string, maxLength: number): string {
@@ -292,14 +387,12 @@ async function relaySecureMessage(
     .replace(/discord/gi, 'user')
     .replace(/clyde/gi, 'user')
     .slice(0, 80) || 'user';
-  const relayFiles = await buildRelayFiles(message, matchedFiles);
 
   return await webhook.send({
     username,
     avatarURL: message.author.displayAvatarURL({ extension: 'png', size: 128 }),
     components: [buildReplacementContainer(route, artifactId, matchedFiles, message.content)],
     flags: MessageFlags.IsComponentsV2,
-    files: relayFiles,
     threadId,
     allowedMentions: { parse: [] },
   });
@@ -408,19 +501,13 @@ async function postToArchive(
     throw new Error(`Archive channel ${route.archiveChannelId} is not accessible`);
   }
 
-  const files = await Promise.all(
-    matchedFiles.map(async ({ attachment }) => {
-      const buffer = await fetchAttachmentBuffer(attachment.url);
-      return new AttachmentBuilder(buffer, { name: attachment.name ?? 'download.bin' });
-    }),
-  );
-
   const content =
-    `${E.Library} Liened Downloads archive\n` +
+    `${E.Library} Liened Downloads review\n` +
     `${E.Assistant} Uploader: <@${message.author.id}>\n` +
     `${E.Link} Source: ${message.url}\n` +
     `${E.Key} Access: ${route.roleLogic === 'all' ? 'All selected roles' : 'Any selected role'}\n` +
-    `${E.Point} Roles: ${route.requiredRoleIds.map((roleId) => `<@&${roleId}>`).join(', ')}`;
+    `${E.Point} Roles: ${route.requiredRoleIds.map((roleId) => `<@&${roleId}>`).join(', ')}\n` +
+    `${E.Bag} Files: ${matchedFiles.map(({ attachment }) => `\`${attachment.name ?? 'download.bin'}\``).join(', ')}`;
 
   if ('type' in archiveChannel && archiveChannel.type === ChannelType.GuildForum) {
     const forum = archiveChannel as ForumChannel;
@@ -428,12 +515,11 @@ async function postToArchive(
       name: `${message.author.username}-${Date.now()}`.slice(0, 90),
       message: {
         content,
-        files,
       },
     });
-    const starter = await thread.fetchStarterMessage().catch(() => null);
+    const forwardedMessage = await message.forward(thread);
     return {
-      sentMessage: starter,
+      sentMessage: forwardedMessage,
       archiveChannelId: route.archiveChannelId,
       archiveThreadId: thread.id,
     };
@@ -443,10 +529,8 @@ async function postToArchive(
     throw new Error(`Archive channel ${route.archiveChannelId} is not writable`);
   }
 
-  const sentMessage = await (archiveChannel as any).send({
-    content,
-    files,
-  });
+  await (archiveChannel as any).send({ content });
+  const sentMessage = await message.forward(archiveChannel as any);
   return {
     sentMessage,
     archiveChannelId: route.archiveChannelId,
@@ -525,6 +609,15 @@ export class LienedDownloadsService {
     route: DownloadRoute,
     mode: 'replace' | 'reply' = 'replace',
   ): Promise<'secured' | 'skipped'> {
+    logger.info('Liened Downloads securing message', {
+      feature: 'Liened Downloads',
+      guildId: message.guildId,
+      channelId: message.channelId,
+      messageId: message.id,
+      routeId: route._id,
+      mode,
+    });
+
     if (!message.inGuild() || message.author.bot || message.webhookId) return 'skipped';
     if (message.attachments.size === 0) return 'skipped';
 
@@ -561,6 +654,10 @@ export class LienedDownloadsService {
       throw new Error('Archive message could not be resolved');
     }
 
+    const protectedFiles = getProtectedFilesFromForwardedMessage(archiveResult.sentMessage);
+    if (protectedFiles.length === 0) {
+      throw new Error('Forwarded message did not contain attachment metadata');
+    }
     const artifact = (await this.convex.mutation('downloads:createArtifact' as any, {
       apiSecret: this.apiSecret,
       tenantId: route.tenantId,
@@ -576,13 +673,7 @@ export class LienedDownloadsService {
       sourceDeliveryMode: mode === 'replace' ? 'webhook' : 'reply',
       requiredRoleIds: route.requiredRoleIds,
       roleLogic: route.roleLogic,
-      files: [...archiveResult.sentMessage.attachments.values()].map((attachment) => ({
-        filename: attachment.name ?? 'download.bin',
-        url: attachment.url,
-        size: attachment.size,
-        contentType: attachment.contentType ?? undefined,
-        extension: getExtension(attachment.name ?? '') ?? 'bin',
-      })),
+      files: protectedFiles,
     })) as { artifactId: string };
 
     let replacementMessage: Message | null = null;
@@ -595,6 +686,17 @@ export class LienedDownloadsService {
       if (!replacementMessage) {
         throw new Error('Replacement message could not be created');
       }
+
+      logger.info('Liened Downloads created replacement message', {
+        feature: 'Liened Downloads',
+        guildId: message.guildId,
+        channelId: message.channelId,
+        messageId: message.id,
+        routeId: route._id,
+        artifactId: artifact.artifactId,
+        mode,
+        replacementMessageId: replacementMessage.id,
+      });
 
       await this.convex.mutation('downloads:updateArtifactSourceRelay' as any, {
         apiSecret: this.apiSecret,
@@ -611,6 +713,14 @@ export class LienedDownloadsService {
     if (mode === 'replace') {
       try {
         await message.delete();
+        logger.info('Liened Downloads deleted original message after replacement', {
+          feature: 'Liened Downloads',
+          guildId: message.guildId,
+          channelId: message.channelId,
+          messageId: message.id,
+          routeId: route._id,
+          artifactId: artifact.artifactId,
+        });
       } catch (error) {
         try {
           if (replacementMessage) {
@@ -668,13 +778,29 @@ export class LienedDownloadsService {
         channelId: message.channelId,
         parentId,
         messageId: message.id,
+        candidateRoutes: routes.map((candidate) => ({
+          routeId: candidate._id,
+          sourceChannelId: candidate.sourceChannelId,
+          archiveChannelId: candidate.archiveChannelId,
+          enabled: candidate.enabled,
+        })),
         attachments: describeAttachments(message),
       });
       return;
     }
 
     try {
-      const mode = await this.isForumRouteMessage(message, route) ? 'reply' : 'replace';
+      const matchedFiles = getMatchingFiles(message, route);
+      const mode = shouldReplaceOriginalMessage(message, matchedFiles) ? 'replace' : 'reply';
+      logger.info('Liened Downloads selected capture mode', {
+        feature: 'Liened Downloads',
+        guildId: message.guildId,
+        channelId: message.channelId,
+        messageId: message.id,
+        routeId: route._id,
+        mode,
+        ...describeReplacementDecision(message, matchedFiles),
+      });
       await this.secureMessage(message, route, mode);
     } catch (err) {
       logger.error('Liened Downloads capture failed', {
