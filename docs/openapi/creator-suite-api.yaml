@@ -1,0 +1,306 @@
+openapi: 3.1.0
+info:
+  title: Creator Suite Verification API
+  description: |
+    API for third-party apps to verify product entitlements via "Sign in with Creator Suite".
+    Use OAuth 2.1 (Authorization Code + PKCE) to obtain an access token, then call these endpoints
+    with `Authorization: Bearer <access_token>`.
+
+    **OAuth base URL:** `{CONVEX_SITE_URL}/api/auth` (e.g. `https://<deployment>.convex.site/api/auth`)
+    - Authorize: `GET /api/auth/oauth2/authorize`
+    - Token: `POST /api/auth/oauth2/token`
+    - Well-known: `GET /api/auth/.well-known/openid-configuration`, `GET /api/auth/.well-known/oauth-authorization-server`
+
+    **Required scope:** `verification:read`
+  version: 0.1.0
+  contact:
+    name: Creator Assistant
+    url: https://verify.creators.yucp.club
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.example.com
+    description: Production (replace with actual API base URL)
+  - url: http://127.0.0.1:3000
+    description: Local development
+
+security:
+  - oauth2: [verification:read]
+
+paths:
+  /api/suite/verification/status:
+    get:
+      summary: Get full verification status
+      description: Returns verification status for the authenticated user within a tenant.
+      operationId: getVerificationStatus
+      tags:
+        - Verification
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          description: Convex tenant ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verification status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/suite/verification/products:
+    get:
+      summary: List verified product IDs
+      description: Returns list of verified product IDs for the authenticated user within a tenant.
+      operationId: listVerifiedProducts
+      tags:
+        - Verification
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          description: Convex tenant ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of verified products
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifiedProductsList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/suite/verification/check:
+    post:
+      summary: Batch check product verification
+      description: Check verification status for multiple products in a single request.
+      operationId: checkVerification
+      tags:
+        - Verification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationCheckRequest'
+      responses:
+        '200':
+          description: Batch check results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationCheckResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/suite/tenants/{slug}:
+    get:
+      summary: Resolve tenant by slug
+      description: Returns public tenant metadata for human-friendly URLs. Use the returned tenantId with other verification endpoints.
+      operationId: getTenantBySlug
+      tags:
+        - Tenants
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Tenant slug (e.g. from URL)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantMetadata'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://YOUR_DEPLOYMENT.convex.site/api/auth/oauth2/authorize
+          tokenUrl: https://YOUR_DEPLOYMENT.convex.site/api/auth/oauth2/token
+          scopes:
+            openid: User ID (sub claim)
+            profile: Name, avatar
+            verification:read: Access verification status endpoints
+      description: |
+        OAuth 2.1 with PKCE. Obtain token via Authorization Code flow. Required scope `verification:read`.
+        Replace YOUR_DEPLOYMENT with your Convex deployment name (e.g. from CONVEX_SITE_URL).
+
+  schemas:
+    VerificationStatus:
+      type: object
+      required:
+        - verified
+        - subjectId
+        - products
+      properties:
+        verified:
+          type: boolean
+          description: Whether the user has any verified products in this tenant
+        subjectId:
+          type: string
+          description: Canonical subject ID (internal)
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerifiedProduct'
+
+    VerifiedProduct:
+      type: object
+      properties:
+        productId:
+          type: string
+          description: Product identifier
+        status:
+          type: string
+          enum: [active, revoked, expired]
+        grantedAt:
+          type: integer
+          format: int64
+          description: Unix timestamp (ms) when verification was granted
+
+    VerifiedProductsList:
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            type: string
+          description: List of verified product IDs
+
+    VerificationCheckRequest:
+      type: object
+      required:
+        - tenantId
+        - productIds
+      properties:
+        tenantId:
+          type: string
+          description: Convex tenant ID
+        productIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 50
+          description: Product IDs to check
+
+    VerificationCheckResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required:
+              - productId
+              - verified
+            properties:
+              productId:
+                type: string
+              verified:
+                type: boolean
+
+    TenantMetadata:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          description: Convex tenant ID for use with verification endpoints
+        name:
+          type: string
+        slug:
+          type: string
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code (e.g. invalid_token, insufficient_scope, rate_limited)
+        message:
+          type: string
+          description: Human-readable message
+
+  responses:
+    BadRequest:
+      description: Invalid request (e.g. missing tenantId, invalid productIds)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: invalid_request
+            message: tenantId is required
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: invalid_token
+            message: Missing or invalid Bearer token
+    Forbidden:
+      description: Valid token but insufficient scope or tenant/subject not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: insufficient_scope
+            message: Token does not include verification:read scope
+    NotFound:
+      description: Resource not found (may return 403 to avoid leaking existence)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: rate_limited
+            message: Too many requests. Retry after 60 seconds.

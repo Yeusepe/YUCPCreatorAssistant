@@ -41,6 +41,7 @@
     "bun": ">=1.1"
   },
   "dependencies": {
+    "@better-auth/oauth-provider": "1.4.9",
     "@convex-dev/better-auth": "^0.10.13",
     "better-auth": "1.4.9",
     "convex": "^1.32.0"

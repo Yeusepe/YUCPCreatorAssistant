@@ -103,6 +103,39 @@ export const createTenant = mutation({
 });
 
 /**
+ * Get tenant by slug. Used for human-friendly URL resolution (e.g. /tenants/my-creator).
+ */
+export const getTenantBySlug = query({
+  args: {
+    apiSecret: v.string(),
+    slug: v.string(),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id('tenants'),
+      _creationTime: v.number(),
+      name: v.string(),
+      ownerDiscordUserId: v.string(),
+      ownerAuthUserId: v.string(),
+      slug: v.optional(v.string()),
+      status: v.string(),
+      policy: v.optional(v.any()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+  ),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const tenant = await ctx.db
+      .query('tenants')
+      .withIndex('by_slug', (q) => q.eq('slug', args.slug))
+      .first();
+    return tenant ?? null;
+  },
+});
+
+/**
  * Get tenant by ID. Used by API to validate tenant exists before verification.
  */
 export const getTenant = query({
