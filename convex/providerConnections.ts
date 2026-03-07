@@ -34,7 +34,7 @@ export const getJinxxyWebhookSecret = query({
         q.eq('tenantId', args.tenantId).eq('provider', 'jinxxy')
       )
       .first();
-    if (!conn?.webhookSecretRef) return null;
+    if (!conn?.webhookSecretRef || conn.status === 'disconnected') return null;
     return conn.webhookSecretRef;
   },
 });

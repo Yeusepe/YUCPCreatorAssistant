@@ -363,13 +363,18 @@ export function createWebhookRoutes(config: WebhookConfig) {
         payloadBytes: rawBody.length,
       });
       const signature = request.headers.get('x-signature');
-
-      const webhookSecret = await getJinxxyWebhookSecret(tenantId) ?? await getPendingJinxxyWebhookSecret(tenantId);
+      const convexSecret = await getJinxxyWebhookSecret(tenantId);
+      const pendingSecret = await getPendingJinxxyWebhookSecret(tenantId);
+      const webhookSecret = convexSecret ?? pendingSecret;
       let signatureValid = false;
 
       if (webhookSecret && signature) {
         const expectedSig = await hmacSha256(webhookSecret, rawBody);
-        signatureValid = timingSafeEqual(expectedSig, signature);
+        let incomingSig = signature.trim();
+        if (incomingSig.startsWith('sha256=')) {
+          incomingSig = incomingSig.slice(7);
+        }
+        signatureValid = timingSafeEqual(expectedSig, incomingSig);
       } else if (!webhookSecret) {
         logger.warn('Jinxxy webhook: no secret configured', { tenantId });
         signatureValid = false;
@@ -393,7 +398,14 @@ export function createWebhookRoutes(config: WebhookConfig) {
 
       // Reject unverified webhooks before ingestion.
       if (!signatureValid) {
-        logger.warn('Jinxxy webhook: rejected (unverified)', { tenantId, eventId });
+        logger.warn('Jinxxy webhook: rejected (unverified)', {
+          tenantId,
+          eventId,
+          hasConvexSecret: !!convexSecret,
+          hasPendingSecret: !!pendingSecret,
+          hasSignature: !!signature,
+          signatureLen: signature?.length ?? 0,
+        });
         return new Response('Forbidden', { status: 403 });
       }
 

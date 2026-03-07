@@ -676,7 +676,6 @@
                     return;
                 }
 
-                const guildName = document.getElementById('guild-select').options[document.getElementById('guild-select').selectedIndex].text;
                 document.getElementById('success-guild-name').textContent = guildName;
                 document.getElementById('success-role-summary').textContent =
                     roleIds.length === 1 ? roleIds[0] : `${roleIds.length} roles`;
