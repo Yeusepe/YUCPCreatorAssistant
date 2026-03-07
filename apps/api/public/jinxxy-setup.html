@@ -333,6 +333,9 @@
                             On the Webhooks page, locate the <strong class="text-[#ffffff]">New Webhook</strong> button
                             in the top right corner and click it to open the creation modal.
                         </p>
+                        <p class="text-sm text-amber-400/90">
+                            <strong>Reconnecting?</strong> Delete any existing Creator Assistant webhook in Jinxxy first, then create this new one. Old webhooks use a different secret and will be rejected.
+                        </p>
                     </div>
                 </div>
 
@@ -1079,13 +1082,16 @@
             lucide.createIcons();
 
             try {
+                const secretInput = document.getElementById('signing-secret-input');
+                const webhookSecret = secretInput?.value?.trim();
+                const body = { tenantId: TENANT_ID, apiKey };
+                if (webhookSecret && webhookSecret.length >= SIGNING_SECRET_MIN && webhookSecret.length <= SIGNING_SECRET_MAX) {
+                    body.webhookSecret = webhookSecret;
+                }
                 const res = await apiFetch(API_BASE + '/api/connect/jinxxy-store', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        tenantId: TENANT_ID,
-                        apiKey
-                    })
+                    body: JSON.stringify(body)
                 });
                 const data = await res.json();
                 if (!res.ok) {
