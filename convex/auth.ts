@@ -66,9 +66,14 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 
   return betterAuth({
     secret: process.env.BETTER_AUTH_SECRET!,
+    baseURL: process.env.CONVEX_SITE_URL,
     trustedOrigins,
     database: authComponent.adapter(ctx),
     socialProviders: discordConfig,
+    plugins: [
+      crossDomain({ siteUrl }),
+      convex({ authConfig }),
+    ],
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
       updateAge: 60 * 60 * 24, // 1 day
@@ -80,14 +85,5 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     advanced: {
       cookiePrefix: 'yucp',
     },
-    plugins: [
-      // Required for client-side frameworks / cross-domain setups.
-      // The browser talks directly to the Convex .site URL, and the
-      // crossDomain plugin bridges cookies and handles OAuth callbacks
-      // via one-time-tokens.
-      crossDomain({ siteUrl }),
-      // Required for Convex compatibility (JWT, adapter, schema).
-      convex({ authConfig }),
-    ],
   } satisfies BetterAuthOptions);
 };

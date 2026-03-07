@@ -1078,21 +1078,40 @@
             if (window.innerWidth <= 900) { sidebar.classList.remove('open'); backdrop.classList.remove('open'); }
         }));
 
-        // Active section tracking
+        // Active section tracking + hash sync
+        const NAV_OFFSET = 80; // px — fixed navbar height
         const sections = document.querySelectorAll('.doc-section[id]');
         const links    = document.querySelectorAll('.sidebar-link[data-section]');
+
+        function scrollToSection(id, smooth) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const top = el.getBoundingClientRect().top + window.scrollY - NAV_OFFSET;
+            window.scrollTo({ top, behavior: smooth ? 'smooth' : 'instant' });
+        }
+
+        // On load: scroll to hash if present
+        if (location.hash) {
+            const id = location.hash.slice(1);
+            // defer until layout is ready
+            requestAnimationFrame(() => scrollToSection(id, false));
+        }
+
+        // Update hash and active link when a section enters the viewport
         const io = new IntersectionObserver((entries) => {
             entries.forEach(e => {
-                if (e.isIntersecting) links.forEach(l => l.classList.toggle('active', l.dataset.section === e.target.id));
+                if (e.isIntersecting) {
+                    links.forEach(l => l.classList.toggle('active', l.dataset.section === e.target.id));
+                    history.replaceState(null, '', '#' + e.target.id);
+                }
             });
-        }, { rootMargin: '-60px 0px -60% 0px', threshold: 0 });
+        }, { rootMargin: `-${NAV_OFFSET}px 0px -60% 0px`, threshold: 0 });
         sections.forEach(s => io.observe(s));
 
-        // Smooth scroll
+        // Smooth scroll on sidebar click
         links.forEach(l => l.addEventListener('click', (e) => {
             e.preventDefault();
-            const t = document.getElementById(l.dataset.section);
-            if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            scrollToSection(l.dataset.section, true);
         }));
     </script>
 </body>

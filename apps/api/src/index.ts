@@ -19,6 +19,7 @@ import {
   type VerificationConfig,
 } from './routes';
 import { createCollabRoutes } from './routes/collab';
+import { createSuiteRoutes } from './routes/suite';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
@@ -31,6 +32,7 @@ let verificationRoutes: Map<string, (request: Request) => Promise<Response>> | n
 let connectRoutes: ReturnType<typeof createConnectRoutes> | null = null;
 let webhookHandler: ReturnType<typeof createWebhookHandler> | null = null;
 let collabRoutes: ReturnType<typeof createCollabRoutes> | null = null;
+let suiteRoutes: ReturnType<typeof createSuiteRoutes> | null = null;
 
 // Resolved after initializeAuth - used for apiBase injection and CORS
 let resolvedApiBaseUrl = 'http://localhost:3001';
@@ -155,6 +157,12 @@ function initializeAuth(webhookBaseUrl?: string) {
     discordClientSecret: env.DISCORD_CLIENT_SECRET ?? '',
   });
 
+  suiteRoutes = createSuiteRoutes({
+    convexUrl: env.CONVEX_URL ?? env.CONVEX_DEPLOYMENT ?? '',
+    convexApiSecret: env.CONVEX_API_SECRET ?? '',
+    convexSiteUrl,
+  });
+
   logger.info('Better Auth initialized', {
     installRoutes: installRoutes.size,
     verificationRoutes: verificationRoutes.size,
@@ -194,6 +202,14 @@ async function routeRequest(request: Request): Promise<Response> {
   }
   if (pathname.startsWith('/api/collab/')) {
     if (isRateLimited(`connect:${clientAddress}`, 120, 60_000)) {
+      return new Response(JSON.stringify({ error: 'Too many requests' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
+  if (pathname.startsWith('/api/suite/')) {
+    if (isRateLimited(`suite:${clientAddress}`, 120, 60_000)) {
       return new Response(JSON.stringify({ error: 'Too many requests' }), {
         status: 429,
         headers: { 'Content-Type': 'application/json' },
@@ -501,6 +517,13 @@ async function routeRequest(request: Request): Promise<Response> {
   if (pathname.startsWith('/api/collab/') && collabRoutes) {
     return collabRoutes.handleCollabRequest(request);
   }
+
+  // Suite verification API (OAuth 2.1 protected)
+  if (pathname.startsWith('/api/suite/') && suiteRoutes) {
+    const response = await suiteRoutes.handleRequest(request, pathname);
+    if (response) return response;
+  }
+
   const HTML_SECURITY_HEADERS: Record<string, string> = {
     'Content-Security-Policy':
       "default-src 'self'; " +
