@@ -8,10 +8,14 @@
     <title>Discord Role Setup | Creator Assistant</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="./tokens.css">
 
     <style>
+        
+
         body {
             background-color: var(--bg-color);
             font-family: 'DM Sans', sans-serif;
@@ -19,7 +23,10 @@
             min-height: 100vh;
         }
 
-        h1, h2, h3, .font-heading {
+        h1,
+        h2,
+        h3,
+        .font-heading {
             font-family: 'Plus Jakarta Sans', sans-serif;
             font-weight: 800;
             letter-spacing: -0.03em;
@@ -31,13 +38,18 @@
             backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.13);
             border-radius: 28px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
             padding: 36px;
         }
 
         /* ── Steps ──────────────────────────────────────────────────────────── */
-        .step { display: none; }
-        .step.active { display: block; }
+        .step {
+            display: none;
+        }
+
+        .step.active {
+            display: block;
+        }
 
         /* ── Step dots ──────────────────────────────────────────────────────── */
         .step-dots {
@@ -52,7 +64,7 @@
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
             transition: all 0.3s;
         }
 
@@ -60,7 +72,7 @@
             background: #5865F2;
             width: 24px;
             border-radius: 4px;
-            box-shadow: 0 0 8px rgba(88,101,242,0.5);
+            box-shadow: 0 0 8px rgba(88, 101, 242, 0.5);
         }
 
         .step-dot.done {
@@ -85,16 +97,18 @@
             cursor: pointer;
             transition: all 0.2s;
             text-decoration: none;
-            box-shadow: 0 4px 16px rgba(88,101,242,0.35);
+            box-shadow: 0 4px 16px rgba(88, 101, 242, 0.35);
         }
 
         .btn-discord:hover {
             background: #4752C4;
-            box-shadow: 0 6px 24px rgba(88,101,242,0.5);
+            box-shadow: 0 6px 24px rgba(88, 101, 242, 0.5);
             transform: translateY(-1px);
         }
 
-        .btn-discord:active { transform: scale(0.98); }
+        .btn-discord:active {
+            transform: scale(0.98);
+        }
 
         .btn-primary {
             display: flex;
@@ -112,16 +126,18 @@
             border: none;
             cursor: pointer;
             transition: all 0.2s;
-            box-shadow: 0 4px 16px rgba(88,101,242,0.3);
+            box-shadow: 0 4px 16px rgba(88, 101, 242, 0.3);
         }
 
         .btn-primary:hover {
             background: #4752C4;
-            box-shadow: 0 6px 24px rgba(88,101,242,0.45);
+            box-shadow: 0 6px 24px rgba(88, 101, 242, 0.45);
             transform: translateY(-1px);
         }
 
-        .btn-primary:active { transform: scale(0.98); }
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
 
         .btn-primary:disabled {
             opacity: 0.55;
@@ -138,14 +154,15 @@
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            color: rgba(255,255,255,0.5);
+            color: rgba(255, 255, 255, 0.5);
             margin-bottom: 8px;
         }
 
-        select, input[type="text"] {
+        select,
+        input[type="text"] {
             width: 100%;
-            background: rgba(255,255,255,0.06);
-            border: 1.5px solid rgba(255,255,255,0.14);
+            background: rgba(255, 255, 255, 0.06);
+            border: 1.5px solid rgba(255, 255, 255, 0.14);
             border-radius: 12px;
             padding: 12px 16px;
             font-family: 'DM Sans', sans-serif;
@@ -168,14 +185,15 @@
             color: #fff;
         }
 
-        select:focus, input[type="text"]:focus {
-            border-color: rgba(88,101,242,0.7);
-            background: rgba(255,255,255,0.09);
-            box-shadow: 0 0 0 3px rgba(88,101,242,0.15);
+        select:focus,
+        input[type="text"]:focus {
+            border-color: rgba(88, 101, 242, 0.7);
+            background: rgba(255, 255, 255, 0.09);
+            box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.15);
         }
 
         input[type="text"]::placeholder {
-            color: rgba(255,255,255,0.3);
+            color: rgba(255, 255, 255, 0.3);
         }
 
         /* ── Error Box ──────────────────────────────────────────────────────── */
@@ -183,8 +201,8 @@
             display: flex;
             align-items: flex-start;
             gap: 10px;
-            background: rgba(239,68,68,0.1);
-            border: 1.5px solid rgba(239,68,68,0.25);
+            background: rgba(239, 68, 68, 0.1);
+            border: 1.5px solid rgba(239, 68, 68, 0.25);
             border-radius: 12px;
             padding: 12px 14px;
             color: #fca5a5;
@@ -204,8 +222,8 @@
 
         /* ── Helper text ────────────────────────────────────────────────────── */
         .helper-box {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.09);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.09);
             border-radius: 12px;
             padding: 14px 16px;
             margin-top: 10px;
@@ -216,19 +234,19 @@
             align-items: flex-start;
             gap: 10px;
             font-size: 13px;
-            color: rgba(255,255,255,0.65);
+            color: rgba(255, 255, 255, 0.65);
             font-family: 'DM Sans', sans-serif;
             line-height: 1.5;
         }
 
-        .helper-step + .helper-step {
+        .helper-step+.helper-step {
             margin-top: 8px;
         }
 
         .helper-num {
             width: 20px;
             height: 20px;
-            background: rgba(88,101,242,0.25);
+            background: rgba(88, 101, 242, 0.25);
             color: #a5b4fc;
             border-radius: 50%;
             font-size: 11px;
@@ -242,8 +260,8 @@
         }
 
         code {
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 6px;
             padding: 1px 6px;
             font-size: 12px;
@@ -254,7 +272,7 @@
         .success-glow {
             width: 72px;
             height: 72px;
-            background: radial-gradient(circle, rgba(74,222,128,0.25) 0%, transparent 70%);
+            background: radial-gradient(circle, rgba(74, 222, 128, 0.25) 0%, transparent 70%);
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -266,20 +284,33 @@
         .page-loading-spinner {
             width: 36px;
             height: 36px;
-            border: 3px solid rgba(255,255,255,0.1);
+            border: 3px solid rgba(255, 255, 255, 0.1);
             border-top-color: #5865F2;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
 
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(12px); }
-            to { opacity: 1; transform: translateY(0); }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
         }
 
-        .animate-in { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-in {
+            animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
 
         /* ── Option Pills (Verification rule) ─────────────────────────────────── */
         .option-pill-group {
@@ -325,6 +356,25 @@
             opacity: 0;
             pointer-events: none;
         }
+
+        /* ── Flash fix ─────────────────────────────────────────────────────── */
+        #page-loading-overlay {
+            transition: opacity 0.35s ease;
+        }
+
+        #page-loading-overlay.is-hiding {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #page-content {
+            opacity: 0;
+            transition: opacity 0.3s ease 0.05s;
+        }
+
+        #page-content.is-visible {
+            opacity: 1;
+        }
     </style>
 
     <link rel="stylesheet" href="/assets/site/site.css">
@@ -334,7 +384,8 @@
 <body class="flex items-center justify-center p-6" style="min-height:100vh;">
 
     <!-- Loading overlay -->
-    <div id="page-loading-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center" style="background-color: var(--bg-color);">
+    <div id="page-loading-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center"
+        style="background-color: var(--bg-color);">
         <img src="Icons/MainLogo.png" alt="Creator Assistant" class="h-10 mb-8">
         <div class="page-loading-spinner"></div>
         <p class="mt-4 text-sm font-semibold" style="color:rgba(255,255,255,0.5);">Loading...</p>
@@ -343,18 +394,22 @@
     <div id="page-content" style="display:none;">
 
         <!-- Background -->
-        <div id="bg-canvas-root" style="position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:-20;pointer-events:none;"></div>
+        <div id="bg-canvas-root"
+            style="position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:-20;pointer-events:none;"></div>
 
         <div class="w-full max-w-md animate-in">
 
             <!-- Header -->
             <div class="text-center mb-8">
                 <img src="Icons/MainLogo.png" alt="Creator Assistant" class="h-8 mx-auto mb-5 opacity-90">
-                <div class="inline-flex items-center gap-2.5 bg-[#5865F2]/20 border border-[#5865F2]/30 rounded-full px-4 py-1.5 mb-4">
+                <div
+                    class="inline-flex items-center gap-2.5 bg-[#5865F2]/20 border border-[#5865F2]/30 rounded-full px-4 py-1.5 mb-4">
                     <svg class="w-4 h-4 text-[#7289da]" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.053a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/>
+                        <path
+                            d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.053a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z" />
                     </svg>
-                    <span class="font-heading text-[11px] font-black uppercase tracking-widest text-[#a5b4fc]">Discord Role Setup</span>
+                    <span class="font-heading text-[11px] font-black uppercase tracking-widest text-[#a5b4fc]">Discord
+                        Role Setup</span>
                 </div>
                 <h1 class="text-3xl font-black text-white mb-2">Pick a server &amp; role</h1>
                 <p class="text-sm text-white/60" style="font-family:'DM Sans',sans-serif;">
@@ -373,11 +428,13 @@
                 <div class="flex items-center gap-3 mb-5">
                     <div class="w-9 h-9 rounded-xl bg-[#5865F2]/20 flex items-center justify-center flex-shrink-0">
                         <svg class="w-5 h-5 text-[#7289da]" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.053a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/>
+                            <path
+                                d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.053a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z" />
                         </svg>
                     </div>
                     <div>
-                        <h2 class="font-heading text-lg text-white" style="letter-spacing:-0.02em;">Sign in with Discord</h2>
+                        <h2 class="font-heading text-lg text-white" style="letter-spacing:-0.02em;">Sign in with Discord
+                        </h2>
                         <p class="text-xs text-white/50" style="font-family:'DM Sans',sans-serif;">Step 1 of 2</p>
                     </div>
                 </div>
@@ -409,7 +466,8 @@
                         <img src="Icons/PersonKey.png" class="w-5 h-5 object-contain" alt="">
                     </div>
                     <div>
-                        <h2 class="font-heading text-lg text-white" style="letter-spacing:-0.02em;">Pick a server and role</h2>
+                        <h2 class="font-heading text-lg text-white" style="letter-spacing:-0.02em;">Pick a server and
+                            role</h2>
                         <p class="text-xs text-white/50" style="font-family:'DM Sans',sans-serif;">Step 2 of 2</p>
                     </div>
                 </div>
@@ -427,8 +485,11 @@
 
                 <div class="mb-2">
                     <label class="form-label">Required Role(s)</label>
-                    <textarea id="role-ids-input" rows="3" placeholder="One role ID per line, e.g.:&#10;123456789012345678&#10;987654321098765432" class="w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 text-white placeholder-white/30 focus:border-[#5865F2] focus:outline-none focus:ring-1 focus:ring-[#5865F2] font-mono text-sm"></textarea>
-                    <p class="text-xs text-white/50 mt-1" style="font-family:'DM Sans',sans-serif;">Users must have these roles in the source server. Add one or more.</p>
+                    <textarea id="role-ids-input" rows="3"
+                        placeholder="One role ID per line, e.g.:&#10;123456789012345678&#10;987654321098765432"
+                        class="w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 text-white placeholder-white/30 focus:border-[#5865F2] focus:outline-none focus:ring-1 focus:ring-[#5865F2] font-mono text-sm"></textarea>
+                    <p class="text-xs text-white/50 mt-1" style="font-family:'DM Sans',sans-serif;">Users must have
+                        these roles in the source server. Add one or more.</p>
                     <div class="helper-box mt-2">
                         <div class="helper-step">
                             <div class="helper-num">1</div>
@@ -441,7 +502,8 @@
                         <div class="helper-step">
                             <div class="helper-num">3</div>
                             <span>Right-click the role → <strong class="text-white/80">Copy Role ID</strong><br>
-                            <span class="text-white/40">(Requires Developer Mode: User Settings → Advanced → Developer Mode)</span></span>
+                                <span class="text-white/40">(Requires Developer Mode: User Settings → Advanced →
+                                    Developer Mode)</span></span>
                         </div>
                     </div>
                 </div>
@@ -458,7 +520,8 @@
                             <span>User must have <strong>all</strong> of these roles</span>
                         </label>
                     </div>
-                    <p class="text-xs text-white/50 mt-1" style="font-family:'DM Sans',sans-serif;">Choose whether the user needs at least one role or every role.</p>
+                    <p class="text-xs text-white/50 mt-1" style="font-family:'DM Sans',sans-serif;">Choose whether the
+                        user needs at least one role or every role.</p>
                 </div>
 
                 <div id="pick-error" class="error-box mt-4" style="display:none;">
@@ -499,12 +562,15 @@
                     </div>
                 </div>
 
-                <div class="bg-[#5865F2]/10 border border-[#5865F2]/25 rounded-2xl p-4 flex items-start gap-3 text-left">
+                <div
+                    class="bg-[#5865F2]/10 border border-[#5865F2]/25 rounded-2xl p-4 flex items-start gap-3 text-left">
                     <svg class="w-5 h-5 text-[#7289da] flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.053a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/>
+                        <path
+                            d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.053a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z" />
                     </svg>
                     <p class="text-sm text-white/70" style="font-family:'DM Sans',sans-serif;">
-                        Go back to Discord and click <strong class="text-white">"Done, I've selected it"</strong> to finish setup.
+                        Go back to Discord and click <strong class="text-white">"Done, I've selected it"</strong> to
+                        finish setup.
                     </p>
                 </div>
             </div>
@@ -737,6 +803,31 @@
         init();
     </script>
 
-    </body>
+    <script>
+        // Smooth overlay fade: intercepts site.js instant display:none
+        (function () {
+            var overlay = document.getElementById('page-loading-overlay');
+            var content = document.getElementById('page-content');
+            if (!overlay) return;
+            var observer = new MutationObserver(function () {
+                if (overlay.style.display === 'none') {
+                    overlay.style.display = '';
+                    setTimeout(function() {
+                        overlay.classList.add('is-hiding');
+                        if (content) {
+                        requestAnimationFrame(function () {
+                            requestAnimationFrame(function () { content.classList.add('is-visible'); });
+                        });
+                    }
+                    setTimeout(function () { overlay.style.display = 'none'; }, 370);
+                    }, 500);
+                    observer.disconnect();
+                }
+            });
+            observer.observe(overlay, { attributes: true, attributeFilter: ['style'] });
+        })();
+    </script>
+
+</body>
 
 </html>

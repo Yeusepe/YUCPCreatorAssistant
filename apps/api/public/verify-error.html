@@ -14,6 +14,8 @@
 
     <link rel="stylesheet" href="./tokens.css">
     <style>
+        
+
         body {
             background-color: var(--bg-color);
             color: var(--text-primary);
@@ -69,8 +71,30 @@
             border-radius: 50%;
             animation: page-loading-spin 0.8s linear infinite;
         }
+
         @keyframes page-loading-spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ── Flash fix ─────────────────────────────────────────────────────── */
+        #page-loading-overlay {
+            transition: opacity 0.35s ease;
+        }
+
+        #page-loading-overlay.is-hiding {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #page-content {
+            opacity: 0;
+            transition: opacity 0.3s ease 0.05s;
+        }
+
+        #page-content.is-visible {
+            opacity: 1;
         }
     </style>
 
@@ -79,99 +103,123 @@
 </head>
 
 <body>
-    <div id="page-loading-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center" style="background-color: var(--bg-color);">
+    <div id="page-loading-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center"
+        style="background-color: var(--bg-color);">
         <img src="__API_BASE__/Icons/MainLogo.png" alt="Creator Assistant" class="h-10 mb-8" />
         <div class="page-loading-spinner"></div>
         <p class="mt-4" style="color: var(--text-secondary);">Loading...</p>
     </div>
     <div id="page-content" style="display: none;">
-    <div id="bg-canvas-root"
-        style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -20; pointer-events: none;">
-    </div>
-    <!-- Playful Background Stickers -->
-    <div id="holo-world-0"
-        class="absolute top-20 left-10 w-24 opacity-40 sticker pointer-events-auto z-0 grayscale h-24"
-        style="animation-delay: -2s;"></div>
-    <div id="holo-discord-1"
-        class="absolute bottom-40 right-10 w-20 opacity-40 sticker pointer-events-auto z-0 grayscale h-20"
-        style="animation-delay: -5s;"></div>
-
-    <main class="text-center max-w-2xl px-6 relative z-10">
-        <div class="mb-8 fade-up" style="animation-delay: 0.2s">
-            <svg class="w-24 h-24 mx-auto text-[#c53030]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
-                </path>
-            </svg>
+        <div id="bg-canvas-root"
+            style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -20; pointer-events: none;">
         </div>
-        <h1 class="text-5xl md:text-6xl text-[#ffffff] mb-6 fade-up" style="animation-delay: 0.3s">
-            Something went wrong
-        </h1>
-        <p id="error-msg" class="text-xl md:text-2xl text-[rgba(255,255,255,0.85)] mb-12 leading-relaxed fade-up"
-            style="animation-delay: 0.5s">
-            Verification could not be completed.
-        </p>
-        <div class="fade-up" style="animation-delay: 0.7s">
-            <a id="return-btn" href="#"
-                class="action-btn inline-block px-12 py-5 rounded-full text-xl font-black uppercase tracking-widest no-underline">
-                Return to Discord
-            </a>
-        </div>
-    </main>
-    <script>
-        (function () {
-            const params = new URLSearchParams(window.location.search);
-            const error = params.get('error');
-            const returnTo = params.get('returnTo');
-            const btn = document.getElementById('return-btn');
-            const errorMsg = document.getElementById('error-msg');
+        <!-- Playful Background Stickers -->
+        <div id="holo-world-0"
+            class="absolute top-20 left-10 w-24 opacity-40 sticker pointer-events-auto z-0 grayscale h-24"
+            style="animation-delay: -2s;"></div>
+        <div id="holo-discord-1"
+            class="absolute bottom-40 right-10 w-20 opacity-40 sticker pointer-events-auto z-0 grayscale h-20"
+            style="animation-delay: -5s;"></div>
 
-            function getSafeReturnTo(value) {
-                if (!value) return null;
-                try {
-                    const url = new URL(value, window.location.origin);
-                    const allowedOrigins = new Set([
-                        'https://discord.com',
-                        'https://ptb.discord.com',
-                        'https://canary.discord.com',
-                        window.location.origin,
-                    ]);
-                    if (!['https:', 'http:'].includes(url.protocol)) return null;
-                    if (!allowedOrigins.has(url.origin)) return null;
-                    return url.toString();
-                } catch {
-                    return null;
+        <main class="text-center max-w-2xl px-6 relative z-10">
+            <div class="mb-8 fade-up" style="animation-delay: 0.2s">
+                <svg class="w-24 h-24 mx-auto text-[#c53030]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                    </path>
+                </svg>
+            </div>
+            <h1 class="text-5xl md:text-6xl text-[#ffffff] mb-6 fade-up" style="animation-delay: 0.3s">
+                Something went wrong
+            </h1>
+            <p id="error-msg" class="text-xl md:text-2xl text-[rgba(255,255,255,0.85)] mb-12 leading-relaxed fade-up"
+                style="animation-delay: 0.5s">
+                Verification could not be completed.
+            </p>
+            <div class="fade-up" style="animation-delay: 0.7s">
+                <a id="return-btn" href="#"
+                    class="action-btn inline-block px-12 py-5 rounded-full text-xl font-black uppercase tracking-widest no-underline">
+                    Return to Discord
+                </a>
+            </div>
+        </main>
+        <script>
+            (function () {
+                const params = new URLSearchParams(window.location.search);
+                const error = params.get('error');
+                const returnTo = params.get('returnTo');
+                const btn = document.getElementById('return-btn');
+                const errorMsg = document.getElementById('error-msg');
+
+                function getSafeReturnTo(value) {
+                    if (!value) return null;
+                    try {
+                        const url = new URL(value, window.location.origin);
+                        const allowedOrigins = new Set([
+                            'https://discord.com',
+                            'https://ptb.discord.com',
+                            'https://canary.discord.com',
+                            window.location.origin,
+                        ]);
+                        if (!['https:', 'http:'].includes(url.protocol)) return null;
+                        if (!allowedOrigins.has(url.origin)) return null;
+                        return url.toString();
+                    } catch {
+                        return null;
+                    }
                 }
-            }
 
-            if (error) {
-                const normalized = error
-                    .replace(/^link_expired$/i, 'This link has expired')
-                    .replace(/^missing_parameters$/i, 'Missing parameters')
-                    .replace(/^internal_error$/i, 'An internal error occurred')
-                    .replace(/_/g, ' ');
-                errorMsg.textContent = normalized;
-            }
+                if (error) {
+                    const normalized = error
+                        .replace(/^link_expired$/i, 'This link has expired')
+                        .replace(/^missing_parameters$/i, 'Missing parameters')
+                        .replace(/^internal_error$/i, 'An internal error occurred')
+                        .replace(/_/g, ' ');
+                    errorMsg.textContent = normalized;
+                }
 
-            const safeReturnTo = getSafeReturnTo(returnTo);
+                const safeReturnTo = getSafeReturnTo(returnTo);
 
-            if (safeReturnTo) {
-                btn.href = safeReturnTo;
-                btn.textContent = 'Return to Discord';
-            } else {
-                btn.href = '#';
-                btn.textContent = 'Try Again';
-                btn.onclick = function () {
-                    window.history.back();
-                    return false;
-                };
-            }
+                if (safeReturnTo) {
+                    btn.href = safeReturnTo;
+                    btn.textContent = 'Return to Discord';
+                } else {
+                    btn.href = '#';
+                    btn.textContent = 'Try Again';
+                    btn.onclick = function () {
+                        window.history.back();
+                        return false;
+                    };
+                }
+            })();
+        </script>
+    </div>
+
+    <script>
+        // Smooth overlay fade: intercepts site.js instant display:none
+        (function () {
+            var overlay = document.getElementById('page-loading-overlay');
+            var content = document.getElementById('page-content');
+            if (!overlay) return;
+            var observer = new MutationObserver(function () {
+                if (overlay.style.display === 'none') {
+                    overlay.style.display = '';
+                    setTimeout(function() {
+                        overlay.classList.add('is-hiding');
+                        if (content) {
+                        requestAnimationFrame(function () {
+                            requestAnimationFrame(function () { content.classList.add('is-visible'); });
+                        });
+                    }
+                    setTimeout(function () { overlay.style.display = 'none'; }, 370);
+                    }, 500);
+                    observer.disconnect();
+                }
+            });
+            observer.observe(overlay, { attributes: true, attributeFilter: ['style'] });
         })();
     </script>
-    </div>
 
-    </body>
+</body>
 
 </html>
-
-

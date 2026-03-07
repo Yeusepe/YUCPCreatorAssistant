@@ -14,6 +14,8 @@
 
     <link rel="stylesheet" href="./tokens.css">
     <style>
+        
+
         body {
             background-color: var(--bg-color);
             color: var(--text-primary);
@@ -95,8 +97,30 @@
             border-radius: 50%;
             animation: page-loading-spin 0.8s linear infinite;
         }
+
         @keyframes page-loading-spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ── Flash fix ─────────────────────────────────────────────────────── */
+        #page-loading-overlay {
+            transition: opacity 0.35s ease;
+        }
+
+        #page-loading-overlay.is-hiding {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #page-content {
+            opacity: 0;
+            transition: opacity 0.3s ease 0.05s;
+        }
+
+        #page-content.is-visible {
+            opacity: 1;
         }
     </style>
 
@@ -105,118 +129,142 @@
 </head>
 
 <body>
-    <div id="page-loading-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center" style="background-color: var(--bg-color);">
+    <div id="page-loading-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center"
+        style="background-color: var(--bg-color);">
         <img src="__API_BASE__/Icons/MainLogo.png" alt="Creator Assistant" class="h-10 mb-8" />
         <div class="page-loading-spinner"></div>
         <p class="mt-4" style="color: var(--text-secondary);">Loading...</p>
     </div>
     <div id="page-content" style="display: none;">
-    <div id="bg-canvas-root"
-        style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -20; pointer-events: none;">
-    </div>
-    <!-- Playful Background Stickers -->
-    <div id="holo-clapstars-0" class="absolute top-20 right-20 w-32 opacity-80 sticker pointer-events-auto z-0 h-32"
-        style="animation-delay: -2s;"></div>
-    <div id="holo-world-1" class="absolute bottom-20 left-10 w-24 opacity-60 sticker pointer-events-auto z-0 h-24"
-        style="animation-delay: -5s;"></div>
-
-    <main class="text-center max-w-2xl px-6 relative z-10">
-        <div class="success-checkmark">
-            <svg viewBox="0 0 100 100">
-                <circle class="circle-path" cx="50" cy="50" r="45" stroke="#00e676" stroke-width="6" fill="none">
-                </circle>
-                <path class="check-path" d="M30 50 L45 65 L70 35" stroke="#00e676" stroke-width="6" fill="none"
-                    stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
+        <div id="bg-canvas-root"
+            style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -20; pointer-events: none;">
         </div>
-        <h1 class="text-5xl md:text-6xl text-[#ffffff] mb-6 fade-up" style="animation-delay: 0.3s">
-            You're verified!
-        </h1>
-        <p class="text-xl md:text-2xl text-[rgba(255,255,255,0.85)] mb-12 leading-relaxed fade-up"
-            style="animation-delay: 0.5s">
-            Your Discord account has been verified. Your roles will be updated shortly. You can return to Discord now.
-        </p>
-        <div class="fade-up" style="animation-delay: 0.7s">
-            <a id="return-btn" href="#"
-                class="action-btn inline-block px-12 py-5 rounded-full text-xl font-black uppercase tracking-widest no-underline">
-                Return to Discord
-            </a>
-        </div>
-        <div id="redirect-msg" class="mt-12 text-sm font-bold uppercase tracking-widest opacity-40 fade-up"
-            style="animation-delay: 0.9s">
-            Redirecting in 5 seconds...
-        </div>
-        <div id="close-msg" class="mt-12 text-sm font-bold uppercase tracking-widest opacity-40 fade-up"
-            style="animation-delay: 0.9s; display: none;">
-            You can close this tab.
-        </div>
-    </main>
-    <script>
-        (function () {
-            const params = new URLSearchParams(window.location.search);
-            const returnTo = params.get('returnTo');
-            const btn = document.getElementById('return-btn');
-            const redirectMsg = document.getElementById('redirect-msg');
-            const closeMsg = document.getElementById('close-msg');
+        <!-- Playful Background Stickers -->
+        <div id="holo-clapstars-0" class="absolute top-20 right-20 w-32 opacity-80 sticker pointer-events-auto z-0 h-32"
+            style="animation-delay: -2s;"></div>
+        <div id="holo-world-1" class="absolute bottom-20 left-10 w-24 opacity-60 sticker pointer-events-auto z-0 h-24"
+            style="animation-delay: -5s;"></div>
 
-            function getSafeReturnTo(value) {
-                if (!value) return null;
-                try {
-                    const url = new URL(value, window.location.origin);
-                    const allowedOrigins = new Set([
-                        'https://discord.com',
-                        'https://ptb.discord.com',
-                        'https://canary.discord.com',
-                        window.location.origin,
-                    ]);
-                    if (!['https:', 'http:'].includes(url.protocol)) return null;
-                    if (!allowedOrigins.has(url.origin)) return null;
-                    return url.toString();
-                } catch {
-                    return null;
-                }
-            }
+        <main class="text-center max-w-2xl px-6 relative z-10">
+            <div class="success-checkmark">
+                <svg viewBox="0 0 100 100">
+                    <circle class="circle-path" cx="50" cy="50" r="45" stroke="#00e676" stroke-width="6" fill="none">
+                    </circle>
+                    <path class="check-path" d="M30 50 L45 65 L70 35" stroke="#00e676" stroke-width="6" fill="none"
+                        stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+            </div>
+            <h1 class="text-5xl md:text-6xl text-[#ffffff] mb-6 fade-up" style="animation-delay: 0.3s">
+                You're verified!
+            </h1>
+            <p class="text-xl md:text-2xl text-[rgba(255,255,255,0.85)] mb-12 leading-relaxed fade-up"
+                style="animation-delay: 0.5s">
+                Your Discord account has been verified. Your roles will be updated shortly. You can return to Discord
+                now.
+            </p>
+            <div class="fade-up" style="animation-delay: 0.7s">
+                <a id="return-btn" href="#"
+                    class="action-btn inline-block px-12 py-5 rounded-full text-xl font-black uppercase tracking-widest no-underline">
+                    Return to Discord
+                </a>
+            </div>
+            <div id="redirect-msg" class="mt-12 text-sm font-bold uppercase tracking-widest opacity-40 fade-up"
+                style="animation-delay: 0.9s">
+                Redirecting in 5 seconds...
+            </div>
+            <div id="close-msg" class="mt-12 text-sm font-bold uppercase tracking-widest opacity-40 fade-up"
+                style="animation-delay: 0.9s; display: none;">
+                You can close this tab.
+            </div>
+        </main>
+        <script>
+            (function () {
+                const params = new URLSearchParams(window.location.search);
+                const returnTo = params.get('returnTo');
+                const btn = document.getElementById('return-btn');
+                const redirectMsg = document.getElementById('redirect-msg');
+                const closeMsg = document.getElementById('close-msg');
 
-            const safeReturnTo = getSafeReturnTo(returnTo);
-
-            if (safeReturnTo) {
-                btn.href = safeReturnTo;
-                btn.textContent = 'Return to Discord';
-                let count = 5;
-                const interval = setInterval(function () {
-                    count--;
-                    redirectMsg.textContent = count > 0 ? 'Redirecting in ' + count + ' second' + (count !== 1 ? 's' : '') + '...' : 'Redirecting...';
-                    if (count <= 0) {
-                        clearInterval(interval);
-                        window.location.href = safeReturnTo;
+                function getSafeReturnTo(value) {
+                    if (!value) return null;
+                    try {
+                        const url = new URL(value, window.location.origin);
+                        const allowedOrigins = new Set([
+                            'https://discord.com',
+                            'https://ptb.discord.com',
+                            'https://canary.discord.com',
+                            window.location.origin,
+                        ]);
+                        if (!['https:', 'http:'].includes(url.protocol)) return null;
+                        if (!allowedOrigins.has(url.origin)) return null;
+                        return url.toString();
+                    } catch {
+                        return null;
                     }
-                }, 1000);
-            } else {
-                btn.href = '#';
-                btn.textContent = 'Close';
-                btn.onclick = function () { window.close(); return false; };
-                redirectMsg.style.display = 'none';
-                closeMsg.style.display = 'block';
-            }
+                }
 
-            window.addEventListener('load', function () {
-                if (typeof confetti === 'function') {
-                    confetti({
-                        particleCount: 150,
-                        spread: 100,
-                        origin: { y: 0.6 },
-                        colors: ['#ffeb3b', '#0ea5e9', '#00e676', '#ffffff'],
-                        disableForReducedMotion: true
-                    });
+                const safeReturnTo = getSafeReturnTo(returnTo);
+
+                if (safeReturnTo) {
+                    btn.href = safeReturnTo;
+                    btn.textContent = 'Return to Discord';
+                    let count = 5;
+                    const interval = setInterval(function () {
+                        count--;
+                        redirectMsg.textContent = count > 0 ? 'Redirecting in ' + count + ' second' + (count !== 1 ? 's' : '') + '...' : 'Redirecting...';
+                        if (count <= 0) {
+                            clearInterval(interval);
+                            window.location.href = safeReturnTo;
+                        }
+                    }, 1000);
+                } else {
+                    btn.href = '#';
+                    btn.textContent = 'Close';
+                    btn.onclick = function () { window.close(); return false; };
+                    redirectMsg.style.display = 'none';
+                    closeMsg.style.display = 'block';
+                }
+
+                window.addEventListener('load', function () {
+                    if (typeof confetti === 'function') {
+                        confetti({
+                            particleCount: 150,
+                            spread: 100,
+                            origin: { y: 0.6 },
+                            colors: ['#ffeb3b', '#0ea5e9', '#00e676', '#ffffff'],
+                            disableForReducedMotion: true
+                        });
+                    }
+                });
+            })();
+        </script>
+    </div>
+
+    <script>
+        // Smooth overlay fade: intercepts site.js instant display:none
+        (function () {
+            var overlay = document.getElementById('page-loading-overlay');
+            var content = document.getElementById('page-content');
+            if (!overlay) return;
+            var observer = new MutationObserver(function () {
+                if (overlay.style.display === 'none') {
+                    overlay.style.display = '';
+                    setTimeout(function() {
+                        overlay.classList.add('is-hiding');
+                        if (content) {
+                        requestAnimationFrame(function () {
+                            requestAnimationFrame(function () { content.classList.add('is-visible'); });
+                        });
+                    }
+                    setTimeout(function () { overlay.style.display = 'none'; }, 370);
+                    }, 500);
+                    observer.disconnect();
                 }
             });
+            observer.observe(overlay, { attributes: true, attributeFilter: ['style'] });
         })();
     </script>
-    </div>
 
-    </body>
+</body>
 
 </html>
-
-
-
