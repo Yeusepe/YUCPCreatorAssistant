@@ -58,6 +58,9 @@ type DownloadArtifact = {
   sourceMessageUrl: string;
   sourceRelayMessageId?: string;
   sourceDeliveryMode?: 'reply' | 'webhook';
+  archiveChannelId?: string;
+  archiveMessageId?: string;
+  archiveThreadId?: string;
   requiredRoleIds: string[];
   roleLogic: 'all' | 'any';
   files: Array<{
@@ -228,7 +231,9 @@ function getProtectedFilesFromForwardedMessage(message: Message): Array<{
   extension: string;
 }> {
   const snapshot = getForwardedSnapshot(message);
-  const attachments = snapshot?.attachments ?? message.attachments;
+  // Prefer the forwarded message's own attachments (persistent URLs) over the snapshot
+  // (original message URLs that break when the original is deleted).
+  const attachments = message.attachments.size > 0 ? message.attachments : (snapshot?.attachments ?? message.attachments);
 
   return [...attachments.values()].map((attachment) => ({
     filename: attachment.name ?? 'download.bin',
@@ -1139,8 +1144,45 @@ export class LienedDownloadsService {
       return;
     }
 
+    // Prefer URLs from the live forwarded message in the archive (persistent) over stored URLs
+    // (snapshot URLs that break when the original message is deleted).
+    let files = artifact.files;
+    let linkSource: 'live_archive' | 'stored_artifact' = 'stored_artifact';
+    if (artifact.archiveChannelId && artifact.archiveMessageId) {
+      try {
+        const channelId = artifact.archiveThreadId ?? artifact.archiveChannelId;
+        const channel = await this.client.channels.fetch(channelId).catch(() => null);
+        if (channel?.isTextBased() && 'messages' in channel) {
+          const archiveMessage = await (channel as TextBasedChannel).messages.fetch(artifact.archiveMessageId).catch(() => null);
+          if (archiveMessage) {
+            const liveFiles = getProtectedFilesFromForwardedMessage(archiveMessage);
+            if (liveFiles.length > 0) {
+              files = liveFiles;
+              linkSource = 'live_archive';
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn('Liened Downloads could not fetch archive message, using stored URLs', {
+          feature: 'Liened Downloads',
+          artifactId,
+          archiveChannelId: artifact.archiveChannelId,
+          archiveMessageId: artifact.archiveMessageId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    logger.info('Liened Downloads serving download', {
+      feature: 'Liened Downloads',
+      artifactId,
+      linkSource,
+      fileCount: files.length,
+      urls: files.map((f) => ({ filename: f.filename, url: f.url })),
+    });
+
     await interaction.reply({
-      embeds: [buildAllowedDownloadEmbed(artifact)],
+      embeds: [buildAllowedDownloadEmbed({ ...artifact, files })],
       flags: MessageFlags.Ephemeral,
     });
   }
