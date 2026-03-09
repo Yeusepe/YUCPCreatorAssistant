@@ -48,7 +48,6 @@ export * from './verificationSupport';
 // Crypto module exports
 export * from './crypto';
 
-
 // Entitlement module exports
 export * from './entitlement';
 

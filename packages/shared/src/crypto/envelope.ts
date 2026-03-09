@@ -204,9 +204,7 @@ export async function decrypt(options: DecryptOptions): Promise<string> {
     return new TextDecoder().decode(plaintextBuffer);
   } catch (error) {
     throw new Error(
-      'Decryption failed. This may indicate: ' +
-        '1) Wrong KEK, 2) AAD mismatch, 3) Corrupted ciphertext, or 4) Tampered data. ' +
-        `Original error: ${error instanceof Error ? error.message : String(error)}`
+      `Decryption failed. This may indicate: 1) Wrong KEK, 2) AAD mismatch, 3) Corrupted ciphertext, or 4) Tampered data. Original error: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 }

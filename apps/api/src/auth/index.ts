@@ -12,8 +12,8 @@
  * and one-time-tokens.
  */
 
-import { createLogger } from '@yucp/shared';
 import { createHash, createHmac } from 'node:crypto';
+import { createLogger } from '@yucp/shared';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 const INTERNAL_AUTH_TS_HEADER = 'x-yucp-internal-auth-ts';
@@ -276,7 +276,7 @@ export function createAuth(config: AuthConfig) {
         if (json) {
           logger.debug('getSession: session found', {
             userId: json.user?.id,
-            sessionId: json.session?.id?.slice(0, 8) + '...',
+            sessionId: `${json.session?.id?.slice(0, 8)}...`,
           });
         } else if (cookie.length > 0) {
           logger.warn('Better Auth get-session returned empty session despite cookies', {
@@ -387,12 +387,10 @@ export function createAuth(config: AuthConfig) {
         const accounts = (await res.json()) as Array<{
           accountId: string;
           providerId: string;
-          [key: string]: any;
+          [key: string]: unknown;
         }>;
 
-        const discordAccount = accounts?.find?.(
-          (a) => a.providerId === 'discord'
-        );
+        const discordAccount = accounts?.find?.((a) => a.providerId === 'discord');
         return discordAccount?.accountId ?? null;
       } catch {
         return null;

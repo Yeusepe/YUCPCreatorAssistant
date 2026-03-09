@@ -1,12 +1,12 @@
 import './site.css';
+import { Cloud, Clouds, Sky as SkyImpl } from '@react-three/drei';
+import { Canvas, useFrame } from '@react-three/fiber';
+import confetti from 'canvas-confetti';
+import HolographicSticker from 'holographic-sticker';
+import { createIcons, icons } from 'lucide';
 import React, { Component, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Cloud, Clouds, Sky as SkyImpl } from '@react-three/drei';
-import confetti from 'canvas-confetti';
-import { createIcons, icons } from 'lucide';
-import HolographicSticker from 'holographic-sticker';
 import cloudTextureUrl from './assets/cloud.png';
 
 const HOLO_ASSET_MAP: Record<string, string> = {
@@ -103,7 +103,7 @@ function MovingCloud({
     const elapsed = state.clock.getElapsedTime();
     const range = 240;
     let currentX = startX - elapsed * speed;
-    currentX = ((currentX + 120) % range + range) % range - 120;
+    currentX = ((((currentX + 120) % range) + range) % range) - 120;
     ref.current.position.x = currentX;
   });
 
@@ -129,11 +129,70 @@ function BackgroundSky() {
   return (
     <>
       <SkyImpl sunPosition={[100, 20, 100]} turbidity={0.8} rayleigh={0.5} />
-      <Clouds material={THREE.MeshLambertMaterial} texture={cloudTextureUrl} limit={4000} range={20}>
-        <MovingCloud startX={0} speed={1.5} bounds={[25, 6, 15]} color="#ffffff" volume={15} opacity={0.6} seed={1} y={0} z={-10} growth={4} fade={10} segments={20} />
-        <MovingCloud startX={30} speed={2.2} bounds={[10, 4, 10]} color="#eaebff" volume={6} opacity={0.4} seed={2} y={8} z={-20} growth={8} fade={20} segments={10} />
-        <MovingCloud startX={-20} speed={0.5} bounds={[60, 5, 40]} color="#d3e2ff" volume={40} opacity={0.9} seed={3} y={-5} z={-35} growth={2} fade={30} segments={40} concentrate="outside" />
-        <MovingCloud startX={-45} speed={1.0} bounds={[30, 20, 30]} color="#fdfdfd" volume={35} opacity={0.7} seed={5} y={5} z={-25} growth={6} fade={15} segments={35} concentrate="random" />
+      <Clouds
+        material={THREE.MeshLambertMaterial}
+        texture={cloudTextureUrl}
+        limit={4000}
+        range={20}
+      >
+        <MovingCloud
+          startX={0}
+          speed={1.5}
+          bounds={[25, 6, 15]}
+          color="#ffffff"
+          volume={15}
+          opacity={0.6}
+          seed={1}
+          y={0}
+          z={-10}
+          growth={4}
+          fade={10}
+          segments={20}
+        />
+        <MovingCloud
+          startX={30}
+          speed={2.2}
+          bounds={[10, 4, 10]}
+          color="#eaebff"
+          volume={6}
+          opacity={0.4}
+          seed={2}
+          y={8}
+          z={-20}
+          growth={8}
+          fade={20}
+          segments={10}
+        />
+        <MovingCloud
+          startX={-20}
+          speed={0.5}
+          bounds={[60, 5, 40]}
+          color="#d3e2ff"
+          volume={40}
+          opacity={0.9}
+          seed={3}
+          y={-5}
+          z={-35}
+          growth={2}
+          fade={30}
+          segments={40}
+          concentrate="outside"
+        />
+        <MovingCloud
+          startX={-45}
+          speed={1.0}
+          bounds={[30, 20, 30]}
+          color="#fdfdfd"
+          volume={35}
+          opacity={0.7}
+          seed={5}
+          y={5}
+          z={-25}
+          growth={6}
+          fade={15}
+          segments={35}
+          concentrate="random"
+        />
       </Clouds>
     </>
   );
@@ -142,8 +201,35 @@ function BackgroundSky() {
 function ForegroundSky() {
   return (
     <Clouds material={THREE.MeshLambertMaterial} texture={cloudTextureUrl} limit={4000} range={20}>
-      <MovingCloud startX={45} speed={2.8} bounds={[10, 10, 5]} color="#f0f0f0" volume={12} opacity={0.8} seed={4} y={2} z={10} growth={15} fade={5} segments={15} concentrate="inside" />
-      <MovingCloud startX={15} speed={3.5} bounds={[20, 5, 8]} color="#ffffff" volume={8} opacity={0.6} seed={6} y={-2} z={5} growth={5} fade={25} segments={12} />
+      <MovingCloud
+        startX={45}
+        speed={2.8}
+        bounds={[10, 10, 5]}
+        color="#f0f0f0"
+        volume={12}
+        opacity={0.8}
+        seed={4}
+        y={2}
+        z={10}
+        growth={15}
+        fade={5}
+        segments={15}
+        concentrate="inside"
+      />
+      <MovingCloud
+        startX={15}
+        speed={3.5}
+        bounds={[20, 5, 8]}
+        color="#ffffff"
+        volume={8}
+        opacity={0.6}
+        seed={6}
+        y={-2}
+        z={5}
+        growth={5}
+        fade={25}
+        segments={12}
+      />
     </Clouds>
   );
 }
@@ -155,7 +241,14 @@ function BackgroundApp() {
         <BackgroundSky />
         <ambientLight intensity={Math.PI / 1.5} />
         <directionalLight position={[10, 20, 10]} intensity={1.5} color="#ffffff" />
-        <spotLight position={[-20, 0, 10]} color="#ffdddd" angle={0.8} decay={0} penumbra={1} intensity={10} />
+        <spotLight
+          position={[-20, 0, 10]}
+          color="#ffdddd"
+          angle={0.8}
+          decay={0}
+          penumbra={1}
+          intensity={10}
+        />
       </Canvas>
     </ErrorBoundary>
   );
@@ -164,7 +257,11 @@ function BackgroundApp() {
 function ForegroundApp() {
   return (
     <ErrorBoundary>
-      <Canvas camera={{ position: [0, -5, 15], fov: 60 }} gl={{ alpha: true }} style={{ pointerEvents: 'none' }}>
+      <Canvas
+        camera={{ position: [0, -5, 15], fov: 60 }}
+        gl={{ alpha: true }}
+        style={{ pointerEvents: 'none' }}
+      >
         <ForegroundSky />
         <ambientLight intensity={Math.PI / 1.5} />
         <directionalLight position={[10, 20, 10]} intensity={1.5} color="#ffffff" />
@@ -189,9 +286,11 @@ function bootLucide() {
   const apply = (options: Parameters<typeof createIcons>[0] = {}) =>
     createIcons({ icons, ...options });
 
-  (window as Window & {
-    lucide?: { createIcons: typeof apply };
-  }).lucide = { createIcons: apply };
+  (
+    window as Window & {
+      lucide?: { createIcons: typeof apply };
+    }
+  ).lucide = { createIcons: apply };
 
   apply();
 }

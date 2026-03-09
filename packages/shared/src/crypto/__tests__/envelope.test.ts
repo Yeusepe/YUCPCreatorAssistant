@@ -52,16 +52,8 @@ describe('Key utilities', () => {
       const dek = await generateDEK();
       const plaintext = new TextEncoder().encode('secret-data');
       const iv = generateIV();
-      const ciphertext = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv },
-        dek,
-        plaintext
-      );
-      const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
-        dek,
-        ciphertext
-      );
+      const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, dek, plaintext);
+      const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, dek, ciphertext);
       expect(new Uint8Array(decrypted)).toEqual(plaintext);
     });
 
@@ -175,7 +167,12 @@ describe('Envelope encryption', () => {
     provider: 'gumroad',
     tokenType: 'access',
   };
-  const encryptOptions: { keyId: string; keyVersion: number; kekBytes: Uint8Array<ArrayBuffer>; aad: EncryptionAAD } = {
+  const encryptOptions: {
+    keyId: string;
+    keyVersion: number;
+    kekBytes: Uint8Array<ArrayBuffer>;
+    aad: EncryptionAAD;
+  } = {
     keyId: 'kek-v1',
     keyVersion: 1,
     kekBytes: new Uint8Array(32),
@@ -347,7 +344,7 @@ describe('Envelope encryption', () => {
       // Tamper with ciphertext
       const tamperedPayload: EncryptedPayload = {
         ...payload,
-        ciphertext: payload.ciphertext.slice(0, -5) + 'XXXXX',
+        ciphertext: `${payload.ciphertext.slice(0, -5)}XXXXX`,
       };
 
       await expect(
@@ -364,7 +361,7 @@ describe('Envelope encryption', () => {
 
       const invalidPayload: EncryptedPayload = {
         ...payload,
-        algorithm: 'AES-128-CBC' as any,
+        algorithm: 'AES-128-CBC' as EncryptedPayload['algorithm'],
       };
 
       await expect(
@@ -469,7 +466,7 @@ describe('Payload utilities', () => {
       expect(
         validatePayload({
           ...validPayload,
-          wrappedDek: { ...validPayload.wrappedDek, keyId: undefined as any },
+          wrappedDek: { ...validPayload.wrappedDek, keyId: undefined },
         })
       ).toBe(false);
     });

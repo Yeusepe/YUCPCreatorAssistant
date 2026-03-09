@@ -692,6 +692,77 @@
             color: #f87171;
         }
 
+        /* ── API Keys ─────────────────────────────────────────────────────── */
+        .api-key-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .api-key-row:last-child {
+            border-bottom: none;
+        }
+
+        .api-key-prefix {
+            font-family: 'DM Mono', monospace;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.85);
+            letter-spacing: 0.02em;
+        }
+
+        .api-key-scopes {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.5);
+            font-family: 'DM Sans', sans-serif;
+        }
+
+        .api-key-status-revoked {
+            font-size: 10px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+        }
+
+        .api-key-status-active {
+            font-size: 10px;
+            font-weight: 700;
+            color: #4ade80;
+            text-transform: uppercase;
+        }
+
+        .api-key-actions {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        .api-key-action-btn {
+            font-size: 11px;
+            font-weight: 700;
+            background: transparent;
+            border: 1.5px solid rgba(255, 255, 255, 0.12);
+            color: rgba(255, 255, 255, 0.6);
+            border-radius: 8px;
+            padding: 5px 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        .api-key-action-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+        }
+
+        .api-key-action-btn.revoke:hover {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #f87171;
+        }
+
         /* ── Primary Button ────────────────────────────────────────────────── */
         .btn-primary {
             display: inline-flex;
@@ -999,6 +1070,11 @@
 
         .animate-in-delay-4 {
             animation-delay: 0.32s;
+            opacity: 0;
+        }
+
+        .animate-in-delay-5 {
+            animation-delay: 0.4s;
             opacity: 0;
         }
 
@@ -1469,6 +1545,46 @@
                     </div>
                 </section>
 
+                <!-- ── Public API Keys ──────────────────────────────────────────────── -->
+                <section class="section-card p-4 sm:p-5 md:p-7 animate-in animate-in-delay-5" id="api-keys-section">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+                                style="background: rgba(14,165,233,0.2);">
+                                <img src="__API_BASE__/Icons/ClapStars.png" class="w-4 h-4 object-contain" alt="">
+                            </div>
+                            <h2 class="text-lg font-black">Public API Keys</h2>
+                        </div>
+                        <button id="create-api-key-btn" class="btn-primary" onclick="openCreateApiKeyModal()"
+                            style="font-size:12px;padding:8px 16px;">
+                            <img src="__API_BASE__/Icons/Link.png" class="w-3.5 h-3.5 object-contain" alt="">
+                            New API Key
+                        </button>
+                    </div>
+                    <p class="text-xs text-white/50 font-medium mb-6 ml-11" style="font-family:'DM Sans',sans-serif;">
+                        Use these keys to call the verification API from your integrations. Send as <code class="text-white/60">x-api-key</code> header.
+                    </p>
+
+                    <div id="api-keys-signin-required" class="hidden text-center py-6 px-4 rounded-xl" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);">
+                        <p class="text-sm text-white/70 font-medium" style="font-family:'DM Sans',sans-serif;">Sign in to manage API keys.</p>
+                    </div>
+
+                    <!-- API keys list -->
+                    <div id="api-keys-list"></div>
+
+                    <!-- Empty state -->
+                    <div id="api-keys-empty" class="empty-state hidden">
+                        <img src="__API_BASE__/Icons/World.png" alt="">
+                        <p class="text-sm text-white/50 font-semibold" style="font-family:'DM Sans',sans-serif;">No API keys yet.<br>Create a key to integrate with the verification API.</p>
+                    </div>
+
+                    <!-- Loading state -->
+                    <div id="api-keys-loading" class="text-center py-8">
+                        <div class="inline-block w-5 h-5 border-2 border-white/20 border-t-sky-400 rounded-full"
+                            style="animation: page-loading-spin 0.8s linear infinite;"></div>
+                    </div>
+                </section>
+
             </div>
         </main>
 
@@ -1508,6 +1624,50 @@
             </div>
         </div>
 
+        <!-- ── Create API Key Modal ──────────────────────────────────────────── -->
+        <div id="createApiKeyModal" class="modal-overlay">
+            <div class="modal-box">
+                <h3>Create API Key</h3>
+                <p>Give your key a name to identify it later. You can choose which scopes it has access to.</p>
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-white/70 mb-2" for="api-key-name">Name</label>
+                    <input type="text" id="api-key-name" class="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/15 text-white placeholder-white/40 font-medium"
+                        placeholder="e.g. Production integration" maxlength="64">
+                </div>
+                <div class="mb-4">
+                    <span class="block text-xs font-bold text-white/70 mb-2">Scopes</span>
+                    <label class="flex items-center gap-2 mb-2 cursor-pointer">
+                        <input type="checkbox" id="scope-verification-read" checked class="rounded">
+                        <span class="text-sm text-white/80">verification:read</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="scope-subjects-read" checked class="rounded">
+                        <span class="text-sm text-white/80">subjects:read</span>
+                    </label>
+                </div>
+                <div class="modal-btn-row">
+                    <button onclick="closeCreateApiKeyModal()" class="btn-ghost">Cancel</button>
+                    <button id="create-api-key-submit" class="btn-primary" onclick="submitCreateApiKey()">Create Key</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Copy API Key Modal (one-time display) ─────────────────────────── -->
+        <div id="copyApiKeyModal" class="modal-overlay">
+            <div class="modal-box">
+                <h3>API Key Created</h3>
+                <p class="text-amber-400/90 font-semibold">Copy now. You won&apos;t see this again.</p>
+                <div id="api-key-value-display" class="invite-url-box font-mono text-sm mb-4"></div>
+                <div class="flex gap-3">
+                    <button id="copy-api-key-btn" class="btn-primary flex-1" onclick="copyApiKeyValue()">
+                        <img src="__API_BASE__/Icons/ClapStars.png" class="w-4 h-4 object-contain" alt="">
+                        Copy Key
+                    </button>
+                    <button onclick="closeCopyApiKeyModal()" class="btn-ghost flex-1">Done</button>
+                </div>
+            </div>
+        </div>
+
     </div><!-- #page-content -->
 
     <script>
@@ -1527,7 +1687,9 @@
         let settingsMap = new Map();
         let pendingDisconnectPlatform = null;
         let collabConnections = [];
+        let publicApiKeys = [];
         let currentInviteUrl = '';
+        let currentApiKeyValue = '';
         let quickStartSignature = '';
         let completedMilestones = new Set();
         let settingsTouched = false;
@@ -1890,6 +2052,7 @@
 
                 await fetchAllData();
                 await fetchCollabConnections();
+                await fetchPublicApiKeys();
                 renderQuickStart();
 
             } catch (err) {
@@ -2320,6 +2483,226 @@
             } catch (e) {
                 console.error('Failed to remove collab connection:', e);
                 alert('Network error. Please try again.');
+            }
+        }
+
+        // ── Public API Keys ──────────────────────────────────────────────────────
+
+        async function fetchPublicApiKeys() {
+            const tid = tenantId || tenantIdFromServer;
+            if (!tid) {
+                document.getElementById('api-keys-loading').classList.add('hidden');
+                document.getElementById('api-keys-list').classList.add('hidden');
+                document.getElementById('api-keys-empty').classList.remove('hidden');
+                return;
+            }
+            try {
+                const res = await apiFetch(`${apiBase}/api/connect/public-api/keys?tenantId=${encodeURIComponent(tid)}`);
+                if (res.status === 401 || res.status === 403) {
+                    document.getElementById('api-keys-loading').classList.add('hidden');
+                    document.getElementById('api-keys-list').classList.add('hidden');
+                    document.getElementById('api-keys-empty').classList.add('hidden');
+                    document.getElementById('api-keys-signin-required').classList.remove('hidden');
+                    document.getElementById('create-api-key-btn').classList.add('hidden');
+                    return;
+                }
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                publicApiKeys = data.keys ?? [];
+            } catch (e) {
+                console.error('Failed to fetch API keys:', e);
+                publicApiKeys = [];
+            }
+            renderApiKeysSection();
+        }
+
+        function renderApiKeysSection() {
+            const loading = document.getElementById('api-keys-loading');
+            const list = document.getElementById('api-keys-list');
+            const empty = document.getElementById('api-keys-empty');
+            const signinRequired = document.getElementById('api-keys-signin-required');
+            const createBtn = document.getElementById('create-api-key-btn');
+
+            loading.classList.add('hidden');
+            if (signinRequired && !signinRequired.classList.contains('hidden')) return;
+
+            list.replaceChildren();
+            list.classList.remove('hidden');
+            empty.classList.add('hidden');
+
+            if (publicApiKeys.length === 0) {
+                empty.classList.remove('hidden');
+                list.classList.add('hidden');
+                return;
+            }
+
+            for (const key of publicApiKeys) {
+                const row = document.createElement('div');
+                row.className = 'api-key-row';
+
+                const info = document.createElement('div');
+                info.style.flex = '1';
+                const nameEl = document.createElement('div');
+                nameEl.className = 'api-key-prefix';
+                nameEl.textContent = key.name || 'Unnamed';
+                const meta = document.createElement('div');
+                meta.className = 'api-key-scopes';
+                const parts = [];
+                if (key.prefix) parts.push(key.prefix);
+                parts.push((key.scopes || []).join(', '));
+                if (key.lastUsedAt) {
+                    parts.push('Last used ' + new Date(key.lastUsedAt).toLocaleDateString());
+                }
+                meta.textContent = parts.join(' · ');
+                info.appendChild(nameEl);
+                info.appendChild(meta);
+
+                const statusSpan = document.createElement('span');
+                statusSpan.className = key.status === 'active' ? 'api-key-status-active' : 'api-key-status-revoked';
+                statusSpan.textContent = key.status || 'active';
+
+                const actions = document.createElement('div');
+                actions.className = 'api-key-actions';
+                if (key.status === 'active') {
+                    const rotateBtn = document.createElement('button');
+                    rotateBtn.className = 'api-key-action-btn';
+                    rotateBtn.textContent = 'Rotate';
+                    rotateBtn.type = 'button';
+                    rotateBtn.addEventListener('click', () => rotatePublicApiKey(key._id));
+                    actions.appendChild(rotateBtn);
+
+                    const revokeBtn = document.createElement('button');
+                    revokeBtn.className = 'api-key-action-btn revoke';
+                    revokeBtn.textContent = 'Revoke';
+                    revokeBtn.type = 'button';
+                    revokeBtn.addEventListener('click', () => revokePublicApiKey(key._id));
+                    actions.appendChild(revokeBtn);
+                }
+
+                row.appendChild(info);
+                row.appendChild(statusSpan);
+                row.appendChild(actions);
+                list.appendChild(row);
+            }
+        }
+
+        function openCreateApiKeyModal() {
+            document.getElementById('api-key-name').value = '';
+            document.getElementById('scope-verification-read').checked = true;
+            document.getElementById('scope-subjects-read').checked = true;
+            document.getElementById('createApiKeyModal').classList.add('modal-visible');
+        }
+
+        function closeCreateApiKeyModal() {
+            document.getElementById('createApiKeyModal').classList.remove('modal-visible');
+        }
+
+        async function submitCreateApiKey() {
+            const name = document.getElementById('api-key-name').value?.trim();
+            if (!name) {
+                alert('Please enter a name for the key.');
+                return;
+            }
+            const scopes = [];
+            if (document.getElementById('scope-verification-read').checked) scopes.push('verification:read');
+            if (document.getElementById('scope-subjects-read').checked) scopes.push('subjects:read');
+            if (scopes.length === 0) {
+                alert('Please select at least one scope.');
+                return;
+            }
+
+            const tid = tenantId || tenantIdFromServer;
+            if (!tid) {
+                alert('Tenant context is required.');
+                return;
+            }
+
+            const btn = document.getElementById('create-api-key-submit');
+            btn.disabled = true;
+            btn.textContent = 'Creating...';
+            try {
+                const res = await apiFetch(`${apiBase}/api/connect/public-api/keys`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tenantId: tid, name, scopes })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || 'Failed to create API key');
+                }
+                const data = await res.json();
+                closeCreateApiKeyModal();
+                currentApiKeyValue = data.apiKey || '';
+                document.getElementById('api-key-value-display').textContent = currentApiKeyValue;
+                document.getElementById('copyApiKeyModal').classList.add('modal-visible');
+                await fetchPublicApiKeys();
+            } catch (e) {
+                alert(e.message || 'Failed to create API key. Please try again.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Create Key';
+            }
+        }
+
+        function closeCopyApiKeyModal() {
+            currentApiKeyValue = '';
+            document.getElementById('copyApiKeyModal').classList.remove('modal-visible');
+        }
+
+        async function copyApiKeyValue() {
+            if (!currentApiKeyValue) return;
+            try {
+                await navigator.clipboard.writeText(currentApiKeyValue);
+                const btn = document.getElementById('copy-api-key-btn');
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<span>Copied!</span>';
+                setTimeout(() => { btn.innerHTML = orig; }, 2000);
+            } catch { /* silent */ }
+        }
+
+        async function revokePublicApiKey(keyId) {
+            if (!confirm('Revoke this API key? It will stop working immediately.')) return;
+            const tid = tenantId || tenantIdFromServer;
+            if (!tid) return;
+            try {
+                const res = await apiFetch(`${apiBase}/api/connect/public-api/keys/${encodeURIComponent(keyId)}/revoke`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tenantId: tid })
+                });
+                if (res.ok) {
+                    await fetchPublicApiKeys();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.error || 'Failed to revoke key.');
+                }
+            } catch (e) {
+                console.error('Revoke API key failed:', e);
+                alert('Network error. Please try again.');
+            }
+        }
+
+        async function rotatePublicApiKey(keyId) {
+            if (!confirm('Rotate this key? A new key will be created and this one will be revoked. Copy the new key when it appears.')) return;
+            const tid = tenantId || tenantIdFromServer;
+            if (!tid) return;
+            try {
+                const res = await apiFetch(`${apiBase}/api/connect/public-api/keys/${encodeURIComponent(keyId)}/rotate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tenantId: tid })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || 'Failed to rotate key');
+                }
+                const data = await res.json();
+                currentApiKeyValue = data.apiKey || '';
+                document.getElementById('api-key-value-display').textContent = currentApiKeyValue;
+                document.getElementById('copyApiKeyModal').classList.add('modal-visible');
+                await fetchPublicApiKeys();
+            } catch (e) {
+                alert(e.message || 'Failed to rotate key. Please try again.');
             }
         }
 

@@ -5,20 +5,25 @@
 
 import { createLogger } from '@yucp/shared';
 import { type Auth, createAuth } from './auth';
-import { DISCORD_ROLE_SETUP_COOKIE, getCookieValue, SETUP_SESSION_COOKIE } from './lib/browserSessions';
+import {
+  DISCORD_ROLE_SETUP_COOKIE,
+  SETUP_SESSION_COOKIE,
+  getCookieValue,
+} from './lib/browserSessions';
 import { getRequired, loadEnv, loadEnvAsync } from './lib/env';
+import { resolveSetupSession } from './lib/setupSession';
 import { getStateStore } from './lib/stateStore';
 import { detectTunnelUrl } from './lib/tunnel';
-import { resolveSetupSession } from './lib/setupSession';
 import {
-  mountInstallRoutes,
-  mountVerificationRoutes,
-  createConnectRoutes,
-  createWebhookHandler,
   type InstallConfig,
   type VerificationConfig,
+  createConnectRoutes,
+  createWebhookHandler,
+  mountInstallRoutes,
+  mountVerificationRoutes,
 } from './routes';
 import { createCollabRoutes } from './routes/collab';
+import { createPublicRoutes } from './routes/public';
 import { createSuiteRoutes } from './routes/suite';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
@@ -32,6 +37,7 @@ let verificationRoutes: Map<string, (request: Request) => Promise<Response>> | n
 let connectRoutes: ReturnType<typeof createConnectRoutes> | null = null;
 let webhookHandler: ReturnType<typeof createWebhookHandler> | null = null;
 let collabRoutes: ReturnType<typeof createCollabRoutes> | null = null;
+let publicRoutes: ReturnType<typeof createPublicRoutes> | null = null;
 let suiteRoutes: ReturnType<typeof createSuiteRoutes> | null = null;
 
 // Resolved after initializeAuth - used for apiBase injection and CORS
@@ -91,9 +97,7 @@ function initializeAuth(webhookBaseUrl?: string) {
   resolvedFrontendOrigin = frontendUrl !== publicBaseUrl ? new URL(frontendUrl).origin : null;
 
   const convexUrl = env.CONVEX_URL ?? '';
-  const convexSiteUrl = convexUrl
-    ? convexUrl.replace('.convex.cloud', '.convex.site')
-    : '';
+  const convexSiteUrl = convexUrl ? convexUrl.replace('.convex.cloud', '.convex.site') : '';
 
   if (!convexSiteUrl) {
     throw new Error('CONVEX_URL must be set for auth (Convex hosts auth)');
@@ -167,6 +171,13 @@ function initializeAuth(webhookBaseUrl?: string) {
     convexSiteUrl,
   });
 
+  publicRoutes = createPublicRoutes({
+    convexUrl: env.CONVEX_URL ?? env.CONVEX_DEPLOYMENT ?? '',
+    convexApiSecret: env.CONVEX_API_SECRET ?? '',
+    convexSiteUrl,
+    publicApiKeyPepper: env.PUBLIC_API_KEY_PEPPER ?? env.BETTER_AUTH_SECRET ?? '',
+  });
+
   logger.info('Better Auth initialized', {
     installRoutes: installRoutes.size,
     verificationRoutes: verificationRoutes.size,
@@ -220,6 +231,14 @@ async function routeRequest(request: Request): Promise<Response> {
       });
     }
   }
+  if (pathname.startsWith('/api/public/')) {
+    if (isRateLimited(`public:${clientAddress}`, 120, 60_000)) {
+      return new Response(JSON.stringify({ error: 'Too many requests' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
 
   // Health check endpoint
   if (pathname === '/health') {
@@ -236,18 +255,24 @@ async function routeRequest(request: Request): Promise<Response> {
   }
 
   // Handle /Icons/ even with path prefix (e.g. /api/Icons/ when API has base path)
-  const iconsPath = pathname.includes('/Icons/') ? pathname.slice(pathname.indexOf('/Icons/')) : pathname;
+  const iconsPath = pathname.includes('/Icons/')
+    ? pathname.slice(pathname.indexOf('/Icons/'))
+    : pathname;
   if (iconsPath.startsWith('/Icons/')) {
     const assetPath = `${import.meta.dir}/../public${iconsPath}`;
     const file = Bun.file(assetPath);
     if (await file.exists()) {
       const ext = iconsPath.split('.').pop()?.toLowerCase();
       const contentType =
-        ext === 'png' ? 'image/png' :
-          ext === 'svg' ? 'image/svg+xml' :
-            ext === 'ico' ? 'image/x-icon' :
-              ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
-                'application/octet-stream';
+        ext === 'png'
+          ? 'image/png'
+          : ext === 'svg'
+            ? 'image/svg+xml'
+            : ext === 'ico'
+              ? 'image/x-icon'
+              : ext === 'jpg' || ext === 'jpeg'
+                ? 'image/jpeg'
+                : 'application/octet-stream';
       return new Response(file, {
         headers: { 'Content-Type': contentType },
       });
@@ -260,12 +285,17 @@ async function routeRequest(request: Request): Promise<Response> {
     if (await file.exists()) {
       const ext = pathname.split('.').pop()?.toLowerCase();
       const contentType =
-        ext === 'js' ? 'text/javascript; charset=utf-8' :
-        ext === 'css' ? 'text/css; charset=utf-8' :
-        ext === 'map' ? 'application/json; charset=utf-8' :
-        ext === 'png' ? 'image/png' :
-        ext === 'svg' ? 'image/svg+xml' :
-        'application/octet-stream';
+        ext === 'js'
+          ? 'text/javascript; charset=utf-8'
+          : ext === 'css'
+            ? 'text/css; charset=utf-8'
+            : ext === 'map'
+              ? 'application/json; charset=utf-8'
+              : ext === 'png'
+                ? 'image/png'
+                : ext === 'svg'
+                  ? 'image/svg+xml'
+                  : 'application/octet-stream';
       return new Response(file, {
         headers: { 'Content-Type': contentType },
       });
@@ -287,9 +317,7 @@ async function routeRequest(request: Request): Promise<Response> {
 
     const env = loadEnv();
     const convexUrl = env.CONVEX_URL ?? '';
-    const convexSiteUrl = convexUrl
-      ? convexUrl.replace('.convex.cloud', '.convex.site')
-      : '';
+    const convexSiteUrl = convexUrl ? convexUrl.replace('.convex.cloud', '.convex.site') : '';
     if (!convexSiteUrl) {
       logger.error('Discord sign-in bridge missing CONVEX_URL', {
         callbackURL,
@@ -309,21 +337,26 @@ async function routeRequest(request: Request): Promise<Response> {
       convexSiteUrl,
     });
 
-    const authResponse = await fetch(`${convexSiteUrl.replace(/\/$/, '')}/api/auth/sign-in/social`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        provider: 'discord',
-        callbackURL,
-      }),
-    });
+    const authResponse = await fetch(
+      `${convexSiteUrl.replace(/\/$/, '')}/api/auth/sign-in/social`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          provider: 'discord',
+          callbackURL,
+        }),
+      }
+    );
 
     const payloadText = await authResponse.text();
     let payload: { url?: string; error?: { message?: string } } | null = null;
     try {
-      payload = payloadText ? JSON.parse(payloadText) as { url?: string; error?: { message?: string } } : null;
+      payload = payloadText
+        ? (JSON.parse(payloadText) as { url?: string; error?: { message?: string } })
+        : null;
     } catch {
       logger.warn('Discord sign-in bridge received non-JSON response', {
         status: authResponse.status,
@@ -340,12 +373,15 @@ async function routeRequest(request: Request): Promise<Response> {
         responseError: payload?.error?.message,
         responseBodyPreview: payloadText.slice(0, 300),
       });
-      return new Response(JSON.stringify({
-        error: payload?.error?.message ?? 'Failed to start Discord sign-in',
-      }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({
+          error: payload?.error?.message ?? 'Failed to start Discord sign-in',
+        }),
+        {
+          status: 502,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
     }
 
     let discordRedirectUri: string | null = null;
@@ -378,7 +414,10 @@ async function routeRequest(request: Request): Promise<Response> {
 
   // Install routes for bot installation
   if (installRoutes?.has(pathname)) {
-    const handler = installRoutes.get(pathname)!;
+    const handler = installRoutes.get(pathname);
+    if (!handler) {
+      return Response.json({ error: 'Route handler not found' }, { status: 500 });
+    }
     return handler(request);
   }
 
@@ -400,7 +439,10 @@ async function routeRequest(request: Request): Promise<Response> {
 
   // Verification routes
   if (verificationRoutes?.has(pathname)) {
-    const handler = verificationRoutes.get(pathname)!;
+    const handler = verificationRoutes.get(pathname);
+    if (!handler) {
+      return Response.json({ error: 'Route handler not found' }, { status: 500 });
+    }
     return handler(request);
   }
 
@@ -516,10 +558,35 @@ async function routeRequest(request: Request): Promise<Response> {
     }
     return connectRoutes.getSettingsHandler(request);
   }
+  if (pathname === '/api/connect/public-api/keys' && connectRoutes) {
+    if (request.method === 'POST') {
+      return connectRoutes.createPublicApiKey(request);
+    }
+    return connectRoutes.listPublicApiKeys(request);
+  }
+  if (
+    pathname.startsWith('/api/connect/public-api/keys/') &&
+    connectRoutes &&
+    request.method === 'POST'
+  ) {
+    const keyId = pathname.replace(/^\/api\/connect\/public-api\/keys\//, '').split('/')[0];
+    if (pathname.endsWith('/revoke')) {
+      return connectRoutes.revokePublicApiKey(request, decodeURIComponent(keyId));
+    }
+    if (pathname.endsWith('/rotate')) {
+      return connectRoutes.rotatePublicApiKey(request, decodeURIComponent(keyId));
+    }
+  }
 
   // Collab routes
   if (pathname.startsWith('/api/collab/') && collabRoutes) {
     return collabRoutes.handleCollabRequest(request);
+  }
+
+  // Public verification API
+  if (pathname.startsWith('/api/public/') && publicRoutes) {
+    const response = await publicRoutes.handleRequest(request, pathname);
+    if (response) return response;
   }
 
   // Suite verification API (OAuth 2.1 protected)
@@ -543,9 +610,9 @@ async function routeRequest(request: Request): Promise<Response> {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
   };
-const COLLAB_HTML_SECURITY_HEADERS: Record<string, string> = {
-  'Content-Security-Policy':
-    "default-src 'self'; " +
+  const COLLAB_HTML_SECURITY_HEADERS: Record<string, string> = {
+    'Content-Security-Policy':
+      "default-src 'self'; " +
       "script-src 'self' 'unsafe-inline'; " +
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
       "img-src 'self' data:; " +
@@ -556,64 +623,126 @@ const COLLAB_HTML_SECURITY_HEADERS: Record<string, string> = {
       "frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'",
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY',
-};
+    'X-Frame-Options': 'DENY',
+  };
 
-async function maybeServeSetupAuthRedirect(
-  request: Request,
-  pathname: string,
-  tenantId: string,
-  guildId: string,
-  setupCookieToken: string
-): Promise<Response | null> {
-  if (!setupCookieToken || !auth) {
-    return null;
-  }
-
-  const encryptionSecret = loadEnv().BETTER_AUTH_SECRET ?? '';
-  const setupSession = await resolveSetupSession(setupCookieToken, encryptionSecret);
-  if (!setupSession) {
-    return null;
-  }
-
-  const authSession = await auth.getSession(request);
-  const browserApiBase = resolvedFrontendOrigin ?? resolvedApiBaseUrl;
-  const callbackUrl = `${browserApiBase}${pathname}?tenant_id=${encodeURIComponent(tenantId)}&guild_id=${encodeURIComponent(guildId)}`;
-
-  if (!authSession) {
+  if (pathname === '/oauth/login') {
     const filePath = `${import.meta.dir}/../public/sign-in-redirect.html`;
     let html = await Bun.file(filePath).text();
-    const signInUrl = `${resolvedApiBaseUrl.replace(/\/$/, '')}/api/auth/sign-in/discord?callbackURL=${encodeURIComponent(callbackUrl)}`;
-    html = html.replace('__SIGN_IN_URL__', JSON.stringify(signInUrl));
-    html = html.replace('__CALLBACK_URL__', JSON.stringify(callbackUrl));
+    html = html.replace(
+      '__SIGN_IN_URL__',
+      "JSON.stringify('/api/auth/sign-in/discord?callbackURL=' + encodeURIComponent(window.location.href))"
+    );
+    html = html.replace('__CALLBACK_URL__', 'JSON.stringify(window.location.href)');
     return new Response(html, {
       status: 200,
       headers: { 'Content-Type': 'text/html', ...HTML_SECURITY_HEADERS },
     });
   }
 
-  const authDiscordUserId = await auth.getDiscordUserId(request);
-  if (!authDiscordUserId) {
-    const filePath = `${import.meta.dir}/../public/sign-in-redirect.html`;
-    let html = await Bun.file(filePath).text();
-    const signInUrl = `${resolvedApiBaseUrl.replace(/\/$/, '')}/api/auth/sign-in/discord?callbackURL=${encodeURIComponent(callbackUrl)}`;
-    html = html.replace('__SIGN_IN_URL__', JSON.stringify(signInUrl));
-    html = html.replace('__CALLBACK_URL__', JSON.stringify(callbackUrl));
+  if (pathname === '/oauth/consent') {
+    const consentCode = url.searchParams.get('consent_code') ?? '';
+    const clientId = url.searchParams.get('client_id') ?? '';
+    const scope = url.searchParams.get('scope') ?? '';
+    const escapedClientId = clientId.replace(/[<>&"'`]/g, '');
+    const escapedScope = scope.replace(/[<>&"'`]/g, '');
+    const escapedConsentCode = consentCode.replace(/[<>&"'`]/g, '');
+    const authBase = `${(process.env.CONVEX_SITE_URL ?? '').replace(/\/$/, '')}/api/auth`;
+    const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Authorize Application</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; background: #f4f1e8; color: #1e1b18; }
+      main { max-width: 560px; margin: 10vh auto; padding: 32px; background: #fffdf8; border: 1px solid #d8cfc2; border-radius: 20px; box-shadow: 0 20px 60px rgba(30,27,24,.08); }
+      h1 { margin-top: 0; font-size: 28px; }
+      p, li { line-height: 1.5; }
+      code { background: #f1eadb; padding: 2px 6px; border-radius: 6px; }
+      .actions { display: flex; gap: 12px; margin-top: 24px; }
+      button { border: 0; border-radius: 999px; padding: 12px 18px; cursor: pointer; font-weight: 600; }
+      .allow { background: #1d7a51; color: white; }
+      .deny { background: #ede5d7; color: #1e1b18; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Authorize application</h1>
+      <p><strong>Client:</strong> <code>${escapedClientId || 'unknown client'}</code></p>
+      <p><strong>Requested scopes:</strong> <code>${escapedScope || 'openid verification:read'}</code></p>
+      <p>This application is requesting access to your verification status.</p>
+      <form method="post" action="${authBase}/oauth2/consent">
+        <input type="hidden" name="consent_code" value="${escapedConsentCode}" />
+        <div class="actions">
+          <button class="allow" type="submit" name="accept" value="true">Allow</button>
+          <button class="deny" type="submit" name="accept" value="false">Deny</button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>`;
     return new Response(html, {
       status: 200,
-      headers: { 'Content-Type': 'text/html', ...HTML_SECURITY_HEADERS },
+      headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
     });
   }
 
-  if (authDiscordUserId !== setupSession.discordUserId) {
-    return new Response('This setup link belongs to a different Discord account.', {
-      status: 403,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    });
-  }
+  async function maybeServeSetupAuthRedirect(
+    request: Request,
+    pathname: string,
+    tenantId: string,
+    guildId: string,
+    setupCookieToken: string
+  ): Promise<Response | null> {
+    if (!setupCookieToken || !auth) {
+      return null;
+    }
 
-  return null;
-}
+    const encryptionSecret = loadEnv().BETTER_AUTH_SECRET ?? '';
+    const setupSession = await resolveSetupSession(setupCookieToken, encryptionSecret);
+    if (!setupSession) {
+      return null;
+    }
+
+    const authSession = await auth.getSession(request);
+    const browserApiBase = resolvedFrontendOrigin ?? resolvedApiBaseUrl;
+    const callbackUrl = `${browserApiBase}${pathname}?tenant_id=${encodeURIComponent(tenantId)}&guild_id=${encodeURIComponent(guildId)}`;
+
+    if (!authSession) {
+      const filePath = `${import.meta.dir}/../public/sign-in-redirect.html`;
+      let html = await Bun.file(filePath).text();
+      const signInUrl = `${resolvedApiBaseUrl.replace(/\/$/, '')}/api/auth/sign-in/discord?callbackURL=${encodeURIComponent(callbackUrl)}`;
+      html = html.replace('__SIGN_IN_URL__', JSON.stringify(signInUrl));
+      html = html.replace('__CALLBACK_URL__', JSON.stringify(callbackUrl));
+      return new Response(html, {
+        status: 200,
+        headers: { 'Content-Type': 'text/html', ...HTML_SECURITY_HEADERS },
+      });
+    }
+
+    const authDiscordUserId = await auth.getDiscordUserId(request);
+    if (!authDiscordUserId) {
+      const filePath = `${import.meta.dir}/../public/sign-in-redirect.html`;
+      let html = await Bun.file(filePath).text();
+      const signInUrl = `${resolvedApiBaseUrl.replace(/\/$/, '')}/api/auth/sign-in/discord?callbackURL=${encodeURIComponent(callbackUrl)}`;
+      html = html.replace('__SIGN_IN_URL__', JSON.stringify(signInUrl));
+      html = html.replace('__CALLBACK_URL__', JSON.stringify(callbackUrl));
+      return new Response(html, {
+        status: 200,
+        headers: { 'Content-Type': 'text/html', ...HTML_SECURITY_HEADERS },
+      });
+    }
+
+    if (authDiscordUserId !== setupSession.discordUserId) {
+      return new Response('This setup link belongs to a different Discord account.', {
+        status: 403,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
+
+    return null;
+  }
 
   if (pathname === '/discord-role-setup' || pathname === '/discord-role-setup.html') {
     if (resolvedFrontendOrigin && url.host !== new URL(resolvedFrontendOrigin).host) {
@@ -631,7 +760,9 @@ async function maybeServeSetupAuthRedirect(
     html = html.replaceAll('__API_BASE__', escapeForSingleQuotedJsString(browserApiBase));
     html = html.replaceAll('__SETUP_TOKEN__', '');
     html = html.replaceAll('__HAS_SETUP_SESSION__', resolvedSetupToken ? 'true' : 'false');
-    return new Response(html, { headers: { 'Content-Type': 'text/html', ...HTML_SECURITY_HEADERS } });
+    return new Response(html, {
+      headers: { 'Content-Type': 'text/html', ...HTML_SECURITY_HEADERS },
+    });
   }
 
   if (pathname === '/collab-invite' || pathname === '/collab-invite.html') {
@@ -646,7 +777,9 @@ async function maybeServeSetupAuthRedirect(
     let html = await file.text();
     const browserApiBase = resolvedFrontendOrigin ?? resolvedApiBaseUrl;
     html = html.replaceAll('__API_BASE__', escapeForSingleQuotedJsString(browserApiBase));
-    return new Response(html, { headers: { 'Content-Type': 'text/html', ...COLLAB_HTML_SECURITY_HEADERS } });
+    return new Response(html, {
+      headers: { 'Content-Type': 'text/html', ...COLLAB_HTML_SECURITY_HEADERS },
+    });
   }
 
   if (pathname === '/vrchat-verify' || pathname === '/vrchat-verify.html') {
@@ -875,7 +1008,7 @@ async function handleRequest(request: Request): Promise<Response> {
       corsHeaders['Access-Control-Allow-Credentials'] = 'true';
       corsHeaders['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS';
       corsHeaders['Access-Control-Allow-Headers'] = 'Authorization, Content-Type';
-      corsHeaders['Vary'] = 'Origin';
+      corsHeaders.Vary = 'Origin';
     }
   }
 
@@ -909,18 +1042,16 @@ async function main() {
 
   // Detect tunnel URL for webhook callbacks (Tailscale Funnel or ngrok)
   const port = Number.parseInt(process.env.PORT ?? '3001', 10);
-  const hostname =
-    process.env.HOST ??
-    (env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
+  const hostname = process.env.HOST ?? (env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
   const tunnel = await detectTunnelUrl(port);
   if (tunnel.provider !== 'none') {
     logger.info(`Tunnel detected (${tunnel.provider})`, { publicUrl: tunnel.url });
   }
-  
+
   const publicBaseUrl =
     tunnel.provider !== 'none'
       ? tunnel.url
-      : env.BETTER_AUTH_URL ?? process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${port}`;
+      : (env.BETTER_AUTH_URL ?? process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${port}`);
 
   // Initialize Better Auth (pass tunnel URL for webhook base if detected)
   auth = initializeAuth(tunnel.provider !== 'none' ? tunnel.url : undefined);
