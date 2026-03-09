@@ -20,7 +20,7 @@
         }
 
         body {
-            background-color: var(--bg-color);
+            background-color: transparent;
             color: #ffffff !important;
             font-family: 'DM Sans', sans-serif;
             scroll-behavior: smooth;
@@ -28,10 +28,13 @@
 
         html {
             color: #ffffff;
+            background: var(--bg-color);
         }
 
         main {
             color: #ffffff !important;
+            padding-top: 2rem !important;
+            padding-bottom: 4rem !important;
         }
 
         main * {
@@ -190,10 +193,13 @@
     <div id="bg-canvas-root"
         style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -20; pointer-events: none;">
     </div>
-    <main class="max-w-3xl mx-auto px-6 py-20 pb-20">
+    <main class="max-w-3xl mx-auto px-6 pb-20">
         <header class="mb-16">
-            <p class="text-[#0ea5e9] font-bold uppercase tracking-[0.3em] text-xs mb-4">Legal &amp; Compliance</p>
-            <h1 class="text-5xl md:text-6xl mb-6 flex flex-wrap items-center justify-center gap-3"><img src="__API_BASE__/Icons/MainLogo.png" alt="Creator Assistant logo" role="img" class="h-12 md:h-14" />Terms of Service</h1>
+            <p class="text-[#0ea5e9] font-bold uppercase tracking-[0.3em] text-xs mb-8">Legal &amp; Compliance</p>
+            <div class="flex flex-col items-center gap-8 mb-8">
+                <img src="__API_BASE__/Icons/MainLogo.png" alt="Creator Assistant logo" role="img" class="h-12 sm:h-14 md:h-16 object-contain max-w-full w-auto flex-shrink-0" />
+                <h1 class="text-5xl md:text-6xl text-center">Terms of Service</h1>
+            </div>
             <p class="text-xl opacity-70 leading-relaxed font-medium">
                 <strong>Effective date:</strong> March 4, 2026 &nbsp;|&nbsp; <strong>Last updated:</strong> March 6,
                 2026
