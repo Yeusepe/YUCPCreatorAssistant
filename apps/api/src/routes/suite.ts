@@ -7,6 +7,7 @@
 
 import { createLogger } from '@yucp/shared';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { api } from '../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../lib/convex';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
@@ -108,25 +109,27 @@ export async function getVerificationStatus(
   const convex = getConvexClientFromUrl(config.convexUrl);
   const apiSecret = config.convexApiSecret;
 
-  const subjectResult = await convex.query('subjects:getSubjectByAuthId' as any, {
+  const subjectResult = await convex.query(api.subjects.getSubjectByAuthId, {
     authUserId: verified.sub,
   });
   if (!subjectResult?.found || !subjectResult.subject) {
     return errorResponse('forbidden', 'Subject not found', 403);
   }
 
-  const entitlements = await convex.query('entitlements:getEntitlementsBySubject' as any, {
+  const entitlements = await convex.query(api.entitlements.getEntitlementsBySubject, {
     apiSecret,
     tenantId,
     subjectId: subjectResult.subject._id,
     includeInactive: false,
   });
 
-  const products = (entitlements ?? []).map((e: { productId: string; status: string; grantedAt: number }) => ({
-    productId: e.productId,
-    status: e.status,
-    grantedAt: e.grantedAt,
-  }));
+  const products = (entitlements ?? []).map(
+    (e: { productId: string; status: string; grantedAt: number }) => ({
+      productId: e.productId,
+      status: e.status,
+      grantedAt: e.grantedAt,
+    })
+  );
 
   return jsonResponse({
     verified: true,
@@ -164,21 +167,23 @@ export async function getVerifiedProducts(
   const convex = getConvexClientFromUrl(config.convexUrl);
   const apiSecret = config.convexApiSecret;
 
-  const subjectResult = await convex.query('subjects:getSubjectByAuthId' as any, {
+  const subjectResult = await convex.query(api.subjects.getSubjectByAuthId, {
     authUserId: verified.sub,
   });
   if (!subjectResult?.found || !subjectResult.subject) {
     return jsonResponse({ productIds: [] });
   }
 
-  const entitlements = await convex.query('entitlements:getEntitlementsBySubject' as any, {
+  const entitlements = await convex.query(api.entitlements.getEntitlementsBySubject, {
     apiSecret,
     tenantId,
     subjectId: subjectResult.subject._id,
     includeInactive: false,
   });
 
-  const productIds = [...new Set((entitlements ?? []).map((e: { productId: string }) => e.productId))];
+  const productIds = [
+    ...new Set((entitlements ?? []).map((e: { productId: string }) => e.productId)),
+  ];
   return jsonResponse({ productIds });
 }
 
@@ -186,10 +191,7 @@ export async function getVerifiedProducts(
  * POST /api/suite/verification/check
  * Body: { tenantId: string, productIds: string[] }
  */
-export async function checkVerification(
-  request: Request,
-  config: SuiteConfig
-): Promise<Response> {
+export async function checkVerification(request: Request, config: SuiteConfig): Promise<Response> {
   const token = extractBearerToken(request);
   if (!token) {
     return errorResponse('unauthorized', 'Missing or invalid Authorization header', 401);
@@ -218,13 +220,17 @@ export async function checkVerification(
     return errorResponse('bad_request', 'productIds must be a non-empty array', 400);
   }
   if (productIds.length > MAX_PRODUCT_IDS_PER_CHECK) {
-    return errorResponse('bad_request', `productIds must not exceed ${MAX_PRODUCT_IDS_PER_CHECK} items`, 400);
+    return errorResponse(
+      'bad_request',
+      `productIds must not exceed ${MAX_PRODUCT_IDS_PER_CHECK} items`,
+      400
+    );
   }
 
   const convex = getConvexClientFromUrl(config.convexUrl);
   const apiSecret = config.convexApiSecret;
 
-  const subjectResult = await convex.query('subjects:getSubjectByAuthId' as any, {
+  const subjectResult = await convex.query(api.subjects.getSubjectByAuthId, {
     authUserId: verified.sub,
   });
   if (!subjectResult?.found || !subjectResult.subject) {
@@ -235,7 +241,7 @@ export async function checkVerification(
 
   const results = await Promise.all(
     productIds.map(async (productId: string) => {
-      const verified = await convex.query('entitlements:hasActiveEntitlement' as any, {
+      const verified = await convex.query(api.entitlements.hasActiveEntitlement, {
         apiSecret,
         tenantId,
         subjectId: subjectResult.subject._id,
@@ -272,7 +278,7 @@ export async function getTenantBySlug(
   const convex = getConvexClientFromUrl(config.convexUrl);
   const apiSecret = config.convexApiSecret;
 
-  const tenant = await convex.query('tenants:getTenantBySlug' as any, {
+  const tenant = await convex.query(api.tenants.getTenantBySlug, {
     apiSecret,
     slug,
   });

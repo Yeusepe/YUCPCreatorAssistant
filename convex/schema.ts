@@ -16,7 +16,7 @@
 
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
-import { ProviderV, WebhookProviderV, CustomerProviderV, VerificationModeV } from './lib/providers';
+import { CustomerProviderV, ProviderV, VerificationModeV, WebhookProviderV } from './lib/providers';
 
 // ============================================================================
 // ENUM-LIKE LITERALS
@@ -30,28 +30,28 @@ const SubjectStatus = v.union(
   v.literal('active'),
   v.literal('suspended'),
   v.literal('quarantined'),
-  v.literal('deleted'),
+  v.literal('deleted')
 );
 
 /** External account status values */
 const ExternalAccountStatus = v.union(
   v.literal('active'),
   v.literal('disconnected'),
-  v.literal('revoked'),
+  v.literal('revoked')
 );
 
 /** Provider customer status values */
 const ProviderCustomerStatus = v.union(
   v.literal('active'),
   v.literal('inactive'),
-  v.literal('disputed'),
+  v.literal('disputed')
 );
 
 /** Product catalog status values */
 const ProductCatalogStatus = v.union(
   v.literal('active'),
   v.literal('deprecated'),
-  v.literal('hidden'),
+  v.literal('hidden')
 );
 
 /** Catalog product link kinds */
@@ -60,21 +60,21 @@ const LinkKind = v.union(
   v.literal('direct_product'),
   v.literal('checkout'),
   v.literal('mirror'),
-  v.literal('documentation'),
+  v.literal('documentation')
 );
 
 /** Catalog product link status */
 const CatalogLinkStatus = v.union(
   v.literal('active'),
   v.literal('deprecated'),
-  v.literal('redirected'),
+  v.literal('redirected')
 );
 
 /** Binding types */
 const BindingType = v.union(
   v.literal('ownership'),
   v.literal('verification'),
-  v.literal('manual_override'),
+  v.literal('manual_override')
 );
 
 /** Binding status values */
@@ -83,7 +83,7 @@ const BindingStatus = v.union(
   v.literal('active'),
   v.literal('revoked'),
   v.literal('transferred'),
-  v.literal('quarantined'),
+  v.literal('quarantined')
 );
 
 /** Verification session modes */
@@ -95,7 +95,7 @@ const VerificationSessionStatus = v.union(
   v.literal('completed'),
   v.literal('failed'),
   v.literal('expired'),
-  v.literal('cancelled'),
+  v.literal('cancelled')
 );
 
 /** Entitlement status values */
@@ -104,47 +104,41 @@ const EntitlementStatus = v.union(
   v.literal('revoked'),
   v.literal('expired'),
   v.literal('refunded'),
-  v.literal('disputed'),
+  v.literal('disputed')
 );
 
 /** Guild link status */
 const GuildLinkStatus = v.union(
   v.literal('active'),
   v.literal('uninstalled'),
-  v.literal('suspended'),
+  v.literal('suspended')
 );
 
 /** Unity installation status */
 const UnityInstallationStatus = v.union(
   v.literal('active'),
   v.literal('revoked'),
-  v.literal('quarantined'),
+  v.literal('quarantined')
 );
 
 /** Runtime assertion status */
 const RuntimeAssertionStatus = v.union(
   v.literal('valid'),
   v.literal('expired'),
-  v.literal('revoked'),
+  v.literal('revoked')
 );
 
 /** Download route role logic */
-const DownloadRoleLogic = v.union(
-  v.literal('all'),
-  v.literal('any'),
-);
+const DownloadRoleLogic = v.union(v.literal('all'), v.literal('any'));
 
 /** Download artifact status */
 const DownloadArtifactStatus = v.union(
   v.literal('active'),
   v.literal('deleted'),
-  v.literal('failed'),
+  v.literal('failed')
 );
 
-const DownloadArtifactSourceMode = v.union(
-  v.literal('reply'),
-  v.literal('webhook'),
-);
+const DownloadArtifactSourceMode = v.union(v.literal('reply'), v.literal('webhook'));
 
 /** Outbox job status */
 const OutboxJobStatus = v.union(
@@ -152,7 +146,7 @@ const OutboxJobStatus = v.union(
   v.literal('in_progress'),
   v.literal('completed'),
   v.literal('failed'),
-  v.literal('dead_letter'),
+  v.literal('dead_letter')
 );
 
 /** Outbox job types */
@@ -163,7 +157,7 @@ const OutboxJobType = v.union(
   v.literal('revocation'),
   v.literal('notification'),
   v.literal('creator_alert'),
-  v.literal('retroactive_rule_sync'),
+  v.literal('retroactive_rule_sync')
 );
 
 /** Webhook event status */
@@ -171,14 +165,14 @@ const WebhookEventStatus = v.union(
   v.literal('pending'),
   v.literal('processed'),
   v.literal('failed'),
-  v.literal('duplicate'),
+  v.literal('duplicate')
 );
 
 /** Purchase fact lifecycle status */
 const PurchaseFactLifecycleStatus = v.union(
   v.literal('active'),
   v.literal('refunded'),
-  v.literal('disputed'),
+  v.literal('disputed')
 );
 
 /** Audit event types */
@@ -206,6 +200,8 @@ const AuditEventType = v.union(
   v.literal('subject.status.updated'),
   v.literal('subject.suspicious.marked'),
   v.literal('subject.suspicious.cleared'),
+  v.literal('public.api_key.created'),
+  v.literal('public.api_key.revoked')
 );
 
 // ============================================================================
@@ -250,17 +246,17 @@ const tenants = defineTable({
       shareVerificationWithServers: v.optional(v.boolean()),
       shareVerificationScope: v.optional(v.string()),
       duplicateVerificationBehavior: v.optional(
-        v.union(v.literal('block'), v.literal('notify'), v.literal('allow')),
+        v.union(v.literal('block'), v.literal('notify'), v.literal('allow'))
       ),
       duplicateVerificationNotifyChannelId: v.optional(v.string()),
       suspiciousAccountBehavior: v.optional(
-        v.union(v.literal('quarantine'), v.literal('notify'), v.literal('revoke')),
+        v.union(v.literal('quarantine'), v.literal('notify'), v.literal('revoke'))
       ),
       suspiciousNotifyChannelId: v.optional(v.string()),
       enableDiscordRoleFromOtherServers: v.optional(v.boolean()),
       allowedSourceGuildIds: v.optional(v.array(v.string())),
       allowMismatchedEmails: v.optional(v.boolean()),
-    }),
+    })
   ),
   // Metadata
   createdAt: v.number(),
@@ -404,7 +400,7 @@ const guild_links = defineTable({
     v.object({
       registered: v.boolean(),
       registeredAt: v.optional(v.number()),
-    }),
+    })
   ),
   // Current status
   status: GuildLinkStatus,
@@ -511,7 +507,7 @@ const download_artifacts = defineTable({
       size: v.optional(v.number()),
       contentType: v.optional(v.string()),
       extension: v.string(),
-    }),
+    })
   ),
   status: DownloadArtifactStatus,
   createdAt: v.number(),
@@ -548,9 +544,9 @@ const unity_installations = defineTable({
         v.literal('unusual_frequency'),
         v.literal('geo_mismatch'),
         v.literal('fingerprint_change'),
-        v.literal('multiple_subjects'),
-      ),
-    ),
+        v.literal('multiple_subjects')
+      )
+    )
   ),
   // App version at last check-in
   appVersion: v.optional(v.string()),
@@ -770,6 +766,28 @@ const provider_connections = defineTable({
   .index('by_tenant_provider', ['tenantId', 'provider'])
   .index('by_tenant_provider_label', ['tenantId', 'provider', 'label']);
 
+/**
+ * Public API Keys - Tenant-scoped server-to-server credentials.
+ * Keys are hashed before storage and are never persisted in plaintext.
+ */
+const public_api_keys = defineTable({
+  tenantId: v.id('tenants'),
+  name: v.string(),
+  prefix: v.string(),
+  keyHash: v.string(),
+  status: v.union(v.literal('active'), v.literal('revoked')),
+  scopes: v.array(v.string()),
+  createdByAuthUserId: v.string(),
+  revokedByAuthUserId: v.optional(v.string()),
+  lastUsedAt: v.optional(v.number()),
+  expiresAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_tenant', ['tenantId'])
+  .index('by_key_hash', ['keyHash'])
+  .index('by_tenant_status', ['tenantId', 'status']);
+
 // ============================================================================
 // PLATFORM-LEVEL TABLES (no tenantId)
 // ============================================================================
@@ -796,7 +814,7 @@ const subjects = defineTable({
       reason: v.optional(v.string()),
       flaggedAt: v.optional(v.number()),
       flaggedBy: v.optional(v.string()),
-    }),
+    })
   ),
   // Timestamps
   createdAt: v.number(),
@@ -828,7 +846,7 @@ const external_accounts = defineTable({
       avatarUrl: v.optional(v.string()),
       profileUrl: v.optional(v.string()),
       rawData: v.optional(v.any()),
-    }),
+    })
   ),
   // Encrypted Discord OAuth2 access token (for proactive guild member checks)
   discordAccessTokenEncrypted: v.optional(v.string()),
@@ -868,7 +886,7 @@ const provider_customers = defineTable({
     v.object({
       emailPrefix: v.optional(v.string()),
       usernamePrefix: v.optional(v.string()),
-    }),
+    })
   ),
   // Current status
   status: ProviderCustomerStatus,
@@ -959,7 +977,7 @@ const ManualLicenseStatus = v.union(
   v.literal('active'),
   v.literal('revoked'),
   v.literal('expired'),
-  v.literal('exhausted'),
+  v.literal('exhausted')
 );
 
 /**
@@ -1009,8 +1027,7 @@ const tenant_provider_config = defineTable({
   // Timestamps
   createdAt: v.number(),
   updatedAt: v.number(),
-})
-  .index('by_tenant', ['tenantId']);
+}).index('by_tenant', ['tenantId']);
 
 /**
  * Collaborator Invites - Single-use invite tokens for cross-creator API key sharing
@@ -1091,6 +1108,7 @@ export default defineSchema({
   tenant_provider_config,
   purchase_facts,
   provider_connections,
+  public_api_keys,
   collaborator_invites,
   collaborator_connections,
 

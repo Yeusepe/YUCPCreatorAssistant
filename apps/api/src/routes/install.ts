@@ -18,8 +18,9 @@
  */
 
 import { createLogger } from '@yucp/shared';
+import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
-import { getConvexClient, getConvexApiSecret } from '../lib/convex';
+import { getConvexApiSecret, getConvexClient } from '../lib/convex';
 import { getStateStore } from '../lib/stateStore';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
@@ -63,6 +64,8 @@ interface DiscordTokenExchangeResponse {
   guild_id?: string;
 }
 
+type AuthSession = Awaited<ReturnType<Auth['getSession']>>;
+
 // State expiration: 10 minutes
 const STATE_EXPIRY_MS = 10 * 60 * 1000;
 
@@ -78,7 +81,11 @@ export function generateState(): string {
 /**
  * Stores install state for CSRF validation
  */
-export async function storeInstallState(state: string, tenantId: string, authUserId: string): Promise<void> {
+export async function storeInstallState(
+  state: string,
+  tenantId: string,
+  authUserId: string
+): Promise<void> {
   const now = Date.now();
   const data: InstallState = {
     state,
@@ -177,7 +184,7 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
    */
   async function initiateBotInstall(request: Request): Promise<Response> {
     // Verify user is authenticated
-    let session;
+    let session: AuthSession = null;
     try {
       session = await auth.getSession(request);
     } catch {
@@ -186,10 +193,7 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
 
     if (!session) {
       logger.warn('Unauthenticated bot install attempt');
-      return Response.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+      return Response.json({ error: 'Authentication required' }, { status: 401 });
     }
 
     const url = new URL(request.url);
@@ -197,10 +201,7 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
     const guildId = url.searchParams.get('guildId');
 
     if (!tenantId) {
-      return Response.json(
-        { error: 'tenantId is required' },
-        { status: 400 }
-      );
+      return Response.json({ error: 'tenantId is required' }, { status: 400 });
     }
 
     // Generate state for CSRF protection
@@ -328,7 +329,7 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
 
       // Store guild link in Convex
       await storeGuildLink(config.convexApiSecret, {
-        tenantId: installState.tenantId as any,
+        tenantId: installState.tenantId,
         discordGuildId: guildId,
         installedByAuthUserId: installState.authUserId,
         botPresent: true,
@@ -342,7 +343,9 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
 
       return Response.redirect(successUrl.toString(), 302);
     } catch (err) {
-      logger.error('Bot install callback failed', { error: err instanceof Error ? err.message : String(err) });
+      logger.error('Bot install callback failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       const errorUrl = new URL('/install/error', config.frontendUrl);
       errorUrl.searchParams.set('error', 'installation_failed');
       return Response.redirect(errorUrl.toString(), 302);
@@ -354,7 +357,20 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
    * Checks if the bot is still present in the guild
    */
   async function checkGuildHealth(request: Request): Promise<Response> {
-    let session;
+    const url = new URL(request.url);
+    const pathParts = url.pathname.split('/').filter(Boolean);
+
+    // Expected path: /api/install/health/:guildId
+    // pathParts should be ['api', 'install', 'health', guildId]
+    const healthIndex = pathParts.indexOf('health');
+    const guildId =
+      healthIndex >= 0 && healthIndex + 1 < pathParts.length ? pathParts[healthIndex + 1] : null;
+
+    if (!guildId) {
+      return Response.json({ error: 'guildId is required' }, { status: 400 });
+    }
+
+    let session: AuthSession = null;
     try {
       session = await auth.getSession(request);
     } catch {
@@ -362,23 +378,6 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
     }
     if (!session) {
       return Response.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    const url = new URL(request.url);
-    const pathParts = url.pathname.split('/').filter(Boolean);
-
-    // Expected path: /api/install/health/:guildId
-    // pathParts should be ['api', 'install', 'health', guildId]
-    const healthIndex = pathParts.indexOf('health');
-    const guildId = healthIndex >= 0 && healthIndex + 1 < pathParts.length
-      ? pathParts[healthIndex + 1]
-      : null;
-
-    if (!guildId) {
-      return Response.json(
-        { error: 'guildId is required' },
-        { status: 400 }
-      );
     }
 
     try {
@@ -390,7 +389,7 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
       });
 
       if (guildResponse.ok) {
-        const guild = await guildResponse.json() as DiscordGuildResponse;
+        const guild = (await guildResponse.json()) as DiscordGuildResponse;
 
         logger.debug('Guild health check passed', { guildId, guildName: guild.name });
 
@@ -435,7 +434,9 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
         reason: 'Failed to check guild status',
       });
     } catch (err) {
-      logger.error('Guild health check error', { error: err instanceof Error ? err.message : String(err) });
+      logger.error('Guild health check error', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       return Response.json(
         {
           healthy: false,
@@ -454,7 +455,7 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
    */
   async function uninstallFromGuild(request: Request): Promise<Response> {
     // Verify user is authenticated
-    let session;
+    let session: AuthSession = null;
     try {
       session = await auth.getSession(request);
     } catch {
@@ -462,10 +463,7 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
     }
 
     if (!session) {
-      return Response.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+      return Response.json({ error: 'Authentication required' }, { status: 401 });
     }
 
     const url = new URL(request.url);
@@ -473,26 +471,20 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
     const guildId = pathParts[pathParts.length - 1];
 
     if (!guildId) {
-      return Response.json(
-        { error: 'guildId is required' },
-        { status: 400 }
-      );
+      return Response.json({ error: 'guildId is required' }, { status: 400 });
     }
 
     try {
       // Verify tenant ownership before uninstalling
       const convex = getConvexClient();
       const apiSecret = getConvexApiSecret();
-      const guildLink = await convex.query('guildLinks:getGuildLinkForUninstall' as any, {
+      const guildLink = await convex.query(api.guildLinks.getGuildLinkForUninstall, {
         apiSecret,
         discordGuildId: guildId,
       });
 
       if (!guildLink || guildLink.ownerAuthUserId !== session.user.id) {
-        return Response.json(
-          { error: 'Forbidden: you do not own this guild' },
-          { status: 403 }
-        );
+        return Response.json({ error: 'Forbidden: you do not own this guild' }, { status: 403 });
       }
 
       await updateGuildLinkStatus(config.convexApiSecret, guildId, 'uninstalled', false);
@@ -507,7 +499,9 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
         message: 'Guild uninstalled successfully',
       });
     } catch (err) {
-      logger.error('Failed to uninstall guild', { error: err instanceof Error ? err.message : String(err) });
+      logger.error('Failed to uninstall guild', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       return Response.json(
         {
           success: false,
@@ -531,7 +525,7 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
  */
 async function storeGuildLink(apiSecret: string, data: GuildLinkData): Promise<void> {
   const convex = getConvexClient();
-  await convex.mutation('guildLinks:upsertGuildLink' as any, {
+  await convex.mutation(api.guildLinks.upsertGuildLink, {
     apiSecret,
     tenantId: data.tenantId,
     discordGuildId: data.discordGuildId,
@@ -555,7 +549,7 @@ async function updateGuildLinkStatus(
   botPresent: boolean
 ): Promise<void> {
   const convex = getConvexClient();
-  await convex.mutation('guildLinks:updateGuildLinkStatus' as any, {
+  await convex.mutation(api.guildLinks.updateGuildLinkStatus, {
     apiSecret,
     discordGuildId,
     status,

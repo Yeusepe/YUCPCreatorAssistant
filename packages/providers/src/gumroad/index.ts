@@ -593,7 +593,7 @@ export async function resolveGumroadProductId(urlOrSlug: string): Promise<string
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, '&')
     .replace(/&#x([0-9A-Fa-f]+);/g, (_, hex: string) =>
-      String.fromCharCode(Number.parseInt(hex, 16)),
+      String.fromCharCode(Number.parseInt(hex, 16))
     );
 
   let pageData: unknown;
@@ -603,7 +603,19 @@ export async function resolveGumroadProductId(urlOrSlug: string): Promise<string
     throw new Error(`Could not parse data-page JSON from Gumroad product page: ${url}`);
   }
 
-  const productId = (pageData as any)?.props?.product?.id as string | undefined;
+  const productId =
+    typeof pageData === 'object' &&
+    pageData !== null &&
+    'props' in pageData &&
+    typeof pageData.props === 'object' &&
+    pageData.props !== null &&
+    'product' in pageData.props &&
+    typeof pageData.props.product === 'object' &&
+    pageData.props.product !== null &&
+    'id' in pageData.props.product &&
+    typeof pageData.props.product.id === 'string'
+      ? pageData.props.product.id
+      : undefined;
   if (!productId) {
     throw new Error(`Could not find product.id in Gumroad page data: ${url}`);
   }
