@@ -29,15 +29,18 @@ import type * as lib_vrchat_crypto from "../lib/vrchat/crypto.js";
 import type * as lib_vrchat_guards from "../lib/vrchat/guards.js";
 import type * as lib_vrchat_index from "../lib/vrchat/index.js";
 import type * as lib_vrchat_types from "../lib/vrchat/types.js";
+import type * as lib_yucpCrypto from "../lib/yucpCrypto.js";
 import type * as licenseVerification from "../licenseVerification.js";
 import type * as manualLicenses from "../manualLicenses.js";
 import type * as oauthApps from "../oauthApps.js";
 import type * as outbox_jobs from "../outbox_jobs.js";
+import type * as packageRegistry from "../packageRegistry.js";
 import type * as plugins_vrchat from "../plugins/vrchat.js";
 import type * as productResolution from "../productResolution.js";
 import type * as providerConnections from "../providerConnections.js";
 import type * as purgeOrphans from "../purgeOrphans.js";
 import type * as role_rules from "../role_rules.js";
+import type * as signingLog from "../signingLog.js";
 import type * as subjects from "../subjects.js";
 import type * as tenantConfig from "../tenantConfig.js";
 import type * as tenantHelpers from "../tenantHelpers.js";
@@ -46,6 +49,7 @@ import type * as verificationSessions from "../verificationSessions.js";
 import type * as webhookCron from "../webhookCron.js";
 import type * as webhookIngestion from "../webhookIngestion.js";
 import type * as webhookProcessing from "../webhookProcessing.js";
+import type * as yucpCertificates from "../yucpCertificates.js";
 
 import type {
   ApiFromModules,
@@ -75,15 +79,18 @@ declare const fullApi: ApiFromModules<{
   "lib/vrchat/guards": typeof lib_vrchat_guards;
   "lib/vrchat/index": typeof lib_vrchat_index;
   "lib/vrchat/types": typeof lib_vrchat_types;
+  "lib/yucpCrypto": typeof lib_yucpCrypto;
   licenseVerification: typeof licenseVerification;
   manualLicenses: typeof manualLicenses;
   oauthApps: typeof oauthApps;
   outbox_jobs: typeof outbox_jobs;
+  packageRegistry: typeof packageRegistry;
   "plugins/vrchat": typeof plugins_vrchat;
   productResolution: typeof productResolution;
   providerConnections: typeof providerConnections;
   purgeOrphans: typeof purgeOrphans;
   role_rules: typeof role_rules;
+  signingLog: typeof signingLog;
   subjects: typeof subjects;
   tenantConfig: typeof tenantConfig;
   tenantHelpers: typeof tenantHelpers;
@@ -92,6 +99,7 @@ declare const fullApi: ApiFromModules<{
   webhookCron: typeof webhookCron;
   webhookIngestion: typeof webhookIngestion;
   webhookProcessing: typeof webhookProcessing;
+  yucpCertificates: typeof yucpCertificates;
 }>;
 
 /**

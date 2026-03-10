@@ -182,7 +182,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>): BetterAuthOptions
       oauthProvider({
         loginPage: `${siteUrl.replace(/\/$/, '')}/oauth/login`,
         consentPage: `${siteUrl.replace(/\/$/, '')}/oauth/consent`,
-        scopes: ['verification:read'],
+        scopes: ['verification:read', 'cert:issue'],
         validAudiences: [PUBLIC_API_AUDIENCE],
         cachedTrustedClients,
         allowDynamicClientRegistration: false,

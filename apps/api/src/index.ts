@@ -550,6 +550,9 @@ async function routeRequest(request: Request): Promise<Response> {
   if (pathname === '/api/connect/session-status' && connectRoutes) {
     return connectRoutes.getDashboardSessionStatus(request);
   }
+  if (pathname === '/api/connect/contexts' && request.method === 'GET' && connectRoutes) {
+    return connectRoutes.getListContexts(request);
+  }
   if (pathname === '/api/connect/ensure-tenant' && connectRoutes) {
     return connectRoutes.ensureTenant(request);
   }
@@ -950,15 +953,6 @@ async function routeRequest(request: Request): Promise<Response> {
     });
   }
 
-  if (pathname === '/api-test' || pathname === '/api-test.html') {
-    const filePath = `${import.meta.dir}/../public/api-test.html`;
-    const html = await Bun.file(filePath).text();
-    return new Response(html, {
-      status: 200,
-      headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
-    });
-  }
-
   if (pathname === '/dashboard' || pathname === '/dashboard.html') {
     if (resolvedFrontendOrigin && url.host !== new URL(resolvedFrontendOrigin).host) {
       const redirectUrl = new URL(request.url);
@@ -969,8 +963,11 @@ async function routeRequest(request: Request): Promise<Response> {
     const filePath = `${import.meta.dir}/../public/dashboard.html`;
     const file = Bun.file(filePath);
     let html = await file.text();
-    let tenantId = url.searchParams.get('tenant_id') ?? url.searchParams.get('tenantId') ?? '';
-    let guildId = url.searchParams.get('guild_id') ?? url.searchParams.get('guildId') ?? '';
+    const urlContext = url.searchParams.get('context');
+    const urlTenantId = url.searchParams.get('tenant_id') ?? url.searchParams.get('tenantId') ?? '';
+    const urlGuildId = url.searchParams.get('guild_id') ?? url.searchParams.get('guildId') ?? '';
+    let tenantId = urlTenantId;
+    let guildId = urlGuildId;
     const ott = url.searchParams.get('ott');
     const setupCookieToken = getCookieValue(request, SETUP_SESSION_COOKIE) ?? '';
 
@@ -991,10 +988,13 @@ async function routeRequest(request: Request): Promise<Response> {
       });
     }
 
-    if (setupCookieToken) {
+    if (urlContext === 'personal' || (!urlTenantId && !urlGuildId)) {
+      tenantId = '';
+      guildId = '';
+    } else if (setupCookieToken) {
       const encryptionSecret = loadEnv().BETTER_AUTH_SECRET ?? '';
       const session = await resolveSetupSession(setupCookieToken, encryptionSecret);
-      if (session) {
+      if (session && !urlTenantId && !urlGuildId) {
         tenantId = session.tenantId;
         guildId = session.guildId;
       }
@@ -1082,9 +1082,19 @@ async function routeRequest(request: Request): Promise<Response> {
   }
 
   // 404 for unknown routes
-  return new Response(JSON.stringify({ error: 'Not found' }), {
+  // API routes get JSON; page requests get styled HTML 404
+  if (pathname.startsWith('/api/')) {
+    return new Response(JSON.stringify({ error: 'Not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  const filePath = `${import.meta.dir}/../public/404.html`;
+  let html = await Bun.file(filePath).text();
+  html = html.replaceAll('__API_BASE__', resolvedFrontendOrigin ?? resolvedApiBaseUrl);
+  return new Response(html, {
     status: 404,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
   });
 }
 

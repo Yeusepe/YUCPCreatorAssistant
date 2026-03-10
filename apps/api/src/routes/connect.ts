@@ -548,6 +548,25 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     });
   }
 
+  async function getListContexts(request: Request): Promise<Response> {
+    const authSession = await auth.getSession(request);
+    if (!authSession) {
+      return Response.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
+    const authUserId = authSession.user.id;
+    const discordUserId = (await getAuthenticatedDiscordUserId(request)) ?? '';
+
+    const convex = getConvexClientFromUrl(config.convexUrl);
+    const contexts = await convex.query(api.tenants.listUserContexts, {
+      apiSecret: config.convexApiSecret,
+      authUserId,
+      discordUserId,
+    });
+
+    return Response.json({ contexts });
+  }
+
   /**
    * Requires a valid Discord role setup session (cookie from exchange or OAuth callback).
    * Does NOT use Better Auth - the role setup flow uses its own OAuth and session.
@@ -1562,23 +1581,50 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
   }
 
   /**
-   * GET /api/connections?s=TOKEN
+   * GET /api/connections?s=TOKEN&tenantId=XXX
    * Returns all connections for the tenant with status info.
+   * Optional tenantId: when provided and user has access (owner or collaborator), use it; else use setup session.
    */
   async function listConnectionsHandler(request: Request): Promise<Response> {
     if (request.method !== 'GET' && request.method !== 'DELETE') {
       return Response.json({ error: 'Method not allowed' }, { status: 405 });
     }
-    const setupBinding = await requireBoundSetupSession(request);
-    if (!setupBinding.ok) {
-      return setupBinding.response;
+    const url = new URL(request.url);
+    const requestedTenantId = url.searchParams.get('tenantId');
+    let tenantId: string;
+
+    if (requestedTenantId) {
+      const authSession = await auth.getSession(request);
+      if (!authSession) {
+        return Response.json({ error: 'Authentication required' }, { status: 401 });
+      }
+      const discordUserId = (await getAuthenticatedDiscordUserId(request)) ?? '';
+      const convex = getConvexClientFromUrl(config.convexUrl);
+      const contexts = await convex.query(api.tenants.listUserContexts, {
+        apiSecret: config.convexApiSecret,
+        authUserId: authSession.user.id,
+        discordUserId,
+      });
+      const hasAccess = contexts.some(
+        (c) => c.type === 'server' && c.tenantId === requestedTenantId
+      );
+      if (!hasAccess) {
+        return Response.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      tenantId = requestedTenantId;
+    } else {
+      const setupBinding = await requireBoundSetupSession(request);
+      if (!setupBinding.ok) {
+        return setupBinding.response;
+      }
+      tenantId = setupBinding.setupSession.tenantId;
     }
-    const session = setupBinding.setupSession;
+
     try {
       const convex = getConvexClientFromUrl(config.convexUrl);
       const result = (await convex.query(api.providerConnections.listConnections, {
         apiSecret: config.convexApiSecret,
-        tenantId: session.tenantId,
+        tenantId,
       })) as { allowMismatchedEmails: boolean; connections: unknown[] };
       return Response.json(result);
     } catch (err) {
@@ -1624,20 +1670,47 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
   }
 
   /**
-   * GET /api/connect/settings?s=TOKEN
+   * GET /api/connect/settings?s=TOKEN&tenantId=XXX
    * Returns the current tenant policy settings.
+   * Optional tenantId: when provided and user has access, use it; else use setup session.
    */
   async function getSettingsHandler(request: Request): Promise<Response> {
-    const setupBinding = await requireBoundSetupSession(request);
-    if (!setupBinding.ok) {
-      return setupBinding.response;
+    const url = new URL(request.url);
+    const requestedTenantId = url.searchParams.get('tenantId');
+    let tenantId: string;
+
+    if (requestedTenantId) {
+      const authSession = await auth.getSession(request);
+      if (!authSession) {
+        return Response.json({ error: 'Authentication required' }, { status: 401 });
+      }
+      const discordUserId = (await getAuthenticatedDiscordUserId(request)) ?? '';
+      const convex = getConvexClientFromUrl(config.convexUrl);
+      const contexts = await convex.query(api.tenants.listUserContexts, {
+        apiSecret: config.convexApiSecret,
+        authUserId: authSession.user.id,
+        discordUserId,
+      });
+      const hasAccess = contexts.some(
+        (c) => c.type === 'server' && c.tenantId === requestedTenantId
+      );
+      if (!hasAccess) {
+        return Response.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      tenantId = requestedTenantId;
+    } else {
+      const setupBinding = await requireBoundSetupSession(request);
+      if (!setupBinding.ok) {
+        return setupBinding.response;
+      }
+      tenantId = setupBinding.setupSession.tenantId;
     }
-    const session = setupBinding.setupSession;
+
     try {
       const convex = getConvexClientFromUrl(config.convexUrl);
       const tenant = (await convex.query(api.tenants.getTenant, {
         apiSecret: config.convexApiSecret,
-        tenantId: session.tenantId,
+        tenantId,
       })) as { policy?: Record<string, unknown> };
       return Response.json({ policy: tenant?.policy ?? {} });
     } catch (err) {
@@ -2707,6 +2780,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     serveConnectPage,
     exchangeConnectBootstrap,
     getDashboardSessionStatus,
+    getListContexts,
     createSessionEndpoint,
     createTokenEndpoint,
     completeSetup,
