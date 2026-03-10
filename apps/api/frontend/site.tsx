@@ -1,6 +1,7 @@
 import './site.css';
-import { Cloud, Clouds, Sky as SkyImpl } from '@react-three/drei';
+import { Center, Cloud, Clouds, Sky as SkyImpl, Text3D, useTexture } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
+import { Suspense } from 'react';
 import confetti from 'canvas-confetti';
 import HolographicSticker from 'holographic-sticker';
 import { createIcons, icons } from 'lucide';
@@ -8,6 +9,7 @@ import React, { Component, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
 import cloudTextureUrl from './assets/cloud.png';
+import fontUrl from './assets/fonts/helvetiker_bold.typeface.json?url';
 
 const HOLO_ASSET_MAP: Record<string, string> = {
   assistant: './Icons/Assistant.png',
@@ -270,15 +272,62 @@ function ForegroundApp() {
   );
 }
 
+function Cloud404Text() {
+  const cloudTexture = useTexture(cloudTextureUrl);
+  return (
+    <Center position={[0, 0, 5]}>
+      <Text3D font={fontUrl} size={13} height={0.7} bevelEnabled bevelSize={0.04} bevelThickness={0.04}>
+        404
+        <meshBasicMaterial map={cloudTexture} color="#ffffff" transparent opacity={0.98} />
+      </Text3D>
+    </Center>
+  );
+}
+
+function Cloud404App() {
+  return (
+    <ErrorBoundary>
+      <Canvas
+        camera={{ position: [0, -5, 26], fov: 60 }}
+        gl={{ alpha: true }}
+        style={{ pointerEvents: 'none' }}
+      >
+        <Suspense fallback={null}>
+          <Cloud404Text />
+        </Suspense>
+        <ambientLight intensity={Math.PI / 1.5} />
+        <directionalLight position={[10, 20, 10]} intensity={1.5} color="#ffffff" />
+        <spotLight
+          position={[-20, 0, 10]}
+          color="#ffdddd"
+          angle={0.8}
+          decay={0}
+          penumbra={1}
+          intensity={10}
+        />
+      </Canvas>
+    </ErrorBoundary>
+  );
+}
+
+function is404Page(): boolean {
+  return document.body.dataset.page === '404';
+}
+
 function bootClouds() {
   const backgroundMount = document.getElementById('bg-canvas-root');
   if (backgroundMount) {
     createRoot(backgroundMount).render(<BackgroundApp />);
   }
 
-  const foregroundMount = document.getElementById('fg-canvas-root');
-  if (foregroundMount) {
-    createRoot(foregroundMount).render(<ForegroundApp />);
+  const canvas404Mount = document.getElementById('canvas-404-root');
+  if (canvas404Mount && is404Page()) {
+    createRoot(canvas404Mount).render(<Cloud404App />);
+  } else {
+    const foregroundMount = document.getElementById('fg-canvas-root');
+    if (foregroundMount) {
+      createRoot(foregroundMount).render(<ForegroundApp />);
+    }
   }
 }
 
