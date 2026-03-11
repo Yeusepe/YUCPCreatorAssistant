@@ -10,8 +10,8 @@ import type { Id } from './_generated/dataModel';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import {
-  selectCanonicalExternalAccountCandidates,
   type ExternalAccountIdentityCandidate,
+  selectCanonicalExternalAccountCandidates,
 } from './lib/externalAccountIdentity';
 import { ProviderV } from './lib/providers';
 

@@ -21,7 +21,10 @@ import type { ProviderKey } from '../providers';
 export type Provider = ProviderKey;
 
 /** Commerce providers (those that can have provider_customers) */
-export type CommerceProvider = Extract<ProviderKey, 'gumroad' | 'jinxxy' | 'lemonsqueezy' | 'manual' | 'patreon' | 'fourthwall' | 'itchio' | 'payhip'>;
+export type CommerceProvider = Extract<
+  ProviderKey,
+  'gumroad' | 'jinxxy' | 'lemonsqueezy' | 'manual' | 'patreon' | 'fourthwall' | 'itchio' | 'payhip'
+>;
 
 /** Entitlement status values */
 export type EntitlementStatus = 'active' | 'revoked' | 'expired' | 'refunded' | 'disputed';

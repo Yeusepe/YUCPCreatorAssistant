@@ -95,7 +95,8 @@ export async function handleLemonSqueezyProducts(request: Request): Promise<Resp
       return new Response(
         JSON.stringify({
           products: [],
-          error: 'Lemon Squeezy not connected. Use /creator setup to connect your Lemon Squeezy account.',
+          error:
+            'Lemon Squeezy not connected. Use /creator setup to connect your Lemon Squeezy account.',
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
@@ -109,7 +110,8 @@ export async function handleLemonSqueezyProducts(request: Request): Promise<Resp
       return new Response(
         JSON.stringify({
           products: [],
-          error: 'Failed to decrypt stored Lemon Squeezy API key. Re-add your key via /creator setup.',
+          error:
+            'Failed to decrypt stored Lemon Squeezy API key. Re-add your key via /creator setup.',
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );

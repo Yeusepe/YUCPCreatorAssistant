@@ -52,22 +52,19 @@
  */
 
 import { httpRouter } from 'convex/server';
+import { PROVIDER_REGISTRY, PROVIDER_REGISTRY_BY_KEY } from '../packages/shared/src/providers';
+import { api, components, internal } from './_generated/api';
 import { httpAction } from './_generated/server';
-import { internal, api, components } from './_generated/api';
 import { authComponent, createAuth } from './auth';
+import { decryptForPurpose } from './lib/vrchat/crypto';
 import {
-  PROVIDER_REGISTRY,
-  PROVIDER_REGISTRY_BY_KEY,
-} from '../packages/shared/src/providers';
-import {
-  verifyCertEnvelope,
-  getPublicKeyFromPrivate,
-  base64ToBytes,
-  signLicenseJwt,
   type CertEnvelope,
   type LicenseClaims,
+  base64ToBytes,
+  getPublicKeyFromPrivate,
+  signLicenseJwt,
+  verifyCertEnvelope,
 } from './lib/yucpCrypto';
-import { decryptForPurpose } from './lib/vrchat/crypto';
 
 /**
  * Public API routes follow Spotify/GitHub/Stripe conventions.
@@ -147,7 +144,7 @@ http.route({
 /** Parse and verify a cert envelope from "Authorization: Bearer <base64>" */
 async function parseBearerCert(
   request: Request,
-  rootPublicKey: string,
+  rootPublicKey: string
 ): Promise<{ ok: true; envelope: CertEnvelope } | { ok: false; error: string }> {
   const auth = request.headers.get('Authorization');
   if (!auth?.startsWith('Bearer ')) return { ok: false, error: 'Missing Authorization header' };
@@ -182,17 +179,25 @@ async function parseBearerCert(
 async function verifyOAuthToken(
   token: string,
   siteUrl: string,
-  requiredScope: string,
-): Promise<{ ok: true; yucpUserId: string; name: string | null; email: string | null } | { ok: false; error: string }> {
+  requiredScope: string
+): Promise<
+  | { ok: true; yucpUserId: string; name: string | null; email: string | null }
+  | { ok: false; error: string }
+> {
   try {
     const { verifyAccessToken } = await import('better-auth/oauth2');
     const authBase = `${siteUrl.replace(/\/$/, '')}/api/auth`;
 
     // Detect token type for diagnostics: JWTs are 3 dot-separated base64 segments
     const isJwtShape = (token.match(/\./g) ?? []).length === 2;
-    console.log('[verifyOAuthToken] token_type=' + (isJwtShape ? 'jwt' : 'opaque')
-      + ' length=' + token.length
-      + ' issuer=' + authBase);
+    console.log(
+      '[verifyOAuthToken] token_type=' +
+        (isJwtShape ? 'jwt' : 'opaque') +
+        ' length=' +
+        token.length +
+        ' issuer=' +
+        authBase
+    );
 
     const verified = await verifyAccessToken(token, {
       verifyOptions: {
@@ -247,7 +252,11 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 function isLoopback(uri: string): boolean {
-  try { return LOOPBACK_HOSTS.has(new URL(uri).hostname); } catch { return false; }
+  try {
+    return LOOPBACK_HOSTS.has(new URL(uri).hostname);
+  } catch {
+    return false;
+  }
 }
 
 http.route({
@@ -303,7 +312,7 @@ http.route({
     if (!session) {
       return new Response(
         '<html><body><p>OAuth session expired or not found. Please try again in Unity.</p></body></html>',
-        { status: 400, headers: { 'Content-Type': 'text/html' } },
+        { status: 400, headers: { 'Content-Type': 'text/html' } }
       );
     }
 
@@ -347,11 +356,11 @@ http.route({
 
     // Look up fresh user data from Better Auth's user table.
     // sub = the user's stable primary key (_id in the betterAuth component).
-    const user = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    const user = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: 'user',
       where: [{ field: 'id', value: tokenResult.yucpUserId }],
       select: ['id', 'name', 'email'],
-    }) as { id?: string; name?: string; email?: string } | null;
+    })) as { id?: string; name?: string; email?: string } | null;
 
     if (!user) return errorResponse('User not found', 404);
 
@@ -409,19 +418,19 @@ http.route({
     // ── Collaborator products ─────────────────────────────────────────────────
     // If the creator has linked Discord, check for collaborator connections
     try {
-      const discordAccount = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+      const discordAccount = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
         model: 'account',
         where: [
           { field: 'userId', value: tokenResult.yucpUserId },
           { field: 'providerId', value: 'discord' },
         ],
         select: ['accountId'],
-      }) as { accountId?: string } | null;
+      })) as { accountId?: string } | null;
 
       if (discordAccount?.accountId) {
         const collabConnections = await ctx.runQuery(
           internal.collaboratorInvites.getActiveByCollaboratorDiscord,
-          { collaboratorDiscordUserId: discordAccount.accountId },
+          { collaboratorDiscordUserId: discordAccount.accountId }
         );
 
         for (const conn of collabConnections) {
@@ -448,7 +457,9 @@ http.route({
       console.warn('[products] collaborator lookup failed:', err);
     }
 
-    console.log(`[products] tenant=${tenant._id} own=${ownProducts.length} total=${allProducts.length}`);
+    console.log(
+      `[products] tenant=${tenant._id} own=${ownProducts.length} total=${allProducts.length}`
+    );
     return jsonResponse({ products: allProducts });
   }),
 });
@@ -471,12 +482,14 @@ http.route({
     const publicKeyBase64 = await getPublicKeyFromPrivate(rootPrivateKey);
 
     return jsonResponse({
-      keys: [{
-        kty: 'OKP',
-        crv: 'Ed25519',
-        kid: keyId,
-        x: publicKeyBase64,
-      }],
+      keys: [
+        {
+          kty: 'OKP',
+          crv: 'Ed25519',
+          kid: keyId,
+          x: publicKeyBase64,
+        },
+      ],
     });
   }),
 });
@@ -542,8 +555,12 @@ http.route({
     const { yucpUserId } = tokenResult;
 
     // Look up the user's subject to get their Discord ID (secondary identity anchor)
-    const subjectResult = await ctx.runQuery(api.subjects.getSubjectByAuthId, { authUserId: yucpUserId });
-    const discordUserId = subjectResult?.found ? subjectResult.subject.primaryDiscordUserId : undefined;
+    const subjectResult = await ctx.runQuery(api.subjects.getSubjectByAuthId, {
+      authUserId: yucpUserId,
+    });
+    const discordUserId = subjectResult?.found
+      ? subjectResult.subject.primaryDiscordUserId
+      : undefined;
 
     // Parse request body
     let body: { devPublicKey: string; publisherName: string };
@@ -552,9 +569,14 @@ http.route({
     } catch {
       return errorResponse('Invalid JSON body', 400);
     }
-    console.log('[cert/issue] body keys=' + Object.keys(body ?? {}).join(',')
-      + ' devPublicKey_len=' + (body?.devPublicKey?.length ?? 'null')
-      + ' publisherName=' + (body?.publisherName ?? 'null'));
+    console.log(
+      '[cert/issue] body keys=' +
+        Object.keys(body ?? {}).join(',') +
+        ' devPublicKey_len=' +
+        (body?.devPublicKey?.length ?? 'null') +
+        ' publisherName=' +
+        (body?.publisherName ?? 'null')
+    );
     if (!body.devPublicKey || !body.publisherName) {
       return errorResponse('devPublicKey and publisherName are required', 400);
     }
@@ -696,7 +718,7 @@ http.route({
           message: `Package "${body.packageId}" is owned by a different YUCP account`,
           registeredOwnerYucpUserId: regResult.ownedBy,
         },
-        409,
+        409
       );
     }
 
@@ -717,7 +739,7 @@ http.route({
           message: 'This package content was previously signed by a different YUCP identity',
           existingYucpUserId: logResult.existingYucpUserId,
         },
-        409,
+        409
       );
     }
 
@@ -786,8 +808,15 @@ http.route({
       return errorResponse('Invalid JSON body', 400);
     }
 
-    const { packageId, licenseKey, provider, productPermalink, machineFingerprint, nonce, timestamp } =
-      body ?? {};
+    const {
+      packageId,
+      licenseKey,
+      provider,
+      productPermalink,
+      machineFingerprint,
+      nonce,
+      timestamp,
+    } = body ?? {};
 
     if (
       !packageId ||
@@ -858,8 +887,16 @@ http.route({
       return errorResponse('Invalid JSON body', 400);
     }
 
-    const { packageId, creatorAuthUserId, productId, machineFingerprint, nonce, timestamp } = body ?? {};
-    if (!packageId || !creatorAuthUserId || !productId || !machineFingerprint || !nonce || !timestamp) {
+    const { packageId, creatorAuthUserId, productId, machineFingerprint, nonce, timestamp } =
+      body ?? {};
+    if (
+      !packageId ||
+      !creatorAuthUserId ||
+      !productId ||
+      !machineFingerprint ||
+      !nonce ||
+      !timestamp
+    ) {
       return errorResponse('Missing required fields', 400);
     }
 
@@ -869,20 +906,17 @@ http.route({
     }
 
     // Get buyer's linked Discord account via Better Auth
-    const discordAccount = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    const discordAccount = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: 'account',
       where: [
         { field: 'userId', value: tokenResult.yucpUserId },
         { field: 'providerId', value: 'discord' },
       ],
       select: ['accountId'],
-    }) as { accountId?: string } | null;
+    })) as { accountId?: string } | null;
 
     if (!discordAccount?.accountId) {
-      return errorResponse(
-        'No Discord account linked. Sign in with Discord via YUCP first.',
-        403,
-      );
+      return errorResponse('No Discord account linked. Sign in with Discord via YUCP first.', 403);
     }
 
     // Find subject record by their Discord user ID
@@ -891,8 +925,8 @@ http.route({
     });
     if (!subject) {
       return errorResponse(
-        'No verified Discord account found. Verify your purchase with the creator\'s Discord server first.',
-        403,
+        "No verified Discord account found. Verify your purchase with the creator's Discord server first.",
+        403
       );
     }
 
@@ -910,8 +944,8 @@ http.route({
     });
     if (!hasEntitlement) {
       return errorResponse(
-        'No active entitlement. Purchase or verify via the creator\'s Discord server first.',
-        403,
+        "No active entitlement. Purchase or verify via the creator's Discord server first.",
+        403
       );
     }
 
@@ -921,10 +955,7 @@ http.route({
       packageId,
     });
     if (!packageReg || packageReg.yucpUserId !== creatorAuthUserId) {
-      return errorResponse(
-        'Package not found or not owned by the specified creator',
-        403,
-      );
+      return errorResponse('Package not found or not owned by the specified creator', 403);
     }
 
     // Issue machine-fingerprint-bound license JWT
@@ -951,7 +982,7 @@ http.route({
     const licenseToken = await signLicenseJwt(claims, rootPrivateKey, keyId);
 
     console.log(
-      `[license/verify-discord] issued token package_id=${packageId} subject=${String(subject._id).slice(0, 8)}*** exp=${exp}`,
+      `[license/verify-discord] issued token package_id=${packageId} subject=${String(subject._id).slice(0, 8)}*** exp=${exp}`
     );
 
     return jsonResponse({ success: true, token: licenseToken, expiresAt: exp });
@@ -994,21 +1025,22 @@ http.route({
     if (!tenant) return jsonResponse({ name: null });
 
     // Look up owner's VRChat account from BetterAuth
-    const vrchatAccount = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    const vrchatAccount = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: 'account',
       where: [
         { field: 'userId', value: tenant.ownerAuthUserId },
         { field: 'providerId', value: 'vrchat' },
       ],
       select: ['accessToken', 'idToken'],
-    }) as { accessToken?: string; idToken?: string } | null;
+    })) as { accessToken?: string; idToken?: string } | null;
 
     if (!vrchatAccount?.accessToken) return jsonResponse({ name: null });
 
     // Decrypt the stored VRChat session (mirrors loadStoredSession in vrchat plugin)
     const ENCRYPTED_PREFIX = 'enc:v1:';
     const PROVIDER_SESSION_PURPOSE = 'vrchat-provider-session';
-    const sessionSecret = process.env.VRCHAT_PROVIDER_SESSION_SECRET ?? process.env.BETTER_AUTH_SECRET;
+    const sessionSecret =
+      process.env.VRCHAT_PROVIDER_SESSION_SECRET ?? process.env.BETTER_AUTH_SECRET;
     if (!sessionSecret) return jsonResponse({ name: null });
 
     let authToken: string;
@@ -1016,12 +1048,20 @@ http.route({
     try {
       const rawAuth = vrchatAccount.accessToken;
       authToken = rawAuth.startsWith(ENCRYPTED_PREFIX)
-        ? await decryptForPurpose(rawAuth.slice(ENCRYPTED_PREFIX.length), sessionSecret, PROVIDER_SESSION_PURPOSE)
+        ? await decryptForPurpose(
+            rawAuth.slice(ENCRYPTED_PREFIX.length),
+            sessionSecret,
+            PROVIDER_SESSION_PURPOSE
+          )
         : rawAuth;
       if (vrchatAccount.idToken) {
         const rawTfa = vrchatAccount.idToken;
         twoFactorAuthToken = rawTfa.startsWith(ENCRYPTED_PREFIX)
-          ? await decryptForPurpose(rawTfa.slice(ENCRYPTED_PREFIX.length), sessionSecret, PROVIDER_SESSION_PURPOSE)
+          ? await decryptForPurpose(
+              rawTfa.slice(ENCRYPTED_PREFIX.length),
+              sessionSecret,
+              PROVIDER_SESSION_PURPOSE
+            )
           : rawTfa;
       }
     } catch {
@@ -1042,7 +1082,7 @@ http.route({
     );
 
     if (!avatarRes.ok) return jsonResponse({ name: null });
-    const avatarData = await avatarRes.json().catch(() => null) as Record<string, unknown> | null;
+    const avatarData = (await avatarRes.json().catch(() => null)) as Record<string, unknown> | null;
     const name = typeof avatarData?.name === 'string' ? avatarData.name : null;
     return jsonResponse({ name });
   }),

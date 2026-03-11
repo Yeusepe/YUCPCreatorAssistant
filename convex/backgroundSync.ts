@@ -7,10 +7,16 @@
  * 3. Retroactive product rule: When a new role rule is added, create role_sync jobs for all users with entitlements
  */
 
-import { internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
 import { api, internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from './_generated/server';
 
 function requireApiSecret(apiSecret: string | undefined): void {
   const expected = process.env.CONVEX_API_SECRET;
@@ -30,11 +36,7 @@ const BackfillPurchaseRecord = v.object({
   providerUserId: v.optional(v.string()),
   providerProductId: v.string(),
   paymentStatus: v.string(),
-  lifecycleStatus: v.union(
-    v.literal('active'),
-    v.literal('refunded'),
-    v.literal('disputed')
-  ),
+  lifecycleStatus: v.union(v.literal('active'), v.literal('refunded'), v.literal('disputed')),
   purchasedAt: v.number(),
 });
 
@@ -173,10 +175,9 @@ export const triggerBackfillThenSyncForGumroadBuyer = internalAction({
     emailHash: v.string(),
   },
   handler: async (ctx, args) => {
-    const products = await ctx.runQuery(
-      internal.backgroundSync.getGumroadProductsForTenant,
-      { tenantId: args.tenantId }
-    );
+    const products = await ctx.runQuery(internal.backgroundSync.getGumroadProductsForTenant, {
+      tenantId: args.tenantId,
+    });
 
     for (const p of products) {
       await ctx.runAction(internal.backgroundSync.backfillProductPurchases, {
@@ -210,12 +211,16 @@ export const scheduleBackfillThenSyncForGumroadBuyer = mutation({
   },
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    await ctx.scheduler.runAfter(0, internal.backgroundSync.triggerBackfillThenSyncForGumroadBuyer, {
-      tenantId: args.tenantId,
-      subjectId: args.subjectId,
-      providerUserId: args.providerUserId,
-      emailHash: args.emailHash,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.backgroundSync.triggerBackfillThenSyncForGumroadBuyer,
+      {
+        tenantId: args.tenantId,
+        subjectId: args.subjectId,
+        providerUserId: args.providerUserId,
+        emailHash: args.emailHash,
+      }
+    );
   },
 });
 
@@ -262,22 +267,19 @@ export const syncPastPurchasesForSubject = internalAction({
       throw new Error('CONVEX_API_SECRET required for syncPastPurchasesForSubject');
     }
 
-    const purchases = await ctx.runQuery(
-      internal.backgroundSync.getPurchasesByEmailHash,
-      { emailHash: args.emailHash }
-    );
+    const purchases = await ctx.runQuery(internal.backgroundSync.getPurchasesByEmailHash, {
+      emailHash: args.emailHash,
+    });
 
     for (const p of purchases) {
       if (p.lifecycleStatus !== 'active') continue;
+      if (p.provider !== args.provider) continue;
 
-      const catalog = await ctx.runQuery(
-        internal.backgroundSync.resolveCatalogProduct,
-        {
-          tenantId: p.tenantId,
-          provider: args.provider,
-          providerProductId: p.providerProductId,
-        }
-      );
+      const catalog = await ctx.runQuery(internal.backgroundSync.resolveCatalogProduct, {
+        tenantId: p.tenantId,
+        provider: args.provider,
+        providerProductId: p.providerProductId,
+      });
 
       const productId = catalog?.productId ?? p.providerProductId;
       const catalogProductId = catalog?.catalogProductId;
@@ -429,7 +431,7 @@ export const projectBackfilledPurchasesForProduct = internalMutation({
           ctx,
           args.tenantId,
           args.provider,
-          purchaseFact.providerUserId,
+          purchaseFact.providerUserId
         );
       }
 
@@ -482,7 +484,7 @@ export const projectBackfilledPurchasesForProduct = internalMutation({
 async function findSubjectByEmailHash(
   ctx: any,
   tenantId: Id<'tenants'>,
-  emailHash: string | undefined,
+  emailHash: string | undefined
 ): Promise<Id<'subjects'> | undefined> {
   if (!emailHash) return undefined;
 
@@ -513,7 +515,7 @@ async function findSubjectByProviderUserId(
   ctx: any,
   tenantId: Id<'tenants'>,
   provider: 'gumroad' | 'jinxxy',
-  providerUserId: string,
+  providerUserId: string
 ): Promise<Id<'subjects'> | undefined> {
   const externalAccount = await ctx.db
     .query('external_accounts')
@@ -569,8 +571,8 @@ export const processRetroactiveRuleSyncJob = mutation({
           discordAccessTokenEncrypted: v.string(),
           discordTokenExpiresAt: v.optional(v.number()),
           discordRefreshTokenEncrypted: v.optional(v.string()),
-        }),
-      ),
+        })
+      )
     ),
   }),
   handler: async (ctx, args) => {
@@ -634,12 +636,12 @@ export const processRetroactiveRuleSyncJob = mutation({
     // so the bot can proactively check guild membership without re-authorization.
     let discordTokenAccounts:
       | Array<{
-        externalAccountId: Id<'external_accounts'>;
-        providerUserId: string;
-        discordAccessTokenEncrypted: string;
-        discordTokenExpiresAt?: number;
-        discordRefreshTokenEncrypted?: string;
-      }>
+          externalAccountId: Id<'external_accounts'>;
+          providerUserId: string;
+          discordAccessTokenEncrypted: string;
+          discordTokenExpiresAt?: number;
+          discordRefreshTokenEncrypted?: string;
+        }>
       | undefined;
 
     if (args.productId.startsWith('discord_role:')) {

@@ -648,6 +648,7 @@ export async function fetchAllData() {
         } else {
           if (statusData.gumroad) connectionsMap.set('gumroad', { provider: 'gumroad', status: 'active' });
           if (statusData.jinxxy) connectionsMap.set('jinxxy', { provider: 'jinxxy', status: 'active' });
+          if (statusData.lemonsqueezy) connectionsMap.set('lemonsqueezy', { provider: 'lemonsqueezy', status: 'active' });
         }
         updatePlatformCards();
       }

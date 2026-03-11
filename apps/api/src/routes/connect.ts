@@ -1656,7 +1656,10 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       const storesResult = await client.getStores(1, 100);
       const selectedStore = storesResult.stores[0];
       if (!selectedStore) {
-        return Response.json({ error: 'No Lemon Squeezy stores found for this API key' }, { status: 422 });
+        return Response.json(
+          { error: 'No Lemon Squeezy stores found for this API key' },
+          { status: 422 }
+        );
       }
 
       const convex = getConvexClientFromUrl(config.convexUrl);
@@ -1680,10 +1683,34 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       const encryptedWebhookSecret = await encrypt(webhookSecretPlain, config.encryptionSecret);
 
       for (const credential of [
-        { credentialKey: 'api_token', kind: 'api_token', encryptedValue: encryptedApiToken, metadata: { storeId: selectedStore.id } },
-        { credentialKey: 'webhook_secret', kind: 'webhook_secret', encryptedValue: encryptedWebhookSecret, metadata: { webhookId: webhook.id } },
-        { credentialKey: 'store_selector', kind: 'store_selector', encryptedValue: undefined, metadata: { storeId: selectedStore.id, storeName: selectedStore.name, slug: selectedStore.slug } },
-        { credentialKey: 'remote_webhook', kind: 'remote_webhook', encryptedValue: undefined, metadata: { webhookId: webhook.id, events: webhook.events, url: webhook.url } },
+        {
+          credentialKey: 'api_token',
+          kind: 'api_token',
+          encryptedValue: encryptedApiToken,
+          metadata: { storeId: selectedStore.id },
+        },
+        {
+          credentialKey: 'webhook_secret',
+          kind: 'webhook_secret',
+          encryptedValue: encryptedWebhookSecret,
+          metadata: { webhookId: webhook.id },
+        },
+        {
+          credentialKey: 'store_selector',
+          kind: 'store_selector',
+          encryptedValue: undefined,
+          metadata: {
+            storeId: selectedStore.id,
+            storeName: selectedStore.name,
+            slug: selectedStore.slug,
+          },
+        },
+        {
+          credentialKey: 'remote_webhook',
+          kind: 'remote_webhook',
+          encryptedValue: undefined,
+          metadata: { webhookId: webhook.id, events: webhook.events, url: webhook.url },
+        },
       ] as const) {
         await convex.mutation(api.providerConnections.putProviderCredential, {
           apiSecret: config.convexApiSecret,
@@ -1712,7 +1739,16 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
         metadata: { store: selectedStore, webhookId: webhook.id },
       });
 
-      for (const capabilityKey of ['catalog_sync', 'managed_webhooks', 'webhooks', 'reconciliation', 'license_verification', 'orders', 'refunds', 'subscriptions']) {
+      for (const capabilityKey of [
+        'catalog_sync',
+        'managed_webhooks',
+        'webhooks',
+        'reconciliation',
+        'license_verification',
+        'orders',
+        'refunds',
+        'subscriptions',
+      ]) {
         await convex.mutation(api.providerConnections.upsertConnectionCapability, {
           apiSecret: config.convexApiSecret,
           tenantId,
@@ -1728,9 +1764,14 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
         error: err instanceof Error ? err.message : String(err),
       });
       const msg = err instanceof Error ? err.message : String(err);
-      const isApiKeyError = msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('401');
+      const isApiKeyError =
+        msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('401');
       return Response.json(
-        { error: isApiKeyError ? 'Invalid API key. Please double-check and try again.' : 'Failed to complete Lemon Squeezy setup.' },
+        {
+          error: isApiKeyError
+            ? 'Invalid API key. Please double-check and try again.'
+            : 'Failed to complete Lemon Squeezy setup.',
+        },
         { status: isApiKeyError ? 401 : 500 }
       );
     }
