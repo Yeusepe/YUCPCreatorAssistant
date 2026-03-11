@@ -8,7 +8,9 @@
 /**
  * Supported token providers for encryption AAD binding
  */
-export type TokenProvider = 'discord' | 'gumroad' | 'jinxxy' | 'manual';
+export type TokenProvider =
+  | import('../providers').ProviderKey
+  | 'discord_role';
 
 /**
  * Supported token types for encryption AAD binding

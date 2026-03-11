@@ -6,6 +6,7 @@
  */
 
 import type { Id } from './_generated/dataModel';
+import type { ProviderKey } from '../packages/shared/src/providers';
 
 // ============================================================================
 // TENANT-SCOPED TABLE TYPES
@@ -122,10 +123,13 @@ export type PlatformIndexPattern =
 // ============================================================================
 
 /** Provider types for type-safe provider handling */
-export type Provider = 'discord' | 'gumroad' | 'jinxxy' | 'manual';
+export type Provider = ProviderKey;
 
 /** Commerce providers (those that can have provider_customers) */
-export type CommerceProvider = 'gumroad' | 'jinxxy' | 'manual';
+export type CommerceProvider = Extract<
+  ProviderKey,
+  'gumroad' | 'jinxxy' | 'lemonsqueezy' | 'manual' | 'patreon' | 'fourthwall' | 'itchio' | 'payhip'
+>;
 
 // ============================================================================
 // STATUS TYPES

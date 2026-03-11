@@ -56,6 +56,10 @@ import { httpAction } from './_generated/server';
 import { internal, api, components } from './_generated/api';
 import { authComponent, createAuth } from './auth';
 import {
+  PROVIDER_REGISTRY,
+  PROVIDER_REGISTRY_BY_KEY,
+} from '../packages/shared/src/providers';
+import {
   verifyCertEnvelope,
   getPublicKeyFromPrivate,
   base64ToBytes,
@@ -105,6 +109,40 @@ function jsonResponse(body: unknown, status = 200): Response {
 function errorResponse(message: string, status: number): Response {
   return jsonResponse({ error: message }, status);
 }
+
+http.route({
+  method: 'GET',
+  path: '/v1/providers',
+  handler: httpAction(async () => {
+    return jsonResponse({
+      providers: PROVIDER_REGISTRY.map((provider) => ({
+        providerKey: provider.providerKey,
+        label: provider.label,
+        category: provider.category,
+        status: provider.status,
+        docsUrl: provider.docsUrl,
+        creatorAuthModes: provider.creatorAuthModes,
+        buyerVerificationMethods: provider.buyerVerificationMethods,
+        capabilities: provider.capabilities,
+        setupRequirements: provider.setupRequirements,
+        supportsTestMode: provider.supportsTestMode,
+      })),
+    });
+  }),
+});
+
+http.route({
+  method: 'GET',
+  pathPrefix: '/v1/providers/',
+  handler: httpAction(async (_ctx, request) => {
+    const providerKey = request.url.replace(/^.*\/v1\/providers\//, '').split('?')[0];
+    const provider = PROVIDER_REGISTRY_BY_KEY[providerKey as keyof typeof PROVIDER_REGISTRY_BY_KEY];
+    if (!provider) {
+      return errorResponse('Provider not found', 404);
+    }
+    return jsonResponse(provider);
+  }),
+});
 
 /** Parse and verify a cert envelope from "Authorization: Bearer <base64>" */
 async function parseBearerCert(
