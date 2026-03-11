@@ -5,6 +5,7 @@
  */
 
 import { createLogger } from '@yucp/shared';
+import { PROVIDER_META } from '@yucp/providers';
 import { ConvexHttpClient } from 'convex/browser';
 import {
   ActionRowBuilder,
@@ -300,7 +301,7 @@ async function handleAutocomplete(
 
     await interaction.respond(
       filtered.map((p) => ({
-        name: `${p.provider === 'gumroad' ? '🟣' : '🔷'} ${p.displayName ?? p.canonicalSlug ?? p.productId}`,
+        name: `${E[(PROVIDER_META[p.provider as keyof typeof PROVIDER_META]?.emojiKey ?? '') as keyof typeof E] ?? '🔷'} ${p.displayName ?? p.canonicalSlug ?? p.productId}`,
         value: `${p.provider}::${p.providerProductRef}`,
       }))
     );
@@ -703,7 +704,7 @@ async function handleButton(
     const parts = rest.split(':');
     // parts[0] = tenantId, parts[1] = filter, parts[2] = page
     const tenantId = parts[0] as Id<'tenants'>;
-    const filter = (parts[1] ?? 'all') as 'all' | 'gumroad' | 'jinxxy';
+    const filter = (parts[1] ?? 'all') as string;
     const page = Number.parseInt(parts[2] ?? '0', 10);
     const { handlePickerNavigation } = await import('../commands/licenseVerify');
     await handlePickerNavigation(interaction, ctx.convex, ctx.apiSecret, tenantId, filter, page);

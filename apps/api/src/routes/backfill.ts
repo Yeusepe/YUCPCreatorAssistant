@@ -45,7 +45,7 @@ export interface BackfillRequest {
   apiSecret: string;
   tenantId: string;
   productId: string;
-  provider: 'gumroad' | 'jinxxy';
+  provider: string;
   providerProductRef: string;
 }
 

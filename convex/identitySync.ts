@@ -184,12 +184,7 @@ export const findSubjectByDiscordId = query({
  */
 export const findExternalAccount = query({
   args: {
-    provider: v.union(
-      v.literal('discord'),
-      v.literal('gumroad'),
-      v.literal('jinxxy'),
-      v.literal('manual')
-    ),
+    provider: v.string(),
     providerUserId: v.string(),
   },
   returns: v.union(
@@ -441,7 +436,7 @@ export const syncUserFromAuth = mutation({
 export const syncUserFromProvider = mutation({
   args: {
     apiSecret: v.string(),
-    provider: v.union(v.literal('gumroad'), v.literal('discord'), v.literal('jinxxy')),
+    provider: v.string(),
     providerUserId: v.string(),
     username: v.optional(v.union(v.string(), v.null())),
     email: v.optional(v.union(v.string(), v.null())),
@@ -569,7 +564,7 @@ export const syncUserFromProvider = mutation({
       isNewExternalAccount = true;
     }
 
-    if ((args.provider === 'gumroad' || args.provider === 'jinxxy') && emailHash) {
+    if (args.provider !== 'discord' && emailHash) {
       await ctx.scheduler.runAfter(0, internal.backgroundSync.syncPastPurchasesForSubject, {
         subjectId,
         provider: args.provider,
@@ -940,12 +935,7 @@ export const linkExternalAccountToSubject = mutation({
   args: {
     apiSecret: v.string(),
     subjectId: v.id('subjects'),
-    provider: v.union(
-      v.literal('discord'),
-      v.literal('gumroad'),
-      v.literal('jinxxy'),
-      v.literal('manual')
-    ),
+    provider: v.string(),
     providerUserId: v.string(),
     providerUsername: v.optional(v.string()),
     providerMetadata: v.optional(

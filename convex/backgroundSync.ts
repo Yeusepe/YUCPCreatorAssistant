@@ -28,7 +28,7 @@ function requireApiSecret(apiSecret: string | undefined): void {
 /** Normalized purchase record for batch ingestion */
 const BackfillPurchaseRecord = v.object({
   tenantId: v.id('tenants'),
-  provider: v.union(v.literal('gumroad'), v.literal('jinxxy')),
+  provider: v.string(),
   externalOrderId: v.string(),
   externalLineItemId: v.optional(v.string()),
   buyerEmailNormalized: v.optional(v.string()),
@@ -53,7 +53,7 @@ export const backfillProductPurchases = internalAction({
   args: {
     tenantId: v.id('tenants'),
     productId: v.string(),
-    provider: v.union(v.literal('gumroad'), v.literal('jinxxy')),
+    provider: v.string(),
     providerProductRef: v.string(),
   },
   handler: async (ctx, args) => {
@@ -102,7 +102,7 @@ export const ingestBackfillPurchaseFactsBatch = mutation({
   args: {
     apiSecret: v.string(),
     tenantId: v.id('tenants'),
-    provider: v.union(v.literal('gumroad'), v.literal('jinxxy')),
+    provider: v.string(),
     purchases: v.array(BackfillPurchaseRecord),
   },
   returns: v.object({
@@ -255,7 +255,7 @@ export const getGumroadProductsForTenant = internalQuery({
 export const syncPastPurchasesForSubject = internalAction({
   args: {
     subjectId: v.id('subjects'),
-    provider: v.union(v.literal('gumroad'), v.literal('jinxxy')),
+    provider: v.string(),
     providerUserId: v.string(),
     emailHash: v.optional(v.string()),
   },
@@ -340,7 +340,7 @@ export const getPurchasesByEmailHash = internalQuery({
 export const resolveCatalogProduct = internalQuery({
   args: {
     tenantId: v.id('tenants'),
-    provider: v.union(v.literal('gumroad'), v.literal('jinxxy')),
+    provider: v.string(),
     providerProductId: v.string(),
   },
   returns: v.union(
@@ -375,7 +375,7 @@ export const projectBackfilledPurchasesForProduct = internalMutation({
   args: {
     tenantId: v.id('tenants'),
     productId: v.string(),
-    provider: v.union(v.literal('gumroad'), v.literal('jinxxy')),
+    provider: v.string(),
     providerProductRef: v.string(),
   },
   returns: v.object({
@@ -514,7 +514,7 @@ async function findSubjectByEmailHash(
 async function findSubjectByProviderUserId(
   ctx: any,
   tenantId: Id<'tenants'>,
-  provider: 'gumroad' | 'jinxxy',
+  provider: string,
   providerUserId: string
 ): Promise<Id<'subjects'> | undefined> {
   const externalAccount = await ctx.db

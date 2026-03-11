@@ -109,7 +109,6 @@ export const getProductsForTenant = query({
       .collect();
 
     return products
-      .filter((p) => p.provider === 'gumroad' || p.provider === 'jinxxy')
       .map((p) => ({
         _id: p._id,
         productId: p.productId,

@@ -93,16 +93,23 @@ export const processWebhookEvent = internalMutation({
     }
 
     const tenantId = event.tenantId;
-    const provider = (event.providerKey ?? event.provider) as 'gumroad' | 'jinxxy' | 'lemonsqueezy';
+    const provider = (event.providerKey ?? event.provider) as string;
     const rawPayload = event.rawPayload as Record<string, unknown>;
 
+    const EVENT_PROCESSORS: Record<
+      string,
+      // biome-ignore lint/suspicious/noExplicitAny: processor functions use any for ctx/event
+      (ctx: any, tenantId: Id<'tenants'>, event: any, payload: Record<string, unknown>) => Promise<void>
+    > = {
+      gumroad: processGumroadEvent,
+      jinxxy: processJinxxyEvent,
+      lemonsqueezy: processLemonEvent,
+    };
+
     try {
-      if (provider === 'gumroad') {
-        await processGumroadEvent(ctx, tenantId, event, rawPayload);
-      } else if (provider === 'jinxxy') {
-        await processJinxxyEvent(ctx, tenantId, event, rawPayload);
-      } else if (provider === 'lemonsqueezy') {
-        await processLemonEvent(ctx, tenantId, event, rawPayload);
+      const processor = EVENT_PROCESSORS[provider];
+      if (processor) {
+        await processor(ctx, tenantId, event, rawPayload);
       } else {
         await ctx.db.patch(args.eventId, {
           status: 'failed',
