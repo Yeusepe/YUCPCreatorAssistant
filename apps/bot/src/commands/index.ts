@@ -74,13 +74,6 @@ const CREATOR_ADMIN_COMMAND = new SlashCommandBuilder()
         s
           .setName('remove')
           .setDescription('Remove a product-role mapping')
-          .addStringOption((o) =>
-            o
-              .setName('product_id')
-              .setDescription('Product to remove (start typing to select)')
-              .setRequired(true)
-              .setAutocomplete(true)
-          )
       )
   )
   .addSubcommandGroup((downloads) =>

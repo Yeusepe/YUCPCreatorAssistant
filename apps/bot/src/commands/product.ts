@@ -56,6 +56,7 @@ interface ProductSession {
   jinxxyProductNames?: Record<string, string>;
   /** Jinxxy product id -> collaborator display name (undefined = owner's own store) */
   jinxxyProductSources?: Record<string, string>;
+  removeProductIds?: string[];
   expiresAt: number;
 }
 
@@ -558,12 +559,12 @@ export async function handleProductDiscordRoleDone(
     const result = (await res.json()) as
       | { completed: false }
       | {
-          completed: true;
-          sourceGuildId: string;
-          sourceRoleId?: string;
-          sourceRoleIds?: string[];
-          requiredRoleMatchMode?: 'any' | 'all';
-        };
+        completed: true;
+        sourceGuildId: string;
+        sourceRoleId?: string;
+        sourceRoleIds?: string[];
+        requiredRoleMatchMode?: 'any' | 'all';
+      };
 
     if (!result.completed) {
       // Re-show the link button so they can go back
@@ -977,64 +978,217 @@ export async function handleProductRemove(
   apiSecret: string,
   ctx: { tenantId: Id<'tenants'>; guildId: string }
 ): Promise<void> {
-  const productId = interaction.options.getString('product_id', true);
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const rules = await convex.query(api.role_rules.getByTenant, {
+  const rules = await convex.query(api.role_rules.getByGuildWithProductNames, {
     tenantId: ctx.tenantId,
+    guildId: ctx.guildId,
   });
-  const matching = rules.filter((r: { productId: string }) => r.productId === productId);
 
-  if (!matching.length) {
+  if (!rules.length) {
     await interaction.editReply({
-      content: `No rule found for product \`${productId}\`. Use \`/creator-admin product list\` to see all mappings.`,
+      content: 'No product-role mappings found for this server.',
     });
     return;
   }
 
-  for (const rule of matching) {
-    await convex.mutation(api.role_rules.deleteRoleRule, {
-      apiSecret,
-      ruleId: rule._id,
-    });
-  }
+  const productProviderPrefix = (p: { provider?: string }) => {
+    if (!p.provider) return '';
+    if (p.provider === 'discord') return '[Discord Role] ';
+    return `[${providerLabel(p.provider)}] `;
+  };
 
-  let content: string;
-  const isDiscordRole = productId.startsWith('discord_role:');
-  if (isDiscordRole && matching.length > 0) {
-    const r = matching[0] as {
-      sourceGuildId?: string;
-      requiredRoleId?: string;
-      verifiedRoleId?: string;
-    };
-    let sourceRoleName = '?';
-    let targetRoleName = '?';
-    try {
-      if (r.sourceGuildId && r.requiredRoleId) {
-        const requiredRoleId = r.requiredRoleId;
-        const sourceGuild = await interaction.client.guilds
-          .fetch(r.sourceGuildId)
-          .catch(() => null);
-        const role = sourceGuild
-          ? await sourceGuild.roles.fetch(requiredRoleId).catch(() => null)
-          : null;
-        sourceRoleName = role?.name ?? '?';
-      }
-      if (r.verifiedRoleId && interaction.guild) {
-        const targetRole = await interaction.guild.roles.fetch(r.verifiedRoleId).catch(() => null);
-        targetRoleName = targetRole?.name ?? '?';
-      }
-    } catch {
-      /* use fallbacks */
+  // discord max options is 25
+  const toShow = rules.slice(0, 25);
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(`creator_product:remove_select:${ctx.tenantId}`)
+    .setPlaceholder('Select product(s) to remove (1-25)')
+    .setMinValues(1)
+    .setMaxValues(toShow.length)
+    .addOptions(
+      toShow.map((r: any) => {
+        const labelText = `${productProviderPrefix(r)}${r.displayName ?? r.productId}`;
+        const label = labelText.length > 100 ? `${labelText.slice(0, 97)}...` : labelText;
+        return new StringSelectMenuOptionBuilder()
+          .setLabel(label)
+          .setValue(r.productId)
+      })
+    );
+
+  const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
+
+  const msg = toShow.length < rules.length
+    ? `**Select up to 25 products to remove:**\n*(Showing first 25 of ${rules.length} products)*`
+    : '**Select the product(s) you want to remove:**';
+
+  await interaction.editReply({
+    content: msg,
+    components: [row],
+  });
+}
+
+/** Step 2 for remove: Products selected in dropdown */
+export async function handleProductRemoveSelect(
+  interaction: StringSelectMenuInteraction,
+  convex: ConvexHttpClient,
+  apiSecret: string,
+  tenantId: Id<'tenants'>
+): Promise<void> {
+  const productIds = interaction.values;
+  if (!productIds || productIds.length === 0) {
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.update({ content: 'No products selected.', components: [] });
+    } else {
+      await interaction.editReply({ content: 'No products selected.', components: [] });
     }
-    content =
-      `**Removed Discord role rule** (${matching.length} mapping${matching.length > 1 ? 's' : ''})\n\n` +
-      `Users with **${sourceRoleName}** in the source server will no longer receive **${targetRoleName}** here.`;
-  } else {
-    content = `Removed ${matching.length} rule(s) for product \`${productId}\`.`;
+    return;
   }
 
-  await interaction.editReply({ content });
+  const sessionKey = getSessionKey(interaction.user.id, tenantId);
+  let session = productSessions.get(sessionKey);
+  if (!session) {
+    session = {
+      tenantId,
+      guildId: interaction.guildId ?? '',
+      guildLinkId: '' as Id<'guild_links'>,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    };
+    productSessions.set(sessionKey, session);
+  }
+
+  session.removeProductIds = productIds;
+  session.expiresAt = Date.now() + 10 * 60 * 1000;
+
+  const embed = new EmbedBuilder()
+    .setTitle(`${E.Wrench} Confirm Removal`)
+    .setColor(0xfee75c)
+    .setDescription(`Are you sure you want to remove **${productIds.length}** product mapping(s)? This will stop granting roles for these products.`);
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`creator_product:confirm_remove:${interaction.user.id}:${tenantId}`)
+      .setLabel('Remove Products')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`creator_product:cancel_remove:${interaction.user.id}:${tenantId}`)
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  await interaction.update({
+    content: '',
+    embeds: [embed],
+    components: [row],
+  });
+}
+
+/** Step 3 for remove: Confirmed */
+export async function handleProductConfirmRemove(
+  interaction: ButtonInteraction,
+  convex: ConvexHttpClient,
+  apiSecret: string,
+  userId: string,
+  tenantId: Id<'tenants'>
+): Promise<void> {
+  // Use discordjs loading function (deferUpdate tells Discord to show a loading state on the button!)
+  await interaction.deferUpdate();
+
+  const sessionKey = getSessionKey(userId, tenantId);
+  const session = productSessions.get(sessionKey);
+
+  if (!session || Date.now() > session.expiresAt || !session.removeProductIds) {
+    await interaction.editReply({
+      content: `${E.Timer} Session expired. Please run \`/creator-admin product remove\` again.`,
+      embeds: [],
+      components: [],
+    });
+    return;
+  }
+
+  const productIds = session.removeProductIds;
+
+  const rules = await convex.query(api.role_rules.getByTenant, {
+    tenantId,
+  });
+
+  let removedCount = 0;
+  // biome-ignore lint/suspicious/noExplicitAny: Rule object fields vary
+  const removedDiscordRoles: any[] = [];
+  const notFoundIds: string[] = [];
+
+  for (const productId of productIds) {
+    const matching = rules.filter((r: { productId: string }) => r.productId === productId);
+
+    if (matching.length === 0) {
+      notFoundIds.push(productId);
+      continue;
+    }
+
+    for (const rule of matching) {
+      await convex.mutation(api.role_rules.deleteRoleRule, {
+        apiSecret,
+        ruleId: (rule as any)._id,
+      });
+      removedCount++;
+      if (productId.startsWith('discord_role:')) {
+        removedDiscordRoles.push(rule);
+      }
+    }
+  }
+
+  let content = '';
+
+  if (removedCount > 0) {
+    content += `${E.Checkmark} Removed ${removedCount} rule(s) for ${productIds.length - notFoundIds.length} product(s).\n\n`;
+
+    for (const r of removedDiscordRoles) {
+      let sourceRoleName = '?';
+      let targetRoleName = '?';
+      try {
+        const reqId = r.requiredRoleIds?.[0] ?? r.requiredRoleId;
+        if (r.sourceGuildId && reqId) {
+          const sourceGuild = await interaction.client.guilds.fetch(r.sourceGuildId).catch(() => null);
+          const role = sourceGuild ? await sourceGuild.roles.fetch(reqId).catch(() => null) : null;
+          sourceRoleName = role?.name ?? reqId;
+        }
+
+        const verId = r.verifiedRoleIds?.[0] ?? r.verifiedRoleId;
+        if (verId && interaction.guild) {
+          const targetRole = await interaction.guild.roles.fetch(verId).catch(() => null);
+          targetRoleName = targetRole?.name ?? verId;
+        }
+      } catch { }
+      content += `• **Removed Discord role rule**: Users with **${sourceRoleName}** in the source server will no longer receive **${targetRoleName}** here.\n`;
+    }
+  }
+
+  if (notFoundIds.length > 0) {
+    content += '\nNo rules found for: ' + notFoundIds.map(id => '`' + id + '`').join(', ');
+  }
+
+  if (!content) {
+    content = 'No mappings were removed.';
+  }
+
+  productSessions.delete(sessionKey);
+  await interaction.editReply({ content: content.trim(), embeds: [], components: [] });
+}
+
+/** Cancel remove button */
+export async function handleProductCancelRemove(
+  interaction: ButtonInteraction,
+  userId: string,
+  tenantId: Id<'tenants'>
+): Promise<void> {
+  const sessionKey = getSessionKey(userId, tenantId);
+  productSessions.delete(sessionKey);
+
+  await interaction.update({
+    content: 'Cancelled product removal.',
+    embeds: [],
+    components: [],
+  });
 }
 
 // Legacy handleProductAdd kept for backwards compat (maps to interactive flow)
