@@ -176,7 +176,7 @@ export const getUserGuilds = query({
       .query('tenants')
       .withIndex('by_owner_auth', (q) => q.eq('ownerAuthUserId', args.authUserId))
       .collect();
-      
+
     const guilds = [];
     for (const tenant of tenants) {
       const links = await ctx.db
@@ -184,7 +184,7 @@ export const getUserGuilds = query({
         .withIndex('by_tenant', (q) => q.eq('tenantId', tenant._id))
         .filter((q) => q.eq(q.field('status'), 'active'))
         .collect();
-        
+
       for (const link of links) {
         guilds.push({
           tenantId: tenant._id,
@@ -197,3 +197,61 @@ export const getUserGuilds = query({
     return guilds;
   },
 });
+
+/**
+ * Completely wipe a guild link and all associated data. Called by bot on /creator-admin settings disconnect.
+ * Danger: Irreversible deletion of role rules, download routes, download artifacts, and the guild link itself.
+ */
+export const hardDisconnectGuild = mutation({
+  args: {
+    apiSecret: v.string(),
+    discordGuildId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+
+    const link = await ctx.db
+      .query('guild_links')
+      .withIndex('by_discord_guild', (q) => q.eq('discordGuildId', args.discordGuildId))
+      .first();
+
+    if (!link) {
+      return { success: false, reason: 'guild_link_not_found' };
+    }
+
+    const guildId = args.discordGuildId;
+
+    // Delete all role_rules for this guild
+    const roleRules = await ctx.db
+      .query('role_rules')
+      .withIndex('by_guild_link', (q) => q.eq('guildLinkId', link._id))
+      .collect();
+    for (const rule of roleRules) {
+      await ctx.db.delete(rule._id);
+    }
+
+    // Delete all download_routes for this guild
+    const downloadRoutes = await ctx.db
+      .query('download_routes')
+      .withIndex('by_guild_link', (q) => q.eq('guildLinkId', link._id))
+      .collect();
+    for (const route of downloadRoutes) {
+      await ctx.db.delete(route._id);
+    }
+
+    // Delete all download_artifacts for this guild
+    const downloadArtifacts = await ctx.db
+      .query('download_artifacts')
+      .withIndex('by_tenant_guild', (q) => q.eq('tenantId', link.tenantId).eq('guildId', guildId))
+      .collect();
+    for (const artifact of downloadArtifacts) {
+      await ctx.db.delete(artifact._id);
+    }
+
+    // Delete the guild_link itself
+    await ctx.db.delete(link._id);
+
+    return { success: true };
+  },
+});
+
