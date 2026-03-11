@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { LemonSqueezyApiClient } from '@yucp/providers';
 import { createLogger, getProviderDescriptor } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
@@ -840,6 +841,7 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
       productId?: string;
       installationHint?: string;
     }>(request);
+    const state = randomBytes(16).toString('hex');
     const result = await convex.mutation(api.verificationSessions.createVerificationSession, {
       apiSecret: config.convexApiSecret,
       tenantId: body.tenantId,
