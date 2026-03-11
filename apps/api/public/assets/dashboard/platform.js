@@ -388,61 +388,15 @@ export async function navigateLemonSqueezy() {
       return;
     }
   }
-  if (!getHasSetupSession() || !getTenantId()) {
-    alert('Please open Lemon Squeezy setup from a secure Discord setup link.');
-    return;
+  const tid = getTenantId();
+  const gid = getGuildId();
+  if (tid && gid) {
+    window.location.href = `${getApiBase()}/lemonsqueezy-setup?tenant_id=${encodeURIComponent(tid)}&guild_id=${encodeURIComponent(gid)}`;
+  } else if (getHasSetupSession()) {
+    window.location.href = `${getApiBase()}/lemonsqueezy-setup`;
+  } else {
+    alert('Please wait for the page to finish loading.');
   }
-
-  const apiToken = window.prompt('Paste your Lemon Squeezy API token');
-  if (!apiToken) return;
-
-  const createRes = await apiFetch(`${getApiBase()}/v1/tenants/${encodeURIComponent(getTenantId())}/provider-connections`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ providerKey: 'lemonsqueezy', authMode: 'api_token', label: 'Lemon Squeezy' }),
-  });
-  const createData = await createRes.json().catch(() => ({}));
-  if (!createRes.ok || !createData.connectionId) {
-    alert(createData?.error || 'Failed to create Lemon Squeezy connection.');
-    return;
-  }
-
-  let payload = { apiToken };
-  let credentialsRes = await apiFetch(`${getApiBase()}/v1/provider-connections/${encodeURIComponent(createData.connectionId)}/credentials`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-
-  if (credentialsRes.status === 409) {
-    const conflictData = await credentialsRes.json().catch(() => ({}));
-    const options = (conflictData.availableStores || [])
-      .map((store) => `${store.id}: ${store.name}`)
-      .join('\n');
-    const selectedStoreId = window.prompt(`Multiple Lemon Squeezy stores were found.\nChoose a store ID:\n${options}`);
-    if (!selectedStoreId) return;
-    payload = { apiToken, storeId: selectedStoreId.trim() };
-    credentialsRes = await apiFetch(`${getApiBase()}/v1/provider-connections/${encodeURIComponent(createData.connectionId)}/credentials`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  }
-
-  const credentialsData = await credentialsRes.json().catch(() => ({}));
-  if (!credentialsRes.ok) {
-    alert(credentialsData?.error || 'Failed to validate Lemon Squeezy credentials.');
-    return;
-  }
-
-  connectionsMap.set('lemonsqueezy', {
-    id: createData.connectionId,
-    provider: 'lemonsqueezy',
-    providerKey: 'lemonsqueezy',
-    status: 'active',
-  });
-  updatePlatformCards();
-  alert(`Lemon Squeezy connected${credentialsData?.store?.name ? `: ${credentialsData.store.name}` : '.'}`);
 }
 
 export async function navigateProvider(providerKey) {

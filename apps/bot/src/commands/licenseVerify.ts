@@ -127,7 +127,7 @@ function buildProductPickerComponents(
     .setPlaceholder('Select a product to verify…')
     .addOptions(
       slice.map((p) => {
-        const meta = PROVIDER_META[p.provider];
+        const meta = PROVIDER_META[p.provider as keyof typeof PROVIDER_META];
         const label = p.displayName ?? p.canonicalSlug ?? p.productId;
         const opt = new StringSelectMenuOptionBuilder()
           .setLabel(label.slice(0, 100))
@@ -676,7 +676,7 @@ export async function handleLicenseKeyModal(
     // (The binding creation is already handled inside completeLicense + sessionManager.)
 
     const label = providerLabel(provider);
-    const meta = PROVIDER_META[provider];
+    const meta = PROVIDER_META[provider as keyof typeof PROVIDER_META];
     const emoji = meta?.emojiKey ? (E[meta.emojiKey as keyof typeof E] ?? '') : '';
     if (interaction.guildId && apiBaseUrl) {
       const message = await interaction.editReply(
