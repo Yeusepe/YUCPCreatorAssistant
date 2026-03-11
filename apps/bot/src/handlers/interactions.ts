@@ -58,13 +58,13 @@ async function getNotConfiguredMessage(
           });
           if (res.ok) {
             const { token } = (await res.json()) as { token: string };
-            return `This server is not configured. [Sign in to configure](${linkBase}/connect?guild_id=${guildId}#token=${token})`;
+            return `This server is not configured. [Sign in to configure](${linkBase}/dashboard?guild_id=${guildId}#token=${token})`;
           }
         }
       } catch (e) {
         logger.error('Failed to generate secure connect token', { error: e });
       }
-      return `This server is not configured. [Sign in to configure](${linkBase}/connect?guild_id=${guildId})`;
+      return `This server is not configured. [Sign in to configure](${linkBase}/dashboard?guild_id=${guildId})`;
     }
     return 'This server is not configured. Please sign in to configure (API_BASE_URL not set).';
   }
@@ -368,14 +368,18 @@ async function handleSlashCommand(
   });
 
   try {
-    if (subcommandGroup === 'setup') {
-      if (subcommand === 'start') {
-        await runSetupStart(interaction, ctx.convex, ctx.apiSecret, {
-          tenantId,
-          guildLinkId,
-          guildId,
-        });
-      }
+    if (subcommandGroup === 'setup' && subcommand === 'start') {
+      await runSetupStart(interaction, ctx.convex, ctx.apiSecret, {
+        tenantId,
+        guildLinkId,
+        guildId,
+      });
+    } else if (!subcommandGroup && subcommand === 'dashboard') {
+      await runSetupStart(interaction, ctx.convex, ctx.apiSecret, {
+        tenantId,
+        guildLinkId,
+        guildId,
+      });
     } else if (subcommandGroup === 'product') {
       const sub = interaction.options.getSubcommand();
       const { handleProductAddInteractive, handleProductList, handleProductRemove } = await import(
@@ -415,9 +419,18 @@ async function handleSlashCommand(
         guildId,
       });
     } else if (subcommandGroup === 'settings') {
-      // settings cross-server
-      const { handleDiscordRoleVerification } = await import('../commands/discordRoleVerification');
-      await handleDiscordRoleVerification(interaction, ctx.convex, ctx.apiSecret, { tenantId });
+      const sub = interaction.options.getSubcommand();
+      if (sub === 'cross-server') {
+        const { handleDiscordRoleVerification } = await import('../commands/discordRoleVerification');
+        await handleDiscordRoleVerification(interaction, ctx.convex, ctx.apiSecret, { tenantId });
+      } else if (sub === 'disconnect') {
+        const { handleSettingsDisconnect } = await import('../commands/settings');
+        await handleSettingsDisconnect(interaction, ctx.convex, ctx.apiSecret, {
+          logger,
+          tenantId,
+          guildId,
+        });
+      }
     } else if (subcommand === 'analytics') {
       // Single subcommand (not a group) - combined link + summary
       const { handleAnalytics } = await import('../commands/analytics');
@@ -1143,6 +1156,40 @@ async function handleButton(
     const connectionId = rest.slice(colonIdx + 1);
     const { handleCollabRemove } = await import('../commands/collab');
     await handleCollabRemove(interaction, ctx.apiSecret, tenantId, connectionId);
+    return;
+  }
+
+  // ─── Settings disconnect flow ──────────────────────────────────────────────
+  if (customId === 'creator_settings:disconnect_warn1:confirm') {
+    const { handleDisconnectWarn1 } = await import('../commands/settings');
+    await handleDisconnectWarn1(interaction, ctx.convex, ctx.apiSecret, {
+      logger,
+      guildId: interaction.guildId!,
+    });
+    return;
+  }
+
+  if (customId === 'creator_settings:disconnect_warn2:confirm') {
+    const { handleDisconnectWarn2 } = await import('../commands/settings');
+    await handleDisconnectWarn2(interaction, ctx.convex, ctx.apiSecret, {
+      logger,
+      guildId: interaction.guildId!,
+    });
+    return;
+  }
+
+  if (customId === 'creator_settings:disconnect_confirm') {
+    const { handleDisconnectConfirm } = await import('../commands/settings');
+    await handleDisconnectConfirm(interaction, ctx.convex, ctx.apiSecret, {
+      logger,
+      guildId: interaction.guildId!,
+    });
+    return;
+  }
+
+  if (customId === 'creator_settings:disconnect_cancel') {
+    const { handleDisconnectCancel } = await import('../commands/settings');
+    await handleDisconnectCancel(interaction, ctx.convex, ctx.apiSecret, { logger });
     return;
   }
 

@@ -103,10 +103,8 @@ function getQuickStartState() {
 }
 
 function celebrateMilestone(milestoneId) {
-  if (completedMilestones.has(milestoneId) || typeof confetti !== 'function') return;
+  if (completedMilestones.has(milestoneId)) return;
   completedMilestones.add(milestoneId);
-  const palette = ['#0ea5e9', '#facc15', '#ffffff', '#4ade80'];
-  confetti({ particleCount: milestoneId === 'finish' ? 90 : 45, spread: milestoneId === 'finish' ? 90 : 65, startVelocity: 28, origin: { y: 0.24 }, colors: palette });
 }
 
 function getNewlyCompletedMilestones(state) {
@@ -583,9 +581,6 @@ export function initPlatforms() {
       status.className = 'text-center text-xs mt-2 font-bold';
       persistSetupCompleted();
       renderQuickStart();
-      if (typeof confetti === 'function') {
-        confetti({ particleCount: 50, spread: 60, origin: { y: 0.55 }, colors: ['#22c55e', '#0ea5e9', '#ffffff'], ticks: 100 });
-      }
     } catch (err) {
       btn.classList.remove('is-loading');
       btn.hidden = false;
