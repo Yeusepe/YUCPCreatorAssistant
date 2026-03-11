@@ -474,11 +474,11 @@ async function handleSlashCommand(
       if (interaction.deferred) {
         await interaction
           .editReply({ content: 'An error occurred. Please try again.' })
-          .catch(() => {});
+          .catch(() => { });
       } else if (!interaction.replied) {
         await interaction
           .reply({ content: 'An error occurred. Please try again.', flags: MessageFlags.Ephemeral })
-          .catch(() => {});
+          .catch(() => { });
       }
     } catch {
       // ignore
@@ -600,7 +600,7 @@ async function handleUserCommand(
     if (!interaction.replied && !interaction.deferred) {
       await interaction
         .reply({ content: 'An error occurred.', flags: MessageFlags.Ephemeral })
-        .catch(() => {});
+        .catch(() => { });
     }
   }
 }
@@ -1159,7 +1159,7 @@ async function handleButton(
 
   await interaction
     .reply({ content: 'Unknown button.', flags: MessageFlags.Ephemeral })
-    .catch(() => {});
+    .catch(() => { });
 }
 
 async function handleModalSubmit(
@@ -1237,7 +1237,7 @@ async function handleModalSubmit(
 
   await interaction
     .reply({ content: 'Unknown modal.', flags: MessageFlags.Ephemeral })
-    .catch(() => {});
+    .catch(() => { });
 }
 
 async function handleSelectMenu(
@@ -1326,6 +1326,36 @@ async function handleSelectMenu(
     return;
   }
 
+  // Product remove select: creator_product:remove_select:{tenantId}
+  if (customId.startsWith('creator_product:remove_select:')) {
+    const tenantId = customId.slice('creator_product:remove_select:'.length) as Id<'tenants'>;
+    const { handleProductRemoveSelect } = await import('../commands/product');
+    await handleProductRemoveSelect(interaction as StringSelectMenuInteraction, ctx.convex, ctx.apiSecret, tenantId);
+    return;
+  }
+
+  // Product remove confirm: creator_product:confirm_remove:{userId}:{tenantId}
+  if (customId.startsWith('creator_product:confirm_remove:')) {
+    const rest = customId.slice('creator_product:confirm_remove:'.length);
+    const colonIdx = rest.indexOf(':');
+    const userId = rest.slice(0, colonIdx);
+    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const { handleProductConfirmRemove } = await import('../commands/product');
+    await handleProductConfirmRemove(interaction as ButtonInteraction, ctx.convex, ctx.apiSecret, userId, tenantId);
+    return;
+  }
+
+  // Product remove cancel: creator_product:cancel_remove:{userId}:{tenantId}
+  if (customId.startsWith('creator_product:cancel_remove:')) {
+    const rest = customId.slice('creator_product:cancel_remove:'.length);
+    const colonIdx = rest.indexOf(':');
+    const userId = rest.slice(0, colonIdx);
+    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const { handleProductCancelRemove } = await import('../commands/product');
+    await handleProductCancelRemove(interaction as ButtonInteraction, userId, tenantId);
+    return;
+  }
+
   if (customId.startsWith('creator_downloads:logic_select:')) {
     const rest = customId.slice('creator_downloads:logic_select:'.length);
     const colonIdx = rest.indexOf(':');
@@ -1383,7 +1413,7 @@ async function handleSelectMenu(
 
   await interaction
     .reply({ content: 'Unknown select.', flags: MessageFlags.Ephemeral })
-    .catch(() => {});
+    .catch(() => { });
 }
 
 async function handleRoleSelectMenu(
@@ -1448,7 +1478,7 @@ async function handleRoleSelectMenu(
     return;
   }
 
-  await interaction.editReply({ content: 'Unknown role select.' }).catch(() => {});
+  await interaction.editReply({ content: 'Unknown role select.' }).catch(() => { });
 }
 
 async function handleChannelSelectMenu(
@@ -1479,7 +1509,7 @@ async function handleChannelSelectMenu(
 
   await interaction
     .reply({ content: 'Unknown channel select.', flags: MessageFlags.Ephemeral })
-    .catch(() => {});
+    .catch(() => { });
 }
 
 async function handleUserSelectMenu(
@@ -1501,5 +1531,5 @@ async function handleUserSelectMenu(
 
   await interaction
     .reply({ content: 'Unknown user select.', flags: MessageFlags.Ephemeral })
-    .catch(() => {});
+    .catch(() => { });
 }

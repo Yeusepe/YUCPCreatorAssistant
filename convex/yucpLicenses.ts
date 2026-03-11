@@ -185,7 +185,7 @@ export const getProductsForTenant = internalQuery({
       });
     }
 
-    // ── Enrich with Discord: if role_rules exist for a product, add discord provider ──
+    // ── Add pure Discord cross-server products (discord_role: entries, no catalog product) ──
     const roleRules = await ctx.db
       .query('role_rules')
       .withIndex('by_tenant', (q) => q.eq('tenantId', args.tenantId))
@@ -193,13 +193,19 @@ export const getProductsForTenant = internalQuery({
       .collect();
 
     for (const rule of roleRules) {
-      // Only attach Discord to products already in the catalog
-      if (!grouped.has(rule.productId)) continue;
+      // Discord cross-server products have no catalog entry; their productId is synthetic
+      if (rule.catalogProductId) continue;            // skip catalog-linked rules (those are Gumroad/Jinxxy products)
+      if (!rule.productId.startsWith('discord_role:')) continue;
+
       const guildLink = await ctx.db.get(rule.guildLinkId);
       if (!guildLink || guildLink.status !== 'active') continue;
-      const entry = grouped.get(rule.productId)!;
-      if (!entry.providers.some((p) => p.provider === 'discord')) {
-        entry.providers.push({ provider: 'discord', providerProductRef: rule.guildId });
+
+      if (!grouped.has(rule.productId)) {
+        grouped.set(rule.productId, {
+          productId: rule.productId,
+          displayName: `Discord role — ${guildLink.discordGuildName ?? rule.guildId}`,
+          providers: [{ provider: 'discord', providerProductRef: rule.guildId }],
+        });
       }
     }
 
