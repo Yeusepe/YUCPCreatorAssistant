@@ -166,7 +166,7 @@ export const PROVIDER_REGISTRY = [
     category: 'commerce',
     status: 'active',
     docsUrl: 'https://docs.lemonsqueezy.com/api',
-    emojiKey: 'CreditCard',
+    emojiKey: 'LemonSqueezy',
     addProductDescription: 'Sold on lemonsqueezy.com',
     creatorAuthModes: ['api_token'],
     buyerVerificationMethods: ['license_key', 'account_link'],

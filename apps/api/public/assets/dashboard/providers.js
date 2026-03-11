@@ -32,7 +32,7 @@ export const DASHBOARD_PROVIDER_REGISTRY = [
   {
     key: 'lemonsqueezy',
     label: 'Lemon Squeezy',
-    iconUrl: '__API_BASE__/Icons/CreditCard.png',
+    iconUrl: '__API_BASE__/Icons/LemonSqueezy.png',
     iconBg: '#f7b84b',
     iconClassName: 'w-6 h-6 object-contain',
     description: 'API tokens, webhooks & license keys',
@@ -43,6 +43,7 @@ export const DASHBOARD_PROVIDER_REGISTRY = [
     serverTileHint: 'Allow users to verify Lemon Squeezy purchases and licenses in this Discord server.',
     setupState: 'ready',
   },
+
 ];
 
 export function getDashboardProvider(providerKey) {

@@ -693,6 +693,9 @@ async function routeRequest(request: Request): Promise<Response> {
   if (pathname === '/api/connect/jinxxy-store' && connectRoutes) {
     return connectRoutes.jinxxyStore(request);
   }
+  if (pathname === '/api/connect/lemonsqueezy-finish' && connectRoutes) {
+    return connectRoutes.lemonsqueezyFinish(request);
+  }
   // Setup session management
   if (pathname === '/api/connect/create-token' && connectRoutes) {
     return connectRoutes.createTokenEndpoint(request);
@@ -1060,6 +1063,69 @@ async function routeRequest(request: Request): Promise<Response> {
     const setupAuthRedirect = await maybeServeSetupAuthRedirect(
       request,
       '/jinxxy-setup',
+      tenantId,
+      guildId,
+      setupCookieToken
+    );
+    if (setupAuthRedirect) {
+      return setupAuthRedirect;
+    }
+
+    const browserApiBase = resolvedFrontendOrigin ?? resolvedApiBaseUrl;
+    html = html.replaceAll('__TENANT_ID__', escapeForSingleQuotedJsString(tenantId));
+    html = html.replaceAll('__GUILD_ID__', escapeForSingleQuotedJsString(guildId));
+    html = html.replaceAll('__API_BASE__', escapeForSingleQuotedJsString(browserApiBase));
+    html = html.replaceAll('__SETUP_TOKEN__', '');
+    html = html.replaceAll('__HAS_SETUP_SESSION__', setupCookieToken ? 'true' : 'false');
+    return new Response(html, {
+      headers: { 'Content-Type': 'text/html', ...HTML_SECURITY_HEADERS },
+    });
+  }
+
+  if (pathname === '/lemonsqueezy-setup' || pathname === '/lemonsqueezy-setup.html') {
+    if (resolvedFrontendOrigin && url.host !== new URL(resolvedFrontendOrigin).host) {
+      const redirectUrl = new URL(request.url);
+      redirectUrl.protocol = new URL(resolvedFrontendOrigin).protocol;
+      redirectUrl.host = new URL(resolvedFrontendOrigin).host;
+      return redirectPreservingFragment(redirectUrl.toString());
+    }
+    const filePath = `${import.meta.dir}/../public/lemonsqueezy-setup.html`;
+    const file = Bun.file(filePath);
+    let html = await file.text();
+    let tenantId = url.searchParams.get('tenant_id') ?? url.searchParams.get('tenantId') ?? '';
+    let guildId = url.searchParams.get('guild_id') ?? url.searchParams.get('guildId') ?? '';
+    const ott = url.searchParams.get('ott');
+    const setupCookieToken = getCookieValue(request, SETUP_SESSION_COOKIE) ?? '';
+
+    if (ott && auth) {
+      const { session, setCookieHeaders } = await auth.exchangeOTT(ott);
+      if (session && setCookieHeaders.length > 0) {
+        const redirectUrl = new URL(url);
+        redirectUrl.searchParams.delete('ott');
+        const headers = new Headers({ Location: redirectUrl.toString() });
+        for (const cookie of setCookieHeaders) {
+          headers.append('Set-Cookie', cookie);
+        }
+        return new Response(null, { status: 302, headers });
+      }
+      logger.warn('OTT exchange failed for lemonsqueezy setup page', {
+        tenantId: tenantId || undefined,
+        guildId: guildId || undefined,
+      });
+    }
+
+    if (setupCookieToken) {
+      const encryptionSecret = loadEnv().BETTER_AUTH_SECRET ?? '';
+      const session = await resolveSetupSession(setupCookieToken, encryptionSecret);
+      if (session) {
+        tenantId = session.tenantId;
+        guildId = session.guildId;
+      }
+    }
+
+    const setupAuthRedirect = await maybeServeSetupAuthRedirect(
+      request,
+      '/lemonsqueezy-setup',
       tenantId,
       guildId,
       setupCookieToken
