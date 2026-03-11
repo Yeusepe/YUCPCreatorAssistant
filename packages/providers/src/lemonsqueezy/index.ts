@@ -12,13 +12,13 @@ import type {
   LemonSqueezyVariant,
 } from './types';
 import {
+  type LemonSqueezyWebhookCreateInput,
   isLicenseKeyValid,
   isOrderValid,
   isSubscriptionActive,
   normalizeLicenseKeyToEvidence,
   normalizeOrderToEvidence,
   normalizeSubscriptionToEvidence,
-  type LemonSqueezyWebhookCreateInput,
 } from './types';
 
 export class LemonSqueezyAdapter implements ProviderAdapter {
@@ -92,7 +92,20 @@ export class LemonSqueezyAdapter implements ProviderAdapter {
       }));
   }
 
-  async getStores(page = 1, perPage = 50): Promise<{ stores: LemonSqueezyStore[]; pagination: { currentPage: number; nextPage: number | null; previousPage: number | null; perPage: number; total: number; totalPages: number } }> {
+  async getStores(
+    page = 1,
+    perPage = 50
+  ): Promise<{
+    stores: LemonSqueezyStore[];
+    pagination: {
+      currentPage: number;
+      nextPage: number | null;
+      previousPage: number | null;
+      perPage: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
     return this.client.getStores(page, perPage);
   }
 
@@ -104,11 +117,21 @@ export class LemonSqueezyAdapter implements ProviderAdapter {
     return this.client.getAllVariants(productId);
   }
 
-  async getOrders(params?: { storeId?: string; userEmail?: string; page?: number; perPage?: number }) {
+  async getOrders(params?: {
+    storeId?: string;
+    userEmail?: string;
+    page?: number;
+    perPage?: number;
+  }) {
     return this.client.getOrders(params);
   }
 
-  async getSubscriptions(params?: { storeId?: string; userEmail?: string; page?: number; perPage?: number }) {
+  async getSubscriptions(params?: {
+    storeId?: string;
+    userEmail?: string;
+    page?: number;
+    perPage?: number;
+  }) {
     return this.client.getSubscriptions(params);
   }
 

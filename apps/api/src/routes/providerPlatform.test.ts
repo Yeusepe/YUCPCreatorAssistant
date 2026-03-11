@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import type { Auth } from '../auth';
 
 const apiMock = {
   tenants: {
@@ -34,8 +35,8 @@ const apiMock = {
   },
 } as const;
 
-let queryImpl: (ref: unknown, args: any) => Promise<any>;
-let mutationImpl: (ref: unknown, args: any) => Promise<any>;
+let queryImpl: (ref: unknown, args: unknown) => Promise<unknown>;
+let mutationImpl: (ref: unknown, args: unknown) => Promise<unknown>;
 const queryMock = mock((ref: unknown, args?: unknown) => queryImpl(ref, args));
 const mutationMock = mock((ref: unknown, args?: unknown) => mutationImpl(ref, args));
 const actionMock = mock(async () => undefined);
@@ -115,7 +116,7 @@ describe('provider platform routes', () => {
   const auth = {
     getSession: async () => ({ user: { id: 'owner-user' } }),
     getDiscordUserId: async () => 'discord-owner',
-  } as any;
+  } as unknown as Auth;
 
   const routes = createProviderPlatformRoutes(auth, {
     apiBaseUrl: 'http://localhost:3001',
@@ -223,7 +224,8 @@ describe('provider platform routes', () => {
     };
 
     globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       if (url.includes('/stores?')) {
         return makeJsonResponse(
           makePaginatedResponse('stores', [
@@ -358,7 +360,11 @@ describe('provider platform routes', () => {
 
     const payload = (await first?.json()) as { connectionId: string };
     expect(payload.connectionId).toBe('conn_1');
-    expect(mutationMock.mock.calls.filter((call) => call[0] === apiMock.providerConnections.createProviderConnection)).toHaveLength(1);
+    expect(
+      mutationMock.mock.calls.filter(
+        (call) => call[0] === apiMock.providerConnections.createProviderConnection
+      )
+    ).toHaveLength(1);
   });
 
   it('submits Lemon Squeezy credentials, creates a managed webhook, and syncs catalog data', async () => {
@@ -382,10 +388,14 @@ describe('provider platform routes', () => {
     expect(payload.sync).toEqual({ productsSynced: 1, variantsSynced: 1 });
     expect(encryptMock.mock.calls).not.toHaveLength(0);
     expect(
-      mutationMock.mock.calls.some((call) => call[0] === apiMock.providerPlatform.upsertCatalogMapping)
+      mutationMock.mock.calls.some(
+        (call) => call[0] === apiMock.providerPlatform.upsertCatalogMapping
+      )
     ).toBe(true);
     expect(
-      mutationMock.mock.calls.some((call) => call[0] === apiMock.providerPlatform.updateProviderConnectionState)
+      mutationMock.mock.calls.some(
+        (call) => call[0] === apiMock.providerPlatform.updateProviderConnectionState
+      )
     ).toBe(true);
   });
 
@@ -407,7 +417,9 @@ describe('provider platform routes', () => {
     expect(payload.sessionId).toBe('verification_1');
     expect(payload.state).toBeString();
     expect(
-      mutationMock.mock.calls.some((call) => call[0] === apiMock.verificationSessions.createVerificationSession)
+      mutationMock.mock.calls.some(
+        (call) => call[0] === apiMock.verificationSessions.createVerificationSession
+      )
     ).toBe(true);
   });
 
@@ -426,12 +438,28 @@ describe('provider platform routes', () => {
           updatedAt: Date.now(),
         };
       }
-      if (ref === apiMock.providerConnections.getConnectionForBackfill) return { lemonApiTokenEncrypted: 'enc:api-token' };
+      if (ref === apiMock.providerConnections.getConnectionForBackfill)
+        return { lemonApiTokenEncrypted: 'enc:api-token' };
       if (ref === apiMock.providerPlatform.listCatalogMappingsForConnection) {
-        return [{ catalogProductId: 'catalog_1', localProductId: 'local_product_1', externalVariantId: '1', externalProductId: '1' }];
+        return [
+          {
+            catalogProductId: 'catalog_1',
+            localProductId: 'local_product_1',
+            externalVariantId: '1',
+            externalProductId: '1',
+          },
+        ];
       }
       if (ref === apiMock.providerPlatform.listCatalogProductsForTenant) {
-        return [{ _id: 'catalog_1', productId: 'local_product_1', provider: 'lemonsqueezy', providerProductRef: '1', status: 'active' }];
+        return [
+          {
+            _id: 'catalog_1',
+            productId: 'local_product_1',
+            provider: 'lemonsqueezy',
+            providerProductRef: '1',
+            status: 'active',
+          },
+        ];
       }
       if (ref === apiMock.providerPlatform.resolveTenantSubjectByEmailHash) return 'subject_1';
       throw new Error(`Unhandled query ${String(ref)} ${JSON.stringify(args)}`);
@@ -444,13 +472,30 @@ describe('provider platform routes', () => {
     );
 
     expect(response?.status).toBe(202);
-    const payload = (await response?.json()) as { success: boolean; stats: { orders: number; subscriptions: number; licenseKeys: number } };
+    const payload = (await response?.json()) as {
+      success: boolean;
+      stats: { orders: number; subscriptions: number; licenseKeys: number };
+    };
     expect(payload.success).toBe(true);
     expect(payload.stats).toEqual({ orders: 1, subscriptions: 1, licenseKeys: 1 });
-    expect(mutationMock.mock.calls.some((call) => call[0] === apiMock.providerPlatform.upsertProviderTransaction)).toBe(true);
-    expect(mutationMock.mock.calls.some((call) => call[0] === apiMock.providerPlatform.upsertProviderMembership)).toBe(true);
-    expect(mutationMock.mock.calls.some((call) => call[0] === apiMock.providerPlatform.upsertProviderLicense)).toBe(true);
-    expect(mutationMock.mock.calls.some((call) => call[0] === apiMock.entitlements.grantEntitlement)).toBe(true);
+    expect(
+      mutationMock.mock.calls.some(
+        (call) => call[0] === apiMock.providerPlatform.upsertProviderTransaction
+      )
+    ).toBe(true);
+    expect(
+      mutationMock.mock.calls.some(
+        (call) => call[0] === apiMock.providerPlatform.upsertProviderMembership
+      )
+    ).toBe(true);
+    expect(
+      mutationMock.mock.calls.some(
+        (call) => call[0] === apiMock.providerPlatform.upsertProviderLicense
+      )
+    ).toBe(true);
+    expect(
+      mutationMock.mock.calls.some((call) => call[0] === apiMock.entitlements.grantEntitlement)
+    ).toBe(true);
   });
 
   it('accepts signed Lemon webhooks through the canonical endpoint', async () => {
@@ -493,7 +538,9 @@ describe('provider platform routes', () => {
     const payload = (await response?.json()) as { success: boolean; duplicate: boolean };
     expect(payload).toEqual({ success: true, duplicate: false });
     expect(
-      mutationMock.mock.calls.some((call) => call[0] === apiMock.webhookIngestion.insertWebhookEvent)
+      mutationMock.mock.calls.some(
+        (call) => call[0] === apiMock.webhookIngestion.insertWebhookEvent
+      )
     ).toBe(true);
   });
 });

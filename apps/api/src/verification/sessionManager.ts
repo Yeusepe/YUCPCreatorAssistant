@@ -1443,6 +1443,7 @@ export function createVerificationRoutes(config: VerificationConfig) {
       | {
           apiSecret?: string;
           licenseKey?: string;
+          provider?: string;
           productId?: string;
           tenantId?: string;
           subjectId?: string;
@@ -1459,6 +1460,7 @@ export function createVerificationRoutes(config: VerificationConfig) {
       const { handleCompleteLicense } = await import('./completeLicense');
       const result = await handleCompleteLicense(config, {
         licenseKey: body.licenseKey ?? '',
+        provider: body.provider,
         productId: body.productId,
         tenantId: body.tenantId ?? '',
         subjectId: body.subjectId ?? '',

@@ -206,9 +206,9 @@ describe('LemonSqueezyAdapter', () => {
   });
 
   it('requires an API token', () => {
-    expect(
-      () => new LemonSqueezyAdapter({ ...testConfig, apiToken: '' })
-    ).toThrow('API token is required');
+    expect(() => new LemonSqueezyAdapter({ ...testConfig, apiToken: '' })).toThrow(
+      'API token is required'
+    );
   });
 
   it('verifies purchases by email using active orders', async () => {

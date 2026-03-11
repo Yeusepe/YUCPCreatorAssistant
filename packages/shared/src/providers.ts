@@ -26,7 +26,13 @@ export type ProviderCategory = (typeof PROVIDER_CATEGORIES)[number];
 export const PROVIDER_STATUSES = ['active', 'planned', 'inactive'] as const;
 export type ProviderStatus = (typeof PROVIDER_STATUSES)[number];
 
-export const PROVIDER_AUTH_MODES = ['oauth', 'api_key', 'api_token', 'credentials', 'none'] as const;
+export const PROVIDER_AUTH_MODES = [
+  'oauth',
+  'api_key',
+  'api_token',
+  'credentials',
+  'none',
+] as const;
 export type ProviderAuthMode = (typeof PROVIDER_AUTH_MODES)[number];
 
 export const VERIFICATION_METHOD_KEYS = [
@@ -122,7 +128,15 @@ export const PROVIDER_REGISTRY = [
     addProductDescription: 'Sold on gumroad.com',
     creatorAuthModes: ['oauth'],
     buyerVerificationMethods: ['license_key', 'account_link', 'oauth'],
-    capabilities: ['account_link', 'catalog_sync', 'webhooks', 'reconciliation', 'license_verification', 'orders', 'refunds'],
+    capabilities: [
+      'account_link',
+      'catalog_sync',
+      'webhooks',
+      'reconciliation',
+      'license_verification',
+      'orders',
+      'refunds',
+    ],
     setupRequirements: ['oauth_client', 'webhook_secret'],
     verificationMethods: ['license_key', 'oauth'],
     supportsDisconnect: true,
@@ -146,7 +160,15 @@ export const PROVIDER_REGISTRY = [
     addProductDescription: 'Sold on jinxxy.com',
     creatorAuthModes: ['api_key'],
     buyerVerificationMethods: ['license_key', 'account_link'],
-    capabilities: ['account_link', 'catalog_sync', 'webhooks', 'reconciliation', 'license_verification', 'orders', 'refunds'],
+    capabilities: [
+      'account_link',
+      'catalog_sync',
+      'webhooks',
+      'reconciliation',
+      'license_verification',
+      'orders',
+      'refunds',
+    ],
     setupRequirements: ['api_key', 'webhook_secret'],
     verificationMethods: ['license_key'],
     supportsDisconnect: true,
@@ -170,7 +192,18 @@ export const PROVIDER_REGISTRY = [
     addProductDescription: 'Sold on lemonsqueezy.com',
     creatorAuthModes: ['api_token'],
     buyerVerificationMethods: ['license_key', 'account_link'],
-    capabilities: ['account_link', 'catalog_sync', 'webhooks', 'managed_webhooks', 'reconciliation', 'license_verification', 'subscriptions', 'orders', 'refunds', 'test_mode'],
+    capabilities: [
+      'account_link',
+      'catalog_sync',
+      'webhooks',
+      'managed_webhooks',
+      'reconciliation',
+      'license_verification',
+      'subscriptions',
+      'orders',
+      'refunds',
+      'test_mode',
+    ],
     setupRequirements: ['api_token', 'store_selection', 'test_mode_toggle'],
     verificationMethods: ['license_key'],
     supportsDisconnect: true,
@@ -197,7 +230,7 @@ export const PROVIDER_REGISTRY = [
     supportsCredentialLogin: false,
     supportsOAuth: false,
     supportsWebhook: false,
-    supportsLicenseVerify: false,
+    supportsLicenseVerify: true,
     supportsTestMode: false,
   },
   {
@@ -230,7 +263,14 @@ export const PROVIDER_REGISTRY = [
     addProductDescription: 'Sold on fourthwall.com',
     creatorAuthModes: ['api_token'],
     buyerVerificationMethods: ['account_link'],
-    capabilities: ['account_link', 'catalog_sync', 'webhooks', 'reconciliation', 'orders', 'refunds'],
+    capabilities: [
+      'account_link',
+      'catalog_sync',
+      'webhooks',
+      'reconciliation',
+      'orders',
+      'refunds',
+    ],
     setupRequirements: ['api_token'],
     verificationMethods: ['account_link'],
     supportsDisconnect: true,
@@ -297,7 +337,7 @@ export const PROVIDER_REGISTRY = [
     supportsCredentialLogin: true,
     supportsOAuth: false,
     supportsWebhook: false,
-    supportsLicenseVerify: true,
+    supportsLicenseVerify: false,
     supportsTestMode: false,
   },
 ] as const satisfies readonly ProviderDescriptor[];
@@ -306,21 +346,21 @@ export const PROVIDER_REGISTRY_BY_KEY = Object.fromEntries(
   PROVIDER_REGISTRY.map((provider) => [provider.providerKey, provider])
 ) as unknown as Record<ProviderKey, ProviderDescriptor>;
 
-export const ACTIVE_PROVIDER_KEYS = PROVIDER_REGISTRY
-  .filter((provider) => provider.status === 'active')
-  .map((provider) => provider.providerKey);
+export const ACTIVE_PROVIDER_KEYS = PROVIDER_REGISTRY.filter(
+  (provider) => provider.status === 'active'
+).map((provider) => provider.providerKey);
 
-export const LICENSE_PROVIDER_KEYS = PROVIDER_REGISTRY
-  .filter((provider) => provider.supportsLicenseVerify)
-  .map((provider) => provider.providerKey);
+export const LICENSE_PROVIDER_KEYS = PROVIDER_REGISTRY.filter(
+  (provider) => provider.supportsLicenseVerify
+).map((provider) => provider.providerKey);
 
-export const WEBHOOK_PROVIDER_KEYS = PROVIDER_REGISTRY
-  .filter((provider) => provider.supportsWebhook)
-  .map((provider) => provider.providerKey);
+export const WEBHOOK_PROVIDER_KEYS = PROVIDER_REGISTRY.filter(
+  (provider) => provider.supportsWebhook
+).map((provider) => provider.providerKey);
 
-export const COMMERCE_PROVIDER_KEYS = PROVIDER_REGISTRY
-  .filter((provider) => provider.category === 'commerce' || provider.category === 'manual')
-  .map((provider) => provider.providerKey);
+export const COMMERCE_PROVIDER_KEYS = PROVIDER_REGISTRY.filter(
+  (provider) => provider.category === 'commerce' || provider.category === 'manual'
+).map((provider) => provider.providerKey);
 
 export function getProviderDescriptor(providerKey: string): ProviderDescriptor | undefined {
   return PROVIDER_REGISTRY_BY_KEY[providerKey as ProviderKey];

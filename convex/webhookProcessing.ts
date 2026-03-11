@@ -8,10 +8,10 @@
  * Plan Phase 3: event → purchase_facts → link subject → entitlements → role_sync
  */
 
-import { internalAction, internalMutation, internalQuery } from './_generated/server';
 import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
+import { internalAction, internalMutation, internalQuery } from './_generated/server';
 
 /**
  * Get IDs of pending webhook events for processing.
@@ -147,12 +147,10 @@ async function processGumroadEvent(
 
   const lifecycleStatus = refunded ? 'refunded' : 'active';
   const buyerEmailNormalized = email ? normalizeEmail(email) : undefined;
-  const buyerEmailHash = buyerEmailNormalized
-    ? await sha256Hex(buyerEmailNormalized)
-    : undefined;
+  const buyerEmailHash = buyerEmailNormalized ? await sha256Hex(buyerEmailNormalized) : undefined;
 
   const saleTimestamp = payload.sale_timestamp
-    ? parseInt(String(payload.sale_timestamp), 10) * 1000
+    ? Number.parseInt(String(payload.sale_timestamp), 10) * 1000
     : Date.now();
 
   const existing = await ctx.db
@@ -229,9 +227,7 @@ async function processJinxxyEvent(
   const email = (data.email ?? '') as string;
   const paymentStatus = (data.payment_status ?? '') as string;
   const createdAt = data.created_at as string | undefined;
-  const purchasedAt = createdAt
-    ? new Date(createdAt).getTime()
-    : Date.now();
+  const purchasedAt = createdAt ? new Date(createdAt).getTime() : Date.now();
 
   const orderItems = (data.order_items ?? []) as Array<{
     id: string;
@@ -241,19 +237,13 @@ async function processJinxxyEvent(
   }>;
 
   const buyerEmailNormalized = email ? normalizeEmail(email) : undefined;
-  const buyerEmailHash = buyerEmailNormalized
-    ? await sha256Hex(buyerEmailNormalized)
-    : undefined;
+  const buyerEmailHash = buyerEmailNormalized ? await sha256Hex(buyerEmailNormalized) : undefined;
 
   const jinxxyUserId = (data.user as { id?: string })?.id;
 
   const subjectId =
-    (buyerEmailHash
-      ? await findSubjectByEmailHash(ctx, tenantId, buyerEmailHash)
-      : undefined) ??
-    (jinxxyUserId
-      ? await findSubjectByJinxxyUserId(ctx, tenantId, jinxxyUserId)
-      : undefined);
+    (buyerEmailHash ? await findSubjectByEmailHash(ctx, tenantId, buyerEmailHash) : undefined) ??
+    (jinxxyUserId ? await findSubjectByJinxxyUserId(ctx, tenantId, jinxxyUserId) : undefined);
 
   const now = Date.now();
 
@@ -340,6 +330,7 @@ async function resolveLemonCatalogProduct(
       .withIndex('by_external_variant', (q: any) =>
         q.eq('providerKey', 'lemonsqueezy').eq('externalVariantId', ref)
       )
+      .filter((q: any) => q.eq(q.field('tenantId'), tenantId))
       .first();
     if (mapping?.catalogProductId || mapping?.localProductId) {
       return {
@@ -415,7 +406,11 @@ async function projectCanonicalEntitlement(
 
   const subject = await ctx.db.get(subjectId);
   const discordUserId = subject?.primaryDiscordUserId;
-  if (discordUserId && !discordUserId.startsWith('gumroad:') && !discordUserId.startsWith('jinxxy:')) {
+  if (
+    discordUserId &&
+    !discordUserId.startsWith('gumroad:') &&
+    !discordUserId.startsWith('jinxxy:')
+  ) {
     await emitRoleSyncJob(ctx, tenantId, subjectId, discordUserId, entitlementId);
   }
 }
@@ -447,7 +442,11 @@ async function revokeCanonicalEntitlementBySource(
 
   const subject = await ctx.db.get(subjectId);
   const discordUserId = subject?.primaryDiscordUserId;
-  if (discordUserId && !discordUserId.startsWith('gumroad:') && !discordUserId.startsWith('jinxxy:')) {
+  if (
+    discordUserId &&
+    !discordUserId.startsWith('gumroad:') &&
+    !discordUserId.startsWith('jinxxy:')
+  ) {
     await emitRoleRemovalJobs(ctx, tenantId, subjectId, entitlement.productId, discordUserId);
   }
 }
@@ -481,20 +480,24 @@ async function processLemonEvent(
   const now = Date.now();
 
   if (eventType.startsWith('order_')) {
-    const variantId = attributes.first_order_item && typeof attributes.first_order_item === 'object'
-      ? String((attributes.first_order_item as any).variant_id ?? '')
-      : '';
-    const productId = attributes.first_order_item && typeof attributes.first_order_item === 'object'
-      ? String((attributes.first_order_item as any).product_id ?? '')
-      : '';
+    const variantId =
+      attributes.first_order_item && typeof attributes.first_order_item === 'object'
+        ? String((attributes.first_order_item as any).variant_id ?? '')
+        : '';
+    const productId =
+      attributes.first_order_item && typeof attributes.first_order_item === 'object'
+        ? String((attributes.first_order_item as any).product_id ?? '')
+        : '';
     const resolved = await resolveLemonCatalogProduct(ctx, tenantId, [variantId, productId]);
-    const transactionStatus = eventType === 'order_refunded' || attributes.refunded === true ? 'refunded' : 'paid';
+    const transactionStatus =
+      eventType === 'order_refunded' || attributes.refunded === true ? 'refunded' : 'paid';
 
     const existing = await ctx.db
       .query('provider_transactions')
       .withIndex('by_external_id', (q: any) =>
         q.eq('providerKey', 'lemonsqueezy').eq('externalTransactionId', objectId)
       )
+      .filter((q: any) => q.eq(q.field('tenantId'), tenantId))
       .first();
     const transactionId = existing?._id
       ? (await ctx.db.patch(existing._id, {
@@ -505,19 +508,33 @@ async function processLemonEvent(
               : existing.externalOrderNumber,
           externalOrderItemId:
             attributes.first_order_item && typeof attributes.first_order_item === 'object'
-              ? String((attributes.first_order_item as any).id ?? existing.externalOrderItemId ?? '')
+              ? String(
+                  (attributes.first_order_item as any).id ?? existing.externalOrderItemId ?? ''
+                )
               : existing.externalOrderItemId,
-          externalStoreId: typeof attributes.store_id === 'number' ? String(attributes.store_id) : existing.externalStoreId,
+          externalStoreId:
+            typeof attributes.store_id === 'number'
+              ? String(attributes.store_id)
+              : existing.externalStoreId,
           externalProductId: productId || existing.externalProductId,
           externalVariantId: variantId || existing.externalVariantId,
-          externalCustomerId: typeof attributes.customer_id === 'number' ? String(attributes.customer_id) : existing.externalCustomerId,
+          externalCustomerId:
+            typeof attributes.customer_id === 'number'
+              ? String(attributes.customer_id)
+              : existing.externalCustomerId,
           customerEmail: normalizedEmail ?? existing.customerEmail,
           customerEmailHash: emailHash ?? existing.customerEmailHash,
-          currency: typeof attributes.currency === 'string' ? attributes.currency : existing.currency,
-          amountSubtotal: typeof attributes.subtotal === 'number' ? attributes.subtotal : existing.amountSubtotal,
-          amountTotal: typeof attributes.total === 'number' ? attributes.total : existing.amountTotal,
+          currency:
+            typeof attributes.currency === 'string' ? attributes.currency : existing.currency,
+          amountSubtotal:
+            typeof attributes.subtotal === 'number' ? attributes.subtotal : existing.amountSubtotal,
+          amountTotal:
+            typeof attributes.total === 'number' ? attributes.total : existing.amountTotal,
           status: transactionStatus,
-          purchasedAt: parseInt(String(Date.parse(String(attributes.created_at ?? '')) || existing.purchasedAt || now), 10),
+          purchasedAt: Number.parseInt(
+            String(Date.parse(String(attributes.created_at ?? '')) || existing.purchasedAt || now),
+            10
+          ),
           refundedAt:
             typeof attributes.refunded_at === 'string'
               ? new Date(attributes.refunded_at).getTime()
@@ -533,23 +550,33 @@ async function processLemonEvent(
           providerKey: 'lemonsqueezy',
           externalTransactionId: objectId,
           externalOrderNumber:
-            typeof attributes.order_number === 'number' ? String(attributes.order_number) : undefined,
+            typeof attributes.order_number === 'number'
+              ? String(attributes.order_number)
+              : undefined,
           externalOrderItemId:
             attributes.first_order_item && typeof attributes.first_order_item === 'object'
               ? String((attributes.first_order_item as any).id ?? '')
               : undefined,
-          externalStoreId: typeof attributes.store_id === 'number' ? String(attributes.store_id) : undefined,
+          externalStoreId:
+            typeof attributes.store_id === 'number' ? String(attributes.store_id) : undefined,
           externalProductId: productId || undefined,
           externalVariantId: variantId || undefined,
-          externalCustomerId: typeof attributes.customer_id === 'number' ? String(attributes.customer_id) : undefined,
+          externalCustomerId:
+            typeof attributes.customer_id === 'number' ? String(attributes.customer_id) : undefined,
           customerEmail: normalizedEmail,
           customerEmailHash: emailHash,
           currency: typeof attributes.currency === 'string' ? attributes.currency : undefined,
           amountSubtotal: typeof attributes.subtotal === 'number' ? attributes.subtotal : undefined,
           amountTotal: typeof attributes.total === 'number' ? attributes.total : undefined,
           status: transactionStatus,
-          purchasedAt: typeof attributes.created_at === 'string' ? new Date(attributes.created_at).getTime() : now,
-          refundedAt: typeof attributes.refunded_at === 'string' ? new Date(attributes.refunded_at).getTime() : undefined,
+          purchasedAt:
+            typeof attributes.created_at === 'string'
+              ? new Date(attributes.created_at).getTime()
+              : now,
+          refundedAt:
+            typeof attributes.refunded_at === 'string'
+              ? new Date(attributes.refunded_at).getTime()
+              : undefined,
           rawWebhookEventId: event._id,
           metadata: { payload },
           createdAt: now,
@@ -584,8 +611,7 @@ async function processLemonEvent(
         providerConnectionId: connectionId,
         transactionId,
         sourceReference: sourceRef,
-        evidenceType:
-          transactionStatus === 'refunded' ? 'purchase.refunded' : 'purchase.recorded',
+        evidenceType: transactionStatus === 'refunded' ? 'purchase.refunded' : 'purchase.recorded',
         status: transactionStatus === 'refunded' ? 'revoked' : 'active',
         productId: resolved.productId,
         catalogProductId: resolved.catalogProductId,
@@ -615,8 +641,10 @@ async function processLemonEvent(
   }
 
   if (eventType.startsWith('subscription_')) {
-    const variantId = typeof attributes.variant_id === 'number' ? String(attributes.variant_id) : '';
-    const productId = typeof attributes.product_id === 'number' ? String(attributes.product_id) : '';
+    const variantId =
+      typeof attributes.variant_id === 'number' ? String(attributes.variant_id) : '';
+    const productId =
+      typeof attributes.product_id === 'number' ? String(attributes.product_id) : '';
     const status =
       eventType === 'subscription_cancelled'
         ? 'cancelled'
@@ -634,20 +662,36 @@ async function processLemonEvent(
       .withIndex('by_external_id', (q: any) =>
         q.eq('providerKey', 'lemonsqueezy').eq('externalMembershipId', objectId)
       )
+      .filter((q: any) => q.eq(q.field('tenantId'), tenantId))
       .first();
     const membershipId = existing?._id
       ? (await ctx.db.patch(existing._id, {
           providerConnectionId: connectionId,
-          externalTransactionId: typeof attributes.order_id === 'number' ? String(attributes.order_id) : existing.externalTransactionId,
+          externalTransactionId:
+            typeof attributes.order_id === 'number'
+              ? String(attributes.order_id)
+              : existing.externalTransactionId,
           externalProductId: productId || existing.externalProductId,
           externalVariantId: variantId || existing.externalVariantId,
-          externalCustomerId: typeof attributes.customer_id === 'number' ? String(attributes.customer_id) : existing.externalCustomerId,
+          externalCustomerId:
+            typeof attributes.customer_id === 'number'
+              ? String(attributes.customer_id)
+              : existing.externalCustomerId,
           customerEmail: normalizedEmail ?? existing.customerEmail,
           customerEmailHash: emailHash ?? existing.customerEmailHash,
           status,
-          startedAt: typeof attributes.created_at === 'string' ? new Date(attributes.created_at).getTime() : existing.startedAt,
-          renewsAt: typeof attributes.renews_at === 'string' ? new Date(attributes.renews_at).getTime() : existing.renewsAt,
-          endsAt: typeof attributes.ends_at === 'string' ? new Date(attributes.ends_at).getTime() : existing.endsAt,
+          startedAt:
+            typeof attributes.created_at === 'string'
+              ? new Date(attributes.created_at).getTime()
+              : existing.startedAt,
+          renewsAt:
+            typeof attributes.renews_at === 'string'
+              ? new Date(attributes.renews_at).getTime()
+              : existing.renewsAt,
+          endsAt:
+            typeof attributes.ends_at === 'string'
+              ? new Date(attributes.ends_at).getTime()
+              : existing.endsAt,
           cancelledAt: status === 'cancelled' || status === 'expired' ? now : existing.cancelledAt,
           rawWebhookEventId: event._id,
           metadata: { payload },
@@ -659,16 +703,27 @@ async function processLemonEvent(
           providerConnectionId: connectionId,
           providerKey: 'lemonsqueezy',
           externalMembershipId: objectId,
-          externalTransactionId: typeof attributes.order_id === 'number' ? String(attributes.order_id) : undefined,
+          externalTransactionId:
+            typeof attributes.order_id === 'number' ? String(attributes.order_id) : undefined,
           externalProductId: productId || undefined,
           externalVariantId: variantId || undefined,
-          externalCustomerId: typeof attributes.customer_id === 'number' ? String(attributes.customer_id) : undefined,
+          externalCustomerId:
+            typeof attributes.customer_id === 'number' ? String(attributes.customer_id) : undefined,
           customerEmail: normalizedEmail,
           customerEmailHash: emailHash,
           status,
-          startedAt: typeof attributes.created_at === 'string' ? new Date(attributes.created_at).getTime() : now,
-          renewsAt: typeof attributes.renews_at === 'string' ? new Date(attributes.renews_at).getTime() : undefined,
-          endsAt: typeof attributes.ends_at === 'string' ? new Date(attributes.ends_at).getTime() : undefined,
+          startedAt:
+            typeof attributes.created_at === 'string'
+              ? new Date(attributes.created_at).getTime()
+              : now,
+          renewsAt:
+            typeof attributes.renews_at === 'string'
+              ? new Date(attributes.renews_at).getTime()
+              : undefined,
+          endsAt:
+            typeof attributes.ends_at === 'string'
+              ? new Date(attributes.ends_at).getTime()
+              : undefined,
           cancelledAt: status === 'cancelled' || status === 'expired' ? now : undefined,
           rawWebhookEventId: event._id,
           metadata: { payload },
@@ -705,8 +760,7 @@ async function processLemonEvent(
         providerConnectionId: connectionId,
         membershipId,
         sourceReference: sourceRef,
-        evidenceType:
-          evidenceStatus === 'revoked' ? 'subscription.ended' : 'subscription.updated',
+        evidenceType: evidenceStatus === 'revoked' ? 'subscription.ended' : 'subscription.updated',
         status: evidenceStatus,
         productId: resolved.productId,
         catalogProductId: resolved.catalogProductId,
@@ -736,8 +790,10 @@ async function processLemonEvent(
   }
 
   if (eventType.startsWith('license_key_')) {
-    const variantId = typeof attributes.variant_id === 'number' ? String(attributes.variant_id) : '';
-    const productId = typeof attributes.product_id === 'number' ? String(attributes.product_id) : '';
+    const variantId =
+      typeof attributes.variant_id === 'number' ? String(attributes.variant_id) : '';
+    const productId =
+      typeof attributes.product_id === 'number' ? String(attributes.product_id) : '';
     const licenseStatus =
       attributes.disabled === true || attributes.status === 'disabled'
         ? 'disabled'
@@ -749,26 +805,41 @@ async function processLemonEvent(
       .withIndex('by_external_id', (q: any) =>
         q.eq('providerKey', 'lemonsqueezy').eq('externalLicenseId', objectId)
       )
+      .filter((q: any) => q.eq(q.field('tenantId'), tenantId))
       .first();
     const licenseId = existing?._id
       ? (await ctx.db.patch(existing._id, {
           providerConnectionId: connectionId,
-          externalTransactionId: typeof attributes.order_id === 'number' ? String(attributes.order_id) : existing.externalTransactionId,
+          externalTransactionId:
+            typeof attributes.order_id === 'number'
+              ? String(attributes.order_id)
+              : existing.externalTransactionId,
           externalProductId: productId || existing.externalProductId,
           externalVariantId: variantId || existing.externalVariantId,
-          externalCustomerId: typeof attributes.customer_id === 'number' ? String(attributes.customer_id) : existing.externalCustomerId,
+          externalCustomerId:
+            typeof attributes.customer_id === 'number'
+              ? String(attributes.customer_id)
+              : existing.externalCustomerId,
           customerEmail: normalizedEmail ?? existing.customerEmail,
           customerEmailHash: emailHash ?? existing.customerEmailHash,
           licenseKeyHash:
             typeof attributes.key === 'string'
               ? await sha256Hex(attributes.key)
               : existing.licenseKeyHash,
-          shortKey: typeof attributes.key_short === 'string' ? attributes.key_short : existing.shortKey,
+          shortKey:
+            typeof attributes.key_short === 'string' ? attributes.key_short : existing.shortKey,
           status: licenseStatus,
-          issuedAt: typeof attributes.created_at === 'string' ? new Date(attributes.created_at).getTime() : existing.issuedAt,
-          expiresAt: typeof attributes.expires_at === 'string' ? new Date(attributes.expires_at).getTime() : existing.expiresAt,
+          issuedAt:
+            typeof attributes.created_at === 'string'
+              ? new Date(attributes.created_at).getTime()
+              : existing.issuedAt,
+          expiresAt:
+            typeof attributes.expires_at === 'string'
+              ? new Date(attributes.expires_at).getTime()
+              : existing.expiresAt,
           lastValidatedAt: now,
-          revokedAt: licenseStatus === 'disabled' || licenseStatus === 'expired' ? now : existing.revokedAt,
+          revokedAt:
+            licenseStatus === 'disabled' || licenseStatus === 'expired' ? now : existing.revokedAt,
           rawWebhookEventId: event._id,
           metadata: { payload },
           updatedAt: now,
@@ -779,17 +850,26 @@ async function processLemonEvent(
           providerConnectionId: connectionId,
           providerKey: 'lemonsqueezy',
           externalLicenseId: objectId,
-          externalTransactionId: typeof attributes.order_id === 'number' ? String(attributes.order_id) : undefined,
+          externalTransactionId:
+            typeof attributes.order_id === 'number' ? String(attributes.order_id) : undefined,
           externalProductId: productId || undefined,
           externalVariantId: variantId || undefined,
-          externalCustomerId: typeof attributes.customer_id === 'number' ? String(attributes.customer_id) : undefined,
+          externalCustomerId:
+            typeof attributes.customer_id === 'number' ? String(attributes.customer_id) : undefined,
           customerEmail: normalizedEmail,
           customerEmailHash: emailHash,
-          licenseKeyHash: typeof attributes.key === 'string' ? await sha256Hex(attributes.key) : undefined,
+          licenseKeyHash:
+            typeof attributes.key === 'string' ? await sha256Hex(attributes.key) : undefined,
           shortKey: typeof attributes.key_short === 'string' ? attributes.key_short : undefined,
           status: licenseStatus,
-          issuedAt: typeof attributes.created_at === 'string' ? new Date(attributes.created_at).getTime() : now,
-          expiresAt: typeof attributes.expires_at === 'string' ? new Date(attributes.expires_at).getTime() : undefined,
+          issuedAt:
+            typeof attributes.created_at === 'string'
+              ? new Date(attributes.created_at).getTime()
+              : now,
+          expiresAt:
+            typeof attributes.expires_at === 'string'
+              ? new Date(attributes.expires_at).getTime()
+              : undefined,
           lastValidatedAt: now,
           revokedAt: licenseStatus === 'disabled' || licenseStatus === 'expired' ? now : undefined,
           rawWebhookEventId: event._id,
@@ -828,8 +908,7 @@ async function processLemonEvent(
         providerConnectionId: connectionId,
         licenseId,
         sourceReference: sourceRef,
-        evidenceType:
-          evidenceStatus === 'active' ? 'license.issued' : 'license.revoked',
+        evidenceType: evidenceStatus === 'active' ? 'license.issued' : 'license.revoked',
         status: evidenceStatus,
         productId: resolved.productId,
         catalogProductId: resolved.catalogProductId,
@@ -987,7 +1066,11 @@ async function projectEntitlementFromPurchaseFact(
 
   const subject = await ctx.db.get(subjectId);
   const discordUserId = subject?.primaryDiscordUserId;
-  if (discordUserId && !discordUserId.startsWith('gumroad:') && !discordUserId.startsWith('jinxxy:')) {
+  if (
+    discordUserId &&
+    !discordUserId.startsWith('gumroad:') &&
+    !discordUserId.startsWith('jinxxy:')
+  ) {
     await emitRoleSyncJob(ctx, tenantId, subjectId, discordUserId, entitlementId);
   }
 }
@@ -1020,8 +1103,18 @@ async function revokeEntitlementForPurchaseFact(
 
     const subject = await ctx.db.get(purchaseFact.subjectId);
     const discordUserId = subject?.primaryDiscordUserId;
-    if (discordUserId && !discordUserId.startsWith('gumroad:') && !discordUserId.startsWith('jinxxy:')) {
-      await emitRoleRemovalJobs(ctx, tenantId, purchaseFact.subjectId, entitlement.productId, discordUserId);
+    if (
+      discordUserId &&
+      !discordUserId.startsWith('gumroad:') &&
+      !discordUserId.startsWith('jinxxy:')
+    ) {
+      await emitRoleRemovalJobs(
+        ctx,
+        tenantId,
+        purchaseFact.subjectId,
+        entitlement.productId,
+        discordUserId
+      );
     }
   }
 }
@@ -1120,20 +1213,20 @@ export const processPendingWebhookEvents = internalAction({
     requireApiSecret(args.apiSecret);
     const limit = Math.min(args.limit ?? 10, 50);
 
-    const events = await ctx.runQuery(
-      internal.webhookProcessing.getPendingEventIds,
-      { apiSecret: args.apiSecret, limit }
-    );
+    const events = await ctx.runQuery(internal.webhookProcessing.getPendingEventIds, {
+      apiSecret: args.apiSecret,
+      limit,
+    });
 
     let processed = 0;
     let failed = 0;
     const errors: string[] = [];
 
     for (const eventId of events) {
-      const result = await ctx.runMutation(
-        internal.webhookProcessing.processWebhookEvent,
-        { apiSecret: args.apiSecret, eventId }
-      );
+      const result = await ctx.runMutation(internal.webhookProcessing.processWebhookEvent, {
+        apiSecret: args.apiSecret,
+        eventId,
+      });
       if (result.success) {
         processed++;
       } else {
@@ -1145,4 +1238,3 @@ export const processPendingWebhookEvents = internalAction({
     return { processed, failed, errors };
   },
 });
-

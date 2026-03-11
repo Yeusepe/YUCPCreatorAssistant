@@ -1179,7 +1179,7 @@ export async function handleProductRemove(
     .setMinValues(1)
     .setMaxValues(toShow.length)
     .addOptions(
-      toShow.map((r: any) => {
+      toShow.map((r) => {
         const labelText = `${productProviderPrefix(r)}${r.displayName ?? r.productId}`;
         const label = labelText.length > 100 ? `${labelText.slice(0, 97)}...` : labelText;
         return new StringSelectMenuOptionBuilder().setLabel(label).setValue(r.productId);
@@ -1291,7 +1291,7 @@ export async function handleProductConfirmRemove(
   const notFoundIds: string[] = [];
 
   for (const productId of productIds) {
-    const matching = rules.filter((r: { productId: string }) => r.productId === productId);
+    const matching = rules.filter((r) => r.productId === productId);
 
     if (matching.length === 0) {
       notFoundIds.push(productId);
@@ -1301,7 +1301,7 @@ export async function handleProductConfirmRemove(
     for (const rule of matching) {
       await convex.mutation(api.role_rules.deleteRoleRule, {
         apiSecret,
-        ruleId: (rule as any)._id,
+        ruleId: rule._id,
       });
       removedCount++;
       if (productId.startsWith('discord_role:')) {

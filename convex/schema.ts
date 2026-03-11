@@ -1349,11 +1349,7 @@ const collaborator_connections = defineTable({
 // YUCP CERTIFICATE AUTHORITY TABLES
 // ============================================================================
 
-const YucpCertStatus = v.union(
-  v.literal('active'),
-  v.literal('revoked'),
-  v.literal('expired'),
-);
+const YucpCertStatus = v.union(v.literal('active'), v.literal('revoked'), v.literal('expired'));
 
 /** Issued YUCP publisher certificates (schemaVersion 2+, identity-anchored) */
 const yucp_certificates = defineTable({

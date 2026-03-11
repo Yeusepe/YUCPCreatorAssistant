@@ -1,6 +1,6 @@
-import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
+import { mutation, query } from './_generated/server';
 import { ProviderV } from './lib/providers';
 
 function requireApiSecret(apiSecret: string | undefined): void {
@@ -36,6 +36,7 @@ export const upsertCatalogMapping = mutation({
           .withIndex('by_external_variant', (q) =>
             q.eq('providerKey', args.providerKey).eq('externalVariantId', args.externalVariantId)
           )
+          .filter((q) => q.eq(q.field('tenantId'), args.tenantId))
           .first()
       : null;
 
@@ -116,8 +117,11 @@ export const upsertProviderTransaction = mutation({
     const existing = await ctx.db
       .query('provider_transactions')
       .withIndex('by_external_id', (q) =>
-        q.eq('providerKey', args.providerKey).eq('externalTransactionId', args.externalTransactionId)
+        q
+          .eq('providerKey', args.providerKey)
+          .eq('externalTransactionId', args.externalTransactionId)
       )
+      .filter((q) => q.eq(q.field('tenantId'), args.tenantId))
       .first();
 
     if (existing) {
@@ -207,6 +211,7 @@ export const upsertProviderMembership = mutation({
       .withIndex('by_external_id', (q) =>
         q.eq('providerKey', args.providerKey).eq('externalMembershipId', args.externalMembershipId)
       )
+      .filter((q) => q.eq(q.field('tenantId'), args.tenantId))
       .first();
 
     if (existing) {
@@ -291,6 +296,7 @@ export const upsertProviderLicense = mutation({
       .withIndex('by_external_id', (q) =>
         q.eq('providerKey', args.providerKey).eq('externalLicenseId', args.externalLicenseId)
       )
+      .filter((q) => q.eq(q.field('tenantId'), args.tenantId))
       .first();
 
     if (existing) {
@@ -527,9 +533,7 @@ export const updateProviderConnectionState = mutation({
       ...(args.authMode !== undefined ? { authMode: args.authMode } : {}),
       ...(args.label !== undefined ? { label: args.label } : {}),
       ...(args.externalShopId !== undefined ? { externalShopId: args.externalShopId } : {}),
-      ...(args.externalShopName !== undefined
-        ? { externalShopName: args.externalShopName }
-        : {}),
+      ...(args.externalShopName !== undefined ? { externalShopName: args.externalShopName } : {}),
       ...(args.webhookConfigured !== undefined
         ? { webhookConfigured: args.webhookConfigured }
         : {}),

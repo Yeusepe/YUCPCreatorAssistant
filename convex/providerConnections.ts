@@ -5,16 +5,16 @@
  * Jinxxy: API key, webhook secret.
  */
 
+import { v } from 'convex/values';
+import { providerLabel } from '../packages/shared/src/providers';
+import type { Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { mutation, query } from './_generated/server';
-import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
-import { ProviderV } from './lib/providers';
 import {
-  findDuplicateExternalAccountIdentityGroups,
   type ExternalAccountIdentityCandidate,
+  findDuplicateExternalAccountIdentityGroups,
 } from './lib/externalAccountIdentity';
-import { providerLabel } from '../packages/shared/src/providers';
+import { ProviderV } from './lib/providers';
 
 function requireApiSecret(apiSecret: string | undefined): void {
   const expected = process.env.CONVEX_API_SECRET;
@@ -77,7 +77,9 @@ async function upsertCredential(
   const existing = await ctx.db
     .query('provider_credentials')
     .withIndex('by_connection_key', (q) =>
-      q.eq('providerConnectionId', args.providerConnectionId).eq('credentialKey', args.credentialKey)
+      q
+        .eq('providerConnectionId', args.providerConnectionId)
+        .eq('credentialKey', args.credentialKey)
     )
     .first();
 
@@ -124,7 +126,9 @@ async function upsertCapability(
   const existing = await ctx.db
     .query('provider_connection_capabilities')
     .withIndex('by_connection_capability', (q) =>
-      q.eq('providerConnectionId', args.providerConnectionId).eq('capabilityKey', args.capabilityKey)
+      q
+        .eq('providerConnectionId', args.providerConnectionId)
+        .eq('capabilityKey', args.capabilityKey)
     )
     .first();
 
@@ -279,15 +283,19 @@ export const getConnectionStatus = query({
         )
         .first(),
     ]);
-    const gumroadAccessToken =
-      gumroad ? await getCredentialValue(ctx, gumroad._id, 'oauth_access_token') : null;
+    const gumroadAccessToken = gumroad
+      ? await getCredentialValue(ctx, gumroad._id, 'oauth_access_token')
+      : null;
     const jinxxyApiKey = jinxxy ? await getCredentialValue(ctx, jinxxy._id, 'api_key') : null;
     return {
       gumroad: !!(
         (gumroadAccessToken || gumroad?.gumroadAccessTokenEncrypted) &&
         gumroad?.status !== 'disconnected'
       ),
-      jinxxy: !!((jinxxyApiKey || jinxxy?.jinxxyApiKeyEncrypted) && jinxxy?.status !== 'disconnected'),
+      jinxxy: !!(
+        (jinxxyApiKey || jinxxy?.jinxxyApiKeyEncrypted) &&
+        jinxxy?.status !== 'disconnected'
+      ),
     };
   },
 });
@@ -331,7 +339,11 @@ export const listConnections = query({
             connectionType: c.connectionType ?? 'setup',
             status:
               c.status ??
-              (c.gumroadAccessTokenEncrypted || c.jinxxyApiKeyEncrypted || apiKey || apiToken || accessToken
+              (c.gumroadAccessTokenEncrypted ||
+              c.jinxxyApiKeyEncrypted ||
+              apiKey ||
+              apiToken ||
+              accessToken
                 ? 'active'
                 : 'disconnected'),
             authMode: c.authMode,
@@ -351,7 +363,7 @@ export const listConnections = query({
             updatedAt: c.updatedAt,
           };
         })
-      )
+      ),
     };
   },
 });
@@ -450,7 +462,10 @@ export const getConnectionForBackfill = query({
       jinxxyApiKeyEncrypted: apiKey ?? conn.jinxxyApiKeyEncrypted,
       lemonApiTokenEncrypted: apiToken ?? undefined,
       webhookSecretEncrypted:
-        webhookSecret ?? conn.remoteWebhookSecretRef ?? conn.webhookSecretRef ?? conn.gumroadWebhookSecretRef,
+        webhookSecret ??
+        conn.remoteWebhookSecretRef ??
+        conn.webhookSecretRef ??
+        conn.gumroadWebhookSecretRef,
     };
   },
 });
@@ -645,7 +660,7 @@ export const updateTenantSetting = mutation({
       updatedAt: Date.now(),
     });
     return { success: true };
-  }
+  },
 });
 
 /**
@@ -677,7 +692,8 @@ export const upsertGumroadConnection = mutation({
         status: 'active',
         authMode: 'oauth',
         gumroadAccessTokenEncrypted: args.gumroadAccessTokenEncrypted,
-        gumroadRefreshTokenEncrypted: args.gumroadRefreshTokenEncrypted ?? existing.gumroadRefreshTokenEncrypted,
+        gumroadRefreshTokenEncrypted:
+          args.gumroadRefreshTokenEncrypted ?? existing.gumroadRefreshTokenEncrypted,
         gumroadUserId: args.gumroadUserId ?? existing.gumroadUserId,
         updatedAt: now,
       });
@@ -972,4 +988,3 @@ export const cleanupDuplicateAccountsForSubject = mutation({
     };
   },
 });
-

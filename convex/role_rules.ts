@@ -11,10 +11,10 @@
  * - Optional removal on entitlement revoke
  */
 
-import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
+import { mutation, query } from './_generated/server';
 
 function requireApiSecret(apiSecret: string | undefined): void {
   const expected = process.env.CONVEX_API_SECRET;
@@ -58,10 +58,7 @@ export const getEnabledVerificationProvidersFromProducts = query({
     guildId: v.string(),
   },
   returns: v.object({
-    gumroad: v.boolean(),
-    jinxxy: v.boolean(),
-    discord: v.boolean(),
-    vrchat: v.boolean(),
+    providers: v.array(v.string()),
   }),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
@@ -74,32 +71,28 @@ export const getEnabledVerificationProvidersFromProducts = query({
       .filter((q) => q.eq(q.field('enabled'), true))
       .collect();
 
-    let gumroad = false;
-    let jinxxy = false;
-    let discord = false;
-    let vrchat = false;
+    const providerSet = new Set<string>();
+    let hasDiscordRole = false;
 
     for (const rule of rules) {
       if (rule.productId.startsWith('discord_role:')) {
-        discord = true;
+        hasDiscordRole = true;
         continue;
       }
       if (rule.catalogProductId) {
         const catalog = await ctx.db.get(rule.catalogProductId);
-        if (catalog) {
-          if (catalog.provider === 'gumroad') gumroad = true;
-          else if (catalog.provider === 'jinxxy') jinxxy = true;
-          else if (catalog.provider === 'vrchat') vrchat = true;
+        if (catalog?.provider) {
+          providerSet.add(catalog.provider);
         }
       }
     }
 
     // Discord "Use Another Server" also requires tenant policy
-    if (discord && tenant?.policy?.enableDiscordRoleFromOtherServers !== true) {
-      discord = false;
+    if (hasDiscordRole && tenant?.policy?.enableDiscordRoleFromOtherServers === true) {
+      providerSet.add('discord');
     }
 
-    return { gumroad, jinxxy, discord, vrchat };
+    return { providers: [...providerSet] };
   },
 });
 
@@ -126,12 +119,7 @@ export const getVrchatCatalogProductsMatchingAvatars = query({
     const catalogs = await ctx.db
       .query('product_catalog')
       .withIndex('by_tenant', (q) => q.eq('tenantId', args.tenantId))
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('provider'), 'vrchat'),
-          q.eq(q.field('status'), 'active')
-        )
-      )
+      .filter((q) => q.and(q.eq(q.field('provider'), 'vrchat'), q.eq(q.field('status'), 'active')))
       .collect();
     const matches: Array<{
       productId: string;
@@ -227,7 +215,11 @@ export const getByGuildWithProductNames = query({
       if (r.catalogProductId) {
         const catalog = await ctx.db.get(r.catalogProductId);
         if (catalog) {
-          displayName = catalog.displayName ?? catalog.canonicalSlug ?? catalog.providerProductRef ?? r.productId;
+          displayName =
+            catalog.displayName ??
+            catalog.canonicalSlug ??
+            catalog.providerProductRef ??
+            r.productId;
           provider = catalog.provider;
         }
       }
@@ -305,9 +297,7 @@ export const getByCatalogProduct = query({
   handler: async (ctx, args) => {
     const rules = await ctx.db
       .query('role_rules')
-      .withIndex('by_catalog_product', (q) =>
-        q.eq('catalogProductId', args.catalogProductId)
-      )
+      .withIndex('by_catalog_product', (q) => q.eq('catalogProductId', args.catalogProductId))
       .collect();
 
     return rules;
@@ -337,8 +327,7 @@ export const getDiscordRoleRulesByTenant = query({
     rules = rules.filter(
       (r) =>
         r.sourceGuildId != null &&
-        (r.requiredRoleId != null ||
-          (r.requiredRoleIds != null && r.requiredRoleIds.length > 0)),
+        (r.requiredRoleId != null || (r.requiredRoleIds != null && r.requiredRoleIds.length > 0))
     );
 
     if (args.sourceGuildIds && args.sourceGuildIds.length > 0) {
@@ -547,7 +536,7 @@ export const addProductFromGumroad = mutation({
     const existing = await ctx.db
       .query('product_catalog')
       .withIndex('by_provider_ref', (q) =>
-        q.eq('provider', 'gumroad').eq('providerProductRef', args.providerProductRef),
+        q.eq('provider', 'gumroad').eq('providerProductRef', args.providerProductRef)
       )
       .first();
 
@@ -627,7 +616,7 @@ export const addProductFromJinxxy = mutation({
     const existing = await ctx.db
       .query('product_catalog')
       .withIndex('by_provider_ref', (q) =>
-        q.eq('provider', 'jinxxy').eq('providerProductRef', args.providerProductRef),
+        q.eq('provider', 'jinxxy').eq('providerProductRef', args.providerProductRef)
       )
       .first();
 
@@ -702,7 +691,7 @@ export const addProductFromLemonSqueezy = mutation({
     const existing = await ctx.db
       .query('product_catalog')
       .withIndex('by_provider_ref', (q) =>
-        q.eq('provider', 'lemonsqueezy').eq('providerProductRef', args.providerProductRef),
+        q.eq('provider', 'lemonsqueezy').eq('providerProductRef', args.providerProductRef)
       )
       .first();
 
@@ -746,7 +735,6 @@ export const addProductFromLemonSqueezy = mutation({
   },
 });
 
-
 /**
  * Extract VRChat avatar ID from URL or raw ID.
  * Matches avtr_[a-f0-9-]{36} or extracts from vrchat.com/home/avatar/avtr_xxx
@@ -780,13 +768,15 @@ export const addProductFromVrchat = mutation({
     requireApiSecret(args.apiSecret);
     const avatarId = extractVrchatAvatarId(args.providerProductRef);
     if (!avatarId) {
-      throw new Error('Invalid VRChat avatar URL or ID. Expected avtr_xxx or https://vrchat.com/home/avatar/avtr_xxx');
+      throw new Error(
+        'Invalid VRChat avatar URL or ID. Expected avtr_xxx or https://vrchat.com/home/avatar/avtr_xxx'
+      );
     }
     const now = Date.now();
     const existing = await ctx.db
       .query('product_catalog')
       .withIndex('by_provider_ref', (q) =>
-        q.eq('provider', 'vrchat').eq('providerProductRef', avatarId),
+        q.eq('provider', 'vrchat').eq('providerProductRef', avatarId)
       )
       .first();
 
@@ -833,7 +823,7 @@ export const addProductFromVrchat = mutation({
 function buildDiscordRoleProductId(
   sourceGuildId: string,
   requiredRoleIds: string[],
-  requiredRoleMatchMode?: 'any' | 'all',
+  requiredRoleMatchMode?: 'any' | 'all'
 ): string {
   if (requiredRoleIds.length === 0) {
     throw new Error('At least one required role is needed');
@@ -879,14 +869,14 @@ export const addProductFromDiscordRole = mutation({
     const productId = buildDiscordRoleProductId(
       args.sourceGuildId,
       reqIds,
-      args.requiredRoleMatchMode,
+      args.requiredRoleMatchMode
     );
     const now = Date.now();
 
     const existing = await ctx.db
       .query('role_rules')
       .withIndex('by_tenant_guild', (q) =>
-        q.eq('tenantId', args.tenantId).eq('guildId', args.guildId),
+        q.eq('tenantId', args.tenantId).eq('guildId', args.guildId)
       )
       .filter((q) => q.eq(q.field('productId'), productId))
       .first();
@@ -914,8 +904,7 @@ export const addProductFromDiscordRole = mutation({
       sourceGuildId: args.sourceGuildId,
       requiredRoleId: reqIds.length === 1 ? reqIds[0] : undefined,
       requiredRoleIds: reqIds.length > 1 ? reqIds : undefined,
-      requiredRoleMatchMode:
-        reqIds.length > 1 ? (args.requiredRoleMatchMode ?? 'any') : undefined,
+      requiredRoleMatchMode: reqIds.length > 1 ? (args.requiredRoleMatchMode ?? 'any') : undefined,
       createdAt: now,
       updatedAt: now,
     });
@@ -971,7 +960,7 @@ export const resolveProductByUrl = query({
       providerProductRef: v.string(),
       tenantId: v.id('tenants'),
       status: v.string(),
-    }),
+    })
   ),
   handler: async (ctx, args) => {
     const normalized = normalizeProductUrl(args.url);

@@ -104,15 +104,16 @@ export class LemonSqueezyApiClient {
           await this.sleep(retryAfter * 1000 * (retryCount + 1));
           return this.request<T>(method, path, query, body, retryCount + 1);
         }
-        throw new LemonSqueezyRateLimitError('Rate limit exceeded after maximum retries', retryAfter);
+        throw new LemonSqueezyRateLimitError(
+          'Rate limit exceeded after maximum retries',
+          retryAfter
+        );
       }
 
       if (!response.ok) {
         const error = (await this.safeParseJson(response)) as LemonSqueezyApiErrorResponse | null;
         const message =
-          error?.errors?.[0]?.detail ??
-          error?.errors?.[0]?.title ??
-          `HTTP ${response.status}`;
+          error?.errors?.[0]?.detail ?? error?.errors?.[0]?.title ?? `HTTP ${response.status}`;
         throw new LemonSqueezyApiError(message, response.status, error);
       }
 
@@ -125,10 +126,7 @@ export class LemonSqueezyApiClient {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new LemonSqueezyApiError('Request timeout', 408);
       }
-      throw new LemonSqueezyApiError(
-        error instanceof Error ? error.message : 'Unknown error',
-        0
-      );
+      throw new LemonSqueezyApiError(error instanceof Error ? error.message : 'Unknown error', 0);
     }
   }
 
@@ -163,10 +161,7 @@ export class LemonSqueezyApiClient {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new LemonSqueezyApiError('Request timeout', 408);
       }
-      throw new LemonSqueezyApiError(
-        error instanceof Error ? error.message : 'Unknown error',
-        0
-      );
+      throw new LemonSqueezyApiError(error instanceof Error ? error.message : 'Unknown error', 0);
     }
   }
 
@@ -268,7 +263,9 @@ export class LemonSqueezyApiClient {
   ): LemonSqueezyVariant {
     return {
       id: resource.id,
-      productId: resource.attributes.product_id ? String(resource.attributes.product_id) : undefined,
+      productId: resource.attributes.product_id
+        ? String(resource.attributes.product_id)
+        : undefined,
       name: resource.attributes.name ?? resource.id,
       slug: resource.attributes.slug ?? null,
       description: resource.attributes.description ?? null,
@@ -284,9 +281,7 @@ export class LemonSqueezyApiClient {
     };
   }
 
-  private mapOrder(
-    resource: JsonApiResource<Record<string, unknown>>
-  ): LemonSqueezyOrder {
+  private mapOrder(resource: JsonApiResource<Record<string, unknown>>): LemonSqueezyOrder {
     const attributes = resource.attributes;
     return {
       id: resource.id,
@@ -309,7 +304,10 @@ export class LemonSqueezyApiClient {
         typeof attributes.first_order_item === 'object' && attributes.first_order_item
           ? (attributes.first_order_item as LemonSqueezyOrder['firstOrderItem'])
           : undefined,
-      urls: typeof attributes.urls === 'object' && attributes.urls ? (attributes.urls as Record<string, unknown>) : undefined,
+      urls:
+        typeof attributes.urls === 'object' && attributes.urls
+          ? (attributes.urls as Record<string, unknown>)
+          : undefined,
       createdAt: typeof attributes.created_at === 'string' ? attributes.created_at : undefined,
       updatedAt: typeof attributes.updated_at === 'string' ? attributes.updated_at : undefined,
     };
@@ -332,13 +330,16 @@ export class LemonSqueezyApiClient {
       userName: typeof attributes.user_name === 'string' ? attributes.user_name : null,
       userEmail: typeof attributes.user_email === 'string' ? attributes.user_email : null,
       status: typeof attributes.status === 'string' ? attributes.status : null,
-      statusFormatted: typeof attributes.status_formatted === 'string' ? attributes.status_formatted : null,
+      statusFormatted:
+        typeof attributes.status_formatted === 'string' ? attributes.status_formatted : null,
       cardBrand: typeof attributes.card_brand === 'string' ? attributes.card_brand : null,
-      cardLastFour: typeof attributes.card_last_four === 'string' ? attributes.card_last_four : null,
+      cardLastFour:
+        typeof attributes.card_last_four === 'string' ? attributes.card_last_four : null,
       pause: attributes.pause,
       cancelled: attributes.cancelled === true,
       trialEndsAt: typeof attributes.trial_ends_at === 'string' ? attributes.trial_ends_at : null,
-      billingAnchor: typeof attributes.billing_anchor === 'number' ? attributes.billing_anchor : null,
+      billingAnchor:
+        typeof attributes.billing_anchor === 'number' ? attributes.billing_anchor : null,
       firstSubscriptionItem:
         typeof attributes.first_subscription_item === 'object' && attributes.first_subscription_item
           ? (attributes.first_subscription_item as LemonSqueezySubscription['firstSubscriptionItem'])
@@ -367,8 +368,10 @@ export class LemonSqueezyApiClient {
       userEmail: typeof attributes.user_email === 'string' ? attributes.user_email : null,
       key: typeof attributes.key === 'string' ? attributes.key : null,
       keyShort: typeof attributes.key_short === 'string' ? attributes.key_short : null,
-      activationLimit: typeof attributes.activation_limit === 'number' ? attributes.activation_limit : null,
-      instancesCount: typeof attributes.instances_count === 'number' ? attributes.instances_count : null,
+      activationLimit:
+        typeof attributes.activation_limit === 'number' ? attributes.activation_limit : null,
+      instancesCount:
+        typeof attributes.instances_count === 'number' ? attributes.instances_count : null,
       disabled: attributes.disabled === true,
       status: typeof attributes.status === 'string' ? attributes.status : null,
       expiresAt: typeof attributes.expires_at === 'string' ? attributes.expires_at : null,
@@ -401,60 +404,117 @@ export class LemonSqueezyApiClient {
     };
   }
 
-  async getStores(page = 1, perPage = DEFAULT_PAGE_SIZE): Promise<{
+  async getStores(
+    page = 1,
+    perPage = DEFAULT_PAGE_SIZE
+  ): Promise<{
     stores: LemonSqueezyStore[];
     pagination: LemonSqueezyPagination;
   }> {
-    const response = await this.request<LemonSqueezyListResponse<JsonApiResource>>('GET', '/stores', {
+    const response = await this.request<
+      LemonSqueezyListResponse<
+        JsonApiResource<{
+          name?: string;
+          slug?: string;
+          domain?: string | null;
+          status?: string | null;
+          url?: string | null;
+          test_mode?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        }>
+      >
+    >('GET', '/stores', {
       'page[number]': page,
       'page[size]': perPage,
     });
 
     return {
-      stores: response.data.map((resource) => this.mapStore(resource as JsonApiResource<any>)),
+      stores: response.data.map((resource) => this.mapStore(resource)),
       pagination: this.mapPagination(response),
     };
   }
 
-  async getProducts(
-    params?: { storeId?: string; page?: number; perPage?: number }
-  ): Promise<{ products: LemonSqueezyProduct[]; pagination: LemonSqueezyPagination }> {
-    const response = await this.request<LemonSqueezyListResponse<JsonApiResource>>('GET', '/products', {
+  async getProducts(params?: { storeId?: string; page?: number; perPage?: number }): Promise<{
+    products: LemonSqueezyProduct[];
+    pagination: LemonSqueezyPagination;
+  }> {
+    const response = await this.request<
+      LemonSqueezyListResponse<
+        JsonApiResource<{
+          store_id?: number;
+          name?: string;
+          slug?: string | null;
+          status?: string | null;
+          description?: string | null;
+          url?: string | null;
+          test_mode?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        }>
+      >
+    >('GET', '/products', {
       'filter[store_id]': params?.storeId,
       'page[number]': params?.page ?? 1,
       'page[size]': params?.perPage ?? DEFAULT_PAGE_SIZE,
     });
 
     return {
-      products: response.data.map((resource) => this.mapProduct(resource as JsonApiResource<any>)),
+      products: response.data.map((resource) => this.mapProduct(resource)),
       pagination: this.mapPagination(response),
     };
   }
 
-  async getVariants(
-    params?: { productId?: string; page?: number; perPage?: number }
-  ): Promise<{ variants: LemonSqueezyVariant[]; pagination: LemonSqueezyPagination }> {
-    const response = await this.request<LemonSqueezyListResponse<JsonApiResource>>('GET', '/variants', {
+  async getVariants(params?: { productId?: string; page?: number; perPage?: number }): Promise<{
+    variants: LemonSqueezyVariant[];
+    pagination: LemonSqueezyPagination;
+  }> {
+    const response = await this.request<
+      LemonSqueezyListResponse<
+        JsonApiResource<{
+          product_id?: number;
+          name?: string;
+          slug?: string | null;
+          description?: string | null;
+          price?: number | null;
+          status?: string | null;
+          has_license_keys?: boolean;
+          license_length_value?: number | null;
+          license_length_unit?: string | null;
+          is_subscription?: boolean;
+          test_mode?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        }>
+      >
+    >('GET', '/variants', {
       'filter[product_id]': params?.productId,
       'page[number]': params?.page ?? 1,
       'page[size]': params?.perPage ?? DEFAULT_PAGE_SIZE,
     });
 
     return {
-      variants: response.data.map((resource) => this.mapVariant(resource as JsonApiResource<any>)),
+      variants: response.data.map((resource) => this.mapVariant(resource)),
       pagination: this.mapPagination(response),
     };
   }
 
-  async getOrders(
-    params?: { storeId?: string; userEmail?: string; page?: number; perPage?: number }
-  ): Promise<{ orders: LemonSqueezyOrder[]; pagination: LemonSqueezyPagination }> {
-    const response = await this.request<LemonSqueezyListResponse<JsonApiResource>>('GET', '/orders', {
-      'filter[store_id]': params?.storeId,
-      'filter[user_email]': params?.userEmail,
-      'page[number]': params?.page ?? 1,
-      'page[size]': params?.perPage ?? DEFAULT_PAGE_SIZE,
-    });
+  async getOrders(params?: {
+    storeId?: string;
+    userEmail?: string;
+    page?: number;
+    perPage?: number;
+  }): Promise<{ orders: LemonSqueezyOrder[]; pagination: LemonSqueezyPagination }> {
+    const response = await this.request<LemonSqueezyListResponse<JsonApiResource>>(
+      'GET',
+      '/orders',
+      {
+        'filter[store_id]': params?.storeId,
+        'filter[user_email]': params?.userEmail,
+        'page[number]': params?.page ?? 1,
+        'page[size]': params?.perPage ?? DEFAULT_PAGE_SIZE,
+      }
+    );
 
     return {
       orders: response.data.map((resource) => this.mapOrder(resource as JsonApiResource)),
@@ -462,9 +522,12 @@ export class LemonSqueezyApiClient {
     };
   }
 
-  async getSubscriptions(
-    params?: { storeId?: string; userEmail?: string; page?: number; perPage?: number }
-  ): Promise<{ subscriptions: LemonSqueezySubscription[]; pagination: LemonSqueezyPagination }> {
+  async getSubscriptions(params?: {
+    storeId?: string;
+    userEmail?: string;
+    page?: number;
+    perPage?: number;
+  }): Promise<{ subscriptions: LemonSqueezySubscription[]; pagination: LemonSqueezyPagination }> {
     const response = await this.request<LemonSqueezyListResponse<JsonApiResource>>(
       'GET',
       '/subscriptions',
@@ -484,9 +547,10 @@ export class LemonSqueezyApiClient {
     };
   }
 
-  async getLicenseKeys(
-    params?: { storeId?: string; page?: number; perPage?: number }
-  ): Promise<{ licenseKeys: LemonSqueezyLicenseKey[]; pagination: LemonSqueezyPagination }> {
+  async getLicenseKeys(params?: { storeId?: string; page?: number; perPage?: number }): Promise<{
+    licenseKeys: LemonSqueezyLicenseKey[];
+    pagination: LemonSqueezyPagination;
+  }> {
     const response = await this.request<LemonSqueezyListResponse<JsonApiResource>>(
       'GET',
       '/license-keys',
@@ -498,15 +562,23 @@ export class LemonSqueezyApiClient {
     );
 
     return {
-      licenseKeys: response.data.map((resource) =>
-        this.mapLicenseKey(resource as JsonApiResource)
-      ),
+      licenseKeys: response.data.map((resource) => this.mapLicenseKey(resource as JsonApiResource)),
       pagination: this.mapPagination(response),
     };
   }
 
   async createWebhook(input: LemonSqueezyWebhookCreateInput): Promise<LemonSqueezyWebhook> {
-    const response = await this.request<{ data: JsonApiResource<any> }>('POST', '/webhooks', undefined, {
+    const response = await this.request<{
+      data: JsonApiResource<{
+        store_id?: number;
+        url?: string;
+        events?: string[];
+        secret?: string | null;
+        test_mode?: boolean;
+        created_at?: string;
+        updated_at?: string;
+      }>;
+    }>('POST', '/webhooks', undefined, {
       data: {
         type: 'webhooks',
         attributes: {

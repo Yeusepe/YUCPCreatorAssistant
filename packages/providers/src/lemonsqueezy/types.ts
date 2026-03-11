@@ -42,7 +42,10 @@ export class LemonSqueezyApiError extends Error {
 }
 
 export class LemonSqueezyRateLimitError extends LemonSqueezyApiError {
-  constructor(message = 'Rate limit exceeded', public readonly retryAfter?: number) {
+  constructor(
+    message = 'Rate limit exceeded',
+    public readonly retryAfter?: number
+  ) {
     super(message, 429);
     this.name = 'LemonSqueezyRateLimitError';
   }
