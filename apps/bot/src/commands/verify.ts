@@ -185,24 +185,61 @@ async function bindVerifyPanelToken(
     tenantId: Id<'tenants'>;
   }
 ): Promise<void> {
-  if (!apiBaseUrl) return;
+  const applicationId = interaction.applicationId?.trim();
+  const interactionToken = interaction.token?.trim();
+  const messageId = params.messageId.trim();
+  const panelToken = params.panelToken.trim();
+  const missingFields = [
+    !applicationId ? 'applicationId' : null,
+    !interactionToken ? 'interactionToken' : null,
+    !messageId ? 'messageId' : null,
+    !panelToken ? 'panelToken' : null,
+  ].filter((value): value is string => value !== null);
+
+  if (missingFields.length > 0) {
+    logger.info('Skipped verify panel token bind because interaction context is incomplete', {
+      guildId: params.guildId,
+      missingFields,
+      userId: params.discordUserId,
+    });
+    return;
+  }
+
+  const apiForFetch = getApiUrls().apiInternal ?? apiBaseUrl;
+  if (!apiForFetch) return;
 
   try {
-    const res = await bindVerifyPanel({
-      applicationId: interaction.applicationId,
-      discordUserId: params.discordUserId,
-      guildId: params.guildId,
-      interactionToken: interaction.token,
-      messageId: params.messageId,
-      panelToken: params.panelToken,
-      tenantId: params.tenantId,
-    });
-    if (!res.success) {
-      logger.warn('Failed to bind verify panel token', {
+    const res = await fetch(`${apiForFetch}/api/verification/panel/bind`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiSecret,
+        applicationId,
+        discordUserId: params.discordUserId,
         guildId: params.guildId,
-        supportCode: res.supportCode,
+        interactionToken,
+        messageId,
+        panelToken,
+        tenantId: params.tenantId,
+      }),
+    });
+    if (!res.ok) {
+      const result = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        supportCode?: string;
+      };
+      const metadata = {
+        error: result.error,
+        guildId: params.guildId,
+        status: res.status,
+        supportCode: result.supportCode,
         userId: params.discordUserId,
-      });
+      };
+      if (result.supportCode) {
+        logger.warn('Failed to bind verify panel token', metadata);
+      } else {
+        logger.info('Verify panel token was not bound', metadata);
+      }
     }
   } catch (err) {
     logger.warn('Failed to bind verify panel token', {
