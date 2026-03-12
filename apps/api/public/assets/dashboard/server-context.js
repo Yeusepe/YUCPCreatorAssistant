@@ -321,7 +321,12 @@ export function initServerContext(deps) {
     _setDropdownOpen(false);
 
     try {
-      sessionStorage.clear();
+      for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+        const key = sessionStorage.key(index);
+        if (key?.startsWith('ca_servers_')) {
+          sessionStorage.removeItem(key);
+        }
+      }
     } catch (_) {
       // Ignore storage cleanup failures and continue with sign-out.
     }
