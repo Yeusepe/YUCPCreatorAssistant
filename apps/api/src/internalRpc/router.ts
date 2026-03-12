@@ -1,14 +1,13 @@
-import { ConsoleLogger, TempoLogLevel } from '@tempojs/common';
 import { TempoRouter, TempoRouterConfiguration } from '@tempojs/cloudflare-worker-router';
+import { ConsoleLogger, TempoLogLevel } from '@tempojs/common';
 import { AuthContext, AuthInterceptor, ServerContext } from '@tempojs/server';
 import {
+  type AddCollaboratorConnectionManualRequest,
+  type AddCollaboratorConnectionManualResponse,
   BaseCatalogService,
   BaseCollaboratorService,
   BaseSetupService,
   BaseVerificationService,
-  TempoServiceRegistry,
-  type AddCollaboratorConnectionManualRequest,
-  type AddCollaboratorConnectionManualResponse,
   type BindVerifyPanelRequest,
   type CollaboratorConnectionRecord,
   type CompleteLicenseVerificationRequest,
@@ -18,8 +17,8 @@ import {
   type CreateConnectTokenRequest,
   type CreateDiscordRoleSetupSessionRequest,
   type CreateSetupSessionRequest,
-  type DiscordRoleSetupResultResponse,
   type DisconnectVerificationRequest,
+  type DiscordRoleSetupResultResponse,
   type GetDiscordRoleSetupResultRequest,
   type ListCollaboratorConnectionsRequest,
   type ListCollaboratorConnectionsResponse,
@@ -29,9 +28,11 @@ import {
   type ResolveVrchatAvatarNameRequest,
   type ResolveVrchatAvatarNameResponse,
   type SuccessResponse,
+  TempoServiceRegistry,
   type TokenResponse,
   type VerificationResultResponse,
 } from '@yucp/private-rpc';
+import { createSetupSession } from '../lib/setupSession';
 import type { VerificationRouteHandlers } from '../routes';
 import type { CollabConfig } from '../routes/collab';
 import { createCollabRoutes } from '../routes/collab';
@@ -39,7 +40,6 @@ import { type ConnectConfig, createConnectRoutes } from '../routes/connect';
 import { handleGumroadProducts } from '../routes/gumroadProducts';
 import { handleJinxxyProducts } from '../routes/jinxxyProducts';
 import { handleLemonSqueezyProducts } from '../routes/lemonsqueezyProducts';
-import { createSetupSession } from '../lib/setupSession';
 import { createJsonRequest, readJsonResponse } from './httpAdapter';
 import { InternalRpcTelemetry } from './telemetry';
 
@@ -220,125 +220,125 @@ class InternalRpcAuthInterceptor extends AuthInterceptor {
 
 function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
   if (!servicesRegistered) {
-    TempoServiceRegistry.register(BaseCatalogService.serviceName)(class CatalogTempoService extends BaseCatalogService {
-      async listGumroadProducts(
-        request: ListProductsRequest,
-        _context: ServerContext
-      ): Promise<ProductsResponse> {
-        return withTelemetry('CatalogService.listGumroadProducts', request, async () => {
-          const response = await handleGumroadProducts(
-            createJsonRequest(`${deps.config.apiBaseUrl}/api/gumroad/products`, {
-              apiSecret: deps.config.convexApiSecret,
-              tenantId: request.tenantId ?? '',
-            })
-          );
-          return normalizeProductsResponse(
-            await readJsonResponse<Partial<ProductsResponse>>(response)
-          );
-        });
-      }
-
-      async listJinxxyProducts(
-        request: ListProductsRequest,
-        _context: ServerContext
-      ): Promise<ProductsResponse> {
-        return withTelemetry('CatalogService.listJinxxyProducts', request, async () => {
-          const response = await handleJinxxyProducts(
-            createJsonRequest(`${deps.config.apiBaseUrl}/api/jinxxy/products`, {
-              apiSecret: deps.config.convexApiSecret,
-              tenantId: request.tenantId ?? '',
-            })
-          );
-          return normalizeProductsResponse(
-            await readJsonResponse<Partial<ProductsResponse>>(response)
-          );
-        });
-      }
-
-      async listLemonSqueezyProducts(
-        request: ListProductsRequest,
-        _context: ServerContext
-      ): Promise<ProductsResponse> {
-        return withTelemetry('CatalogService.listLemonSqueezyProducts', request, async () => {
-          const response = await handleLemonSqueezyProducts(
-            createJsonRequest(`${deps.config.apiBaseUrl}/api/lemonsqueezy/products`, {
-              apiSecret: deps.config.convexApiSecret,
-              tenantId: request.tenantId ?? '',
-            })
-          );
-          return normalizeProductsResponse(
-            await readJsonResponse<Partial<ProductsResponse>>(response)
-          );
-        });
-      }
-
-      async resolveVrchatAvatarName(
-        request: ResolveVrchatAvatarNameRequest,
-        _context: ServerContext
-      ): Promise<ResolveVrchatAvatarNameResponse> {
-        return withTelemetry('CatalogService.resolveVrchatAvatarName', request, async () => {
-          const response = await fetch(`${deps.config.convexSiteUrl}/v1/vrchat/avatar-name`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${deps.config.convexApiSecret}`,
-            },
-            body: JSON.stringify({
-              tenantId: request.tenantId ?? '',
-              avatarId: request.avatarId ?? '',
-            }),
+    TempoServiceRegistry.register(BaseCatalogService.serviceName)(
+      class CatalogTempoService extends BaseCatalogService {
+        async listGumroadProducts(
+          request: ListProductsRequest,
+          _context: ServerContext
+        ): Promise<ProductsResponse> {
+          return withTelemetry('CatalogService.listGumroadProducts', request, async () => {
+            const response = await handleGumroadProducts(
+              createJsonRequest(`${deps.config.apiBaseUrl}/api/gumroad/products`, {
+                apiSecret: deps.config.convexApiSecret,
+                tenantId: request.tenantId ?? '',
+              })
+            );
+            return normalizeProductsResponse(
+              await readJsonResponse<Partial<ProductsResponse>>(response)
+            );
           });
+        }
 
-          if (!response.ok) {
-            return { name: undefined };
-          }
+        async listJinxxyProducts(
+          request: ListProductsRequest,
+          _context: ServerContext
+        ): Promise<ProductsResponse> {
+          return withTelemetry('CatalogService.listJinxxyProducts', request, async () => {
+            const response = await handleJinxxyProducts(
+              createJsonRequest(`${deps.config.apiBaseUrl}/api/jinxxy/products`, {
+                apiSecret: deps.config.convexApiSecret,
+                tenantId: request.tenantId ?? '',
+              })
+            );
+            return normalizeProductsResponse(
+              await readJsonResponse<Partial<ProductsResponse>>(response)
+            );
+          });
+        }
 
-          return await readJsonResponse<ResolveVrchatAvatarNameResponse>(response);
-        });
+        async listLemonSqueezyProducts(
+          request: ListProductsRequest,
+          _context: ServerContext
+        ): Promise<ProductsResponse> {
+          return withTelemetry('CatalogService.listLemonSqueezyProducts', request, async () => {
+            const response = await handleLemonSqueezyProducts(
+              createJsonRequest(`${deps.config.apiBaseUrl}/api/lemonsqueezy/products`, {
+                apiSecret: deps.config.convexApiSecret,
+                tenantId: request.tenantId ?? '',
+              })
+            );
+            return normalizeProductsResponse(
+              await readJsonResponse<Partial<ProductsResponse>>(response)
+            );
+          });
+        }
+
+        async resolveVrchatAvatarName(
+          request: ResolveVrchatAvatarNameRequest,
+          _context: ServerContext
+        ): Promise<ResolveVrchatAvatarNameResponse> {
+          return withTelemetry('CatalogService.resolveVrchatAvatarName', request, async () => {
+            const response = await fetch(`${deps.config.convexSiteUrl}/v1/vrchat/avatar-name`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${deps.config.convexApiSecret}`,
+              },
+              body: JSON.stringify({
+                tenantId: request.tenantId ?? '',
+                avatarId: request.avatarId ?? '',
+              }),
+            });
+
+            if (!response.ok) {
+              return { name: undefined };
+            }
+
+            return await readJsonResponse<ResolveVrchatAvatarNameResponse>(response);
+          });
+        }
       }
-    });
+    );
 
-    TempoServiceRegistry.register(BaseSetupService.serviceName)(class SetupTempoService extends BaseSetupService {
-      async createSetupSession(
-        request: CreateSetupSessionRequest,
-        _context: ServerContext
-      ): Promise<TokenResponse> {
-        return withTelemetry('SetupService.createSetupSession', request, async () => {
-          const response = await deps.connectRoutes.createSessionEndpoint(
-            createJsonRequest(`${deps.config.apiBaseUrl}/api/setup/create-session`, {
-              tenantId: request.tenantId ?? '',
-              guildId: request.guildId ?? '',
-              discordUserId: request.discordUserId ?? '',
-              apiSecret: deps.config.convexApiSecret,
-            })
-          );
-          return normalizeTokenResponse(await readJsonResponse<Partial<TokenResponse>>(response));
-        });
-      }
+    TempoServiceRegistry.register(BaseSetupService.serviceName)(
+      class SetupTempoService extends BaseSetupService {
+        async createSetupSession(
+          request: CreateSetupSessionRequest,
+          _context: ServerContext
+        ): Promise<TokenResponse> {
+          return withTelemetry('SetupService.createSetupSession', request, async () => {
+            const response = await deps.connectRoutes.createSessionEndpoint(
+              createJsonRequest(`${deps.config.apiBaseUrl}/api/setup/create-session`, {
+                tenantId: request.tenantId ?? '',
+                guildId: request.guildId ?? '',
+                discordUserId: request.discordUserId ?? '',
+                apiSecret: deps.config.convexApiSecret,
+              })
+            );
+            return normalizeTokenResponse(await readJsonResponse<Partial<TokenResponse>>(response));
+          });
+        }
 
-      async createConnectToken(
-        request: CreateConnectTokenRequest,
-        _context: ServerContext
-      ): Promise<TokenResponse> {
-        return withTelemetry('SetupService.createConnectToken', request, async () => {
-          const response = await deps.connectRoutes.createTokenEndpoint(
-            createJsonRequest(`${deps.config.apiBaseUrl}/api/connect/create-token`, {
-              discordUserId: request.discordUserId ?? '',
-              apiSecret: deps.config.convexApiSecret,
-            })
-          );
-          return normalizeTokenResponse(await readJsonResponse<Partial<TokenResponse>>(response));
-        });
-      }
+        async createConnectToken(
+          request: CreateConnectTokenRequest,
+          _context: ServerContext
+        ): Promise<TokenResponse> {
+          return withTelemetry('SetupService.createConnectToken', request, async () => {
+            const response = await deps.connectRoutes.createTokenEndpoint(
+              createJsonRequest(`${deps.config.apiBaseUrl}/api/connect/create-token`, {
+                discordUserId: request.discordUserId ?? '',
+                apiSecret: deps.config.convexApiSecret,
+              })
+            );
+            return normalizeTokenResponse(await readJsonResponse<Partial<TokenResponse>>(response));
+          });
+        }
 
-      async createDiscordRoleSetupSession(
-        request: CreateDiscordRoleSetupSessionRequest,
-        _context: ServerContext
-      ): Promise<TokenResponse> {
-        return withTelemetry(
-          'SetupService.createDiscordRoleSetupSession',
-          request,
-          async () => {
+        async createDiscordRoleSetupSession(
+          request: CreateDiscordRoleSetupSessionRequest,
+          _context: ServerContext
+        ): Promise<TokenResponse> {
+          return withTelemetry('SetupService.createDiscordRoleSetupSession', request, async () => {
             const response = await deps.connectRoutes.createDiscordRoleSession(
               createJsonRequest(`${deps.config.apiBaseUrl}/api/setup/discord-role-session`, {
                 tenantId: request.tenantId ?? '',
@@ -347,31 +347,29 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
                 apiSecret: deps.config.convexApiSecret,
               })
             );
-            return normalizeTokenResponse(
-              await readJsonResponse<Partial<TokenResponse>>(response)
-            );
-          }
-        );
-      }
+            return normalizeTokenResponse(await readJsonResponse<Partial<TokenResponse>>(response));
+          });
+        }
 
-      async getDiscordRoleSetupResult(
-        request: GetDiscordRoleSetupResultRequest,
-        _context: ServerContext
-      ): Promise<DiscordRoleSetupResultResponse> {
-        return withTelemetry('SetupService.getDiscordRoleSetupResult', request, async () => {
-          const response = await deps.connectRoutes.getDiscordRoleResult(
-            new Request(`${deps.config.apiBaseUrl}/api/setup/discord-role-result`, {
-              headers: {
-                Authorization: `Bearer ${request.token ?? ''}`,
-              },
-            })
-          );
-          return normalizeDiscordRoleSetupResult(
-            await readJsonResponse<Partial<DiscordRoleSetupResultResponse>>(response)
-          );
-        });
+        async getDiscordRoleSetupResult(
+          request: GetDiscordRoleSetupResultRequest,
+          _context: ServerContext
+        ): Promise<DiscordRoleSetupResultResponse> {
+          return withTelemetry('SetupService.getDiscordRoleSetupResult', request, async () => {
+            const response = await deps.connectRoutes.getDiscordRoleResult(
+              new Request(`${deps.config.apiBaseUrl}/api/setup/discord-role-result`, {
+                headers: {
+                  Authorization: `Bearer ${request.token ?? ''}`,
+                },
+              })
+            );
+            return normalizeDiscordRoleSetupResult(
+              await readJsonResponse<Partial<DiscordRoleSetupResultResponse>>(response)
+            );
+          });
+        }
       }
-    });
+    );
 
     TempoServiceRegistry.register(BaseVerificationService.serviceName)(
       class VerificationTempoService extends BaseVerificationService {
@@ -452,23 +450,19 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
           request: DisconnectVerificationRequest,
           _context: ServerContext
         ): Promise<SuccessResponse> {
-          return withTelemetry(
-            'VerificationService.disconnectVerification',
-            request,
-            async () => {
-              const response = await deps.verificationHandlers.disconnectVerification(
-                createJsonRequest(`${deps.config.apiBaseUrl}/api/verification/disconnect`, {
-                  apiSecret: deps.config.convexApiSecret,
-                  tenantId: request.tenantId ?? '',
-                  subjectId: request.subjectId ?? '',
-                  provider: request.provider ?? '',
-                })
-              );
-              return normalizeSuccessResponse(
-                await readJsonResponse<Partial<SuccessResponse>>(response)
-              );
-            }
-          );
+          return withTelemetry('VerificationService.disconnectVerification', request, async () => {
+            const response = await deps.verificationHandlers.disconnectVerification(
+              createJsonRequest(`${deps.config.apiBaseUrl}/api/verification/disconnect`, {
+                apiSecret: deps.config.convexApiSecret,
+                tenantId: request.tenantId ?? '',
+                subjectId: request.subjectId ?? '',
+                provider: request.provider ?? '',
+              })
+            );
+            return normalizeSuccessResponse(
+              await readJsonResponse<Partial<SuccessResponse>>(response)
+            );
+          });
         }
       }
     );
@@ -534,33 +528,29 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
           request: AddCollaboratorConnectionManualRequest,
           _context: ServerContext
         ): Promise<AddCollaboratorConnectionManualResponse> {
-          return withTelemetry(
-            'CollaboratorService.addConnectionManual',
-            request,
-            async () => {
-              const setupToken = await createCollabSetupToken(
-                deps.collabConfig.encryptionSecret,
-                request.tenantId ?? '',
-                request.guildId ?? '',
-                request.actorDiscordUserId ?? ''
-              );
-              const response = await deps.collabRoutes.handleCollabRequest(
-                createJsonRequest(
-                  `${deps.config.apiBaseUrl}/api/collab/connections/manual`,
-                  {
-                    jinxxyApiKey: request.jinxxyApiKey ?? '',
-                    serverName: request.serverName,
+          return withTelemetry('CollaboratorService.addConnectionManual', request, async () => {
+            const setupToken = await createCollabSetupToken(
+              deps.collabConfig.encryptionSecret,
+              request.tenantId ?? '',
+              request.guildId ?? '',
+              request.actorDiscordUserId ?? ''
+            );
+            const response = await deps.collabRoutes.handleCollabRequest(
+              createJsonRequest(
+                `${deps.config.apiBaseUrl}/api/collab/connections/manual`,
+                {
+                  jinxxyApiKey: request.jinxxyApiKey ?? '',
+                  serverName: request.serverName,
+                },
+                {
+                  headers: {
+                    Authorization: `Bearer ${setupToken}`,
                   },
-                  {
-                    headers: {
-                      Authorization: `Bearer ${setupToken}`,
-                    },
-                  }
-                )
-              );
-              return await readJsonResponse<AddCollaboratorConnectionManualResponse>(response);
-            }
-          );
+                }
+              )
+            );
+            return await readJsonResponse<AddCollaboratorConnectionManualResponse>(response);
+          });
         }
 
         async removeConnection(

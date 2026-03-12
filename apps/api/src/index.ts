@@ -17,9 +17,9 @@ import { detectTunnelUrl } from './lib/tunnel';
 import {
   type InstallConfig,
   type VerificationConfig,
-  createVerificationRoutes,
   createConnectRoutes,
   createProviderPlatformRoutes,
+  createVerificationRoutes,
   createWebhookHandler,
   mountInstallRoutes,
   mountVerificationRouteHandlers,
