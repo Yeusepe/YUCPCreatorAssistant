@@ -183,21 +183,26 @@ function renderParticipatingServers(servers) {
   });
 }
 
-async function loadUserServers(updatePlatformCards) {
+async function loadUserServers(updatePlatformCards, options = {}) {
   const listEl = document.getElementById('server-dropdown-list');
   if (!listEl) return;
   listEl.innerHTML = '<div class="server-dropdown-loading">Loading servers...</div>';
 
   const tenantId = getTenantId();
   const cacheKey = `ca_servers_${tenantId || 'global'}_V1`;
-  const cached = sessionStorage.getItem(cacheKey);
+  const force = options.force === true;
+  const cached = force ? null : sessionStorage.getItem(cacheKey);
 
   try {
     if (cached) {
       userServers = JSON.parse(cached);
     } else {
-      const data = await apiFetch(`${getApiBase()}/api/connect/user/guilds`)
-        .then((res) => (res.ok ? res.json() : { servers: [] }));
+      const res = await apiFetch(`${getApiBase()}/api/connect/user/guilds`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
       userServers = data.guilds || data.servers || [];
       sessionStorage.setItem(cacheKey, JSON.stringify(userServers));
     }
@@ -229,6 +234,21 @@ async function loadUserServers(updatePlatformCards) {
     userServers = [];
     listEl.innerHTML = '<div class="server-dropdown-empty">Failed to load servers.</div>';
   }
+}
+
+export async function refreshUserServers(updatePlatformCards) {
+  const tenantId = getTenantId();
+  const cacheKey = `ca_servers_${tenantId || 'global'}_V1`;
+
+  try {
+    sessionStorage.removeItem(cacheKey);
+  } catch (_) {
+    // Ignore storage failures and fall back to an in-memory refresh.
+  }
+
+  userServers = null;
+  filteredServers = null;
+  await loadUserServers(updatePlatformCards, { force: true });
 }
 
 export function initServerContext(deps) {
