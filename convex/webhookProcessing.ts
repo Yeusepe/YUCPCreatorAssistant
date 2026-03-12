@@ -422,7 +422,8 @@ async function projectCanonicalEntitlement(
   if (
     discordUserId &&
     !discordUserId.startsWith('gumroad:') &&
-    !discordUserId.startsWith('jinxxy:')
+    !discordUserId.startsWith('jinxxy:') &&
+    !discordUserId.startsWith('lemonsqueezy:')
   ) {
     await emitRoleSyncJob(ctx, tenantId, subjectId, discordUserId, entitlementId);
   }
@@ -458,7 +459,8 @@ async function revokeCanonicalEntitlementBySource(
   if (
     discordUserId &&
     !discordUserId.startsWith('gumroad:') &&
-    !discordUserId.startsWith('jinxxy:')
+    !discordUserId.startsWith('jinxxy:') &&
+    !discordUserId.startsWith('lemonsqueezy:')
   ) {
     await emitRoleRemovalJobs(ctx, tenantId, subjectId, entitlement.productId, discordUserId);
   }

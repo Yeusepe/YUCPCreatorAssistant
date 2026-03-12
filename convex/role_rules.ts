@@ -693,6 +693,7 @@ export const addProductFromLemonSqueezy = mutation({
       .withIndex('by_provider_ref', (q) =>
         q.eq('provider', 'lemonsqueezy').eq('providerProductRef', args.providerProductRef)
       )
+      .filter((q) => q.eq(q.field('tenantId'), args.tenantId))
       .first();
 
     if (existing) {

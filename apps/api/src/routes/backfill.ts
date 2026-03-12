@@ -57,9 +57,11 @@ export interface BackfillRecord {
   providerUserId?: string;
   providerProductId: string;
   paymentStatus: string;
-  lifecycleStatus: 'active' | 'refunded' | 'disputed';
+  lifecycleStatus: 'active' | 'refunded' | 'cancelled' | 'disputed';
   purchasedAt: number;
 }
+
+const MAX_RATE_LIMIT_RETRIES = 10;
 
 interface BackfillProviderAdapter {
   /**
@@ -136,6 +138,9 @@ class GumroadBackfillAdapter implements BackfillProviderAdapter {
         const waitMs = retryAfter ? Number.parseInt(retryAfter, 10) * 1000 : 5000;
         logger.warn('Gumroad rate limit', { waitMs, retries });
         await new Promise((r) => setTimeout(r, waitMs));
+        if (retries >= MAX_RATE_LIMIT_RETRIES) {
+          throw new Error(`Gumroad rate limit exceeded after ${MAX_RATE_LIMIT_RETRIES} retries`);
+        }
         retries++;
         continue;
       }
@@ -250,6 +255,9 @@ class JinxxyBackfillAdapter implements BackfillProviderAdapter {
           const waitMs = 60_000;
           logger.warn('Jinxxy rate limit, waiting', { waitMs, retries });
           await new Promise((r) => setTimeout(r, waitMs));
+          if (retries >= MAX_RATE_LIMIT_RETRIES) {
+            throw new Error(`Jinxxy rate limit exceeded after ${MAX_RATE_LIMIT_RETRIES} retries`);
+          }
           retries++;
           continue;
         }
@@ -316,9 +324,10 @@ class LemonSqueezyBackfillAdapter implements BackfillProviderAdapter {
                 externalOrderId: sub.orderId ?? sub.id,
                 buyerEmailHash: normalized ? await sha256Hex(normalized) : undefined,
                 providerProductId: productRef,
-                paymentStatus: isCancelled ? 'refunded' : 'paid',
-                lifecycleStatus: (isCancelled ? 'refunded' : 'active') as
+                paymentStatus: 'paid',
+                lifecycleStatus: (isCancelled ? 'cancelled' : 'active') as
                   | 'active'
+                  | 'cancelled'
                   | 'refunded'
                   | 'disputed',
                 purchasedAt: sub.createdAt ? new Date(sub.createdAt).getTime() : Date.now(),
@@ -344,6 +353,11 @@ class LemonSqueezyBackfillAdapter implements BackfillProviderAdapter {
             const waitMs = 5_000;
             logger.warn('LemonSqueezy rate limit (subscriptions)', { waitMs, retries });
             await new Promise((r) => setTimeout(r, waitMs));
+            if (retries >= MAX_RATE_LIMIT_RETRIES) {
+              throw new Error(
+                `LemonSqueezy rate limit exceeded after ${MAX_RATE_LIMIT_RETRIES} retries`
+              );
+            }
             retries++;
             continue;
           }
@@ -369,8 +383,11 @@ class LemonSqueezyBackfillAdapter implements BackfillProviderAdapter {
             let order = null;
             try {
               order = await client.getOrder(item.orderId);
-            } catch {
-              // skip if order fetch fails
+            } catch (err) {
+              logger.warn('LemonSqueezy getOrder failed, skipping order item', {
+                orderId: item.orderId,
+                error: err instanceof Error ? err.message : String(err),
+              });
             }
             if (!order) continue;
             const email = order.userEmail ?? '';
@@ -405,6 +422,11 @@ class LemonSqueezyBackfillAdapter implements BackfillProviderAdapter {
             const waitMs = 5_000;
             logger.warn('LemonSqueezy rate limit (orders)', { waitMs, retries });
             await new Promise((r) => setTimeout(r, waitMs));
+            if (retries >= MAX_RATE_LIMIT_RETRIES) {
+              throw new Error(
+                `LemonSqueezy rate limit exceeded after ${MAX_RATE_LIMIT_RETRIES} retries`
+              );
+            }
             retries++;
             continue;
           }

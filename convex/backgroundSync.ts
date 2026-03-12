@@ -37,7 +37,12 @@ const BackfillPurchaseRecord = v.object({
   providerUserId: v.optional(v.string()),
   providerProductId: v.string(),
   paymentStatus: v.string(),
-  lifecycleStatus: v.union(v.literal('active'), v.literal('refunded'), v.literal('disputed')),
+  lifecycleStatus: v.union(
+    v.literal('active'),
+    v.literal('refunded'),
+    v.literal('cancelled'),
+    v.literal('disputed')
+  ),
   purchasedAt: v.number(),
 });
 
