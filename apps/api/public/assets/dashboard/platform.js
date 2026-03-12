@@ -40,7 +40,8 @@ function showSelectServerNotice() {
 
   const toast = document.createElement('div');
   toast.id = TOAST_ID;
-  toast.setAttribute('role', 'alert');
+  toast.setAttribute('role', 'status');
+  toast.setAttribute('aria-live', 'polite');
   toast.style.cssText = [
     'position:fixed', 'bottom:24px', 'left:50%', 'transform:translateX(-50%)',
     'z-index:9999', 'display:flex', 'align-items:center', 'gap:10px',

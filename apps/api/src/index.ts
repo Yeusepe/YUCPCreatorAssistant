@@ -64,6 +64,14 @@ function escapeForSingleQuotedJsString(value: string): string {
     .replace(/<\/script/gi, '<\\/script');
 }
 
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function redirectPreservingFragment(targetUrl: string): Response {
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Redirecting...</title></head><body><p>Redirecting...</p><script>window.location.replace(${JSON.stringify(targetUrl)} + window.location.hash);</script></body></html>`;
   return new Response(html, {
@@ -95,6 +103,16 @@ function getSafeRelativeRedirectTarget(value: string | null | undefined): string
   }
 
   return value;
+}
+
+function getRelativeRequestTarget(url: URL): string {
+  return `${url.pathname}${url.search}`;
+}
+
+function buildSignInRouteUrl(browserBase: string, redirectTo: string): string {
+  const signInUrl = new URL('/sign-in', `${browserBase.replace(/\/$/, '')}/`);
+  signInUrl.searchParams.set('redirectTo', redirectTo);
+  return signInUrl.toString();
 }
 
 async function handleAppSignOut(request: Request, url: URL, pathname: string): Promise<Response> {
@@ -143,11 +161,21 @@ async function handleAppSignOut(request: Request, url: URL, pathname: string): P
 }
 
 function getClientAddress(request: Request): string {
+  const cloudflareConnectingIp = request.headers.get('cf-connecting-ip')?.trim();
+  if (cloudflareConnectingIp) {
+    return cloudflareConnectingIp;
+  }
+
+  const realIp = request.headers.get('x-real-ip')?.trim();
+  if (realIp) {
+    return realIp;
+  }
+
   const forwardedFor = request.headers.get('x-forwarded-for');
   if (forwardedFor) {
     return forwardedFor.split(',')[0]?.trim() || 'unknown';
   }
-  return request.headers.get('x-real-ip') ?? 'unknown';
+  return 'unknown';
 }
 
 function isRateLimited(bucketKey: string, maxRequests: number, windowMs: number): boolean {
@@ -1180,7 +1208,10 @@ async function routeRequest(request: Request): Promise<Response> {
       const webSession = await auth.getSession(request);
       if (!webSession) {
         const browserBase = resolvedFrontendOrigin ?? resolvedApiBaseUrl;
-        return Response.redirect(`${browserBase}/sign-in`, 302);
+        return Response.redirect(
+          buildSignInRouteUrl(browserBase, getRelativeRequestTarget(url)),
+          302
+        );
       }
     }
 
@@ -1254,7 +1285,10 @@ async function routeRequest(request: Request): Promise<Response> {
       const webSession = await auth.getSession(request);
       if (!webSession) {
         const browserBase = resolvedFrontendOrigin ?? resolvedApiBaseUrl;
-        return Response.redirect(`${browserBase}/sign-in`, 302);
+        return Response.redirect(
+          buildSignInRouteUrl(browserBase, getRelativeRequestTarget(url)),
+          302
+        );
       }
     }
 
@@ -1297,6 +1331,8 @@ async function routeRequest(request: Request): Promise<Response> {
 
     const ott = url.searchParams.get('ott');
     const browserApiBase = resolvedFrontendOrigin ?? resolvedApiBaseUrl;
+    const redirectTo =
+      getSafeRelativeRedirectTarget(url.searchParams.get('redirectTo')) ?? '/dashboard';
 
     // Step 1: Exchange OTT for a session cookie.
     // The OTT arrives here as ?ott=<token> after BetterAuth's Discord OAuth callback
@@ -1320,25 +1356,24 @@ async function routeRequest(request: Request): Promise<Response> {
       // the remaining ?ott= param and show the error state.
     }
 
-    // Step 2: If the user already has a valid session, redirect straight to the dashboard.
+    // Step 2: If the user already has a valid session, redirect straight to the requested page.
     if (auth) {
       const session = await auth.getSession(request);
       if (session) {
-        return Response.redirect(`${browserApiBase}/dashboard`, 302);
+        return Response.redirect(`${browserApiBase}${redirectTo}`, 302);
       }
     }
 
     // Step 3: No session — serve the sign-in page.
-    // The callbackURL is /sign-in so the OTT comes back here (Step 1 above).
-    const callbackUrl = `${browserApiBase}/sign-in`;
-    const signInUrl = `${resolvedApiBaseUrl.replace(/\/$/, '')}/api/auth/sign-in/discord?callbackURL=${encodeURIComponent(callbackUrl)}`;
+    // The callbackURL is /sign-in so the OTT comes back here (Step 1 above),
+    // carrying the original destination through redirectTo.
+    const callbackUrl = new URL(`${browserApiBase}/sign-in`);
+    callbackUrl.searchParams.set('redirectTo', redirectTo);
+    const signInUrl = `${resolvedApiBaseUrl.replace(/\/$/, '')}/api/auth/sign-in/discord?callbackURL=${encodeURIComponent(callbackUrl.toString())}`;
     const filePath = `${import.meta.dir}/../public/sign-in.html`;
     let html = await Bun.file(filePath).text();
     html = html.replaceAll('__SIGN_IN_URL__', JSON.stringify(signInUrl));
-    html = html.replaceAll(
-      '__API_BASE__',
-      escapeForSingleQuotedJsString(browserApiBase.replace(/\/$/, ''))
-    );
+    html = html.replaceAll('__API_BASE__', escapeHtmlAttribute(browserApiBase.replace(/\/$/, '')));
     return new Response(html, {
       status: 200,
       headers: { 'Content-Type': 'text/html', ...HTML_SECURITY_HEADERS },
@@ -1403,7 +1438,10 @@ async function routeRequest(request: Request): Promise<Response> {
       const webSession = await auth.getSession(request);
       if (!webSession) {
         const browserBase = resolvedFrontendOrigin ?? resolvedApiBaseUrl;
-        return Response.redirect(`${browserBase}/sign-in`, 302);
+        return Response.redirect(
+          buildSignInRouteUrl(browserBase, getRelativeRequestTarget(url)),
+          302
+        );
       }
     }
 
