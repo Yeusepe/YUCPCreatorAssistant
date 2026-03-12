@@ -242,6 +242,7 @@ const EntitlementEvidenceStatus = v.union(
 const PurchaseFactLifecycleStatus = v.union(
   v.literal('active'),
   v.literal('refunded'),
+  v.literal('cancelled'),
   v.literal('disputed')
 );
 

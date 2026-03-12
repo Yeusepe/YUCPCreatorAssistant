@@ -99,13 +99,23 @@ export const lemonSqueezyHandler: LicenseVerificationHandler = {
     if (!validation.valid || !validation.license_key) {
       return {
         success: false,
-        error: validation.error ?? 'License is invalid or could not be validated',
+        error: sanitizePublicErrorMessage(
+          validation.error,
+          'License is invalid or could not be validated'
+        ),
       };
     }
 
-    const licenseId = String(
-      validation.license_key.id ?? validation.meta?.order_item_id ?? licenseKey
-    );
+    const licenseId =
+      validation.license_key.id != null
+        ? String(validation.license_key.id)
+        : validation.meta?.order_item_id != null
+          ? String(validation.meta.order_item_id)
+          : null;
+
+    if (!licenseId) {
+      return { success: false, error: 'License validation did not return a license ID.' };
+    }
     const productId = validation.meta?.product_id;
     const variantId = validation.meta?.variant_id;
     const customerId = validation.meta?.customer_id

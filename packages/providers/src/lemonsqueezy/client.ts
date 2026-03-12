@@ -99,7 +99,8 @@ export class LemonSqueezyApiClient {
       clearTimeout(timeoutId);
 
       if (response.status === 429) {
-        const retryAfter = Number.parseInt(response.headers.get('retry-after') ?? '1', 10);
+        const rawRetryAfter = Number.parseInt(response.headers.get('retry-after') ?? '1', 10);
+        const retryAfter = Number.isNaN(rawRetryAfter) ? 1 : rawRetryAfter;
         if (retryCount < this.maxRetries) {
           await this.sleep(retryAfter * 1000 * (retryCount + 1));
           return this.request<T>(method, path, query, body, retryCount + 1);
@@ -558,9 +559,9 @@ export class LemonSqueezyApiClient {
   }): Promise<{
     orderItems: Array<{
       id: string;
-      orderId: string;
-      productId: string;
-      variantId: string;
+      orderId: string | undefined;
+      productId: string | undefined;
+      variantId: string | undefined;
       productName: string | null;
       variantName: string | null;
       createdAt: string | undefined;
@@ -589,9 +590,13 @@ export class LemonSqueezyApiClient {
     return {
       orderItems: response.data.map((resource) => ({
         id: resource.id,
-        orderId: resource.attributes.order_id ? String(resource.attributes.order_id) : '',
-        productId: resource.attributes.product_id ? String(resource.attributes.product_id) : '',
-        variantId: resource.attributes.variant_id ? String(resource.attributes.variant_id) : '',
+        orderId: resource.attributes.order_id ? String(resource.attributes.order_id) : undefined,
+        productId: resource.attributes.product_id
+          ? String(resource.attributes.product_id)
+          : undefined,
+        variantId: resource.attributes.variant_id
+          ? String(resource.attributes.variant_id)
+          : undefined,
         productName: resource.attributes.product_name ?? null,
         variantName: resource.attributes.variant_name ?? null,
         createdAt: resource.attributes.created_at,

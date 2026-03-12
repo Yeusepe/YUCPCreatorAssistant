@@ -219,6 +219,25 @@ export const jinxxyHandler: LicenseVerificationHandler = {
             }
           );
           if (collabMutation.success) {
+            try {
+              const collabCustomerId = cl.customer_id ? String(cl.customer_id) : undefined;
+              if (collabCustomerId) {
+                await convex.mutation(api.backgroundSync.scheduleBackfillThenSyncForBuyer, {
+                  apiSecret: config.convexApiSecret,
+                  tenantId,
+                  subjectId,
+                  provider: 'jinxxy',
+                  emailHash: undefined,
+                  providerUserId: collabCustomerId,
+                });
+              }
+            } catch (syncErr) {
+              logger.warn('[jinxxyHandler] Collab post-verify buyer sync failed (non-fatal)', {
+                tenantId,
+                subjectId,
+                error: syncErr instanceof Error ? syncErr.message : String(syncErr),
+              });
+            }
             return {
               success: true,
               provider: 'jinxxy',

@@ -233,7 +233,7 @@ async function enrichDisplayNames(
   ];
   if (providersMissingNames.length === 0) return products;
 
-  let enriched = [...products];
+  const namesByProvider = new Map<string, Record<string, string>>();
   await Promise.all(
     providersMissingNames.map(async (provider) => {
       try {
@@ -247,19 +247,22 @@ async function enrichDisplayNames(
         const nameById = Object.fromEntries(
           (data.products ?? []).map((p) => [String(p.id), p.name])
         );
-        enriched = enriched.map((p) => {
-          if (p.provider === provider && !p.displayName) {
-            const name = nameById[String(p.providerProductRef)];
-            if (name) return { ...p, displayName: name };
-          }
-          return p;
-        });
+        namesByProvider.set(provider, nameById);
       } catch (err) {
         logger.warn('Failed to enrich display names', { provider, err });
       }
     })
   );
-  return enriched;
+  return products.map((p) => {
+    if (!p.displayName) {
+      const nameById = namesByProvider.get(p.provider);
+      if (nameById) {
+        const name = nameById[String(p.providerProductRef)];
+        if (name) return { ...p, displayName: name };
+      }
+    }
+    return p;
+  });
 }
 
 export async function showProductPicker(

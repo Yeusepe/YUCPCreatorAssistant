@@ -975,7 +975,7 @@ export function buildLicenseModal(tenantId: Id<'tenants'>): ModalBuilder {
         new TextInputBuilder()
           .setCustomId('license_key')
           .setLabel('License Key')
-          .setPlaceholder('Paste your Gumroad or Jinxxy license key here')
+          .setPlaceholder('Paste your license key here')
           .setStyle(TextInputStyle.Paragraph)
           .setRequired(true)
           .setMaxLength(500)
@@ -1283,6 +1283,7 @@ export async function handleRefreshCommand(
         guildId,
         apiBaseUrl,
         enabledSet,
+        undefined,
         interaction.user.id,
         bannerMessage
       );
