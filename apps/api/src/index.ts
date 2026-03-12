@@ -12,6 +12,7 @@ import {
   getCookieValue,
 } from './lib/browserSessions';
 import { getRequired, loadEnv, loadEnvAsync } from './lib/env';
+import { UpstreamTimeoutError, fetchWithTimeout } from './lib/http';
 import { resolveSetupSession } from './lib/setupSession';
 import { getStateStore } from './lib/stateStore';
 import { detectTunnelUrl } from './lib/tunnel';
@@ -519,19 +520,39 @@ async function routeRequest(request: Request): Promise<Response> {
       convexSiteUrl,
     });
 
-    const authResponse = await fetch(
-      `${convexSiteUrl.replace(/\/$/, '')}/api/auth/sign-in/social`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          provider: 'discord',
+    let authResponse: Response;
+    try {
+      authResponse = await fetchWithTimeout(
+        `${convexSiteUrl.replace(/\/$/, '')}/api/auth/sign-in/social`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            provider: 'discord',
+            callbackURL,
+          }),
+          operation: 'discord sign-in bridge',
+        }
+      );
+    } catch (error) {
+      if (error instanceof UpstreamTimeoutError) {
+        logger.error('Discord sign-in bridge timed out', {
           callbackURL,
-        }),
+          timeoutMs: error.timeoutMs,
+          url: error.url,
+        });
+        return new Response(
+          JSON.stringify({ error: 'Authentication service timed out. Please try again.' }),
+          {
+            status: 504,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
       }
-    );
+      throw error;
+    }
 
     const payloadText = await authResponse.text();
     let payload: { url?: string; error?: { message?: string } } | null = null;
@@ -676,12 +697,33 @@ async function routeRequest(request: Request): Promise<Response> {
       // Use 'manual' so 3xx responses are passed directly to the browser.
       // 'follow' (the default) would silently consume redirects server-side,
       // which breaks OAuth flows that depend on the browser seeing the Location header.
-      const proxyRes = await fetch(targetUrl, {
-        method: request.method,
-        headers: proxyHeaders,
-        body: proxyBody,
-        redirect: 'manual',
-      });
+      let proxyRes: Response;
+      try {
+        proxyRes = await fetchWithTimeout(targetUrl, {
+          method: request.method,
+          headers: proxyHeaders,
+          body: proxyBody,
+          redirect: 'manual',
+          operation: `convex proxy ${request.method} ${pathname}`,
+        });
+      } catch (error) {
+        if (error instanceof UpstreamTimeoutError) {
+          logger.error('Convex proxy timed out', {
+            pathname,
+            method: request.method,
+            timeoutMs: error.timeoutMs,
+            url: error.url,
+          });
+          return new Response(
+            JSON.stringify({ error: 'Upstream authentication service timed out' }),
+            {
+              status: 504,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        throw error;
+      }
       // For redirect responses pass them through — but differently per method:
       // - GET 3xx: pass Location header as-is so the browser navigates natively
       // - POST 3xx: browsers can't read Location from a cross-origin opaque redirect,

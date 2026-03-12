@@ -19,6 +19,7 @@ import type { Id } from '../../../../convex/_generated/dataModel';
 import { type VrchatOwnershipPayload, type VrchatSessionTokensPayload, createAuth } from '../auth';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { encrypt } from '../lib/encrypt';
+import { UpstreamTimeoutError, fetchWithTimeout } from '../lib/http';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 import { createApiVerificationSupportError } from '../lib/verificationSupport';
 import {
@@ -595,10 +596,11 @@ export function createVerificationSessionManager(
       if (clientId) tokenParams.set('client_id', clientId);
       if (clientSecret) tokenParams.set('client_secret', clientSecret);
 
-      const tokenRes = await fetch(modeConfig.tokenUrl, {
+      const tokenRes = await fetchWithTimeout(modeConfig.tokenUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: tokenParams.toString(),
+        operation: `${mode} verification token exchange`,
       });
 
       if (!tokenRes.ok) {
@@ -640,8 +642,11 @@ export function createVerificationSessionManager(
       let profileUrl: string | undefined;
 
       if (provider === 'gumroad') {
-        const meRes = await fetch(
-          `https://api.gumroad.com/v2/user?access_token=${encodeURIComponent(accessToken)}`
+        const meRes = await fetchWithTimeout(
+          `https://api.gumroad.com/v2/user?access_token=${encodeURIComponent(accessToken)}`,
+          {
+            operation: 'gumroad verification user lookup',
+          }
         );
         if (!meRes.ok) {
           return { success: false, error: 'Failed to fetch Gumroad user' };
@@ -654,8 +659,9 @@ export function createVerificationSessionManager(
         username = me.user?.name;
         email = me.user?.email;
       } else if (provider === 'discord') {
-        const meRes = await fetch('https://discord.com/api/users/@me', {
+        const meRes = await fetchWithTimeout('https://discord.com/api/users/@me', {
           headers: { Authorization: `Bearer ${accessToken}` },
+          operation: 'discord verification user lookup',
         });
         if (!meRes.ok) {
           return { success: false, error: 'Failed to fetch Discord user' };
@@ -675,8 +681,9 @@ export function createVerificationSessionManager(
         profileUrl = me.id ? `https://discord.com/users/${me.id}` : undefined;
       } else {
         // Jinxxy - use generic pattern
-        const meRes = await fetch('https://api.jinxxy.com/me', {
+        const meRes = await fetchWithTimeout('https://api.jinxxy.com/me', {
           headers: { Authorization: `Bearer ${accessToken}` },
+          operation: 'jinxxy verification user lookup',
         });
         if (!meRes.ok) {
           return { success: false, error: 'Failed to fetch Jinxxy user' };
@@ -783,18 +790,24 @@ export function createVerificationSessionManager(
             const requiredIds = requiredRoleIds ?? (requiredRoleId ? [requiredRoleId] : []);
             if (!sourceGuildId || requiredIds.length === 0) continue;
 
-            let memberRes = await fetch(
+            let memberRes = await fetchWithTimeout(
               `https://discord.com/api/v10/users/@me/guilds/${sourceGuildId}/member`,
-              { headers: { Authorization: `Bearer ${accessToken}` } }
+              {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                operation: 'discord verification guild member lookup',
+              }
             );
 
             if (memberRes.status === 429) {
               const retryAfter = memberRes.headers.get('Retry-After');
               const waitMs = retryAfter ? Number.parseInt(retryAfter, 10) * 1000 : 5000;
               await new Promise((r) => setTimeout(r, waitMs));
-              memberRes = await fetch(
+              memberRes = await fetchWithTimeout(
                 `https://discord.com/api/v10/users/@me/guilds/${sourceGuildId}/member`,
-                { headers: { Authorization: `Bearer ${accessToken}` } }
+                {
+                  headers: { Authorization: `Bearer ${accessToken}` },
+                  operation: 'discord verification guild member retry',
+                }
               );
             }
             if (memberRes.status === 403 || memberRes.status === 404) continue;
@@ -905,6 +918,17 @@ export function createVerificationSessionManager(
         redirectUri: completeResult.redirectUri,
       };
     } catch (err) {
+      if (err instanceof UpstreamTimeoutError) {
+        logger.warn('Verification callback timed out', {
+          mode,
+          timeoutMs: err.timeoutMs,
+          url: err.url,
+        });
+        return {
+          success: false,
+          error: 'Verification provider timed out. Please try again.',
+        };
+      }
       logger.error('Failed to handle OAuth callback', {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -1414,12 +1438,13 @@ export function createVerificationRoutes(config: VerificationConfig) {
       return jsonNoStore({ success: false, error: 'Invalid panel token' }, { status: 400 });
     }
 
-    const discordResponse = await fetch(
+    const discordResponse = await fetchWithTimeout(
       `https://discord.com/api/v10/webhooks/${panel.applicationId}/${panel.interactionToken}/messages/${panel.messageId}`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildVerifyPanelRefreshReply()),
+        operation: 'discord verify panel refresh',
       }
     );
 

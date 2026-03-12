@@ -44,6 +44,7 @@ export interface LocalEnv {
   JINXXY_SECRET_KEY?: string;
   // Logging
   LOG_LEVEL?: string;
+  UPSTREAM_FETCH_TIMEOUT_MS?: string;
   // State store (OAuth/install flows)
   DRAGONFLY_URI?: string;
   REDIS_URL?: string;
@@ -134,6 +135,7 @@ function loadFromEnv(): LocalEnv {
     JINXXY_API_KEY: process.env.JINXXY_API_KEY,
     JINXXY_SECRET_KEY: process.env.JINXXY_SECRET_KEY,
     LOG_LEVEL: process.env.LOG_LEVEL,
+    UPSTREAM_FETCH_TIMEOUT_MS: process.env.UPSTREAM_FETCH_TIMEOUT_MS,
     DRAGONFLY_URI: process.env.DRAGONFLY_URI,
     REDIS_URL: process.env.REDIS_URL,
     RESEND_API_KEY: process.env.RESEND_API_KEY,

@@ -14,6 +14,7 @@
 
 import { createHash, createHmac } from 'node:crypto';
 import { createLogger } from '@yucp/shared';
+import { UpstreamTimeoutError, fetchWithTimeout } from '../lib/http';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 const INTERNAL_AUTH_TS_HEADER = 'x-yucp-internal-auth-ts';
@@ -199,7 +200,7 @@ export function createAuth(config: AuthConfig) {
     }
   ): Promise<VrchatInternalResponse> {
     const bodyText = init.body === undefined ? undefined : canonicalizeJson(init.body);
-    const response = await fetch(`${convexAuthBase}${path}`, {
+    const response = await fetchWithTimeout(`${convexAuthBase}${path}`, {
       method: init.method,
       headers: buildInternalHeaders(
         init.method,
@@ -209,6 +210,7 @@ export function createAuth(config: AuthConfig) {
         init.betterAuthCookieHeader
       ),
       ...(bodyText !== undefined ? { body: bodyText } : {}),
+      operation: `better-auth internal ${init.method} ${path}`,
     });
 
     const browserSetCookies = getResponseSetCookies(response.headers);
@@ -284,14 +286,36 @@ export function createAuth(config: AuthConfig) {
         body = JSON.stringify(init.body);
       }
 
-      const response = await fetch(url, {
-        method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
-        headers,
-        ...(body !== undefined ? { body } : {}),
-      });
+      try {
+        const response = await fetchWithTimeout(url, {
+          method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
+          headers,
+          ...(body !== undefined ? { body } : {}),
+          operation: `better-auth endpoint ${endpointPath}`,
+        });
 
-      const data = await parseEndpointResponse<T>(response);
-      return { response, data };
+        const data = await parseEndpointResponse<T>(response);
+        return { response, data };
+      } catch (error) {
+        if (error instanceof UpstreamTimeoutError) {
+          logger.warn('Better Auth endpoint timed out', {
+            path: endpointPath,
+            timeoutMs: error.timeoutMs,
+            url: error.url,
+          });
+          return {
+            response: new Response(
+              JSON.stringify({ error: 'Authentication service timed out' }),
+              {
+                status: 504,
+                headers: { 'Content-Type': 'application/json' },
+              }
+            ),
+            data: null,
+          };
+        }
+        throw error;
+      }
     },
 
     /** Get session by calling Convex get-session directly with the request cookies. */
@@ -307,12 +331,13 @@ export function createAuth(config: AuthConfig) {
           requestHost: request.headers.get('host'),
         });
 
-        const res = await fetch(getSessionUrl, {
+        const res = await fetchWithTimeout(getSessionUrl, {
           method: 'GET',
           headers: {
             'Better-Auth-Cookie': cookie,
             'content-type': 'application/json',
           },
+          operation: 'better-auth get-session',
         });
 
         const responseBody = await res.text().catch(() => '');
@@ -387,13 +412,14 @@ export function createAuth(config: AuthConfig) {
     }> {
       const url = `${convexAuthBase}/cross-domain/one-time-token/verify`;
       try {
-        const res = await fetch(url, {
+        const res = await fetchWithTimeout(url, {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
             origin: config.baseUrl,
           },
           body: JSON.stringify({ token: ott }),
+          operation: 'better-auth verify one-time token',
         });
 
         const body = await res.text();
@@ -427,12 +453,13 @@ export function createAuth(config: AuthConfig) {
       }
 
       try {
-        const res = await fetch(`${convexAuthBase}/sign-out`, {
+        const res = await fetchWithTimeout(`${convexAuthBase}/sign-out`, {
           method: 'POST',
           headers: {
             'Better-Auth-Cookie': cookie,
             origin: config.baseUrl,
           },
+          operation: 'better-auth sign-out',
         });
 
         return {
@@ -452,12 +479,13 @@ export function createAuth(config: AuthConfig) {
     async getDiscordUserId(request: Request): Promise<string | null> {
       try {
         const cookie = request.headers.get('cookie') ?? '';
-        const res = await fetch(`${convexAuthBase}/list-accounts`, {
+        const res = await fetchWithTimeout(`${convexAuthBase}/list-accounts`, {
           method: 'GET',
           headers: {
             'Better-Auth-Cookie': cookie,
             'content-type': 'application/json',
           },
+          operation: 'better-auth list-accounts',
         });
 
         if (!res.ok) return null;
