@@ -1124,13 +1124,26 @@
                     <div class="pill-nav-divider hidden md:block mx-1"></div>
                 </div>
 
-                <!-- CTA -->
-                <button class="pill-cta clickable flex-shrink-0 !px-2.5 !py-1.5 sm:!px-4 sm:!py-2 ml-1"
-                    onclick="window.open('https://discord.com/api/oauth2/authorize?client_id=1460374394663735582&permissions=327222946816&scope=bot%20applications.commands','_blank')">
-                    <img src="Icons/Discord.png" class="h-3.5 w-3.5 sm:h-4 sm:w-4 object-contain" alt="">
-                    <span class="hidden sm:inline font-bold tracking-widest uppercase text-[10px] sm:text-[11px]">Add to
-                        Discord®</span>
-                </button>
+                <!-- Nav CTAs -->
+                <div class="flex items-center gap-1.5 flex-shrink-0 ml-1">
+                    <!-- Dashboard button -->
+                    <a href="https://api.creators.yucp.club/sign-in"
+                        rel="noopener noreferrer"
+                        class="pill-cta clickable !px-2.5 !py-1.5 sm:!px-4 sm:!py-2"
+                        style="background:rgba(88,101,242,0.18);border-color:rgba(88,101,242,0.35);">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0" aria-hidden="true">
+                            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        <span class="hidden sm:inline font-bold tracking-widest uppercase text-[10px] sm:text-[11px]">Dashboard</span>
+                    </a>
+                    <!-- Add to Discord button -->
+                    <button class="pill-cta clickable !px-2.5 !py-1.5 sm:!px-4 sm:!py-2"
+                        onclick="window.open('https://discord.com/api/oauth2/authorize?client_id=1460374394663735582&permissions=327222946816&scope=bot%20applications.commands','_blank')">
+                        <img src="Icons/Discord.png" class="h-3.5 w-3.5 sm:h-4 sm:w-4 object-contain" alt="">
+                        <span class="hidden sm:inline font-bold tracking-widest uppercase text-[10px] sm:text-[11px]">Add to
+                            Discord®</span>
+                    </button>
+                </div>
 
                 <!-- Mobile Menu Dropdown -->
                 <div id="mobile-menu"
@@ -1140,6 +1153,7 @@
                     <a href="#integrations" class="mobile-menu-item nav-link clickable text-sm font-bold uppercase tracking-widest text-center py-2">Integrations</a>
                     <a href="#security" class="mobile-menu-item nav-link clickable text-sm font-bold uppercase tracking-widest text-center py-2">Security</a>
                     <a href="https://creators.yucp.club/docs.html" class="mobile-menu-item nav-link clickable text-sm font-bold uppercase tracking-widest text-center py-2">Docs</a>
+                    <a href="https://api.creators.yucp.club/sign-in" rel="noopener noreferrer" class="mobile-menu-item nav-link clickable text-sm font-bold uppercase tracking-widest text-center py-2" style="color:rgba(88,101,242,0.9);">Dashboard</a>
                 </div>
             </nav>
         </div>
@@ -1194,9 +1208,10 @@
                                 </svg>
                             </span>
                         </button>
-                        <a href="https://creators.yucp.club/docs.html"
-                            class="clickable text-sm font-bold uppercase tracking-widest text-white/40 hover:text-white/90 transition-colors flex items-center gap-2">
-                            Read the docs
+                        <a href="https://api.creators.yucp.club/sign-in"
+                            rel="noopener noreferrer"
+                            class="clickable text-sm font-bold uppercase tracking-widest text-white/60 hover:text-white/95 transition-colors flex items-center gap-2">
+                            Sign in to Dashboard
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
                             </svg>
