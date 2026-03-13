@@ -40,9 +40,7 @@ import type { VerificationRouteHandlers } from '../routes';
 import type { CollabConfig } from '../routes/collab';
 import { createCollabRoutes } from '../routes/collab';
 import { type ConnectConfig, createConnectRoutes } from '../routes/connect';
-import { handleGumroadProducts } from '../routes/gumroadProducts';
-import { handleJinxxyProducts } from '../routes/jinxxyProducts';
-import { handleLemonSqueezyProducts } from '../routes/lemonsqueezyProducts';
+import { handleProviderProducts } from '../routes/products';
 import { handleCompleteVrchat } from '../verification/completeVrchat';
 import type { VerificationConfig } from '../verification/sessionManager';
 import { createJsonRequest, readJsonResponse } from './httpAdapter';
@@ -288,11 +286,12 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         _context: ServerContext
       ): Promise<ProductsResponse> {
         return withTelemetry('CatalogService.listGumroadProducts', request, async () => {
-          const response = await handleGumroadProducts(
+          const response = await handleProviderProducts(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/gumroad/products`, {
               apiSecret: deps.config.convexApiSecret,
               authUserId: request.authUserId ?? '',
-            })
+            }),
+            'gumroad'
           );
           return normalizeProductsResponse(
             await readJsonResponse<Partial<ProductsResponse>>(response)
@@ -305,11 +304,12 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         _context: ServerContext
       ): Promise<ProductsResponse> {
         return withTelemetry('CatalogService.listJinxxyProducts', request, async () => {
-          const response = await handleJinxxyProducts(
+          const response = await handleProviderProducts(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/jinxxy/products`, {
               apiSecret: deps.config.convexApiSecret,
               authUserId: request.authUserId ?? '',
-            })
+            }),
+            'jinxxy'
           );
           return normalizeProductsResponse(
             await readJsonResponse<Partial<ProductsResponse>>(response)
@@ -322,11 +322,12 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         _context: ServerContext
       ): Promise<ProductsResponse> {
         return withTelemetry('CatalogService.listLemonSqueezyProducts', request, async () => {
-          const response = await handleLemonSqueezyProducts(
+          const response = await handleProviderProducts(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/lemonsqueezy/products`, {
               apiSecret: deps.config.convexApiSecret,
               authUserId: request.authUserId ?? '',
-            })
+            }),
+            'lemonsqueezy'
           );
           return normalizeProductsResponse(
             await readJsonResponse<Partial<ProductsResponse>>(response)
