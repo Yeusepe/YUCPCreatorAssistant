@@ -739,7 +739,7 @@ export function createVerificationSessionManager(
         try {
           const encryptionSecret = process.env.BETTER_AUTH_SECRET;
           if (encryptionSecret && syncResult.externalAccountId) {
-            const tokenEncrypted = await encrypt(accessToken, encryptionSecret);
+            const tokenEncrypted = await encrypt(accessToken, encryptionSecret, 'discord-oauth-access-token');
             // Discord access tokens expire after ~7 days
             const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
             await convex.mutation(api.identitySync.storeDiscordToken, {

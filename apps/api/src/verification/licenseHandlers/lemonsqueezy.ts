@@ -83,7 +83,7 @@ export const lemonSqueezyHandler: LicenseVerificationHandler = {
 
     let apiToken: string;
     try {
-      apiToken = await decrypt(encryptedApiToken, config.encryptionSecret);
+      apiToken = await decrypt(encryptedApiToken, config.encryptionSecret, 'lemonsqueezy-api-token');
     } catch (err) {
       logger.error('Failed to decrypt Lemon Squeezy API token', { authUserId, err });
       return {

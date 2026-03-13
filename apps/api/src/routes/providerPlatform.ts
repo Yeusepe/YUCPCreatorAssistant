@@ -315,7 +315,7 @@ async function buildLemonClientForConnection(
   });
   const encryptedApiToken = secrets?.lemonApiTokenEncrypted;
   if (!encryptedApiToken) throw new Error('Lemon Squeezy API token not configured');
-  const apiToken = await decrypt(encryptedApiToken, config.encryptionSecret);
+  const apiToken = await decrypt(encryptedApiToken, config.encryptionSecret, 'lemonsqueezy-api-token');
   return new LemonSqueezyApiClient({ apiToken });
 }
 
@@ -660,7 +660,7 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
           credentialKey: credential.credentialKey,
           kind: credential.kind,
           encryptedValue: credential.value
-            ? await encrypt(credential.value, config.encryptionSecret)
+            ? await encrypt(credential.value, config.encryptionSecret, 'provider-platform-credential')
             : undefined,
           metadata: credential.metadata,
         });
@@ -710,8 +710,8 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
       secret: webhookSecret,
       testMode: Boolean(body.testMode ?? selectedStore.testMode ?? false),
     });
-    const encryptedApiToken = await encrypt(apiToken, config.encryptionSecret);
-    const encryptedWebhookSecret = await encrypt(webhookSecret, config.encryptionSecret);
+    const encryptedApiToken = await encrypt(apiToken, config.encryptionSecret, 'lemonsqueezy-api-token');
+    const encryptedWebhookSecret = await encrypt(webhookSecret, config.encryptionSecret, 'lemonsqueezy-webhook-secret');
 
     for (const credential of [
       {
@@ -1055,7 +1055,7 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
       return jsonResponse({ error: 'Webhook secret not configured' }, requestId, 409);
 
     const rawBody = await request.text();
-    const webhookSecret = await decrypt(encryptedWebhookSecret, config.encryptionSecret);
+    const webhookSecret = await decrypt(encryptedWebhookSecret, config.encryptionSecret, 'lemonsqueezy-webhook-secret');
     const signature = request.headers.get('x-signature')?.trim() ?? '';
     const expected = await hmacSha256(webhookSecret, rawBody);
     if (!signature || !timingSafeStringEqual(expected, signature)) {

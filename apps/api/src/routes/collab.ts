@@ -496,7 +496,7 @@ export function createCollabRoutes(config: CollabConfig) {
       `${COLLAB_WEBHOOK_PREFIX}${session.invite._id}`,
       JSON.stringify({
         callbackUrl,
-        signingSecretEncrypted: await encrypt(webhookSecret, config.encryptionSecret),
+        signingSecretEncrypted: await encrypt(webhookSecret, config.encryptionSecret, 'webhook-signing-secret'),
       }),
       Math.min(COLLAB_DISCORD_TTL_MS, Math.max(1, session.invite.expiresAt - Date.now()))
     );
@@ -584,7 +584,7 @@ export function createCollabRoutes(config: CollabConfig) {
       );
     }
 
-    const jinxxyApiKeyEncrypted = await encrypt(jinxxyApiKey.trim(), config.encryptionSecret);
+    const jinxxyApiKeyEncrypted = await encrypt(jinxxyApiKey.trim(), config.encryptionSecret, 'jinxxy-api-key');
 
     let webhookSecretRef: string | undefined;
     let webhookEndpoint: string | undefined;
@@ -690,7 +690,7 @@ export function createCollabRoutes(config: CollabConfig) {
       );
     }
 
-    const jinxxyApiKeyEncrypted = await encrypt(jinxxyApiKey, config.encryptionSecret);
+    const jinxxyApiKeyEncrypted = await encrypt(jinxxyApiKey, config.encryptionSecret, 'jinxxy-api-key');
     const collaboratorIdentity = `manual:${user.id}`;
 
     let connectionId: string;

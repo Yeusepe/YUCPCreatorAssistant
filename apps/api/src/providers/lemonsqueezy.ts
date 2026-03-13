@@ -179,7 +179,7 @@ const lemonSqueezyProvider: ProviderPlugin = {
       provider: 'lemonsqueezy',
     });
     if (!conn?.lemonApiTokenEncrypted) return null;
-    return decrypt(conn.lemonApiTokenEncrypted, ctx.encryptionSecret);
+    return decrypt(conn.lemonApiTokenEncrypted, ctx.encryptionSecret, 'lemonsqueezy-api-token');
   },
 
   async fetchProducts(credential) {
