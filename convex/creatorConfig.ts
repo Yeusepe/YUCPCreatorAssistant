@@ -41,6 +41,7 @@ export const getJinxxyApiKeyForVerification = query({
  */
 export const getCreatorProviderConfig = query({
   args: {
+    apiSecret: v.string(),
     authUserId: v.string(),
   },
   returns: v.union(
@@ -50,6 +51,7 @@ export const getCreatorProviderConfig = query({
     })
   ),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const config = await ctx.db
       .query('creator_provider_config')
       .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { LemonSqueezyApiClient } from '@yucp/providers';
-import { createLogger, getProviderDescriptor } from '@yucp/shared';
+import { createLogger, getProviderDescriptor, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
 import { getCookieValue, SETUP_SESSION_COOKIE } from '../lib/browserSessions';
@@ -81,6 +81,13 @@ function getCachedIdempotentResponse(cacheKey: string, requestId: string): Respo
 
 function storeIdempotentResponse(cacheKey: string | null, response: Response, body: string): void {
   if (!cacheKey) return;
+  if (idempotencyCache.size >= 10_000) {
+    // Evict the oldest entry (Map preserves insertion order).
+    const oldestKey = idempotencyCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      idempotencyCache.delete(oldestKey);
+    }
+  }
   idempotencyCache.set(cacheKey, {
     status: response.status,
     body,
@@ -124,15 +131,6 @@ async function hmacSha256(secret: string, body: string): Promise<string> {
   return Array.from(new Uint8Array(signature))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-}
-
-function timingSafeEqual(a: string, b: string): boolean {
-  const aBytes = new TextEncoder().encode(a.toLowerCase());
-  const bBytes = new TextEncoder().encode(b.toLowerCase());
-  if (aBytes.length !== bBytes.length) return false;
-  let diff = 0;
-  for (let i = 0; i < aBytes.length; i += 1) diff |= aBytes[i] ^ bBytes[i];
-  return diff === 0;
 }
 
 async function listAllOrders(client: LemonSqueezyApiClient, storeId: string) {
@@ -852,6 +850,8 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
       productId?: string;
       installationHint?: string;
     }>(request);
+    const access = await requireTenantAccess(auth, convex, config, request, body.authUserId);
+    if (!access.ok) return access.response;
     const state = randomBytes(16).toString('hex');
     const result = await convex.mutation(api.verificationSessions.createVerificationSession, {
       apiSecret: config.convexApiSecret,
@@ -1052,7 +1052,7 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
     const webhookSecret = await decrypt(encryptedWebhookSecret, config.encryptionSecret);
     const signature = request.headers.get('x-signature')?.trim() ?? '';
     const expected = await hmacSha256(webhookSecret, rawBody);
-    if (!signature || !timingSafeEqual(expected, signature)) {
+    if (!signature || !timingSafeStringEqual(expected, signature)) {
       logger.warn('Lemon webhook rejected', {
         connectionId,
         authUserId: connection.authUserId,
@@ -1160,11 +1160,7 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
           path: url.pathname,
           error: error instanceof Error ? error.message : String(error),
         });
-        response = jsonResponse(
-          { error: error instanceof Error ? error.message : 'Internal server error' },
-          requestId,
-          500
-        );
+        response = jsonResponse({ error: 'An internal error occurred' }, requestId, 500);
       }
 
       if (!response) return null;

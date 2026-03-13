@@ -11,9 +11,9 @@
  * - Revocation cascades to entitlements
  */
 
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
-import { mutation, query } from './_generated/server';
+import { internalQuery, mutation, query } from './_generated/server';
 
 // ============================================================================
 // TYPES
@@ -317,6 +317,7 @@ export const activateBinding = mutation({
 export const revokeBinding = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     bindingId: v.id('bindings'),
     reason: v.string(),
     revokedBy: v.optional(v.id('subjects')),
@@ -339,6 +340,10 @@ export const revokeBinding = mutation({
     const binding = await ctx.db.get(args.bindingId);
     if (!binding) {
       throw new Error(`Binding not found: ${args.bindingId}`);
+    }
+
+    if (binding.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
     }
 
     const previousStatus = binding.status;
@@ -406,6 +411,7 @@ export const revokeBinding = mutation({
 export const transferBinding = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     bindingId: v.id('bindings'),
     newSubjectId: v.id('subjects'),
     transferredBy: v.optional(v.id('subjects')),
@@ -429,6 +435,10 @@ export const transferBinding = mutation({
     const binding = await ctx.db.get(args.bindingId);
     if (!binding) {
       throw new Error(`Binding not found: ${args.bindingId}`);
+    }
+
+    if (binding.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
     }
 
     // Check if binding can be transferred
@@ -554,6 +564,7 @@ export const transferBinding = mutation({
 export const quarantineBinding = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     bindingId: v.id('bindings'),
     reason: v.string(),
     quarantinedBy: v.optional(v.id('subjects')),
@@ -573,6 +584,10 @@ export const quarantineBinding = mutation({
     const binding = await ctx.db.get(args.bindingId);
     if (!binding) {
       throw new Error(`Binding not found: ${args.bindingId}`);
+    }
+
+    if (binding.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
     }
 
     const previousStatus = binding.status;
@@ -634,6 +649,7 @@ export const quarantineBinding = mutation({
 export const releaseFromQuarantine = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     bindingId: v.id('bindings'),
     releasedBy: v.optional(v.id('subjects')),
     actorType: v.optional(ActorType),
@@ -652,6 +668,10 @@ export const releaseFromQuarantine = mutation({
     const binding = await ctx.db.get(args.bindingId);
     if (!binding) {
       throw new Error(`Binding not found: ${args.bindingId}`);
+    }
+
+    if (binding.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
     }
 
     if (binding.status !== 'quarantined') {
@@ -695,7 +715,7 @@ export const releaseFromQuarantine = mutation({
 /**
  * Get all bindings for a subject
  */
-export const getBindingsBySubject = query({
+export const getBindingsBySubject = internalQuery({
   args: {
     authUserId: v.string(),
     subjectId: v.id('subjects'),
@@ -739,7 +759,7 @@ export const getBindingsBySubject = query({
 /**
  * Get all bindings for an external account
  */
-export const getBindingsByExternalAccount = query({
+export const getBindingsByExternalAccount = internalQuery({
   args: {
     authUserId: v.string(),
     externalAccountId: v.id('external_accounts'),
@@ -784,7 +804,7 @@ export const getBindingsByExternalAccount = query({
  * Get the active ownership binding for an external account
  * Used to enforce one active ownership per provider account
  */
-export const getActiveOwnershipBinding = query({
+export const getActiveOwnershipBinding = internalQuery({
   args: {
     authUserId: v.string(),
     externalAccountId: v.id('external_accounts'),
@@ -834,7 +854,7 @@ export const getActiveOwnershipBinding = query({
 /**
  * Get a single binding by ID
  */
-export const getBinding = query({
+export const getBinding = internalQuery({
   args: {
     bindingId: v.id('bindings'),
   },
@@ -875,7 +895,7 @@ export const getBinding = query({
 /**
  * Check if a subject has an active ownership binding for an external account
  */
-export const hasActiveOwnershipBinding = query({
+export const hasActiveOwnershipBinding = internalQuery({
   args: {
     authUserId: v.string(),
     subjectId: v.id('subjects'),
@@ -910,7 +930,7 @@ export const hasActiveOwnershipBinding = query({
 /**
  * Get all bindings for a tenant (admin view)
  */
-export const getBindingsByTenant = query({
+export const getBindingsByTenant = internalQuery({
   args: {
     authUserId: v.string(),
     status: v.optional(BindingStatus),

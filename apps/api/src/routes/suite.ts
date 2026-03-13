@@ -74,6 +74,7 @@ async function getSubjectIdByAuthUserId(
 ): Promise<{ found: true; subjectId: string } | { found: false }> {
   const convex = getConvexClientFromUrl(config.convexUrl);
   const subjectResult = await convex.query(api.subjects.getSubjectByAuthId, {
+    apiSecret: config.convexApiSecret,
     authUserId,
   });
 

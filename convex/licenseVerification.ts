@@ -13,9 +13,10 @@
  * 5. Enqueue outbox jobs for role sync
  */
 
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { mutation } from './_generated/server';
+import { canReactivate } from '../packages/shared/src/entitlement/service';
 import { LicenseProviderV } from './lib/providers';
 
 // ============================================================================
@@ -40,16 +41,12 @@ function requireApiSecret(apiSecret: string | undefined): void {
 /**
  * Hash email for provider_customers normalizedEmailHash (SHA-256 hex)
  */
-function hashForStorage(value: string): string {
-  // Convex doesn't have crypto.subtle in mutations - use a simple hash for matching
-  // In production you'd want proper hashing; for now we use a deterministic encoding
-  let h = 0;
-  const str = value.toLowerCase().trim();
-  for (let i = 0; i < str.length; i++) {
-    h = (h << 5) - h + str.charCodeAt(i);
-    h |= 0;
-  }
-  return `h${Math.abs(h).toString(16)}`;
+async function hashForStorage(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value.toLowerCase().trim());
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 /**
@@ -157,7 +154,7 @@ export const completeLicenseVerification = mutation({
 
     // 3. Upsert provider_customer
     const email = args.providerMetadata?.email;
-    const normalizedEmailHash = email ? hashForStorage(email) : undefined;
+    const normalizedEmailHash = email ? await hashForStorage(email) : undefined;
     const displayHints = email
       ? {
           emailPrefix: `${email.slice(0, 3)}***`,
@@ -280,6 +277,9 @@ export const completeLicenseVerification = mutation({
       if (existingEntitlement) {
         entitlementId = existingEntitlement._id;
         if (existingEntitlement.status !== 'active') {
+          if (!canReactivate(existingEntitlement.status as Parameters<typeof canReactivate>[0])) {
+            throw new ConvexError('Cannot reactivate a refunded or disputed entitlement');
+          }
           await ctx.db.patch(entitlementId, {
             status: 'active',
             revokedAt: undefined,

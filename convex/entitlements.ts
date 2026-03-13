@@ -11,9 +11,10 @@
  * - Emit outbox jobs for side effects (role sync, notifications)
  */
 
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
+import { canReactivate } from '../packages/shared/src/entitlement/service';
 import { ProviderV } from './lib/providers';
 
 // ============================================================================
@@ -475,6 +476,7 @@ export const getEntitlement = query({
 export const getEntitlementsByProviderCustomer = query({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     providerCustomerId: v.id('provider_customers'),
   },
   returns: v.array(
@@ -500,6 +502,7 @@ export const getEntitlementsByProviderCustomer = query({
     const entitlements = await ctx.db
       .query('entitlements')
       .withIndex('by_provider_customer', (q) => q.eq('providerCustomerId', args.providerCustomerId))
+      .filter((q) => q.eq(q.field('authUserId'), args.authUserId))
       .collect();
 
     return entitlements;
@@ -565,6 +568,11 @@ export const grantEntitlement = mutation({
           previousStatus: undefined,
           outboxJobId: undefined,
         };
+      }
+
+      // Block reactivation of terminal statuses (refunded/disputed)
+      if (!canReactivate(existingEntitlement.status as Parameters<typeof canReactivate>[0])) {
+        throw new ConvexError('Cannot reactivate a refunded or disputed entitlement');
       }
 
       // Reactivate a revoked/expired entitlement
@@ -676,6 +684,7 @@ export const grantEntitlement = mutation({
 export const revokeEntitlement = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     entitlementId: v.id('entitlements'),
     reason: RevocationReason,
     details: v.optional(v.string()),
@@ -689,6 +698,10 @@ export const revokeEntitlement = mutation({
     const entitlement = await ctx.db.get(args.entitlementId);
     if (!entitlement) {
       throw new Error(`Entitlement not found: ${args.entitlementId}`);
+    }
+
+    if (entitlement.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
     }
 
     const previousStatus = entitlement.status;
@@ -1037,6 +1050,7 @@ export const revokeEntitlementsByProduct = mutation({
 export const refreshEntitlement = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     entitlementId: v.id('entitlements'),
     evidence: ProviderEvidence,
     correlationId: v.optional(v.string()),
@@ -1053,6 +1067,10 @@ export const refreshEntitlement = mutation({
     const entitlement = await ctx.db.get(args.entitlementId);
     if (!entitlement) {
       throw new Error(`Entitlement not found: ${args.entitlementId}`);
+    }
+
+    if (entitlement.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
     }
 
     // Update entitlement with fresh evidence
@@ -1129,6 +1147,9 @@ export const grantEntitlementsForPurchaser = mutation({
 
     const policySnapshotVersion = await getPolicySnapshotVersion(ctx, args.authUserId);
 
+    // Resolve the actual provider from the provider_customer record
+    const providerCustomerDoc = await ctx.db.get(args.providerCustomerId);
+
     for (const product of args.products) {
       // Check for existing entitlement
       const existing = await ctx.db
@@ -1150,7 +1171,7 @@ export const grantEntitlementsForPurchaser = mutation({
         authUserId: args.authUserId,
         subjectId: args.subjectId,
         productId: product.productId,
-        sourceProvider: 'gumroad', // Default for purchaser discovery
+        sourceProvider: providerCustomerDoc?.provider ?? 'gumroad',
         sourceReference: product.sourceReference,
         providerCustomerId: args.providerCustomerId,
         catalogProductId: product.catalogProductId,

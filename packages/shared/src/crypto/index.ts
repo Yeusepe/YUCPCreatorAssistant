@@ -72,3 +72,5 @@ export {
   wrapDEK,
   wrapDEKWithGCM,
 } from './keys';
+// Re-export timing-safe comparison
+export { timingSafeStringEqual } from './timingSafeEqual';

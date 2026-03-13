@@ -33,6 +33,7 @@ import {
   type VerificationResultResponse,
 } from '@yucp/private-rpc';
 import { VrchatApiClient } from '@yucp/providers';
+import { timingSafeStringEqual } from '@yucp/shared';
 import { createSetupSession } from '../lib/setupSession';
 import type { VerificationRouteHandlers } from '../routes';
 import type { CollabConfig } from '../routes/collab';
@@ -98,20 +99,6 @@ function toTempoLogLevel(value: string | undefined): TempoLogLevel {
     default:
       return TempoLogLevel.Info;
   }
-}
-
-function timingSafeEqual(left: string, right: string): boolean {
-  const leftBytes = new TextEncoder().encode(left);
-  const rightBytes = new TextEncoder().encode(right);
-  if (leftBytes.length !== rightBytes.length) {
-    return false;
-  }
-
-  let difference = 0;
-  for (let index = 0; index < leftBytes.length; index += 1) {
-    difference |= leftBytes[index] ^ rightBytes[index];
-  }
-  return difference === 0;
 }
 
 function sanitizeForTelemetry(payload: unknown): unknown {
@@ -280,7 +267,7 @@ class InternalRpcAuthInterceptor extends AuthInterceptor {
     _context: ServerContext,
     authorizationValue: string
   ): Promise<AuthContext> {
-    if (!timingSafeEqual(authorizationValue, `Bearer ${this.expectedSecret}`)) {
+    if (!timingSafeStringEqual(authorizationValue, `Bearer ${this.expectedSecret}`)) {
       throw new Error('unauthorized');
     }
 

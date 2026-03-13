@@ -7,7 +7,7 @@
  */
 
 import { LemonSqueezyApiClient } from '@yucp/providers/lemonsqueezy';
-import { createLogger } from '@yucp/shared';
+import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { decrypt } from '../lib/encrypt';
@@ -15,15 +15,6 @@ import { loadEnv } from '../lib/env';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
-
-function timingSafeEqual(a: string, b: string): boolean {
-  const aBytes = new TextEncoder().encode(a);
-  const bBytes = new TextEncoder().encode(b);
-  if (aBytes.length !== bBytes.length) return false;
-  let diff = 0;
-  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i];
-  return diff === 0;
-}
 
 export interface LemonSqueezyProductsRequest {
   apiSecret: string;
@@ -60,7 +51,7 @@ export async function handleLemonSqueezyProducts(request: Request): Promise<Resp
     }
 
     const expectedSecret = process.env.CONVEX_API_SECRET;
-    if (!expectedSecret || !timingSafeEqual(apiSecret, expectedSecret)) {
+    if (!expectedSecret || !timingSafeStringEqual(apiSecret, expectedSecret)) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' },

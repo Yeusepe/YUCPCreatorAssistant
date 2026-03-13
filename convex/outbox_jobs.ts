@@ -89,6 +89,7 @@ export const getPendingJobs = query({
  */
 export const getByIdempotencyKey = query({
   args: {
+    apiSecret: v.string(),
     idempotencyKey: v.string(),
   },
   returns: v.union(
@@ -102,6 +103,7 @@ export const getByIdempotencyKey = query({
     })
   ),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const job = await ctx.db
       .query('outbox_jobs')
       .withIndex('by_idempotency', (q) => q.eq('idempotencyKey', args.idempotencyKey))
@@ -121,11 +123,13 @@ export const getByIdempotencyKey = query({
  */
 export const getByGuildAndUser = query({
   args: {
+    apiSecret: v.string(),
     guildId: v.string(),
     discordUserId: v.string(),
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const jobs = await ctx.db
       .query('outbox_jobs')
       .withIndex('by_guild_user', (q) =>
@@ -145,6 +149,7 @@ export const getByGuildAndUser = query({
  */
 export const getFailedRoleSyncForUser = query({
   args: {
+    apiSecret: v.string(),
     authUserId: v.string(),
     discordUserId: v.string(),
     guildId: v.string(),
@@ -155,6 +160,7 @@ export const getFailedRoleSyncForUser = query({
     })
   ),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const jobs = await ctx.db
       .query('outbox_jobs')
       .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
