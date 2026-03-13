@@ -222,7 +222,7 @@ function initializeAuth(webhookBaseUrl?: string) {
   const frontendUrl = siteUrl;
 
   resolvedApiBaseUrl = publicBaseUrl;
-  resolvedFrontendOrigin = frontendUrl !== publicBaseUrl ? new URL(frontendUrl).origin : null;
+  resolvedFrontendOrigin = new URL(frontendUrl).origin;
   allowedCorsOrigins = new Set(
     [
       frontendUrl,
@@ -835,46 +835,29 @@ async function routeRequest(request: Request): Promise<Response> {
     if (request.method === 'DELETE') return connectRoutes.deleteUserAccount(request);
     return Response.json({ error: 'Method not allowed' }, { status: 405 });
   }
-  if (pathname === '/api/connect/gumroad/begin' && connectRoutes) {
-    return connectRoutes.gumroadBegin(request);
-  }
+  // Pre-intercept: Gumroad callback is dual-purpose — may be a verification flow, not a connect flow
   if (pathname === '/api/connect/gumroad/callback') {
     const url = new URL(request.url);
     const state = url.searchParams.get('state');
-
     if (state?.startsWith('verify_gumroad:')) {
       const handler = verificationRoutes?.get('/api/verification/callback/gumroad');
       if (handler) {
         // Rewrite the URL so handleVerificationCallback extracts the correct mode 'gumroad'
-        // instead of 'callback' from the original /api/connect/gumroad/callback
         const verifyUrl = new URL(request.url);
         verifyUrl.pathname = '/api/verification/callback/gumroad';
         const verifyRequest = new Request(verifyUrl.toString(), request);
         return handler(verifyRequest);
       }
     }
-
-    if (connectRoutes) {
-      return connectRoutes.gumroadCallback(request);
-    }
+  }
+  // Dispatch to provider connect plugins (gumroad, jinxxy, lemonsqueezy, payhip, ...)
+  // Adding a new provider: add it to apps/api/src/providers/connect/index.ts only
+  if (connectRoutes) {
+    const pluginResponse = await connectRoutes.dispatchPlugin(request.method, pathname, request);
+    if (pluginResponse) return pluginResponse;
   }
   if (pathname === '/api/connect/status' && connectRoutes) {
     return connectRoutes.getStatus(request);
-  }
-  if (pathname === '/api/connect/jinxxy/webhook-config' && connectRoutes) {
-    return connectRoutes.jinxxyWebhookConfig(request);
-  }
-  if (pathname === '/api/connect/jinxxy/test-webhook' && connectRoutes) {
-    return connectRoutes.jinxxyTestWebhook(request);
-  }
-  if (pathname === '/api/connect/jinxxy-store' && connectRoutes) {
-    return connectRoutes.jinxxyStore(request);
-  }
-  if (pathname === '/api/connect/lemonsqueezy-finish' && connectRoutes) {
-    return connectRoutes.lemonsqueezyFinish(request);
-  }
-  if (pathname === '/api/connect/payhip-finish' && connectRoutes) {
-    return connectRoutes.payhipFinish(request);
   }
   if (pathname === '/api/connect/payhip/product-key' && connectRoutes) {
     return connectRoutes.payhipProductKey(request);
@@ -883,9 +866,6 @@ async function routeRequest(request: Request): Promise<Response> {
   const productCredentialMatch = pathname.match(/^\/api\/connect\/([^/]+)\/product-credential$/);
   if (productCredentialMatch && connectRoutes) {
     return connectRoutes.genericProductCredential(request, productCredentialMatch[1]);
-  }
-  if (pathname === '/api/connect/payhip/test-webhook' && connectRoutes) {
-    return connectRoutes.payhipTestWebhook(request);
   }
   // Setup session management
   if (pathname === '/api/connect/create-token' && connectRoutes) {

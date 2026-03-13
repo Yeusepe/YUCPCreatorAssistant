@@ -9,7 +9,6 @@
  * 5. Close page, continue setup in Discord
  */
 
-import { LemonSqueezyApiClient } from '@yucp/providers';
 import { createLogger, getProviderDescriptor } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
@@ -20,19 +19,19 @@ import {
   clearCookie,
   DISCORD_ROLE_SETUP_COOKIE,
   getCookieValue,
-  JINXXY_PENDING_WEBHOOK_PREFIX,
-  JINXXY_PENDING_WEBHOOK_TTL_MS,
   SETUP_SESSION_COOKIE,
 } from '../lib/browserSessions';
 import { getConvexApiSecret, getConvexClient, getConvexClientFromUrl } from '../lib/convex';
 import { encrypt } from '../lib/encrypt';
-import { PURPOSES as GUMROAD } from '../providers/gumroad';
-import { PURPOSES as JINXXY } from '../providers/jinxxy';
-import { PURPOSES as LEMONSQUEEZY } from '../providers/lemonsqueezy';
 import { PURPOSES as PAYHIP } from '../providers/payhip';
+import { CONNECT_PLUGINS } from '../providers/connect/index';
+import type { ConnectConfig, ConnectContext } from '../providers/connect/types';
 import { PUBLIC_API_KEY_PREFIX } from '../lib/publicApiKeys';
 import { createSetupSession, resolveSetupSession } from '../lib/setupSession';
 import { getStateStore } from '../lib/stateStore';
+
+// Re-exported for backwards compatibility — ConnectConfig is defined in providers/connect/types.ts
+export type { ConnectConfig } from '../providers/connect/types';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
@@ -49,11 +48,7 @@ function validateToken(token: string | undefined, name: string): string | null {
 
 const CONNECT_TOKEN_PREFIX = 'connect:';
 
-const GUMROAD_STATE_PREFIX = 'connect_gumroad:';
-const JINXXY_TEST_PREFIX = 'jinxxy_test:';
 const TOKEN_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
-const GUMROAD_STATE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
-const _JINXXY_TEST_TTL_MS = 60 * 1000; // 60 seconds
 const ALLOWED_PUBLIC_API_SCOPES = new Set(['verification:read', 'subjects:read']);
 const PUBLIC_API_KEY_PERMISSION_NAMESPACE = 'publicApi';
 const PUBLIC_API_KEY_METADATA_KIND = 'public-api';
@@ -63,9 +58,6 @@ const DEFAULT_OAUTH_APP_SCOPES = ['verification:read'];
 const DISCORD_ROLE_SETUP_PREFIX = 'discord_role_setup:';
 const DISCORD_ROLE_OAUTH_STATE_PREFIX = 'discord_role_oauth:';
 const DISCORD_ROLE_SETUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
-
-const PAYHIP_TEST_PREFIX = 'payhip_test:';
-const _PAYHIP_TEST_TTL_MS = 90 * 1000; // 90 seconds — longer than LemonSqueezy auto-retry
 
 const HTML_SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy':
@@ -375,22 +367,6 @@ function toCookieAge(ms: number): number {
   return Math.max(1, Math.ceil(ms / 1000));
 }
 
-export interface ConnectConfig {
-  apiBaseUrl: string;
-  frontendBaseUrl: string;
-  /** Convex .site URL for direct auth (e.g. https://rare-squid-409.convex.site) */
-  convexSiteUrl: string;
-  discordClientId: string;
-  discordClientSecret: string;
-  /** Discord bot token for fetching guild info (name, icon) */
-  discordBotToken?: string;
-  convexApiSecret: string;
-  convexUrl: string;
-  gumroadClientId?: string;
-  gumroadClientSecret?: string;
-  encryptionSecret: string;
-}
-
 export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
   const ALLOWED_SETTING_KEYS = new Set([
     'allowMismatchedEmails',
@@ -678,6 +654,37 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     }
 
     return { ok: true, session };
+  }
+
+  /**
+   * ConnectContext — injected into every provider connect plugin route handler.
+   * Built from the auth instance and config that were passed to createConnectRoutes.
+   */
+  const connectContext: ConnectContext = {
+    config,
+    auth,
+    requireBoundSetupSession,
+    getSetupSessionTokenFromRequest,
+    isTenantOwnedBySessionUser,
+  };
+
+  /**
+   * Dispatches a request to the matching provider connect plugin route.
+   * Returns null when no plugin matches, so the caller can fall through.
+   */
+  function dispatchPlugin(
+    method: string,
+    pathname: string,
+    request: Request
+  ): Promise<Response> | null {
+    for (const plugin of CONNECT_PLUGINS) {
+      for (const route of plugin.routes) {
+        if (route.method === method && route.path === pathname) {
+          return route.handler(request, connectContext);
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -1180,321 +1187,6 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
   }
 
   /**
-   * GET /api/connect/gumroad/begin?authUserId=XXX&guildId=XXX
-   * Redirects to Gumroad OAuth.
-   * authUserId and guildId are optional when the user is connecting at the personal/user level.
-   */
-  async function gumroadBegin(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    let authUserId = url.searchParams.get('authUserId');
-    let guildId = url.searchParams.get('guildId');
-
-    const setupBinding = await requireBoundSetupSession(request);
-    const setupSession = setupBinding.ok ? setupBinding.setupSession : null;
-    const session = setupBinding.ok ? setupBinding.authSession : await auth.getSession(request);
-    const authenticatedViaSetupToken = Boolean(setupSession);
-    if (setupSession) {
-      authUserId = authUserId || setupSession.authUserId;
-      guildId = guildId || setupSession.guildId;
-    }
-
-    if (!session && !authenticatedViaSetupToken) {
-      return Response.json({ error: 'Authentication required' }, { status: 401 });
-    }
-    const hasSetupSession = Boolean(await resolveSetupSessionFromRequest(request));
-    if (!setupBinding.ok && hasSetupSession) {
-      return setupBinding.response;
-    }
-
-    if (!config.gumroadClientId || !config.gumroadClientSecret) {
-      return Response.json({ error: 'Gumroad OAuth not configured' }, { status: 400 });
-    }
-
-    // If a authUserId is provided, verify ownership.
-    if (authUserId && !authenticatedViaSetupToken && session) {
-      const tenantOwned = await isTenantOwnedBySessionUser(session.user.id, authUserId);
-      if (!tenantOwned) {
-        return Response.json({ error: 'Forbidden' }, { status: 403 });
-      }
-    }
-
-    authUserId = session?.user?.id ?? null;
-
-    const state = `connect_gumroad:${authUserId ?? 'personal'}:${generateSecureRandom(48)}`;
-    const store = getStateStore();
-    await store.set(
-      `${GUMROAD_STATE_PREFIX}${state}`,
-      JSON.stringify({
-        authUserId: authUserId ?? null,
-        guildId: guildId ?? null,
-        setupToken: getSetupSessionTokenFromRequest(request) ?? '',
-      }),
-      GUMROAD_STATE_EXPIRY_MS
-    );
-
-    const authUrl = new URL('https://gumroad.com/oauth/authorize');
-    authUrl.searchParams.set('client_id', config.gumroadClientId);
-    authUrl.searchParams.set('redirect_uri', `${config.apiBaseUrl}/api/connect/gumroad/callback`);
-    authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('scope', 'view_profile view_sales');
-    authUrl.searchParams.set('state', state);
-
-    return Response.redirect(authUrl.toString(), 302);
-  }
-
-  /**
-   * GET /api/connect/gumroad/callback?code=XXX&state=XXX
-   * Exchanges code for tokens, stores in provider_connections.
-   */
-  async function gumroadCallback(request: Request): Promise<Response> {
-    const buildDashboardRedirect = (
-      params: Record<string, string | undefined>,
-      setupToken?: string
-    ): string => {
-      const redirectUrl = new URL(`${config.frontendBaseUrl.replace(/\/$/, '')}/dashboard`);
-      for (const [key, value] of Object.entries(params)) {
-        if (value) redirectUrl.searchParams.set(key, value);
-      }
-      if (setupToken) {
-        redirectUrl.hash = `s=${encodeURIComponent(setupToken)}`;
-      }
-      return redirectUrl.toString();
-    };
-
-    const url = new URL(request.url);
-    const code = url.searchParams.get('code');
-    const state = url.searchParams.get('state');
-    const error = url.searchParams.get('error');
-
-    if (error) {
-      logger.error('Gumroad OAuth error', { error });
-      return Response.redirect(buildDashboardRedirect({ error }), 302);
-    }
-
-    if (!code || !state) {
-      return Response.redirect(buildDashboardRedirect({ error: 'missing_parameters' }), 302);
-    }
-
-    const store = getStateStore();
-    const raw = await store.get(`${GUMROAD_STATE_PREFIX}${state}`);
-    if (!raw) {
-      return Response.redirect(buildDashboardRedirect({ error: 'invalid_state' }), 302);
-    }
-    await store.delete(`${GUMROAD_STATE_PREFIX}${state}`);
-
-    const {
-      authUserId,
-      guildId,
-      setupToken: storedSetupToken,
-    } = JSON.parse(raw) as {
-      authUserId: string | null;
-      guildId: string | null;
-      setupToken?: string;
-    };
-    const gumroadClientId = config.gumroadClientId;
-    const gumroadClientSecret = config.gumroadClientSecret;
-
-    try {
-      if (!gumroadClientId || !gumroadClientSecret) {
-        return Response.redirect(
-          buildDashboardRedirect(
-            {
-              ...(authUserId ? { tenant_id: authUserId } : {}),
-              ...(guildId ? { guild_id: guildId } : {}),
-              error: 'gumroad_not_configured',
-            },
-            storedSetupToken
-          ),
-          302
-        );
-      }
-
-      const tokenRes = await fetch('https://api.gumroad.com/oauth/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: gumroadClientId,
-          client_secret: gumroadClientSecret,
-          code,
-          redirect_uri: `${config.apiBaseUrl}/api/connect/gumroad/callback`,
-          grant_type: 'authorization_code',
-        }).toString(),
-      });
-
-      if (!tokenRes.ok) {
-        const errText = await tokenRes.text();
-        logger.error('Gumroad token exchange failed', { status: tokenRes.status, body: errText });
-        return Response.redirect(
-          buildDashboardRedirect(
-            {
-              ...(authUserId ? { tenant_id: authUserId } : {}),
-              ...(guildId ? { guild_id: guildId } : {}),
-              error: 'token_exchange_failed',
-            },
-            storedSetupToken
-          ),
-          302
-        );
-      }
-
-      const tokens = (await tokenRes.json()) as {
-        access_token?: string;
-        refresh_token?: string;
-      };
-      const accessToken = tokens.access_token;
-      const refreshToken = tokens.refresh_token;
-      if (!accessToken) {
-        return Response.redirect(
-          buildDashboardRedirect(
-            {
-              ...(authUserId ? { tenant_id: authUserId } : {}),
-              ...(guildId ? { guild_id: guildId } : {}),
-              error: 'no_access_token',
-            },
-            storedSetupToken
-          ),
-          302
-        );
-      }
-
-      const meRes = await fetch(
-        `https://api.gumroad.com/v2/user?access_token=${encodeURIComponent(accessToken)}`
-      );
-      if (!meRes.ok) {
-        return Response.redirect(
-          buildDashboardRedirect(
-            {
-              ...(authUserId ? { tenant_id: authUserId } : {}),
-              ...(guildId ? { guild_id: guildId } : {}),
-              error: 'failed_to_fetch_user',
-            },
-            storedSetupToken
-          ),
-          302
-        );
-      }
-      const me = (await meRes.json()) as {
-        success?: boolean;
-        user?: { user_id?: string; name?: string; email?: string };
-      };
-      const gumroadUserId = me.user?.user_id ?? '';
-
-      const accessEncrypted = await encrypt(accessToken, config.encryptionSecret, GUMROAD.credential);
-      const refreshEncrypted = refreshToken
-        ? await encrypt(refreshToken, config.encryptionSecret, GUMROAD.refreshToken)
-        : undefined;
-
-      const convex = getConvexClientFromUrl(config.convexUrl);
-
-      // Register Gumroad resource_subscriptions for webhook delivery.
-      // First delete any existing subscriptions pointing at our webhook base URL
-      // to prevent stale entries from firing after a reconnect or account change.
-      const webhookBase = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/gumroad/`;
-      try {
-        const listRes = await fetch(
-          `https://api.gumroad.com/v2/resource_subscriptions?access_token=${encodeURIComponent(accessToken)}`
-        );
-        if (listRes.ok) {
-          const listData = (await listRes.json()) as {
-            success: boolean;
-            resource_subscriptions?: Array<{ id: string; resource_name: string; post_url: string }>;
-          };
-          for (const sub of listData.resource_subscriptions ?? []) {
-            if (sub.post_url.startsWith(webhookBase)) {
-              await fetch(
-                `https://api.gumroad.com/v2/resource_subscriptions/${sub.id}?access_token=${encodeURIComponent(accessToken)}`,
-                { method: 'DELETE' }
-              );
-              logger.info('Gumroad: deleted stale resource_subscription', {
-                id: sub.id,
-                post_url: sub.post_url,
-              });
-            }
-          }
-        }
-      } catch (cleanupErr) {
-        logger.warn('Gumroad: failed to clean up old resource_subscriptions', {
-          error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-        });
-      }
-
-      const webhookTarget = authUserId;
-      const postUrl = `${webhookBase}${webhookTarget}`;
-      const resourceSubscriptionIds: string[] = [];
-      for (const resourceName of ['sale', 'refund']) {
-        try {
-          const subRes = await fetch('https://api.gumroad.com/v2/resource_subscriptions', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-              access_token: accessToken,
-              resource_name: resourceName,
-              post_url: postUrl,
-            }).toString(),
-          });
-          if (subRes.ok) {
-            const subData = (await subRes.json()) as {
-              success: boolean;
-              resource_subscription?: { id: string };
-            };
-            if (subData.success && subData.resource_subscription?.id) {
-              resourceSubscriptionIds.push(subData.resource_subscription.id);
-              logger.info('Gumroad: registered resource_subscription', {
-                resourceName,
-                id: subData.resource_subscription.id,
-                webhookTarget,
-              });
-            }
-          } else {
-            const errText = await subRes.text();
-            logger.warn('Gumroad resource_subscription failed', {
-              resourceName,
-              status: subRes.status,
-              body: errText,
-              webhookTarget,
-            });
-          }
-        } catch (subErr) {
-          logger.warn('Gumroad resource_subscription error', {
-            resourceName,
-            error: subErr instanceof Error ? subErr.message : String(subErr),
-            webhookTarget,
-          });
-        }
-      }
-
-      await convex.mutation(api.providerConnections.upsertGumroadConnection, {
-        apiSecret: config.convexApiSecret,
-        authUserId: authUserId ?? undefined,
-        gumroadAccessTokenEncrypted: accessEncrypted,
-        gumroadRefreshTokenEncrypted: refreshEncrypted,
-        gumroadUserId,
-        resourceSubscriptionIds,
-      });
-
-      const redirectParams: Record<string, string> = { gumroad: 'connected' };
-      if (guildId) redirectParams.guild_id = guildId;
-      if (authUserId) redirectParams.tenant_id = authUserId;
-      return Response.redirect(buildDashboardRedirect(redirectParams, storedSetupToken), 302);
-    } catch (err) {
-      logger.error('Gumroad callback failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return Response.redirect(
-        buildDashboardRedirect(
-          {
-            ...(authUserId ? { tenant_id: authUserId } : {}),
-            ...(guildId ? { guild_id: guildId } : {}),
-            error: 'internal_error',
-          },
-          storedSetupToken
-        ),
-        302
-      );
-    }
-  }
-
-  /**
    * GET /api/connect/status?authUserId=XXX
    * Returns { gumroad: boolean, jinxxy: boolean }.
    * When authUserId is omitted, returns status for the authenticated user across all their connections.
@@ -1538,414 +1230,6 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     }
   }
 
-  /**
-   * GET /api/connect/jinxxy/webhook-config?authUserId=XXX
-   * Returns { callbackUrl }.
-   * POST /api/connect/jinxxy/webhook-config
-   * Body: { authUserId?, webhookSecret }
-   * Stores a pending encrypted webhook secret for test delivery.
-   */
-  async function jinxxyWebhookConfig(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    // routeId is either a authUserId (server mode) or authUserId (user-scoped mode).
-    let routeId: string | null = null;
-    const setupBinding = await requireBoundSetupSession(request);
-    if (setupBinding.ok) {
-      routeId = setupBinding.setupSession.authUserId;
-    } else {
-      const session = await auth.getSession(request);
-      if (!session) {
-        return Response.json({ error: 'Authentication required' }, { status: 401 });
-      }
-      const requestedAuthUserId = url.searchParams.get('authUserId');
-      if (requestedAuthUserId) {
-        const tenantOwned = await isTenantOwnedBySessionUser(session.user.id, requestedAuthUserId);
-        if (!tenantOwned) {
-          return Response.json({ error: 'Forbidden' }, { status: 403 });
-        }
-        routeId = requestedAuthUserId;
-      } else {
-        // User-scoped: no server selected — use authUserId as the webhook route.
-        routeId = session.user.id;
-      }
-    }
-
-    try {
-      const callbackUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/jinxxy/${routeId}`;
-      if (request.method === 'GET') {
-        return Response.json({ callbackUrl });
-      }
-      if (request.method !== 'POST') {
-        return Response.json({ error: 'Method not allowed' }, { status: 405 });
-      }
-
-      let body: { webhookSecret?: string };
-      try {
-        body = (await request.json()) as { webhookSecret?: string };
-      } catch {
-        return Response.json({ error: 'Invalid JSON' }, { status: 400 });
-      }
-
-      const webhookSecret = body.webhookSecret?.trim();
-      if (!webhookSecret || webhookSecret.length < 16) {
-        return Response.json(
-          { error: 'Webhook secret must be at least 16 characters' },
-          { status: 400 }
-        );
-      }
-      if (webhookSecret.length > 40) {
-        return Response.json(
-          { error: 'Jinxxy limits the signing secret to 40 characters' },
-          { status: 400 }
-        );
-      }
-
-      const store = getStateStore();
-      await store.set(
-        `${JINXXY_PENDING_WEBHOOK_PREFIX}${routeId}`,
-        JSON.stringify({
-          callbackUrl,
-          signingSecretEncrypted: await encrypt(webhookSecret, config.encryptionSecret, JINXXY.webhookSecret),
-        }),
-        JINXXY_PENDING_WEBHOOK_TTL_MS
-      );
-      return Response.json({ success: true });
-    } catch (err) {
-      logger.error('Jinxxy webhook config failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return Response.json({ error: 'Failed to get webhook config' }, { status: 500 });
-    }
-  }
-
-  /**
-   * GET /api/connect/jinxxy/test-webhook?authUserId=XXX
-   * Returns { received: boolean }.
-   */
-  async function jinxxyTestWebhook(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    // routeId is either a authUserId (server mode) or authUserId (user-scoped mode).
-    let routeId = url.searchParams.get('authUserId');
-    const setupBinding = await requireBoundSetupSession(request);
-
-    if (setupBinding.ok) {
-      routeId = setupBinding.setupSession.authUserId;
-    } else {
-      const session = await auth.getSession(request);
-      if (!session) {
-        return Response.json({ error: 'Authentication required' }, { status: 401 });
-      }
-      if (routeId) {
-        const tenantOwned = await isTenantOwnedBySessionUser(session.user.id, routeId);
-        if (!tenantOwned) {
-          return Response.json({ error: 'Forbidden' }, { status: 403 });
-        }
-      } else {
-        // User-scoped: no server selected — poll by authUserId.
-        routeId = session.user.id;
-      }
-    }
-
-    if (!routeId) {
-      return Response.json({ error: 'authUserId or setup token is required' }, { status: 400 });
-    }
-
-    const store = getStateStore();
-    const raw = await store.get(`${JINXXY_TEST_PREFIX}${routeId}`);
-    return Response.json({ received: !!raw });
-  }
-
-  /**
-   * POST /api/connect/jinxxy-store
-   * Body: { authUserId?, apiKey }
-   */
-  async function jinxxyStore(request: Request): Promise<Response> {
-    if (request.method !== 'POST') {
-      return Response.json({ error: 'Method not allowed' }, { status: 405 });
-    }
-
-    const setupBinding = await requireBoundSetupSession(request);
-    const setupSession = setupBinding.ok ? setupBinding.setupSession : null;
-    const authSession = setupBinding.ok ? setupBinding.authSession : await auth.getSession(request);
-    if (!authSession && !setupSession) {
-      return Response.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    let body: { authUserId?: string; apiKey: string; webhookSecret?: string };
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return Response.json({ error: 'Invalid JSON' }, { status: 400 });
-    }
-
-    const authUserId = setupSession?.authUserId ?? body.authUserId ?? authSession?.user?.id ?? null;
-    const { apiKey } = body;
-    // apiKey is required; authUserId is optional (user-level connection if absent)
-    if (!apiKey) {
-      return Response.json({ error: 'apiKey is required' }, { status: 400 });
-    }
-
-    if (body.authUserId && !setupSession) {
-      if (!authSession) {
-        return Response.json({ error: 'Authentication required' }, { status: 401 });
-      }
-      const tenantOwned = await isTenantOwnedBySessionUser(authSession.user.id, body.authUserId);
-      if (!tenantOwned) {
-        return Response.json({ error: 'Forbidden' }, { status: 403 });
-      }
-    }
-
-    if (!authUserId) {
-      return Response.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    const webhookTarget = authUserId;
-
-    try {
-      const apiKeyEncrypted = await encrypt(apiKey, config.encryptionSecret, JINXXY.credential);
-      const store = getStateStore();
-      const pendingWebhookRaw = await store.get(`${JINXXY_PENDING_WEBHOOK_PREFIX}${webhookTarget}`);
-      let webhookSecretRef: string | undefined;
-      let webhookEndpoint: string | undefined;
-      if (pendingWebhookRaw) {
-        const pendingWebhook = JSON.parse(pendingWebhookRaw) as {
-          callbackUrl: string;
-          signingSecretEncrypted: string;
-        };
-        webhookSecretRef = pendingWebhook.signingSecretEncrypted;
-        webhookEndpoint = pendingWebhook.callbackUrl;
-      } else {
-        const webhookSecret = body.webhookSecret?.trim();
-        if (!webhookSecret || webhookSecret.length < 16) {
-          return Response.json(
-            { error: 'Webhook secret is required and must be at least 16 characters' },
-            { status: 400 }
-          );
-        }
-        webhookSecretRef = await encrypt(webhookSecret, config.encryptionSecret, JINXXY.webhookSecret);
-        webhookEndpoint = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/jinxxy/${webhookTarget}`;
-      }
-      const convex = getConvexClientFromUrl(config.convexUrl);
-      await convex.mutation(api.providerConnections.upsertJinxxyConnection, {
-        apiSecret: config.convexApiSecret,
-        authUserId: authUserId ?? undefined,
-        jinxxyApiKeyEncrypted: apiKeyEncrypted,
-        webhookSecretRef,
-        webhookEndpoint,
-      });
-      if (pendingWebhookRaw) {
-        await store.delete(`${JINXXY_PENDING_WEBHOOK_PREFIX}${webhookTarget}`);
-      }
-      return Response.json({ success: true });
-    } catch (err) {
-      logger.error('Jinxxy store failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return Response.json({ error: 'Failed to store Jinxxy connection' }, { status: 500 });
-    }
-  }
-
-  const LS_WEBHOOK_EVENTS = [
-    'order_created',
-    'order_refunded',
-    'subscription_created',
-    'subscription_updated',
-    'subscription_cancelled',
-    'subscription_resumed',
-    'subscription_expired',
-    'subscription_paused',
-    'subscription_unpaused',
-    'subscription_payment_success',
-    'subscription_payment_failed',
-    'license_key_created',
-    'license_key_updated',
-  ] as const;
-
-  /**
-   * POST /api/connect/lemonsqueezy-finish
-   * Body: { authUserId?, apiKey }
-   * Validates the API key, automatically creates the webhook, and stores all credentials.
-   */
-  async function lemonsqueezyFinish(request: Request): Promise<Response> {
-    if (request.method !== 'POST') {
-      return Response.json({ error: 'Method not allowed' }, { status: 405 });
-    }
-
-    const setupBinding = await requireBoundSetupSession(request);
-    const setupSession = setupBinding.ok ? setupBinding.setupSession : null;
-    const authSession = setupBinding.ok ? setupBinding.authSession : await auth.getSession(request);
-    if (!authSession && !setupSession) {
-      return Response.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    let body: { authUserId?: string; apiKey: string };
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return Response.json({ error: 'Invalid JSON' }, { status: 400 });
-    }
-
-    const authUserId = setupSession?.authUserId ?? body.authUserId ?? authSession?.user?.id ?? null;
-    const { apiKey } = body;
-    if (!apiKey) {
-      return Response.json({ error: 'apiKey is required' }, { status: 400 });
-    }
-
-    if (!authUserId) {
-      return Response.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    if (body.authUserId && !setupSession) {
-      if (!authSession) {
-        return Response.json({ error: 'Authentication required' }, { status: 401 });
-      }
-      const tenantOwned = await isTenantOwnedBySessionUser(authSession.user.id, body.authUserId);
-      if (!tenantOwned) {
-        return Response.json({ error: 'Forbidden' }, { status: 403 });
-      }
-    }
-
-    try {
-      const client = new LemonSqueezyApiClient({ apiToken: apiKey });
-      const storesResult = await client.getStores(1, 100);
-      const selectedStore = storesResult.stores[0];
-      if (!selectedStore) {
-        return Response.json(
-          { error: 'No Lemon Squeezy stores found for this API key' },
-          { status: 422 }
-        );
-      }
-
-      const convex = getConvexClientFromUrl(config.convexUrl);
-      const connectionId = await convex.mutation(api.providerConnections.createProviderConnection, {
-        apiSecret: config.convexApiSecret,
-        authUserId: authUserId ?? undefined,
-        providerKey: 'lemonsqueezy',
-      });
-
-      // Delete any previously registered webhook to avoid duplicate-signing issues.
-      const existingConnection = await convex.query(
-        api.providerPlatform.getProviderConnectionAdmin,
-        { apiSecret: config.convexApiSecret, providerConnectionId: connectionId }
-      );
-      if (existingConnection?.remoteWebhookId) {
-        try {
-          await client.deleteWebhook(existingConnection.remoteWebhookId);
-        } catch (err) {
-          logger.warn('Could not delete old LS webhook (ignoring)', {
-            webhookId: existingConnection.remoteWebhookId,
-            err: String(err),
-          });
-        }
-      }
-
-      const callbackUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/v1/webhooks/lemonsqueezy/${connectionId}`;
-      const webhookSecretPlain = crypto.randomUUID().replace(/-/g, '');
-      const webhook = await client.createWebhook({
-        storeId: selectedStore.id,
-        url: callbackUrl,
-        events: [...LS_WEBHOOK_EVENTS],
-        secret: webhookSecretPlain,
-        testMode: Boolean(selectedStore.testMode ?? false),
-      });
-
-      const encryptedApiToken = await encrypt(apiKey, config.encryptionSecret, LEMONSQUEEZY.credential);
-      const encryptedWebhookSecret = await encrypt(webhookSecretPlain, config.encryptionSecret, LEMONSQUEEZY.webhookSecret);
-
-      for (const credential of [
-        {
-          credentialKey: 'api_token',
-          kind: 'api_token',
-          encryptedValue: encryptedApiToken,
-          metadata: { storeId: selectedStore.id },
-        },
-        {
-          credentialKey: 'webhook_secret',
-          kind: 'webhook_secret',
-          encryptedValue: encryptedWebhookSecret,
-          metadata: { webhookId: webhook.id },
-        },
-        {
-          credentialKey: 'store_selector',
-          kind: 'store_selector',
-          encryptedValue: undefined,
-          metadata: {
-            storeId: selectedStore.id,
-            storeName: selectedStore.name,
-            slug: selectedStore.slug,
-          },
-        },
-        {
-          credentialKey: 'remote_webhook',
-          kind: 'remote_webhook',
-          encryptedValue: undefined,
-          metadata: { webhookId: webhook.id, events: webhook.events, url: webhook.url },
-        },
-      ] as const) {
-        await convex.mutation(api.providerConnections.putProviderCredential, {
-          apiSecret: config.convexApiSecret,
-          authUserId: authUserId ?? undefined,
-          providerConnectionId: connectionId,
-          credentialKey: credential.credentialKey,
-          kind: credential.kind,
-          encryptedValue: credential.encryptedValue,
-          metadata: credential.metadata,
-        });
-      }
-
-      await convex.mutation(api.providerPlatform.updateProviderConnectionState, {
-        apiSecret: config.convexApiSecret,
-        providerConnectionId: connectionId,
-        status: 'active',
-        authMode: 'api_token',
-        externalShopId: selectedStore.id,
-        externalShopName: selectedStore.name,
-        webhookConfigured: true,
-        webhookEndpoint: callbackUrl,
-        remoteWebhookId: webhook.id,
-        remoteWebhookSecretRef: encryptedWebhookSecret,
-        lastHealthcheckAt: Date.now(),
-        testMode: Boolean(selectedStore.testMode ?? false),
-        metadata: { store: selectedStore, webhookId: webhook.id },
-      });
-
-      for (const capabilityKey of [
-        'catalog_sync',
-        'managed_webhooks',
-        'webhooks',
-        'reconciliation',
-        'license_verification',
-        'orders',
-        'refunds',
-        'subscriptions',
-      ]) {
-        await convex.mutation(api.providerConnections.upsertConnectionCapability, {
-          apiSecret: config.convexApiSecret,
-          authUserId: authUserId ?? undefined,
-          providerConnectionId: connectionId,
-          capabilityKey,
-          status: 'active',
-        });
-      }
-
-      return Response.json({ success: true });
-    } catch (err) {
-      logger.error('LemonSqueezy finish failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      const msg = err instanceof Error ? err.message : String(err);
-      const isApiKeyError =
-        msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('401');
-      return Response.json(
-        {
-          error: isApiKeyError
-            ? 'Invalid API key. Please double-check and try again.'
-            : 'Failed to complete Lemon Squeezy setup.',
-        },
-        { status: isApiKeyError ? 401 : 500 }
-      );
-    }
-  }
 
   /**
    * GET /api/connections?s=TOKEN
@@ -3217,74 +2501,6 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     );
   }
 
-  /**
-   * POST /api/connect/payhip-finish
-   * Body: { authUserId?, apiKey }
-   *
-   * Stores the Payhip API key (used for webhook signature verification) and creates
-   * the provider connection. Returns the webhook URL the creator should paste into
-   * Payhip's Settings → Developer page.
-   *
-   * Payhip webhook signature = SHA256(apiKey) — static per creator. No separate
-   * webhook secret is needed.
-   */
-  async function payhipFinish(request: Request): Promise<Response> {
-    if (request.method !== 'POST') {
-      return Response.json({ error: 'Method not allowed' }, { status: 405 });
-    }
-
-    const setupBinding = await requireBoundSetupSession(request);
-    const setupSession = setupBinding.ok ? setupBinding.setupSession : null;
-    const authSession = setupBinding.ok ? setupBinding.authSession : await auth.getSession(request);
-    if (!authSession && !setupSession) {
-      return Response.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    let body: { authUserId?: string; apiKey: string };
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return Response.json({ error: 'Invalid JSON' }, { status: 400 });
-    }
-
-    const authUserId = setupSession?.authUserId ?? body.authUserId ?? authSession?.user?.id ?? null;
-    const { apiKey } = body;
-    if (!apiKey) {
-      return Response.json({ error: 'apiKey is required' }, { status: 400 });
-    }
-
-    if (!authUserId) {
-      return Response.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    if (body.authUserId && !setupSession) {
-      if (!authSession) {
-        return Response.json({ error: 'Authentication required' }, { status: 401 });
-      }
-      const tenantOwned = await isTenantOwnedBySessionUser(authSession.user.id, body.authUserId);
-      if (!tenantOwned) {
-        return Response.json({ error: 'Forbidden' }, { status: 403 });
-      }
-    }
-
-    try {
-      const apiKeyEncrypted = await encrypt(apiKey, config.encryptionSecret, PAYHIP.credential);
-      const convex = getConvexClientFromUrl(config.convexUrl);
-      await convex.mutation(api.providerConnections.upsertPayhipConnection, {
-        apiSecret: config.convexApiSecret,
-        authUserId: authUserId ?? undefined,
-        encryptedApiKey: apiKeyEncrypted,
-      });
-
-      const webhookUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/payhip/${authUserId}`;
-      return Response.json({ success: true, webhookUrl });
-    } catch (err) {
-      logger.error('Payhip finish failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return Response.json({ error: 'Failed to save Payhip API key' }, { status: 500 });
-    }
-  }
 
   /**
    * POST /api/connect/:provider/product-credential
@@ -3398,45 +2614,6 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     return genericProductCredential(syntheticRequest, 'payhip');
   }
 
-  /**
-   * GET /api/connect/payhip/test-webhook?authUserId=XXX
-   * Returns { received: boolean }.
-   *
-   * The webhook handler sets a short-lived flag in the state store when it processes
-   * a valid Payhip webhook for this tenant. The setup page polls this endpoint to
-   * confirm the webhook URL was correctly configured in Payhip's Developer Settings.
-   */
-  async function payhipTestWebhook(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    let routeId: string | null = url.searchParams.get('authUserId');
-    const setupBinding = await requireBoundSetupSession(request);
-
-    if (setupBinding.ok) {
-      routeId = setupBinding.setupSession.authUserId;
-    } else {
-      const session = await auth.getSession(request);
-      if (!session) {
-        return Response.json({ error: 'Authentication required' }, { status: 401 });
-      }
-      if (routeId) {
-        const tenantOwned = await isTenantOwnedBySessionUser(session.user.id, routeId);
-        if (!tenantOwned) {
-          return Response.json({ error: 'Forbidden' }, { status: 403 });
-        }
-      } else {
-        // User-scoped: no server selected — poll by authUserId.
-        routeId = session.user.id;
-      }
-    }
-
-    if (!routeId) {
-      return Response.json({ error: 'authUserId or setup token is required' }, { status: 400 });
-    }
-
-    const store = getStateStore();
-    const raw = await store.get(`${PAYHIP_TEST_PREFIX}${routeId}`);
-    return Response.json({ received: !!raw });
-  }
 
   return {
     serveConnectPage,
@@ -3446,16 +2623,9 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     createTokenEndpoint,
     completeSetup,
     ensureTenant,
-    gumroadBegin,
-    gumroadCallback,
+    dispatchPlugin,
     getStatus,
-    jinxxyWebhookConfig,
-    jinxxyTestWebhook,
-    jinxxyStore,
-    lemonsqueezyFinish,
-    payhipFinish,
     payhipProductKey,
-    payhipTestWebhook,
     genericProductCredential,
     listConnectionsHandler,
     disconnectConnectionHandler,
