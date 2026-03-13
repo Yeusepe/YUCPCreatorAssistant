@@ -51,7 +51,6 @@ async function init() {
 
     if (await ensureBoundSetupSession()) return;
     loadProgressFlags();
-    initServerContext({ updatePlatformCards, refreshData: refreshContextData });
 
     if (!getHasSetupSession() && !getTenantId() && getGuildId()) {
       const res = await apiFetch(`${getApiBase()}/api/connect/ensure-tenant?guildId=${encodeURIComponent(getGuildId())}`);
@@ -59,8 +58,13 @@ async function init() {
       const resolvedId = data.authUserId ?? data.tenantId;
       if (resolvedId) {
         setTenantId(resolvedId);
-        await refreshUserServers(updatePlatformCards);
       }
+    }
+
+    initServerContext({ updatePlatformCards, refreshData: refreshContextData });
+
+    if (!getHasSetupSession() && getTenantId()) {
+      await refreshUserServers(updatePlatformCards);
     }
 
     await fetchAllData();

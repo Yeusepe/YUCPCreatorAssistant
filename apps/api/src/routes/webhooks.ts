@@ -9,11 +9,10 @@
  * Returns 200 quickly after inserting into webhook_events.
  * Normalization runs asynchronously.
  *
- * Gumroad verification: resource_subscriptions webhooks have no secret.
- * We verify by calling Gumroad API GET /sales?id={saleId} with the creator's OAuth token.
+ * Gumroad Ping has no signature header and no shared secret. Security relies
+ * entirely on the routeId (authUserId) embedded in the URL being kept private.
  */
 
-import { GumroadAdapter } from '@yucp/providers';
 import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import { JINXXY_PENDING_WEBHOOK_PREFIX } from '../lib/browserSessions';
@@ -34,7 +33,6 @@ const WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes — replay protection win
 export interface WebhookConfig {
   convexUrl: string;
   convexApiSecret: string;
-  /** Required for Gumroad API verification (decrypt stored OAuth token) */
   encryptionSecret: string;
 }
 
@@ -76,11 +74,6 @@ export function createWebhookRoutes(config: WebhookConfig) {
   const convex = getConvexClientFromUrl(config.convexUrl);
   const apiSecret = config.convexApiSecret;
   const encryptionSecret = config.encryptionSecret;
-  const gumroadAdapter = new GumroadAdapter({
-    clientId: '',
-    clientSecret: '',
-    redirectUri: '',
-  });
 
   async function getJinxxyWebhookSecretByRouteId(routeId: string): Promise<string | null> {
     try {
@@ -100,17 +93,6 @@ export function createWebhookRoutes(config: WebhookConfig) {
       if (!raw) return null;
       const parsed = JSON.parse(raw) as { signingSecretEncrypted: string };
       return await decrypt(parsed.signingSecretEncrypted, encryptionSecret);
-    } catch {
-      return null;
-    }
-  }
-
-  async function getGumroadWebhookSecretByRouteId(routeId: string): Promise<string | null> {
-    try {
-      return await convex.query(api.providerConnections.getGumroadWebhookSecretByRouteId, {
-        apiSecret,
-        routeId,
-      });
     } catch {
       return null;
     }
@@ -247,30 +229,49 @@ export function createWebhookRoutes(config: WebhookConfig) {
         payloadBytes: rawBody.length,
       });
 
-      const incomingSig = request.headers.get('x-gumroad-signature');
-      // Look up secret by routeId — works for authUserId (user-scoped).
-      const webhookSecret = await getGumroadWebhookSecretByRouteId(routeId);
-      let signatureValid = false;
-
-      if (webhookSecret && incomingSig) {
-        const expectedSig = await hmacSha256(webhookSecret, rawBody);
-        signatureValid = timingSafeStringEqual(expectedSig, incomingSig);
-      } else if (!webhookSecret) {
-        logger.warn('Gumroad webhook: no secret configured', { routeId });
-      }
-
       const params = new URLSearchParams(rawBody);
-      const saleId = params.get('sale_id') ?? params.get('order_number') ?? '';
+      const saleId = params.get('sale_id') ?? '';
       const refunded = params.get('refunded') === 'true';
       const eventType = refunded ? 'refund' : 'sale';
       const providerEventId = `${saleId}:${eventType}`;
 
       if (!saleId) {
-        logger.warn('Gumroad webhook: missing sale_id/order_number', { routeId });
+        logger.warn('Gumroad webhook: missing sale_id', { routeId });
         return new Response('OK', { status: 200 });
       }
 
-      // Resolve routeId → authUserIds (supports authUserId routing)
+      const saleTimestamp = params.get('sale_timestamp');
+      if (saleTimestamp) {
+        const ts = Date.parse(saleTimestamp);
+        if (Number.isFinite(ts) && Date.now() - ts > WEBHOOK_MAX_AGE_MS) {
+          logger.warn('Gumroad webhook: rejected', {
+            routeId,
+            saleId,
+            reason: `sale_timestamp is more than ${WEBHOOK_MAX_AGE_MS / 60000} minutes old (replay protection)`,
+          });
+          return new Response('Forbidden', { status: 403 });
+        }
+      }
+
+      // Gumroad Ping sends a plain form POST — there is no signature header and no
+      // shared secret. The only security mechanism is the routeId (authUserId) embedded
+      // in the URL. Accept the ping if the routeId maps to an active Gumroad connection.
+      const conn = await convex.query(api.providerConnections.getConnectionForBackfill, {
+        apiSecret,
+        authUserId: routeId,
+        provider: 'gumroad',
+      });
+
+      if (!conn) {
+        logger.warn('Gumroad webhook: rejected', {
+          routeId,
+          saleId,
+          reason: 'No active Gumroad connection found for this routeId',
+        });
+        return new Response('Forbidden', { status: 403 });
+      }
+
+      // Resolve routeId → authUserIds. Empty when no Discord server is connected yet.
       let authUserIds: string[];
       try {
         authUserIds = await convex.query(api.webhookIngestion.resolveWebhookTenantIds, {
@@ -278,59 +279,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
           authUserId: routeId,
         });
       } catch {
-        authUserIds = [routeId];
-      }
-
-      // API verification: resource_subscriptions webhooks have no secret.
-      // Verify sale exists via Gumroad API when signature is not valid.
-      if (!signatureValid && encryptionSecret && authUserIds.length > 0) {
-        for (const candidateUserId of authUserIds) {
-          if (signatureValid) break;
-          try {
-            const conn = await convex.query(api.providerConnections.getConnectionForBackfill, {
-              apiSecret,
-              authUserId: candidateUserId,
-              provider: 'gumroad',
-            });
-            if (conn?.gumroadAccessTokenEncrypted) {
-              const accessToken = await decrypt(conn.gumroadAccessTokenEncrypted, encryptionSecret);
-              const sale = await gumroadAdapter.getSale(accessToken, saleId);
-              if (sale) {
-                const apiRefunded = sale.refunded === true;
-                if (apiRefunded === refunded) {
-                  signatureValid = true;
-                } else {
-                  logger.warn('Gumroad webhook: refunded mismatch', {
-                    routeId,
-                    saleId,
-                    webhookRefunded: refunded,
-                    apiRefunded,
-                  });
-                }
-              }
-            }
-          } catch (err) {
-            logger.warn('Gumroad webhook: API verification failed', {
-              routeId,
-              saleId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }
-      }
-
-      if (!signatureValid) {
-        logger.warn('Gumroad webhook: rejected (unverified)', { routeId, saleId });
-        return new Response('Forbidden', { status: 403 });
-      }
-
-      const saleTimestamp = params.get('sale_timestamp');
-      if (saleTimestamp) {
-        const ts = Date.parse(saleTimestamp);
-        if (Number.isFinite(ts) && Date.now() - ts > WEBHOOK_MAX_AGE_MS) {
-          logger.warn('Gumroad webhook: rejected (event too old)', { routeId });
-          return new Response('Forbidden', { status: 403 });
-        }
+        authUserIds = [];
       }
 
       const payload = Object.fromEntries(params.entries());
@@ -346,7 +295,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
               providerEventId,
               eventType,
               rawPayload: payload,
-              signatureValid,
+              signatureValid: true,
             });
             if (result.duplicate) {
               logger.debug('Gumroad webhook: duplicate event', { saleId, authUserId });
@@ -364,7 +313,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
           return new Response('Internal Server Error', { status: 500 });
         }
       } else {
-        // User-scoped: no Discord servers yet — store under authUserId
+        // No Discord server connected yet — store event under authUserId directly
         try {
           const result = await convex.mutation(api.webhookIngestion.insertWebhookEvent, {
             apiSecret,
@@ -373,7 +322,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
             providerEventId,
             eventType,
             rawPayload: payload,
-            signatureValid,
+            signatureValid: true,
           });
           if (result.duplicate) {
             logger.debug('Gumroad webhook: duplicate event (user-scoped)', {

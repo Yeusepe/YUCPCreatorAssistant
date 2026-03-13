@@ -431,6 +431,11 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     return auth.getDiscordUserId(request);
   }
 
+  interface ConnectSession {
+    discordUserId: string;
+    guildId?: string;
+  }
+
   async function resolveSetupSessionFromRequest(
     request: Request
   ): Promise<{ authUserId: string; guildId: string; discordUserId: string } | null> {
@@ -446,14 +451,18 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     return bearerToken ?? cookieToken;
   }
 
-  async function resolveConnectDiscordUserId(request: Request): Promise<string | null> {
+  async function resolveConnectSession(request: Request): Promise<ConnectSession | null> {
     const token = getCookieValue(request, CONNECT_TOKEN_COOKIE);
     if (!token) return null;
     const store = getStateStore();
     const raw = await store.get(`${CONNECT_TOKEN_PREFIX}${token}`);
     if (!raw) return null;
-    const data = JSON.parse(raw) as { discordUserId: string };
-    return data.discordUserId;
+    return JSON.parse(raw) as ConnectSession;
+  }
+
+  async function resolveConnectDiscordUserId(request: Request): Promise<string | null> {
+    const session = await resolveConnectSession(request);
+    return session?.discordUserId ?? null;
   }
 
   /**
@@ -709,7 +718,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     if (request.method !== 'POST') {
       return Response.json({ error: 'Method not allowed' }, { status: 405 });
     }
-    let body: { discordUserId: string; apiSecret: string };
+    let body: { discordUserId: string; guildId: string; apiSecret: string };
     try {
       body = (await request.json()) as typeof body;
     } catch {
@@ -718,11 +727,11 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     if (body.apiSecret !== config.convexApiSecret) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (!body.discordUserId) {
-      return Response.json({ error: 'discordUserId is required' }, { status: 400 });
+    if (!body.discordUserId || !body.guildId) {
+      return Response.json({ error: 'discordUserId and guildId are required' }, { status: 400 });
     }
     const token = generateToken();
-    await storeConnectToken(token, body.discordUserId);
+    await storeConnectToken(token, body.discordUserId, body.guildId);
     return Response.json({ token });
   }
 
@@ -951,7 +960,8 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       return Response.json({ error: 'guildId is required' }, { status: 400 });
     }
 
-    const connectDiscordUserId = await resolveConnectDiscordUserId(request);
+    const connectSession = await resolveConnectSession(request);
+    const connectDiscordUserId = connectSession?.discordUserId ?? null;
     const sessionDiscordUserId = await getAuthenticatedDiscordUserId(request);
     if (
       connectDiscordUserId &&
@@ -970,6 +980,12 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     }
 
     const discordUserId: string | null = connectDiscordUserId ?? sessionDiscordUserId;
+    if (!connectSession?.discordUserId || connectSession.guildId !== guildId) {
+      return Response.json(
+        { error: 'A valid setup link for this server is required. Run `/creator-admin setup start` again.' },
+        { status: 403 }
+      );
+    }
 
     const convex = getConvexClient();
     const apiSecret = getConvexApiSecret();
@@ -1059,8 +1075,24 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     }
 
     const convex = getConvexClient();
+    const apiSecret = getConvexApiSecret();
+    const existingGuildLink = await convex.query(api.guildLinks.getGuildLinkForUninstall, {
+      apiSecret,
+      discordGuildId: guildId,
+    });
 
-    const connectDiscordUserId = await resolveConnectDiscordUserId(request);
+    if (existingGuildLink) {
+      if (existingGuildLink.authUserId !== session.user.id) {
+        return Response.json(
+          { error: 'This server is already linked to another account.' },
+          { status: 403 }
+        );
+      }
+      return Response.json({ authUserId: existingGuildLink.authUserId });
+    }
+
+    const connectSession = await resolveConnectSession(request);
+    const connectDiscordUserId = connectSession?.discordUserId ?? null;
     const sessionDiscordUserId = await getAuthenticatedDiscordUserId(request);
     if (
       connectDiscordUserId &&
@@ -1078,9 +1110,15 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       );
     }
 
+    if (!connectSession?.discordUserId || connectSession.guildId !== guildId) {
+      return Response.json(
+        { error: 'A valid setup link for this server is required. Run `/creator-admin setup start` again.' },
+        { status: 403 }
+      );
+    }
+
     const discordUserId: string | null = connectDiscordUserId ?? sessionDiscordUserId;
 
-    const apiSecret = getConvexApiSecret();
     const existing = await convex.query(api.creatorProfiles.getCreatorByAuthUser, {
       apiSecret,
       authUserId: session.user.id,
@@ -3434,11 +3472,11 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
   }
 }
 
-export function storeConnectToken(token: string, discordUserId: string): Promise<void> {
+export function storeConnectToken(token: string, discordUserId: string, guildId: string): Promise<void> {
   const store = getStateStore();
   return store.set(
     `${CONNECT_TOKEN_PREFIX}${token}`,
-    JSON.stringify({ discordUserId }),
+    JSON.stringify({ discordUserId, guildId }),
     TOKEN_EXPIRY_MS
   );
 }

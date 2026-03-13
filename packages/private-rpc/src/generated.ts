@@ -737,6 +737,8 @@ export const CreateSetupSessionRequest = /*#__PURE__*/ Object.freeze(/*#__PURE__
 export interface CreateConnectTokenRequest {
 
   discordUserId?: string;
+
+  guildId?: string;
 }
 
 export const CreateConnectTokenRequest = /*#__PURE__*/ Object.freeze(/*#__PURE__*/ Object.assign(
@@ -765,6 +767,10 @@ export const CreateConnectTokenRequest = /*#__PURE__*/ Object.freeze(/*#__PURE__
         view.writeByte(1);
         view.writeString(record.discordUserId);
       }
+      if (record.guildId !== undefined) {
+        view.writeByte(2);
+        view.writeString(record.guildId);
+      }
       view.writeByte(0);
       const end = view.length;
       view.fillMessageLength(pos, end - start);
@@ -788,6 +794,10 @@ export const CreateConnectTokenRequest = /*#__PURE__*/ Object.freeze(/*#__PURE__
 
           case 1:
             message.discordUserId = view.readString();
+            break;
+
+          case 2:
+            message.guildId = view.readString();
             break;
 
           default:

@@ -91,6 +91,7 @@ export async function createSetupSessionToken(params: {
 
 export async function createConnectToken(params: {
   discordUserId: string;
+  guildId: string;
 }): Promise<string | undefined> {
   const response = await (await getClients()).setup.createConnectToken(params);
   return response.token;
