@@ -1,0 +1,25 @@
+/**
+ * Provider registry
+ *
+ * To add a new provider:
+ * 1. Create apps/api/src/providers/{name}.ts implementing ProviderPlugin
+ * 2. Add an import below and include it in ALL_PROVIDERS
+ * That's it — route handlers require no changes.
+ */
+
+import type { ProviderPlugin } from './types';
+
+import gumroad from './gumroad';
+import jinxxy from './jinxxy';
+import lemonsqueezy from './lemonsqueezy';
+import payhip from './payhip';
+
+const ALL_PROVIDERS: ProviderPlugin[] = [gumroad, jinxxy, lemonsqueezy, payhip];
+
+export const PROVIDERS: ReadonlyMap<string, ProviderPlugin> = new Map(
+  ALL_PROVIDERS.map((p) => [p.id, p]),
+);
+
+export function getProvider(id: string): ProviderPlugin | undefined {
+  return PROVIDERS.get(id);
+}

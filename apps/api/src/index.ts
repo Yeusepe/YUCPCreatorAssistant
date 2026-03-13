@@ -798,28 +798,12 @@ async function routeRequest(request: Request): Promise<Response> {
     return handleBackfillProduct(request);
   }
 
-  // Jinxxy products (for product add flow - fetches from Jinxxy API using tenant key)
-  if (pathname === '/api/jinxxy/products' && request.method === 'POST') {
-    const { handleJinxxyProducts } = await import('./routes/jinxxyProducts');
-    return handleJinxxyProducts(request);
-  }
-
-  // Gumroad products (for autosetup and product add flow - fetches from Gumroad API using OAuth token)
-  if (pathname === '/api/gumroad/products' && request.method === 'POST') {
-    const { handleGumroadProducts } = await import('./routes/gumroadProducts');
-    return handleGumroadProducts(request);
-  }
-
-  // Lemon Squeezy products (for product add flow - fetches from LS API using tenant API token)
-  if (pathname === '/api/lemonsqueezy/products' && request.method === 'POST') {
-    const { handleLemonSqueezyProducts } = await import('./routes/lemonsqueezyProducts');
-    return handleLemonSqueezyProducts(request);
-  }
-
-  // Payhip products (for product add flow - merges credential keys + webhook-seen products)
-  if (pathname === '/api/payhip/products' && request.method === 'POST') {
-    const { handlePayhipProducts } = await import('./routes/payhipProducts');
-    return handlePayhipProducts(request);
+  // Provider products route — generic handler for all providers (/api/:provider/products)
+  const productsMatch = pathname.match(/^\/api\/([^/]+)\/products$/);
+  if (productsMatch && request.method === 'POST') {
+    const providerSlug = productsMatch[1];
+    const { handleProviderProducts } = await import('./routes/products');
+    return handleProviderProducts(request, providerSlug);
   }
 
   // Webhook routes (Gumroad, Jinxxy)
