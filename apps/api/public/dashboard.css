@@ -249,6 +249,20 @@ body:not(.state-server-selected) .server-only {
   gap: 20px;
 }
 
+.settings-subsection-body .svr-cfg-tile {
+  margin-bottom: 0;
+}
+
+#dynamic-server-provider-tiles {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+#dynamic-server-provider-tiles .svr-cfg-tile {
+  margin-bottom: 0;
+}
+
 .settings-subsection-body .setting-row {
   padding: 24px 20px;
   margin-bottom: 0;
