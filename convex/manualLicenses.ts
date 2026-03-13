@@ -5,9 +5,9 @@
  * Uses SHA-256 hashing - license keys are NEVER stored in plaintext.
  */
 
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
-import { mutation, query } from './_generated/server';
+import { internalMutation, mutation, query } from './_generated/server';
 
 // ============================================================================
 // TYPES
@@ -229,7 +229,7 @@ export const create = mutation({
 /**
  * Increment usage count for a license.
  */
-export const incrementUsage = mutation({
+export const incrementUsage = internalMutation({
   args: { licenseId: v.id('manual_licenses') },
   handler: async (ctx, { licenseId }) => {
     const license = await ctx.db.get(licenseId);
@@ -377,9 +377,12 @@ export const bulkCreate = mutation({
  * Requires apiSecret - called by API server only.
  */
 export const hardDelete = mutation({
-  args: { apiSecret: v.string(), licenseId: v.id('manual_licenses') },
-  handler: async (ctx, { apiSecret, licenseId }) => {
+  args: { apiSecret: v.string(), authUserId: v.string(), licenseId: v.id('manual_licenses') },
+  handler: async (ctx, { apiSecret, authUserId, licenseId }) => {
     requireApiSecret(apiSecret);
+    const license = await ctx.db.get(licenseId);
+    if (!license) throw new Error(`Manual license not found: ${licenseId}`);
+    if (license.authUserId !== authUserId) throw new ConvexError('Unauthorized: not the owner');
     await ctx.db.delete(licenseId);
     return { success: true };
   },

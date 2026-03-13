@@ -13,7 +13,7 @@
  */
 
 import { v } from 'convex/values';
-import { mutation, query } from './_generated/server';
+import { internalMutation, mutation, query } from './_generated/server';
 import { VerificationModeV } from './lib/providers';
 
 // ============================================================================
@@ -71,7 +71,6 @@ export const getVerificationSessionByState = query({
         productId: v.optional(v.id('product_catalog')),
         state: v.string(),
         pkceVerifierHash: v.optional(v.string()),
-        pkceVerifier: v.optional(v.string()),
         redirectUri: v.string(),
         successRedirectUri: v.optional(v.string()),
         discordUserId: v.optional(v.string()),
@@ -250,7 +249,6 @@ export const createVerificationSession = mutation({
     verificationMethod: v.optional(v.string()),
     state: v.string(),
     pkceVerifierHash: v.optional(v.string()),
-    pkceVerifier: v.optional(v.string()),
     redirectUri: v.string(),
     successRedirectUri: v.optional(v.string()),
     discordUserId: v.optional(v.string()),
@@ -301,7 +299,6 @@ export const createVerificationSession = mutation({
       verificationMethod: args.verificationMethod ?? args.mode,
       state: args.state,
       pkceVerifierHash: args.pkceVerifierHash,
-      pkceVerifier: args.pkceVerifier,
       redirectUri: args.redirectUri,
       successRedirectUri: args.successRedirectUri,
       discordUserId: args.discordUserId,
@@ -501,7 +498,7 @@ export const cancelVerificationSession = mutation({
  * Removes sessions that have been expired for more than CLEANUP_AGE_MS.
  * This is a maintenance mutation that should be called periodically.
  */
-export const cleanupExpiredSessions = mutation({
+export const cleanupExpiredSessions = internalMutation({
   args: {},
   returns: v.object({
     cleaned: v.number(),

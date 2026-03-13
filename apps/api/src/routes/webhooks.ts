@@ -14,7 +14,7 @@
  */
 
 import { GumroadAdapter } from '@yucp/providers';
-import { createLogger } from '@yucp/shared';
+import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import { JINXXY_PENDING_WEBHOOK_PREFIX } from '../lib/browserSessions';
 import { getConvexClientFromUrl } from '../lib/convex';
@@ -29,24 +29,13 @@ const COLLAB_TEST_PREFIX = 'collab_test:';
 const COLLAB_TEST_TTL_MS = 60 * 1000; // 60 seconds
 const PAYHIP_TEST_PREFIX = 'payhip_test:';
 const PAYHIP_TEST_TTL_MS = 60 * 1000; // 60 seconds
+const WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes — replay protection window
 
 export interface WebhookConfig {
   convexUrl: string;
   convexApiSecret: string;
   /** Required for Gumroad API verification (decrypt stored OAuth token) */
   encryptionSecret: string;
-}
-
-/**
- * Constant-time string comparison to prevent timing attacks.
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  const aBytes = new TextEncoder().encode(a.toLowerCase());
-  const bBytes = new TextEncoder().encode(b.toLowerCase());
-  if (aBytes.length !== bBytes.length) return false;
-  let diff = 0;
-  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i];
-  return diff === 0;
 }
 
 /**
@@ -138,11 +127,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
         authUserId,
       });
       if (!encryptedKey) return null;
-      try {
-        return await decrypt(encryptedKey, encryptionSecret);
-      } catch {
-        return encryptedKey;
-      }
+      return await decrypt(encryptedKey, encryptionSecret);
     } catch {
       return null;
     }
@@ -185,7 +170,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
 
       if (webhookSecret && signature) {
         const expectedSig = await hmacSha256(webhookSecret, rawBody);
-        signatureValid = timingSafeEqual(expectedSig, signature);
+        signatureValid = timingSafeStringEqual(expectedSig, signature);
       } else if (!webhookSecret) {
         logger.warn('Collab webhook: no secret configured', { ownerAuthUserId, inviteId });
         signatureValid = false;
@@ -269,7 +254,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
 
       if (webhookSecret && incomingSig) {
         const expectedSig = await hmacSha256(webhookSecret, rawBody);
-        signatureValid = timingSafeEqual(expectedSig, incomingSig);
+        signatureValid = timingSafeStringEqual(expectedSig, incomingSig);
       } else if (!webhookSecret) {
         logger.warn('Gumroad webhook: no secret configured', { routeId });
       }
@@ -413,9 +398,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
       const signature = request.headers.get('x-signature');
       // Look up secret by routeId — works for authUserId (user-scoped).
       const secretRef = await getJinxxyWebhookSecretByRouteId(routeId);
-      const convexSecret = secretRef
-        ? await decrypt(secretRef, encryptionSecret).catch(() => secretRef)
-        : null;
+      const convexSecret = secretRef ? await decrypt(secretRef, encryptionSecret) : null;
       const pendingSecret = await getPendingJinxxyWebhookSecret(routeId);
       const webhookSecret = convexSecret ?? pendingSecret;
       let signatureValid = false;
@@ -426,14 +409,14 @@ export function createWebhookRoutes(config: WebhookConfig) {
         if (incomingSig.startsWith('sha256=')) {
           incomingSig = incomingSig.slice(7);
         }
-        signatureValid = timingSafeEqual(expectedSig, incomingSig);
+        signatureValid = timingSafeStringEqual(expectedSig, incomingSig);
       } else if (!webhookSecret) {
         logger.warn('Jinxxy webhook: no secret configured', { routeId });
       }
 
-      let payload: { event_id?: string; event_type?: string };
+      let payload: { event_id?: string; event_type?: string; created_at?: string };
       try {
-        payload = JSON.parse(rawBody) as { event_id?: string; event_type?: string };
+        payload = JSON.parse(rawBody) as typeof payload;
       } catch {
         logger.warn('Jinxxy webhook: invalid JSON', { routeId });
         return new Response('Bad Request', { status: 400 });
@@ -457,6 +440,14 @@ export function createWebhookRoutes(config: WebhookConfig) {
           signatureLen: signature?.length ?? 0,
         });
         return new Response('Forbidden', { status: 403 });
+      }
+
+      if (payload.created_at) {
+        const ts = Date.parse(payload.created_at);
+        if (Number.isFinite(ts) && Date.now() - ts > WEBHOOK_MAX_AGE_MS) {
+          logger.warn('Jinxxy webhook: rejected (event too old)', { routeId, eventId });
+          return new Response('Forbidden', { status: 403 });
+        }
       }
 
       // Resolve routeId → authUserIds (supports authUserId routing)
@@ -546,7 +537,13 @@ export function createWebhookRoutes(config: WebhookConfig) {
         payloadBytes: rawBody.length,
       });
 
-      let payload: { id?: string; email?: string; type?: string; signature?: string };
+      let payload: {
+        id?: string;
+        email?: string;
+        type?: string;
+        signature?: string;
+        created_at?: string;
+      };
       try {
         payload = JSON.parse(rawBody) as typeof payload;
       } catch {
@@ -561,14 +558,12 @@ export function createWebhookRoutes(config: WebhookConfig) {
         apiSecret,
         routeId,
       });
-      const apiKey = encryptedKey
-        ? await decrypt(encryptedKey, encryptionSecret).catch(() => encryptedKey)
-        : null;
+      const apiKey = encryptedKey ? await decrypt(encryptedKey, encryptionSecret) : null;
       let signatureValid = false;
 
       if (apiKey && payload.signature) {
         const expectedSig = await sha256Hex(apiKey);
-        signatureValid = timingSafeEqual(expectedSig, payload.signature);
+        signatureValid = timingSafeStringEqual(expectedSig, payload.signature);
       } else if (!apiKey) {
         logger.warn('Payhip webhook: no API key configured', { routeId });
       }
@@ -589,6 +584,14 @@ export function createWebhookRoutes(config: WebhookConfig) {
           hasSignature: !!payload.signature,
         });
         return new Response('Forbidden', { status: 403 });
+      }
+
+      if (payload.created_at) {
+        const ts = Date.parse(payload.created_at);
+        if (Number.isFinite(ts) && Date.now() - ts > WEBHOOK_MAX_AGE_MS) {
+          logger.warn('Payhip webhook: rejected (event too old)', { routeId, eventId });
+          return new Response('Forbidden', { status: 403 });
+        }
       }
 
       // Resolve routeId → authUserIds (supports authUserId routing)

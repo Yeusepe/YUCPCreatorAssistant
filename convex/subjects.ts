@@ -49,6 +49,7 @@ export const PublicSubjectSelector = v.union(
  */
 export const getSubjectByAuthId = query({
   args: {
+    apiSecret: v.string(),
     authUserId: v.string(),
   },
   returns: v.union(
@@ -77,6 +78,7 @@ export const getSubjectByAuthId = query({
     })
   ),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const subject = await ctx.db
       .query('subjects')
       .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
@@ -96,6 +98,7 @@ export const getSubjectByAuthId = query({
  */
 export const getSubjectByDiscordId = query({
   args: {
+    apiSecret: v.string(),
     discordUserId: v.string(),
   },
   returns: v.union(
@@ -124,6 +127,7 @@ export const getSubjectByDiscordId = query({
     })
   ),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const subject = await ctx.db
       .query('subjects')
       .withIndex('by_discord_user', (q) => q.eq('primaryDiscordUserId', args.discordUserId))

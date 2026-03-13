@@ -5,7 +5,8 @@
  * Provides API routes for beginning, callback, and completing verification.
  *
  * Security:
- * - PKCE verifier is hashed before storage (never stored plaintext)
+ * - PKCE verifier is stored in the ephemeral state store (never in Convex/DB)
+ * - Only the SHA-256 hash of the PKCE verifier is stored in Convex
  * - State encodes authUserId for callback lookup: {authUserId}:{random}
  * - Sessions expire after 15 minutes
  * - Replay protection via session status checks
@@ -19,6 +20,7 @@ import type { Id } from '../../../../convex/_generated/dataModel';
 import { createAuth, type VrchatOwnershipPayload, type VrchatSessionTokensPayload } from '../auth';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { encrypt } from '../lib/encrypt';
+import { getStateStore } from '../lib/stateStore';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 import { createApiVerificationSupportError } from '../lib/verificationSupport';
 import {
@@ -34,6 +36,8 @@ export const SESSION_EXPIRY_MS = 15 * 60 * 1000;
 const VRCHAT_VERIFY_ATTEMPTS = new Map<string, { count: number; resetAt: number }>();
 const VERIFY_PANEL_PREFIX = 'verify_panel:';
 const VERIFY_PANEL_TTL_MS = 15 * 60 * 1000;
+// Prefix for PKCE verifiers stored in the state store (never stored in Convex)
+const PKCE_VERIFIER_PREFIX = 'pkce_verifier:';
 
 // ============================================================================
 // CRYPTO UTILITIES
@@ -449,6 +453,9 @@ export function createVerificationSessionManager(
       if (config.convexUrl && config.convexApiSecret) {
         try {
           const convex = getConvexClientFromUrl(config.convexUrl);
+          // Store the plaintext PKCE verifier in the ephemeral state store (never in Convex)
+          const store = getStateStore();
+          await store.set(`${PKCE_VERIFIER_PREFIX}${state}`, codeVerifier, SESSION_EXPIRY_MS);
           // redirectUri = user's destination after verification (e.g. /verify-success?returnTo=...)
           // OAuth redirect_uri for token exchange is always baseUrl + callbackPath
           const result = await convex.mutation(api.verificationSessions.createVerificationSession, {
@@ -457,7 +464,6 @@ export function createVerificationSessionManager(
             mode: input.mode,
             state,
             pkceVerifierHash: verifierHash,
-            pkceVerifier: codeVerifier,
             redirectUri: input.redirectUri,
             successRedirectUri: input.redirectUri,
             discordUserId: input.discordUserId,
@@ -567,7 +573,11 @@ export function createVerificationSessionManager(
       // Use session.mode for feature branching (e.g. 'discord_role')
       // because the URL-path mode is just 'discord' for all Discord OAuth callbacks.
       const sessionMode = session.mode;
-      const codeVerifier = session.pkceVerifier;
+      // Retrieve the PKCE verifier from the ephemeral state store (never stored in Convex)
+      const store = getStateStore();
+      const codeVerifier = await store.get(`${PKCE_VERIFIER_PREFIX}${state}`);
+      // Delete immediately after reading to enforce single-use
+      await store.delete(`${PKCE_VERIFIER_PREFIX}${state}`);
       if (!codeVerifier) {
         return { success: false, error: 'Session missing PKCE verifier' };
       }

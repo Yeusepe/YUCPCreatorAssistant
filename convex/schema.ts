@@ -395,8 +395,6 @@ const verification_sessions = defineTable({
   state: v.string(),
   // PKCE verifier hash for security
   pkceVerifierHash: v.optional(v.string()),
-  // PKCE verifier (plaintext, short-lived, used once at token exchange)
-  pkceVerifier: v.optional(v.string()),
   // Redirect URI for the flow (OAuth callback)
   redirectUri: v.string(),
   // Where to send user after verification completes
@@ -1509,6 +1507,18 @@ const oauth_loopback_sessions = defineTable({
   .index('by_oauth_state', ['oauthState'])
   .index('by_created_at', ['createdAt']);
 
+/**
+ * Used YUCP JWT nonces — tracks consumed nonces for replay prevention.
+ */
+const used_nonces = defineTable({
+  /** The JWT nonce (jti claim) that was consumed */
+  nonce: v.string(),
+  /** Creator (authUserId) that consumed the nonce */
+  authUserId: v.string(),
+  /** When the nonce was consumed (Unix ms) */
+  usedAt: v.number(),
+}).index('by_nonce', ['nonce']);
+
 export default defineSchema({
   // Creator-scoped tables
   creator_profiles,
@@ -1552,4 +1562,5 @@ export default defineSchema({
   signing_log,
   cert_issuance_log,
   oauth_loopback_sessions,
+  used_nonces,
 });

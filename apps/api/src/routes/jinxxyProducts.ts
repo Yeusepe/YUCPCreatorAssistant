@@ -7,7 +7,7 @@
  */
 
 import { JinxxyApiClient } from '@yucp/providers/jinxxy';
-import { createLogger } from '@yucp/shared';
+import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { decrypt } from '../lib/encrypt';
@@ -17,15 +17,6 @@ import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const HARD_PAGE_LIMIT = 100;
-
-function timingSafeEqual(a: string, b: string): boolean {
-  const aBytes = new TextEncoder().encode(a);
-  const bBytes = new TextEncoder().encode(b);
-  if (aBytes.length !== bBytes.length) return false;
-  let diff = 0;
-  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i];
-  return diff === 0;
-}
 
 export interface JinxxyProductsRequest {
   apiSecret: string;
@@ -64,7 +55,7 @@ export async function handleJinxxyProducts(request: Request): Promise<Response> 
     }
 
     const expectedSecret = process.env.CONVEX_API_SECRET;
-    if (!expectedSecret || !timingSafeEqual(apiSecret, expectedSecret)) {
+    if (!expectedSecret || !timingSafeStringEqual(apiSecret, expectedSecret)) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' },

@@ -17,7 +17,7 @@
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { mutation, query } from './_generated/server';
+import { internalQuery, mutation, query } from './_generated/server';
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -107,7 +107,7 @@ function requireApiSecret(apiSecret: string | undefined): void {
  * Internal query to find a subject by authUserId.
  * Used by sync operations to check for existing subjects.
  */
-export const findSubjectByAuthId = query({
+export const findSubjectByAuthId = internalQuery({
   args: {
     authUserId: v.string(),
   },
@@ -145,7 +145,7 @@ export const findSubjectByAuthId = query({
  * Internal query to find a subject by Discord user ID.
  * Used to detect account reconnection scenarios.
  */
-export const findSubjectByDiscordId = query({
+export const findSubjectByDiscordId = internalQuery({
   args: {
     discordUserId: v.string(),
   },
@@ -182,7 +182,7 @@ export const findSubjectByDiscordId = query({
 /**
  * Find external account by provider and provider user ID.
  */
-export const findExternalAccount = query({
+export const findExternalAccount = internalQuery({
   args: {
     provider: v.string(),
     providerUserId: v.string(),

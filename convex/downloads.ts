@@ -1,4 +1,4 @@
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 
 const RoleLogic = v.union(v.literal('all'), v.literal('any'));
@@ -46,12 +46,15 @@ export const listRoutesByGuild = query({
 export const getRouteById = query({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     routeId: v.id('download_routes'),
   },
   returns: v.union(v.any(), v.null()),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    return await ctx.db.get(args.routeId);
+    const doc = await ctx.db.get(args.routeId);
+    if (!doc || doc.authUserId !== args.authUserId) return null;
+    return doc;
   },
 });
 
@@ -153,6 +156,7 @@ export const createRoute = mutation({
 export const toggleRoute = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     routeId: v.id('download_routes'),
     enabled: v.boolean(),
   },
@@ -163,6 +167,7 @@ export const toggleRoute = mutation({
     requireApiSecret(args.apiSecret);
     const route = await ctx.db.get(args.routeId);
     if (!route) throw new Error(`Download route not found: ${args.routeId}`);
+    if (route.authUserId !== args.authUserId) throw new ConvexError('Unauthorized: not the owner');
     await ctx.db.patch(args.routeId, {
       enabled: args.enabled,
       updatedAt: Date.now(),
@@ -174,6 +179,7 @@ export const toggleRoute = mutation({
 export const updateRouteMessage = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     routeId: v.id('download_routes'),
     messageTitle: v.string(),
     messageBody: v.string(),
@@ -185,6 +191,7 @@ export const updateRouteMessage = mutation({
     requireApiSecret(args.apiSecret);
     const route = await ctx.db.get(args.routeId);
     if (!route) throw new Error(`Download route not found: ${args.routeId}`);
+    if (route.authUserId !== args.authUserId) throw new ConvexError('Unauthorized: not the owner');
 
     const messageTitle = args.messageTitle.trim();
     const messageBody = args.messageBody.trim();
@@ -203,6 +210,7 @@ export const updateRouteMessage = mutation({
 export const deleteRoute = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     routeId: v.id('download_routes'),
   },
   returns: v.object({
@@ -212,6 +220,7 @@ export const deleteRoute = mutation({
     requireApiSecret(args.apiSecret);
     const route = await ctx.db.get(args.routeId);
     if (!route) throw new Error(`Download route not found: ${args.routeId}`);
+    if (route.authUserId !== args.authUserId) throw new ConvexError('Unauthorized: not the owner');
 
     const artifacts = await ctx.db
       .query('download_artifacts')
@@ -284,6 +293,7 @@ export const createArtifact = mutation({
 export const updateArtifactSourceRelay = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     artifactId: v.id('download_artifacts'),
     sourceRelayMessageId: v.optional(v.string()),
     sourceDeliveryMode: DownloadArtifactSourceMode,
@@ -295,6 +305,7 @@ export const updateArtifactSourceRelay = mutation({
     requireApiSecret(args.apiSecret);
     const artifact = await ctx.db.get(args.artifactId);
     if (!artifact) throw new Error(`Download artifact not found: ${args.artifactId}`);
+    if (artifact.authUserId !== args.authUserId) throw new ConvexError('Unauthorized: not the owner');
     await ctx.db.patch(args.artifactId, {
       sourceRelayMessageId: args.sourceRelayMessageId,
       sourceDeliveryMode: args.sourceDeliveryMode,
@@ -307,6 +318,7 @@ export const updateArtifactSourceRelay = mutation({
 export const markArtifactStatus = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     artifactId: v.id('download_artifacts'),
     status: DownloadArtifactStatus,
   },
@@ -317,6 +329,7 @@ export const markArtifactStatus = mutation({
     requireApiSecret(args.apiSecret);
     const artifact = await ctx.db.get(args.artifactId);
     if (!artifact) throw new Error(`Download artifact not found: ${args.artifactId}`);
+    if (artifact.authUserId !== args.authUserId) throw new ConvexError('Unauthorized: not the owner');
     await ctx.db.patch(args.artifactId, {
       status: args.status,
       updatedAt: Date.now(),

@@ -31,6 +31,7 @@ import {
   handleSetupJinxxyModal,
   handleSetupSelect,
   runSetupStart,
+  runSetupStartUnconfigured,
 } from '../commands/setup';
 import { getApiUrls } from '../lib/apiUrls';
 import { E } from '../lib/emojis';
@@ -345,10 +346,14 @@ async function handleSlashCommand(
   });
 
   if (!guildLink) {
-    await interaction.reply({
-      content: await getNotConfiguredMessage(guildId, interaction.user.id, ctx.apiSecret, true),
-      flags: MessageFlags.Ephemeral,
-    });
+    if (subcommandGroup === 'setup' && subcommand === 'start') {
+      await runSetupStartUnconfigured(interaction, guildId);
+    } else {
+      await interaction.reply({
+        content: await getNotConfiguredMessage(guildId, interaction.user.id, ctx.apiSecret, true),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
     return;
   }
 

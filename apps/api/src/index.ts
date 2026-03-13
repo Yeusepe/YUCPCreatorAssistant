@@ -2,6 +2,7 @@
 // Convex hosts Better Auth for creator authentication.
 // This Bun server hosts the app pages, connect flows, and integration routes.
 
+import path from 'node:path';
 import { createLogger } from '@yucp/shared';
 import { type Auth, createAuth } from './auth';
 import { createInternalRpcRouter, INTERNAL_RPC_PATH } from './internalRpc/router';
@@ -50,6 +51,20 @@ let allowedCorsOrigins = new Set<string>();
 let resolvedApiBaseUrl = 'http://localhost:3001';
 let resolvedFrontendOrigin: string | null = null;
 const RATE_LIMIT_BUCKETS = new Map<string, { count: number; resetAt: number }>();
+const PUBLIC_BASE_DIR = path.resolve(import.meta.dir, '..', 'public');
+
+// Periodically evict stale rate-limit buckets (every 5 minutes) to prevent unbounded growth.
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [key, bucket] of RATE_LIMIT_BUCKETS) {
+      if (now >= bucket.resetAt) {
+        RATE_LIMIT_BUCKETS.delete(key);
+      }
+    }
+  },
+  5 * 60 * 1000
+).unref();
 
 function escapeForSingleQuotedJsString(value: string): string {
   return value
@@ -267,7 +282,9 @@ function initializeAuth(webhookBaseUrl?: string) {
     discordClientSecret: env.DISCORD_CLIENT_SECRET,
     jinxxyClientId: env.JINXXY_API_KEY,
     jinxxyClientSecret: env.JINXXY_SECRET_KEY,
-    encryptionSecret: env.BETTER_AUTH_SECRET ?? '',
+    // MIGRATION: When first deploying, existing encrypted data uses BETTER_AUTH_SECRET as the
+    // encryption key. Re-encrypt all stored provider credentials after updating this env var.
+    encryptionSecret: env.ENCRYPTION_SECRET ?? env.BETTER_AUTH_SECRET ?? '',
   };
   verificationHandlers = createVerificationRoutes(verificationConfig);
   verificationRoutes = mountVerificationRouteHandlers(verificationHandlers);
@@ -283,7 +300,9 @@ function initializeAuth(webhookBaseUrl?: string) {
     convexUrl: env.CONVEX_URL ?? env.CONVEX_DEPLOYMENT ?? '',
     gumroadClientId: env.GUMROAD_CLIENT_ID ?? env.GUMROAD_API_KEY,
     gumroadClientSecret: env.GUMROAD_CLIENT_SECRET ?? env.GUMROAD_SECRET_KEY,
-    encryptionSecret: env.BETTER_AUTH_SECRET ?? '',
+    // MIGRATION: When first deploying, existing encrypted data uses BETTER_AUTH_SECRET as the
+    // encryption key. Re-encrypt all stored provider credentials after updating this env var.
+    encryptionSecret: env.ENCRYPTION_SECRET ?? env.BETTER_AUTH_SECRET ?? '',
   } satisfies Parameters<typeof createConnectRoutes>[1];
   connectRoutes = createConnectRoutes(auth, connectConfig);
 
@@ -291,13 +310,17 @@ function initializeAuth(webhookBaseUrl?: string) {
     apiBaseUrl: publicBaseUrl,
     convexApiSecret: env.CONVEX_API_SECRET ?? '',
     convexUrl: env.CONVEX_URL ?? env.CONVEX_DEPLOYMENT ?? '',
-    encryptionSecret: env.BETTER_AUTH_SECRET ?? '',
+    // MIGRATION: When first deploying, existing encrypted data uses BETTER_AUTH_SECRET as the
+    // encryption key. Re-encrypt all stored provider credentials after updating this env var.
+    encryptionSecret: env.ENCRYPTION_SECRET ?? env.BETTER_AUTH_SECRET ?? '',
   });
 
   webhookHandler = createWebhookHandler({
     convexUrl: env.CONVEX_URL ?? env.CONVEX_DEPLOYMENT ?? '',
     convexApiSecret: env.CONVEX_API_SECRET ?? '',
-    encryptionSecret: env.BETTER_AUTH_SECRET ?? '',
+    // MIGRATION: When first deploying, existing encrypted data uses BETTER_AUTH_SECRET as the
+    // encryption key. Re-encrypt all stored provider credentials after updating this env var.
+    encryptionSecret: env.ENCRYPTION_SECRET ?? env.BETTER_AUTH_SECRET ?? '',
   });
 
   const collabConfig = {
@@ -305,7 +328,9 @@ function initializeAuth(webhookBaseUrl?: string) {
     frontendBaseUrl: frontendUrl,
     convexUrl: env.CONVEX_URL ?? env.CONVEX_DEPLOYMENT ?? '',
     convexApiSecret: env.CONVEX_API_SECRET ?? '',
-    encryptionSecret: env.BETTER_AUTH_SECRET ?? '',
+    // MIGRATION: When first deploying, existing encrypted data uses BETTER_AUTH_SECRET as the
+    // encryption key. Re-encrypt all stored provider credentials after updating this env var.
+    encryptionSecret: env.ENCRYPTION_SECRET ?? env.BETTER_AUTH_SECRET ?? '',
     discordClientId: env.DISCORD_CLIENT_ID ?? '',
     discordClientSecret: env.DISCORD_CLIENT_SECRET ?? '',
   } satisfies Parameters<typeof createCollabRoutes>[0];
@@ -406,6 +431,14 @@ async function routeRequest(request: Request): Promise<Response> {
       });
     }
   }
+  if (pathname.startsWith('/v1/')) {
+    if (isRateLimited(`v1:${clientAddress}`, 120, 60_000)) {
+      return new Response(JSON.stringify({ error: 'Too many requests' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
 
   // Health check endpoint
   if (pathname === '/health') {
@@ -440,7 +473,17 @@ async function routeRequest(request: Request): Promise<Response> {
     ? pathname.slice(pathname.indexOf('/Icons/'))
     : pathname;
   if (iconsPath.startsWith('/Icons/')) {
+    if (iconsPath.includes('..')) {
+      return new Response(null, { status: 404 });
+    }
     const assetPath = `${import.meta.dir}/../public${iconsPath}`;
+    const resolvedIconsPath = path.resolve(assetPath);
+    if (
+      !resolvedIconsPath.startsWith(PUBLIC_BASE_DIR + path.sep) &&
+      resolvedIconsPath !== PUBLIC_BASE_DIR
+    ) {
+      return new Response(null, { status: 404 });
+    }
     const file = Bun.file(assetPath);
     if (await file.exists()) {
       const ext = iconsPath.split('.').pop()?.toLowerCase();
@@ -461,7 +504,17 @@ async function routeRequest(request: Request): Promise<Response> {
   }
 
   if (pathname.startsWith('/assets/')) {
+    if (pathname.includes('..')) {
+      return new Response(null, { status: 404 });
+    }
     const assetPath = `${import.meta.dir}/../public${pathname}`;
+    const resolvedAssetPath = path.resolve(assetPath);
+    if (
+      !resolvedAssetPath.startsWith(PUBLIC_BASE_DIR + path.sep) &&
+      resolvedAssetPath !== PUBLIC_BASE_DIR
+    ) {
+      return new Response(null, { status: 404 });
+    }
     const file = Bun.file(assetPath);
     if (await file.exists()) {
       const ext = pathname.split('.').pop()?.toLowerCase();
@@ -1067,7 +1120,7 @@ async function routeRequest(request: Request): Promise<Response> {
       return null;
     }
 
-    const encryptionSecret = loadEnv().BETTER_AUTH_SECRET ?? '';
+    const encryptionSecret = loadEnv().ENCRYPTION_SECRET ?? loadEnv().BETTER_AUTH_SECRET ?? '';
     const setupSession = await resolveSetupSession(setupCookieToken, encryptionSecret);
     if (!setupSession) {
       return null;
@@ -1202,7 +1255,7 @@ async function routeRequest(request: Request): Promise<Response> {
     // Resolve setup token if present
     let resolvedSetupSession = false;
     if (setupCookieToken) {
-      const encryptionSecret = loadEnv().BETTER_AUTH_SECRET ?? '';
+      const encryptionSecret = loadEnv().ENCRYPTION_SECRET ?? loadEnv().BETTER_AUTH_SECRET ?? '';
       const setupSession = await resolveSetupSession(setupCookieToken, encryptionSecret);
       if (setupSession) {
         authUserId = setupSession.authUserId;
@@ -1280,7 +1333,7 @@ async function routeRequest(request: Request): Promise<Response> {
 
     let resolvedSetupSession: Awaited<ReturnType<typeof resolveSetupSession>> = null;
     if (setupCookieToken) {
-      const encryptionSecret = loadEnv().BETTER_AUTH_SECRET ?? '';
+      const encryptionSecret = loadEnv().ENCRYPTION_SECRET ?? loadEnv().BETTER_AUTH_SECRET ?? '';
       resolvedSetupSession = await resolveSetupSession(setupCookieToken, encryptionSecret);
       if (resolvedSetupSession) {
         authUserId = resolvedSetupSession.authUserId;
@@ -1357,7 +1410,7 @@ async function routeRequest(request: Request): Promise<Response> {
 
     let resolvedSetupSession: Awaited<ReturnType<typeof resolveSetupSession>> = null;
     if (setupCookieToken) {
-      const encryptionSecret = loadEnv().BETTER_AUTH_SECRET ?? '';
+      const encryptionSecret = loadEnv().ENCRYPTION_SECRET ?? loadEnv().BETTER_AUTH_SECRET ?? '';
       resolvedSetupSession = await resolveSetupSession(setupCookieToken, encryptionSecret);
       if (resolvedSetupSession) {
         authUserId = resolvedSetupSession.authUserId;
@@ -1511,7 +1564,7 @@ async function routeRequest(request: Request): Promise<Response> {
 
     let resolvedSetupSession = false;
     if (setupCookieToken) {
-      const encryptionSecret = loadEnv().BETTER_AUTH_SECRET ?? '';
+      const encryptionSecret = loadEnv().ENCRYPTION_SECRET ?? loadEnv().BETTER_AUTH_SECRET ?? '';
       const setupSession = await resolveSetupSession(setupCookieToken, encryptionSecret);
       if (setupSession) {
         authUserId = setupSession.authUserId;

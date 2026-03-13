@@ -5,7 +5,7 @@
  * Called by the API server after validating creator session.
  */
 
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 
 const GuildLinkStatus = v.union(
@@ -207,6 +207,7 @@ export const getUserGuilds = query({
 export const hardDisconnectGuild = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     discordGuildId: v.string(),
   },
   handler: async (ctx, args) => {
@@ -219,6 +220,10 @@ export const hardDisconnectGuild = mutation({
 
     if (!link) {
       return { success: false, reason: 'guild_link_not_found' };
+    }
+
+    if (link.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
     }
 
     const guildId = args.discordGuildId;

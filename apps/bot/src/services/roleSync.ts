@@ -527,7 +527,7 @@ export class RoleSyncService {
       throw new Error(`Channel ${payload.channelId} not found or not text channel`);
     }
 
-    await channel.send({ content: payload.message });
+    await channel.send({ content: payload.message, allowedMentions: { parse: [] } });
   }
 
   /**

@@ -56,7 +56,7 @@ import { PROVIDER_REGISTRY, PROVIDER_REGISTRY_BY_KEY } from '../packages/shared/
 import { api, components, internal } from './_generated/api';
 import { httpAction } from './_generated/server';
 import { authComponent, createAuth } from './auth';
-import { decryptForPurpose } from './lib/vrchat/crypto';
+import { constantTimeEqual, decryptForPurpose } from './lib/vrchat/crypto';
 import {
   base64ToBytes,
   type CertEnvelope,
@@ -556,6 +556,7 @@ http.route({
 
     // Look up the user's subject to get their Discord ID (secondary identity anchor)
     const subjectResult = await ctx.runQuery(api.subjects.getSubjectByAuthId, {
+      apiSecret: process.env.CONVEX_API_SECRET ?? '',
       authUserId: yucpUserId,
     });
     const discordUserId = subjectResult?.found
@@ -761,7 +762,7 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const apiSecret = process.env.CONVEX_API_SECRET;
     const auth = request.headers.get('Authorization');
-    if (!apiSecret || auth !== `Bearer ${apiSecret}`) {
+    if (!apiSecret || !constantTimeEqual(auth ?? '', `Bearer ${apiSecret}`)) {
       return errorResponse('Unauthorized', 401);
     }
 
@@ -830,9 +831,17 @@ http.route({
       return errorResponse('Missing required fields', 400);
     }
 
+    const licenseKeyDigest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(licenseKey),
+    );
+    const licenseKeyHash = Array.from(new Uint8Array(licenseKeyDigest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
     const result = await ctx.runAction(internal.yucpLicenses.verifyLicense, {
       packageId,
-      licenseKey,
+      licenseKey: licenseKeyHash,
       provider,
       productPermalink,
       machineFingerprint,
@@ -1004,7 +1013,7 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const apiSecret = process.env.CONVEX_API_SECRET;
     const auth = request.headers.get('Authorization');
-    if (!apiSecret || auth !== `Bearer ${apiSecret}`) {
+    if (!apiSecret || !constantTimeEqual(auth ?? '', `Bearer ${apiSecret}`)) {
       return errorResponse('Unauthorized', 401);
     }
 

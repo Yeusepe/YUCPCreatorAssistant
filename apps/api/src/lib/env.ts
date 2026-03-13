@@ -18,6 +18,7 @@ export interface LocalEnv {
   // Auth
   SITE_URL?: string;
   BETTER_AUTH_SECRET?: string;
+  ENCRYPTION_SECRET?: string;
   ERROR_REFERENCE_SECRET?: string;
   /** Legacy alias for CONVEX_SITE_URL. Avoid using for new config. */
   BETTER_AUTH_URL?: string;
@@ -114,6 +115,7 @@ function loadFromEnv(): LocalEnv {
     CONVEX_API_SECRET: process.env.CONVEX_API_SECRET,
     SITE_URL: siteUrl,
     BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+    ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET,
     ERROR_REFERENCE_SECRET: process.env.ERROR_REFERENCE_SECRET,
     BETTER_AUTH_URL: normalizeUrl(process.env.BETTER_AUTH_URL),
     FRONTEND_URL: process.env.FRONTEND_URL,
