@@ -48,7 +48,12 @@ export const purgeLegacyTenantDocuments = internalMutation({
     const PER_TABLE = 200;
 
     for (const table of LEGACY_TABLES) {
-      const docs = await ctx.db.query(table).take(PER_TABLE);
+      // Filter to only fetch docs that still have a legacy tenantId field,
+      // so .take() selects from the right pool regardless of insertion order.
+      const docs = await ctx.db
+        .query(table)
+        .filter((q) => q.neq(q.field('tenantId'), null))
+        .take(PER_TABLE);
       for (const doc of docs) {
         const hasAuthUserId =
           ('authUserId' in doc && doc.authUserId != null) ||
@@ -66,7 +71,10 @@ export const purgeLegacyTenantDocuments = internalMutation({
     }
 
     // Also purge catalog_product_links with submittedByTenantId
-    const catalogLinks = await ctx.db.query('catalog_product_links').take(PER_TABLE);
+    const catalogLinks = await ctx.db
+      .query('catalog_product_links')
+      .filter((q) => q.neq(q.field('submittedByTenantId'), null))
+      .take(PER_TABLE);
     for (const doc of catalogLinks) {
       if ((doc as any).submittedByTenantId != null && (doc as any).submittedByAuthUserId == null) {
         await ctx.db.delete(doc._id);

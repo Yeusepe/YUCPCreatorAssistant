@@ -73,6 +73,9 @@ export const createOAuthAppMapping = mutation({
   returns: OAuthAppRecord,
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
+    if (!args.name.trim()) {
+      throw new Error('OAuth app name cannot be blank');
+    }
     const now = Date.now();
     const appId = await ctx.db.insert('creator_oauth_apps', {
       authUserId: args.authUserId,

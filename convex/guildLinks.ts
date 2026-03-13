@@ -59,6 +59,11 @@ export const upsertGuildLink = mutation({
         commandScopeState: args.commandScopeState,
         updatedAt: now,
       };
+      if (existing.authUserId && existing.authUserId !== args.authUserId) {
+        console.warn(
+          `[guildLinks] Guild ${args.discordGuildId} ownership changing from ${existing.authUserId} to ${args.authUserId}`
+        );
+      }
       if (args.discordGuildName !== undefined) patch.discordGuildName = args.discordGuildName;
       if (args.discordGuildIcon !== undefined) patch.discordGuildIcon = args.discordGuildIcon;
       await ctx.db.patch(existing._id, patch);

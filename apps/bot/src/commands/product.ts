@@ -71,8 +71,8 @@ interface ProductSession {
 
 const productSessions = new Map<string, ProductSession>();
 
-function getSessionKey(userId: string, authUserId: string): string {
-  return `${userId}:${authUserId}`;
+function getSessionKey(userId: string, authUserId: string, guildId: string): string {
+  return `${userId}:${authUserId}:${guildId}`;
 }
 
 function cleanExpiredSessions(): void {
@@ -99,7 +99,7 @@ export async function handleProductAddInteractive(
 ): Promise<void> {
   cleanExpiredSessions();
 
-  const sessionKey = getSessionKey(interaction.user.id, ctx.authUserId);
+  const sessionKey = getSessionKey(interaction.user.id, ctx.authUserId, ctx.guildId);
   productSessions.set(sessionKey, {
     authUserId: ctx.authUserId,
     guildLinkId: ctx.guildLinkId,
@@ -158,7 +158,7 @@ export async function handleProductTypeSelect(
   authUserId: string
 ): Promise<void> {
   const selectedType = interaction.values[0] as ProductSession['type'];
-  const sessionKey = getSessionKey(interaction.user.id, authUserId);
+  const sessionKey = getSessionKey(interaction.user.id, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
 
   if (!session || Date.now() > session.expiresAt) {
@@ -437,7 +437,7 @@ export async function handleProductJinxxySelect(
   authUserId: string
 ): Promise<void> {
   const productId = interaction.values[0];
-  const sessionKey = getSessionKey(userId, authUserId);
+  const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
 
   if (!session || Date.now() > session.expiresAt) {
@@ -473,7 +473,7 @@ export async function handleProductLemonSqueezySelect(
   authUserId: string
 ): Promise<void> {
   const productId = interaction.values[0];
-  const sessionKey = getSessionKey(userId, authUserId);
+  const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
 
   if (!session || Date.now() > session.expiresAt) {
@@ -509,7 +509,7 @@ export async function handleProductUrlModal(
   authUserId: string
 ): Promise<void> {
   const urlOrId = interaction.fields.getTextInputValue('url_or_id')?.trim();
-  const sessionKey = getSessionKey(userId, authUserId);
+  const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
 
   if (!session || Date.now() > session.expiresAt) {
@@ -556,7 +556,7 @@ export async function handleProductDiscordModal(
     interaction.fields.getTextInputValue('source_role_ids')?.trim() ??
     interaction.fields.getTextInputValue('source_role_id')?.trim();
   const matchModeRaw = interaction.fields.getTextInputValue('match_mode')?.trim().toLowerCase();
-  const sessionKey = getSessionKey(userId, authUserId);
+  const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
 
   if (!session || Date.now() > session.expiresAt) {
@@ -612,7 +612,7 @@ export async function handleProductDiscordRoleDone(
   userId: string,
   authUserId: string
 ): Promise<void> {
-  const sessionKey = getSessionKey(userId, authUserId);
+  const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
 
   if (!session || Date.now() > session.expiresAt) {
@@ -704,7 +704,7 @@ export async function handleProductRoleSelect(
   authUserId: string
 ): Promise<void> {
   const roleIds = interaction.values;
-  const sessionKey = getSessionKey(userId, authUserId);
+  const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
 
   if (!session || Date.now() > session.expiresAt) {
@@ -787,7 +787,7 @@ export async function handleProductConfirmAdd(
   userId: string,
   authUserId: string
 ): Promise<void> {
-  const sessionKey = getSessionKey(userId, authUserId);
+  const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
 
   if (!session || Date.now() > session.expiresAt) {
@@ -1018,7 +1018,7 @@ export async function handleProductCancelAdd(
   userId: string,
   authUserId: string
 ): Promise<void> {
-  const sessionKey = getSessionKey(userId, authUserId);
+  const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   productSessions.delete(sessionKey);
 
   await interaction.update({
@@ -1154,7 +1154,7 @@ export async function handleProductRemoveSelect(
     return;
   }
 
-  const sessionKey = getSessionKey(interaction.user.id, authUserId);
+  const sessionKey = getSessionKey(interaction.user.id, authUserId, interaction.guildId ?? '');
   let session = productSessions.get(sessionKey);
   if (!session) {
     session = {
@@ -1205,7 +1205,7 @@ export async function handleProductConfirmRemove(
   // Use discordjs loading function (deferUpdate tells Discord to show a loading state on the button!)
   await interaction.deferUpdate();
 
-  const sessionKey = getSessionKey(userId, authUserId);
+  const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
 
   if (!session || Date.now() > session.expiresAt || !session.removeProductIds) {
@@ -1296,7 +1296,7 @@ export async function handleProductCancelRemove(
   userId: string,
   authUserId: string
 ): Promise<void> {
-  const sessionKey = getSessionKey(userId, authUserId);
+  const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   productSessions.delete(sessionKey);
 
   await interaction.update({

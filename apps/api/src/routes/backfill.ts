@@ -558,10 +558,10 @@ export async function handleBackfillProduct(request: Request): Promise<Response>
 
     const creds = await adapter.getCredential(convex, apiSecret, authUserId, encryptionSecret);
     if (!creds) {
-      return new Response(
-        JSON.stringify({ error: `${provider} credentials not found for tenant` }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: `${provider} credentials not found for user` }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const { totalInserted, totalSkipped } = await runBackfill(

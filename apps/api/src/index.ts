@@ -1689,8 +1689,6 @@ async function routeRequest(request: Request): Promise<Response> {
  * Handles CORS for the frontend subdomain, then delegates to routeRequest.
  */
 async function handleRequest(request: Request): Promise<Response> {
-  const _url = new URL(request.url);
-
   // Build CORS headers for approved browser origins used by the app UI.
   const corsHeaders: Record<string, string> = {};
   const origin = request.headers.get('origin');

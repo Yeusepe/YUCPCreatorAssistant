@@ -188,7 +188,7 @@ export const getFailedRoleSyncForUser = query({
 });
 
 /**
- * Get dead letter jobs for a tenant.
+ * Get dead letter jobs for a creator/user.
  * Used for manual review and reprocessing.
  */
 export const getDeadLetterJobs = query({

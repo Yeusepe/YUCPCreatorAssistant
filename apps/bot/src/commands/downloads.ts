@@ -385,12 +385,13 @@ function buildConfirmComponents(
 
 function buildBackfillWarningComponents(
   userId: string,
+  authUserId: string,
   routeId: Id<'download_routes'>
 ): Array<ActionRowBuilder<ButtonBuilder>> {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
-        .setCustomId(`creator_downloads:autofix_prompt:${userId}:${routeId}`)
+        .setCustomId(`creator_downloads:autofix_prompt:${userId}:${authUserId}:${routeId}`)
         .setLabel('Autofix Messages')
         .setStyle(ButtonStyle.Danger)
     ),
@@ -399,12 +400,13 @@ function buildBackfillWarningComponents(
 
 function buildBackfillAutofixConfirmComponents(
   userId: string,
+  authUserId: string,
   routeId: Id<'download_routes'>
 ): Array<ActionRowBuilder<ButtonBuilder>> {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
-        .setCustomId(`creator_downloads:autofix_run:${userId}:${routeId}`)
+        .setCustomId(`creator_downloads:autofix_run:${userId}:${authUserId}:${routeId}`)
         .setLabel('Replace Messages')
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
@@ -968,7 +970,7 @@ export async function handleDownloadsConfirmAdd(
       ],
       components:
         backfillStats.manualCleanupMessages.length > 0
-          ? buildBackfillWarningComponents(interaction.user.id, result.routeId)
+          ? buildBackfillWarningComponents(interaction.user.id, authUserId, result.routeId)
           : [],
     });
   } catch (err) {
@@ -1060,6 +1062,7 @@ export async function handleDownloadsAutofixPrompt(
   convex: ConvexHttpClient,
   apiSecret: string,
   userId: string,
+  authUserId: string,
   routeId: Id<'download_routes'>
 ): Promise<void> {
   if (interaction.user.id !== userId) {
@@ -1070,7 +1073,7 @@ export async function handleDownloadsAutofixPrompt(
     return;
   }
 
-  const route = await convex.query(api.downloads.getRouteById, { apiSecret, routeId });
+  const route = await convex.query(api.downloads.getRouteById, { apiSecret, authUserId, routeId });
   if (!route) {
     await interaction.update({
       content: `${E.X_} This route is no longer available.`,
@@ -1085,7 +1088,7 @@ export async function handleDownloadsAutofixPrompt(
       `${E.Wrench} Autofix deletes the original messages found during setup and replaces them with the protected version.\n` +
       `This can’t be undone.\n\n${E.X_} This breaks image previews in forum posts.`,
     embeds: [],
-    components: buildBackfillAutofixConfirmComponents(userId, routeId),
+    components: buildBackfillAutofixConfirmComponents(userId, authUserId, routeId),
   });
 }
 
@@ -1094,6 +1097,7 @@ export async function handleDownloadsAutofixRun(
   convex: ConvexHttpClient,
   apiSecret: string,
   userId: string,
+  authUserId: string,
   routeId: Id<'download_routes'>
 ): Promise<void> {
   if (interaction.user.id !== userId) {
@@ -1106,7 +1110,7 @@ export async function handleDownloadsAutofixRun(
 
   await interaction.deferUpdate();
 
-  const route = await convex.query(api.downloads.getRouteById, { apiSecret, routeId });
+  const route = await convex.query(api.downloads.getRouteById, { apiSecret, authUserId, routeId });
   if (!route) {
     await interaction.editReply({
       content: `${E.X_} This route is no longer available.`,
@@ -1259,7 +1263,7 @@ export async function handleDownloadsManageToggle(
   }
 
   const routeId = panel.selectedRouteId;
-  const route = await convex.query(api.downloads.getRouteById, { apiSecret, routeId });
+  const route = await convex.query(api.downloads.getRouteById, { apiSecret, routeId, authUserId: panel.authUserId });
   if (!route || route.authUserId !== panel.authUserId || route.guildId !== interaction.guildId) {
     await interaction.update({
       content: `${E.X_} This route is no longer available.`,
@@ -1272,6 +1276,7 @@ export async function handleDownloadsManageToggle(
   const nextEnabled = !route.enabled;
   await convex.mutation(api.downloads.toggleRoute, {
     apiSecret,
+    authUserId: panel.authUserId,
     routeId,
     enabled: nextEnabled,
   });
@@ -1335,7 +1340,7 @@ export async function handleDownloadsManageRemovePrompt(
   }
 
   const routeId = panel.selectedRouteId;
-  const route = await convex.query(api.downloads.getRouteById, { apiSecret, routeId });
+  const route = await convex.query(api.downloads.getRouteById, { apiSecret, routeId, authUserId: panel.authUserId });
   if (!route || route.authUserId !== panel.authUserId || route.guildId !== interaction.guildId) {
     await interaction.update({
       content: `${E.X_} This route is no longer available.`,
@@ -1377,6 +1382,7 @@ export async function handleDownloadsManageEditMessage(
   const route = await convex.query(api.downloads.getRouteById, {
     apiSecret,
     routeId: panel.selectedRouteId,
+    authUserId: panel.authUserId,
   });
   if (!route || route.authUserId !== panel.authUserId || route.guildId !== interaction.guildId) {
     await interaction.reply({
@@ -1412,7 +1418,7 @@ export async function handleDownloadsManageRemoveConfirm(
   }
 
   const routeId = panel.selectedRouteId;
-  const route = await convex.query(api.downloads.getRouteById, { apiSecret, routeId });
+  const route = await convex.query(api.downloads.getRouteById, { apiSecret, routeId, authUserId: panel.authUserId });
   if (!route || route.authUserId !== panel.authUserId || route.guildId !== interaction.guildId) {
     await interaction.update({
       content: `${E.X_} This route is no longer available.`,
@@ -1422,7 +1428,7 @@ export async function handleDownloadsManageRemoveConfirm(
     return;
   }
 
-  await convex.mutation(api.downloads.deleteRoute, { apiSecret, routeId });
+  await convex.mutation(api.downloads.deleteRoute, { apiSecret, routeId, authUserId: panel.authUserId });
   const guildContext = getGuildContext(interaction);
   if (!guildContext) {
     await interaction.update({
@@ -1557,6 +1563,7 @@ export async function handleDownloadsManageMessageModal(
   const route = await convex.query(api.downloads.getRouteById, {
     apiSecret,
     routeId: panel.selectedRouteId,
+    authUserId: panel.authUserId,
   });
   if (!route || route.authUserId !== panel.authUserId || route.guildId !== interaction.guildId) {
     await interaction.reply({
@@ -1579,6 +1586,7 @@ export async function handleDownloadsManageMessageModal(
 
   await convex.mutation(api.downloads.updateRouteMessage, {
     apiSecret,
+    authUserId: panel.authUserId,
     routeId: panel.selectedRouteId,
     messageTitle,
     messageBody,
