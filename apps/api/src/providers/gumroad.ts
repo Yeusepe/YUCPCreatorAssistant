@@ -109,7 +109,7 @@ const gumroadProvider: ProviderPlugin = {
       provider: 'gumroad',
     });
     if (!conn?.gumroadAccessTokenEncrypted) return null;
-    return decrypt(conn.gumroadAccessTokenEncrypted, ctx.encryptionSecret);
+    return decrypt(conn.gumroadAccessTokenEncrypted, ctx.encryptionSecret, 'gumroad-oauth-access-token');
   },
 
   async fetchProducts(credential) {

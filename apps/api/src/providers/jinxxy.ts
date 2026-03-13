@@ -81,7 +81,7 @@ const jinxxyProvider: ProviderPlugin = {
       provider: 'jinxxy',
     });
     if (conn?.jinxxyApiKeyEncrypted) {
-      return decrypt(conn.jinxxyApiKeyEncrypted, ctx.encryptionSecret);
+      return decrypt(conn.jinxxyApiKeyEncrypted, ctx.encryptionSecret, 'jinxxy-api-key');
     }
 
     // Legacy fallback: check tenant_provider_config table
@@ -89,7 +89,7 @@ const jinxxyProvider: ProviderPlugin = {
       apiSecret: ctx.apiSecret,
       authUserId: ctx.authUserId,
     });
-    if (legacyKey) return decrypt(legacyKey, ctx.encryptionSecret);
+    if (legacyKey) return decrypt(legacyKey, ctx.encryptionSecret, 'jinxxy-api-key');
 
     return null;
   },
@@ -127,7 +127,7 @@ const jinxxyProvider: ProviderPlugin = {
       for (const collab of collabConnections) {
         if (!collab.jinxxyApiKeyEncrypted) continue;
         try {
-          const collabKey = await decrypt(collab.jinxxyApiKeyEncrypted, ctx.encryptionSecret);
+          const collabKey = await decrypt(collab.jinxxyApiKeyEncrypted, ctx.encryptionSecret, 'jinxxy-api-key');
           const collabClient = new JinxxyApiClient({
             apiKey: collabKey,
             apiBaseUrl: process.env.JINXXY_API_BASE_URL,

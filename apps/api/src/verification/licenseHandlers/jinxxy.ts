@@ -59,7 +59,7 @@ async function resolveJinxxyApiKey(
   }
 
   try {
-    const key = await decrypt(encrypted, config.encryptionSecret);
+    const key = await decrypt(encrypted, config.encryptionSecret, 'jinxxy-api-key');
     return { key };
   } catch (err) {
     logger.error('Failed to decrypt creator Jinxxy API key', { authUserId, err });
@@ -192,7 +192,8 @@ export const jinxxyHandler: LicenseVerificationHandler = {
       try {
         const collabKey = await decrypt(
           collab.jinxxyApiKeyEncrypted,
-          config.encryptionSecret ?? ''
+          config.encryptionSecret ?? '',
+          'jinxxy-api-key'
         );
         const collabClient = new JinxxyApiClient({
           apiKey: collabKey,

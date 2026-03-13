@@ -92,7 +92,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
       const raw = await store.get(`${JINXXY_PENDING_WEBHOOK_PREFIX}${routeId}`);
       if (!raw) return null;
       const parsed = JSON.parse(raw) as { signingSecretEncrypted: string };
-      return await decrypt(parsed.signingSecretEncrypted, encryptionSecret);
+      return await decrypt(parsed.signingSecretEncrypted, encryptionSecret, 'webhook-signing-secret');
     } catch {
       return null;
     }
@@ -109,7 +109,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
         authUserId,
       });
       if (!encryptedKey) return null;
-      return await decrypt(encryptedKey, encryptionSecret);
+      return await decrypt(encryptedKey, encryptionSecret, 'payhip-api-key');
     } catch {
       return null;
     }
@@ -122,7 +122,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
         inviteId,
       });
       if (!encryptedSecret) return null;
-      return await decrypt(encryptedSecret, encryptionSecret);
+      return await decrypt(encryptedSecret, encryptionSecret, 'webhook-signing-secret');
     } catch {
       return null;
     }
@@ -365,7 +365,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
       const signature = request.headers.get('x-signature');
       // Look up secret by routeId — works for authUserId (user-scoped).
       const secretRef = await getJinxxyWebhookSecretByRouteId(routeId);
-      const convexSecret = secretRef ? await decrypt(secretRef, encryptionSecret) : null;
+      const convexSecret = secretRef ? await decrypt(secretRef, encryptionSecret, 'webhook-signing-secret') : null;
       const pendingSecret = await getPendingJinxxyWebhookSecret(routeId);
       const webhookSecret = convexSecret ?? pendingSecret;
       let signatureValid = false;
@@ -532,7 +532,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
         apiSecret,
         routeId,
       });
-      const apiKey = encryptedKey ? await decrypt(encryptedKey, encryptionSecret) : null;
+      const apiKey = encryptedKey ? await decrypt(encryptedKey, encryptionSecret, 'payhip-api-key') : null;
       let signatureValid = false;
 
       if (apiKey && payload.signature) {
