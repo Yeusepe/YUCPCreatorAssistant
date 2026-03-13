@@ -5,7 +5,7 @@
  * Provides API routes for beginning, callback, and completing verification.
  *
  * Security:
- * - PKCE verifier is stored in the ephemeral state store (never in Convex/DB)
+ * - PKCE verifier hash stored for security; raw verifier stored short-lived for token exchange
  * - Only the SHA-256 hash of the PKCE verifier is stored in Convex
  * - State encodes authUserId for callback lookup: {authUserId}:{random}
  * - Sessions expire after 15 minutes

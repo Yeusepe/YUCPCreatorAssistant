@@ -284,35 +284,38 @@ export function createWebhookRoutes(config: WebhookConfig) {
       // API verification: resource_subscriptions webhooks have no secret.
       // Verify sale exists via Gumroad API when signature is not valid.
       if (!signatureValid && encryptionSecret && authUserIds.length > 0) {
-        try {
-          const conn = await convex.query(api.providerConnections.getConnectionForBackfill, {
-            apiSecret,
-            authUserId: authUserIds[0],
-            provider: 'gumroad',
-          });
-          if (conn?.gumroadAccessTokenEncrypted) {
-            const accessToken = await decrypt(conn.gumroadAccessTokenEncrypted, encryptionSecret);
-            const sale = await gumroadAdapter.getSale(accessToken, saleId);
-            if (sale) {
-              const apiRefunded = sale.refunded === true;
-              if (apiRefunded === refunded) {
-                signatureValid = true;
-              } else {
-                logger.warn('Gumroad webhook: refunded mismatch', {
-                  routeId,
-                  saleId,
-                  webhookRefunded: refunded,
-                  apiRefunded,
-                });
+        for (const candidateUserId of authUserIds) {
+          if (signatureValid) break;
+          try {
+            const conn = await convex.query(api.providerConnections.getConnectionForBackfill, {
+              apiSecret,
+              authUserId: candidateUserId,
+              provider: 'gumroad',
+            });
+            if (conn?.gumroadAccessTokenEncrypted) {
+              const accessToken = await decrypt(conn.gumroadAccessTokenEncrypted, encryptionSecret);
+              const sale = await gumroadAdapter.getSale(accessToken, saleId);
+              if (sale) {
+                const apiRefunded = sale.refunded === true;
+                if (apiRefunded === refunded) {
+                  signatureValid = true;
+                } else {
+                  logger.warn('Gumroad webhook: refunded mismatch', {
+                    routeId,
+                    saleId,
+                    webhookRefunded: refunded,
+                    apiRefunded,
+                  });
+                }
               }
             }
+          } catch (err) {
+            logger.warn('Gumroad webhook: API verification failed', {
+              routeId,
+              saleId,
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
-        } catch (err) {
-          logger.warn('Gumroad webhook: API verification failed', {
-            routeId,
-            saleId,
-            error: err instanceof Error ? err.message : String(err),
-          });
         }
       }
 
@@ -324,7 +327,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
       const payload = Object.fromEntries(params.entries());
 
       if (authUserIds.length > 0) {
-        // Fan out to all resolved authUserIds
+        let anySuccess = false;
         for (const authUserId of authUserIds) {
           try {
             const result = await convex.mutation(api.webhookIngestion.insertWebhookEvent, {
@@ -339,12 +342,17 @@ export function createWebhookRoutes(config: WebhookConfig) {
             if (result.duplicate) {
               logger.debug('Gumroad webhook: duplicate event', { saleId, authUserId });
             }
+            anySuccess = true;
           } catch (err) {
-            logger.warn('Gumroad webhook: failed to insert event for tenant', {
+            logger.warn('Gumroad webhook: failed to insert event for user', {
               authUserId,
               error: err instanceof Error ? err.message : String(err),
             });
           }
+        }
+        if (!anySuccess) {
+          logger.error('Gumroad webhook: all insert attempts failed', { routeId, saleId });
+          return new Response('Internal Server Error', { status: 500 });
         }
       } else {
         // User-scoped: no Discord servers yet — store under authUserId
@@ -369,6 +377,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
             routeId,
             error: err instanceof Error ? err.message : String(err),
           });
+          return new Response('Internal Server Error', { status: 500 });
         }
       }
 
@@ -462,6 +471,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
       }
 
       if (authUserIds.length > 0) {
+        let anySuccess = false;
         for (const authUserId of authUserIds) {
           try {
             const result = await convex.mutation(api.webhookIngestion.insertWebhookEvent, {
@@ -476,12 +486,17 @@ export function createWebhookRoutes(config: WebhookConfig) {
             if (result.duplicate) {
               logger.debug('Jinxxy webhook: duplicate event', { eventId, authUserId });
             }
+            anySuccess = true;
           } catch (err) {
-            logger.warn('Jinxxy webhook: failed to insert event for tenant', {
+            logger.warn('Jinxxy webhook: failed to insert event for user', {
               authUserId,
               error: err instanceof Error ? err.message : String(err),
             });
           }
+        }
+        if (!anySuccess) {
+          logger.error('Jinxxy webhook: all insert attempts failed', { routeId, eventId });
+          return new Response('Internal Server Error', { status: 500 });
         }
       } else {
         // User-scoped: no Discord servers yet — store under authUserId
@@ -503,6 +518,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
             routeId,
             error: err instanceof Error ? err.message : String(err),
           });
+          return new Response('Internal Server Error', { status: 500 });
         }
       }
 
@@ -606,6 +622,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
       }
 
       if (authUserIds.length > 0) {
+        let anySuccess = false;
         for (const authUserId of authUserIds) {
           try {
             const result = await convex.mutation(api.webhookIngestion.insertWebhookEvent, {
@@ -620,12 +637,17 @@ export function createWebhookRoutes(config: WebhookConfig) {
             if (result.duplicate) {
               logger.debug('Payhip webhook: duplicate event', { eventId, authUserId });
             }
+            anySuccess = true;
           } catch (err) {
-            logger.warn('Payhip webhook: failed to insert event for tenant', {
+            logger.warn('Payhip webhook: failed to insert event for user', {
               authUserId,
               error: err instanceof Error ? err.message : String(err),
             });
           }
+        }
+        if (!anySuccess) {
+          logger.error('Payhip webhook: all insert attempts failed', { routeId, eventId });
+          return new Response('Internal Server Error', { status: 500 });
         }
       } else {
         // User-scoped: no Discord servers yet — store under authUserId
@@ -647,6 +669,7 @@ export function createWebhookRoutes(config: WebhookConfig) {
             routeId,
             error: err instanceof Error ? err.message : String(err),
           });
+          return new Response('Internal Server Error', { status: 500 });
         }
       }
 

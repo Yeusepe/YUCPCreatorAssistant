@@ -46,14 +46,14 @@ export const listRoutesByGuild = query({
 export const getRouteById = query({
   args: {
     apiSecret: v.string(),
-    authUserId: v.optional(v.string()),
+    authUserId: v.string(),
     routeId: v.id('download_routes'),
   },
   returns: v.union(v.any(), v.null()),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
     const doc = await ctx.db.get(args.routeId);
-    if (!doc || (args.authUserId !== undefined && doc.authUserId !== args.authUserId)) return null;
+    if (!doc || doc.authUserId !== args.authUserId) return null;
     return doc;
   },
 });

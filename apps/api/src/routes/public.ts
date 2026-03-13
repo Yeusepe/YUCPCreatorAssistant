@@ -443,7 +443,7 @@ async function authenticateServiceKey(
   if (metadata?.kind !== 'public-api' || metadata.authUserId !== authUserId) {
     return {
       response: await errorResponseWithSupportCode(
-        'API key is not valid for this tenant',
+        'API key is not valid for this user',
         'Access denied',
         403,
         { stage: 'auth', authUserId }
@@ -525,7 +525,7 @@ async function authenticateVerifyRequest(
         ),
       };
     }
-    return { authUserId };
+    return { authUserId: verified.sub };
   }
 
   return {

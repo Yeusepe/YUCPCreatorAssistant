@@ -1025,21 +1025,27 @@ async function handleButton(
 
   if (customId.startsWith('creator_downloads:autofix_prompt:')) {
     const rest = customId.slice('creator_downloads:autofix_prompt:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const routeId = rest.slice(colonIdx + 1) as Id<'download_routes'>;
+    const firstColon = rest.indexOf(':');
+    const userId = rest.slice(0, firstColon);
+    const rest2 = rest.slice(firstColon + 1);
+    const secondColon = rest2.indexOf(':');
+    const authUserId = rest2.slice(0, secondColon);
+    const routeId = rest2.slice(secondColon + 1) as Id<'download_routes'>;
     const { handleDownloadsAutofixPrompt } = await import('../commands/downloads');
-    await handleDownloadsAutofixPrompt(interaction, ctx.convex, ctx.apiSecret, userId, routeId);
+    await handleDownloadsAutofixPrompt(interaction, ctx.convex, ctx.apiSecret, userId, authUserId, routeId);
     return;
   }
 
   if (customId.startsWith('creator_downloads:autofix_run:')) {
     const rest = customId.slice('creator_downloads:autofix_run:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const routeId = rest.slice(colonIdx + 1) as Id<'download_routes'>;
+    const firstColon = rest.indexOf(':');
+    const userId = rest.slice(0, firstColon);
+    const rest2 = rest.slice(firstColon + 1);
+    const secondColon = rest2.indexOf(':');
+    const authUserId = rest2.slice(0, secondColon);
+    const routeId = rest2.slice(secondColon + 1) as Id<'download_routes'>;
     const { handleDownloadsAutofixRun } = await import('../commands/downloads');
-    await handleDownloadsAutofixRun(interaction, ctx.convex, ctx.apiSecret, userId, routeId);
+    await handleDownloadsAutofixRun(interaction, ctx.convex, ctx.apiSecret, userId, authUserId, routeId);
     return;
   }
 

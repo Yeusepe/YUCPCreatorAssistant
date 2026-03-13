@@ -34,8 +34,8 @@ interface StatsUsersSession {
 
 const statsUsersSessions = new Map<string, StatsUsersSession>();
 
-function getStatsSessionKey(userId: string, authUserId: string): string {
-  return `${userId}:${authUserId}`;
+function getStatsSessionKey(userId: string, authUserId: string, guildId: string): string {
+  return `${userId}:${authUserId}:${guildId}`;
 }
 
 function cleanExpiredStatsSessions(): void {
@@ -118,7 +118,7 @@ export async function handleStatsViewUsersButton(
   await interaction.deferUpdate();
 
   cleanExpiredStatsSessions();
-  const sessionKey = getStatsSessionKey(interaction.user.id, authUserId);
+  const sessionKey = getStatsSessionKey(interaction.user.id, authUserId, guildId);
   statsUsersSessions.set(sessionKey, {
     cursorStack: [undefined],
     pageIndex: 0,
@@ -191,7 +191,7 @@ export async function handleStatsViewUsersPageButton(
   await interaction.deferUpdate();
 
   cleanExpiredStatsSessions();
-  const sessionKey = getStatsSessionKey(interaction.user.id, authUserId);
+  const sessionKey = getStatsSessionKey(interaction.user.id, authUserId, guildId);
   const session = statsUsersSessions.get(sessionKey);
 
   if (!session || Date.now() > session.expiresAt) {
@@ -303,7 +303,7 @@ export async function handleStatsBackButton(
   await interaction.deferUpdate();
 
   cleanExpiredStatsSessions();
-  const sessionKey = getStatsSessionKey(interaction.user.id, authUserId);
+  const sessionKey = getStatsSessionKey(interaction.user.id, authUserId, guildId);
   statsUsersSessions.delete(sessionKey);
 
   const rules = await convex.query(api.role_rules.getByGuild, {

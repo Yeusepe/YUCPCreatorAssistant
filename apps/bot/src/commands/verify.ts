@@ -438,6 +438,17 @@ function getActiveProviderCount(linkedAccounts: LinkedAccountSummary[], provider
   ).length;
 }
 
+function addButtonRows<T extends ButtonBuilder>(
+  container: { addActionRowComponents: (...rows: ActionRowBuilder<ButtonBuilder>[]) => unknown },
+  buttons: T[]
+): void {
+  for (let i = 0; i < buttons.length; i += 5) {
+    container.addActionRowComponents(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons.slice(i, i + 5))
+    );
+  }
+}
+
 function buildStatusContainer(
   data: VerifyData,
   authUserId: string,
@@ -614,9 +625,7 @@ function buildStatusContainer(
       if (prompt) {
         container.addTextDisplayComponents(new TextDisplayBuilder().setContent(prompt));
       }
-      container.addActionRowComponents(
-        new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons.slice(0, 5))
-      );
+      addButtonRows(container, buttons);
     } else {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
@@ -692,9 +701,7 @@ function buildStatusContainer(
     }
 
     if (buttons.length > 0) {
-      container.addActionRowComponents(
-        new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons.slice(0, 5))
-      );
+      addButtonRows(container, buttons);
     }
 
     const disconnectButtons = getUniqueActiveEnabledProviders(linkedAccounts, enabledSet).map(
@@ -706,9 +713,7 @@ function buildStatusContainer(
           .setStyle(ButtonStyle.Danger)
     );
     if (disconnectButtons.length > 0) {
-      container.addActionRowComponents(
-        new ActionRowBuilder<ButtonBuilder>().addComponents(...disconnectButtons.slice(0, 5))
-      );
+      addButtonRows(container, disconnectButtons);
     }
   } else {
     // Verified state
@@ -732,9 +737,7 @@ function buildStatusContainer(
           .setStyle(ButtonStyle.Danger)
       ),
     ];
-    container.addActionRowComponents(
-      new ActionRowBuilder<ButtonBuilder>().addComponents(...primaryButtons.slice(0, 5))
-    );
+    addButtonRows(container, primaryButtons);
   }
 
   return container;
