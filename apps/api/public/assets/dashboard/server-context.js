@@ -15,6 +15,7 @@ let userServers = null;
 let filteredServers = null;
 let _setDropdownOpen = null;
 let _refreshData = null;
+let userServersLoadVersion = 0;
 
 export function getServerIconUrl(server) {
   if (server.iconUrl) return server.iconUrl;
@@ -208,6 +209,7 @@ async function loadUserServers(updatePlatformCards, options = {}) {
   const listEl = document.getElementById('server-dropdown-list');
   if (!listEl) return;
   listEl.innerHTML = '<div class="server-dropdown-loading">Loading servers...</div>';
+  const loadVersion = ++userServersLoadVersion;
 
   const tenantId = getTenantId();
   const cacheKey = `ca_servers_${tenantId || 'global'}_V1`;
@@ -215,8 +217,9 @@ async function loadUserServers(updatePlatformCards, options = {}) {
   const cached = force ? null : sessionStorage.getItem(cacheKey);
 
   try {
+    let nextUserServers;
     if (cached) {
-      userServers = JSON.parse(cached);
+      nextUserServers = JSON.parse(cached);
     } else {
       const res = await apiFetch(`${getApiBase()}/api/connect/user/guilds`);
       if (!res.ok) {
@@ -224,10 +227,15 @@ async function loadUserServers(updatePlatformCards, options = {}) {
       }
 
       const data = await res.json();
-      userServers = data.guilds || data.servers || [];
-      sessionStorage.setItem(cacheKey, JSON.stringify(userServers));
+      nextUserServers = data.guilds || data.servers || [];
+      sessionStorage.setItem(cacheKey, JSON.stringify(nextUserServers));
     }
 
+    if (loadVersion !== userServersLoadVersion) {
+      return;
+    }
+
+    userServers = nextUserServers;
     filteredServers = [...userServers];
     renderServerList(filteredServers);
     renderParticipatingServers(filteredServers);
@@ -260,6 +268,9 @@ async function loadUserServers(updatePlatformCards, options = {}) {
       }
     }
   } catch (err) {
+    if (loadVersion !== userServersLoadVersion) {
+      return;
+    }
     console.warn('Server fetch failed', err);
     userServers = [];
     listEl.innerHTML = '<div class="server-dropdown-empty">Failed to load servers.</div>';

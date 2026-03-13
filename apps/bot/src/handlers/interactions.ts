@@ -53,7 +53,7 @@ async function getNotConfiguredMessage(
     if (linkBase) {
       try {
         if (apiInternal ?? apiPublic) {
-          const token = await createConnectToken({ discordUserId });
+          const token = await createConnectToken({ discordUserId, guildId });
           if (token) {
             return `This server is not configured. [Sign in to configure](${linkBase}/dashboard?guild_id=${guildId}#token=${token})`;
           }

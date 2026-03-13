@@ -408,6 +408,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
           const response = await deps.connectRoutes.createTokenEndpoint(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/connect/create-token`, {
               discordUserId: request.discordUserId ?? '',
+              guildId: request.guildId ?? '',
               apiSecret: deps.config.convexApiSecret,
             })
           );

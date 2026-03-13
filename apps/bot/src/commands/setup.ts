@@ -140,7 +140,7 @@ export async function runSetupStartUnconfigured(
 
   let dashboardUrl = `${linkBase}/dashboard?guild_id=${guildId}`;
   try {
-    const token = await createConnectToken({ discordUserId: interaction.user.id });
+    const token = await createConnectToken({ discordUserId: interaction.user.id, guildId });
     if (token) {
       dashboardUrl = `${linkBase}/dashboard?guild_id=${guildId}#token=${token}`;
     }

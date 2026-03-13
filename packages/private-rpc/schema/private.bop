@@ -30,6 +30,7 @@ message CreateSetupSessionRequest {
 
 message CreateConnectTokenRequest {
   1 -> string discordUserId;
+  2 -> string guildId;
 }
 
 message CreateDiscordRoleSetupSessionRequest {

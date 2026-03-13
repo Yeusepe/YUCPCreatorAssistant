@@ -99,6 +99,15 @@ export interface GumroadSalesResponse {
   message?: string;
 }
 
+/**
+ * Gumroad API response wrapper for a single sale (GET /v2/sales/:id)
+ */
+export interface GumroadSaleResponse {
+  success: boolean;
+  sale: GumroadSale;
+  message?: string;
+}
+
 // ============================================================================
 // PRODUCTS API TYPES
 // ============================================================================
