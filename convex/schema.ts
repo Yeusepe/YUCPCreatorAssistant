@@ -885,6 +885,8 @@ const provider_connections = defineTable({
 
 const provider_credentials = defineTable({
   providerConnectionId: v.id('provider_connections'),
+  // @deprecated Legacy field from tenant-first architecture
+  tenantId: v.optional(v.any()),
   providerKey: Provider,
   credentialKey: v.string(),
   kind: ProviderCredentialKind,
@@ -902,6 +904,8 @@ const provider_credentials = defineTable({
 
 const provider_connection_capabilities = defineTable({
   providerConnectionId: v.id('provider_connections'),
+  // @deprecated Legacy field from tenant-first architecture
+  tenantId: v.optional(v.any()),
   providerKey: Provider,
   capabilityKey: v.string(),
   status: ProviderCapabilityStatus,
@@ -1086,7 +1090,7 @@ const creator_oauth_apps = defineTable({
 const subjects = defineTable({
   // Primary Discord user ID
   primaryDiscordUserId: v.string(),
-  // Better Auth user ID (linked from auth system)
+  // Better Auth user ID (linked from auth system, optional for Discord-only subjects)
   authUserId: v.optional(v.string()),
   // Current status
   status: SubjectStatus,
@@ -1211,7 +1215,7 @@ const catalog_product_links = defineTable({
   // Current status
   status: CatalogLinkStatus,
   // Creator who submitted this link (Better Auth user ID)
-  submittedByAuthUserId: v.string(),
+  submittedByAuthUserId: v.optional(v.string()),
   // @deprecated Legacy field from tenant-first architecture
   submittedByTenantId: v.optional(v.any()),
   // Timestamps
@@ -1247,7 +1251,7 @@ const webhook_events = defineTable({
   // Error message if processing failed
   errorMessage: v.optional(v.string()),
   // Related creator user ID (if determined from payload). Optional for platform-level events.
-  authUserId: v.optional(v.string()),
+  authUserId: v.string(),
   // Related subject (if determined from payload)
   subjectId: v.optional(v.id('subjects')),
   // Related entitlement (if determined from payload)
@@ -1549,3 +1553,4 @@ export default defineSchema({
   cert_issuance_log,
   oauth_loopback_sessions,
 });
+

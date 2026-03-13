@@ -44,13 +44,14 @@ export const insertWebhookEvent = mutation({
       throw new Error('authUserId must be provided');
     }
 
+    const authUserId = args.authUserId;
     const now = Date.now();
 
     const existing = await ctx.db
       .query('webhook_events')
       .withIndex('by_auth_user_provider_event', (q) =>
         q
-          .eq('authUserId', args.authUserId)
+          .eq('authUserId', authUserId)
           .eq('provider', args.provider)
           .eq('providerEventId', args.providerEventId)
       )
