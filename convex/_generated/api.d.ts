@@ -34,6 +34,7 @@ import type * as lib_vrchat_types from "../lib/vrchat/types.js";
 import type * as lib_yucpCrypto from "../lib/yucpCrypto.js";
 import type * as licenseVerification from "../licenseVerification.js";
 import type * as manualLicenses from "../manualLicenses.js";
+import type * as migrations from "../migrations.js";
 import type * as oauthApps from "../oauthApps.js";
 import type * as oauthLoopback from "../oauthLoopback.js";
 import type * as outbox_jobs from "../outbox_jobs.js";
@@ -88,6 +89,7 @@ declare const fullApi: ApiFromModules<{
   "lib/yucpCrypto": typeof lib_yucpCrypto;
   licenseVerification: typeof licenseVerification;
   manualLicenses: typeof manualLicenses;
+  migrations: typeof migrations;
   oauthApps: typeof oauthApps;
   oauthLoopback: typeof oauthLoopback;
   outbox_jobs: typeof outbox_jobs;
