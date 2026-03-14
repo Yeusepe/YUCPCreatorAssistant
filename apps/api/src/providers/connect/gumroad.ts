@@ -64,7 +64,7 @@ async function gumroadBegin(request: Request, ctx: ConnectContext): Promise<Resp
     }
   }
 
-  authUserId = session?.user?.id ?? null;
+  authUserId = authUserId ?? session?.user?.id ?? null;
 
   const state = `connect_gumroad:${authUserId ?? 'personal'}:${generateSecureRandom(48)}`;
   const store = getStateStore();

@@ -286,8 +286,8 @@ export async function handleCollabList(
     rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(removeBtn));
   }
 
-  if (connections.length > 5) {
-    content += `\n_...and ${connections.length - 5} more_`;
+  if (activeConnections.length > 5) {
+    content += `\n_...and ${activeConnections.length - 5} more_`;
   }
 
   await interaction.editReply({ content, components: rows });

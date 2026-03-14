@@ -19,6 +19,15 @@ import type { VerificationConfig } from '../sessionManager';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
+async function sha256Hex(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 export interface LicenseVerificationHandler {
   verify(
     input: CompleteLicenseInput,
@@ -41,7 +50,16 @@ export async function getHandler(provider: string): Promise<LicenseVerificationH
         encryptionSecret: config.encryptionSecret ?? '',
       };
 
-      const result = await plugin.verifyLicense(licenseKey, productId, authUserId, ctx);
+      let result: Awaited<ReturnType<typeof plugin.verifyLicense>>;
+      try {
+        result = await plugin.verifyLicense(licenseKey, productId, authUserId, ctx);
+      } catch (err) {
+        logger.error('[licenseHandlers] verifyLicense threw', {
+          provider,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return { success: false, error: 'License verification failed' };
+      }
       if (!result) {
         return { success: false, error: 'Invalid license key' };
       }
@@ -52,11 +70,12 @@ export async function getHandler(provider: string): Promise<LicenseVerificationH
         };
       }
 
+      const licenseKeyDigest = await sha256Hex(licenseKey);
       const providerUserId =
         result.providerUserId ??
-        `${provider}:${productId ?? 'noproduct'}:${licenseKey.slice(0, 8)}`;
+        `${provider}:${productId ?? 'noproduct'}:${licenseKeyDigest.slice(0, 16)}`;
       const sourceReference =
-        result.externalOrderId ?? `${provider}:${licenseKey.slice(0, 16)}`;
+        result.externalOrderId ?? `${provider}:${licenseKeyDigest.slice(0, 16)}`;
 
       logger.info('[licenseHandlers] Granting entitlement', {
         provider,
@@ -64,17 +83,26 @@ export async function getHandler(provider: string): Promise<LicenseVerificationH
         productId,
       });
 
-      const mutationResult = await convex.mutation(
-        api.licenseVerification.completeLicenseVerification,
-        {
-          apiSecret: config.convexApiSecret,
-          authUserId,
-          subjectId,
+      let mutationResult: Awaited<ReturnType<typeof convex.mutation<typeof api.licenseVerification.completeLicenseVerification>>>;
+      try {
+        mutationResult = await convex.mutation(
+          api.licenseVerification.completeLicenseVerification,
+          {
+            apiSecret: config.convexApiSecret,
+            authUserId,
+            subjectId,
+            provider,
+            providerUserId,
+            productsToGrant: [{ productId: result.providerProductId ?? productId ?? '', sourceReference }],
+          },
+        );
+      } catch (err) {
+        logger.error('[licenseHandlers] completeLicenseVerification threw', {
           provider,
-          providerUserId,
-          productsToGrant: [{ productId: productId ?? '', sourceReference }],
-        },
-      );
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return { success: false, error: 'License verification failed' };
+      }
 
       return {
         success: mutationResult.success,

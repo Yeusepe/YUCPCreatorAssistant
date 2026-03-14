@@ -51,13 +51,18 @@ describe('API server — route mounting', () => {
   // -------------------------------------------------------------------------
   it('GET /tokens.css returns CSS with correct content-type', async () => {
     const res = await server.fetch('/tokens.css');
-    // 404 would indicate the public directory is not being served — regression
-    if (res.status === 404) {
-      // tokens.css may not exist in test environment; skip if missing
-      return;
-    }
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/css');
+  });
+
+  it('dashboard browser assets are served with the expected content types', async () => {
+    const dashboardCss = await server.fetch('/dashboard.css');
+    expect(dashboardCss.status).toBe(200);
+    expect(dashboardCss.headers.get('content-type')).toContain('text/css');
+
+    const dashboardScript = await server.fetch('/assets/dashboard/main.js');
+    expect(dashboardScript.status).toBe(200);
+    expect(dashboardScript.headers.get('content-type')).toContain('application/javascript');
   });
 
   // -------------------------------------------------------------------------

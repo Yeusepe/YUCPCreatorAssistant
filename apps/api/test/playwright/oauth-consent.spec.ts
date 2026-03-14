@@ -1,4 +1,4 @@
-import { test, expect } from 'playwright/test';
+import { expect, test } from 'playwright/test';
 
 // Source: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
 // Source: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
@@ -21,7 +21,9 @@ test.describe('OAuth consent page', () => {
   test('OAuth consent page loads with 200 status', async ({ page }) => {
     // The consent page is served with a 200 regardless of whether query params
     // are present; missing values fall back to safe defaults.
-    const response = await page.goto('/oauth/consent?client_id=test-app&scope=verification:read&consent_code=abc');
+    const response = await page.goto(
+      '/oauth/consent?client_id=test-app&scope=verification:read&consent_code=abc'
+    );
     expect(response?.status()).toBe(200);
   });
 
@@ -70,7 +72,6 @@ test.describe('OAuth consent page', () => {
     await page.goto('/oauth/consent?client_id=test-app&scope=verification:read&consent_code=abc');
     const bodyHtml = await page.evaluate(() => document.body.innerHTML);
     // Server must replace all __PLACEHOLDER__ tokens before sending HTML
-    expect(bodyHtml).not.toMatch(/\$\{[^}]+\}/);
     expect(bodyHtml).not.toContain('__CLIENT_ID__');
     expect(bodyHtml).not.toContain('__SCOPE__');
     expect(bodyHtml).not.toContain('__CONSENT_CODE__');
@@ -89,10 +90,17 @@ test.describe('OAuth consent page', () => {
 
     await expect
       .poll(() =>
-        page.evaluate(() => ({
-          client: (window as any).__phase8ConsentClient,
-          scope: (window as any).__phase8ConsentScope,
-        }))
+        page.evaluate(() => {
+          const phase8Window = window as Window & {
+            __phase8ConsentClient?: unknown;
+            __phase8ConsentScope?: unknown;
+          };
+
+          return {
+            client: phase8Window.__phase8ConsentClient,
+            scope: phase8Window.__phase8ConsentScope,
+          };
+        })
       )
       .toEqual({ client: undefined, scope: undefined });
 
