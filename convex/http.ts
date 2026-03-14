@@ -1,5 +1,5 @@
 /**
- * YUCP Certificate Authority — HTTP routes (Convex HTTP router).
+ * YUCP Certificate Authority, HTTP routes (Convex HTTP router).
  *
  * Public API routes follow Spotify/GitHub/Stripe conventions: versioned (/v1/),
  * noun-based resources, and /v1/me for the authenticated current user.
@@ -7,12 +7,12 @@
  * Public API (Authorization: Bearer <oauth_access_token>):
  *
  *   GET  /v1/keys
- *        CA trust anchor — returns the root public key as a JWK Set (no auth).
+ *        CA trust anchor, returns the root public key as a JWK Set (no auth).
  *        Clients fetch this once and cache it; eliminates hardcoded keys.
  *
  *   GET  /v1/me
  *        Returns the authenticated creator's profile (sub, name, email).
- *        Like Spotify GET /v1/me — token identifies "me".
+ *        Like Spotify GET /v1/me, token identifies "me".
  *
  *   GET  /v1/products
  *        List the authenticated creator's registered products (all providers).
@@ -40,9 +40,9 @@
  *        Revoke a certificate by nonce.
  *        Body: { certNonce, reason }
  *
- * OAuth infrastructure (not public API — these are part of the PKCE flow):
- *   GET  /api/yucp/oauth/authorize  — loopback port proxy (RFC 8252)
- *   GET  /api/yucp/oauth/callback   — restores original loopback port
+ * OAuth infrastructure (not public API, these are part of the PKCE flow):
+ *   GET  /api/yucp/oauth/authorize , loopback port proxy (RFC 8252)
+ *   GET  /api/yucp/oauth/callback  , restores original loopback port
  *
  * References:
  *   PKCE flow          https://www.rfc-editor.org/rfc/rfc7636
@@ -56,12 +56,12 @@ import { PROVIDER_REGISTRY, PROVIDER_REGISTRY_BY_KEY } from '../packages/shared/
 import { api, components, internal } from './_generated/api';
 import { httpAction } from './_generated/server';
 import { authComponent, createAuth } from './auth';
-import { decryptForPurpose } from './lib/vrchat/crypto';
+import { constantTimeEqual, decryptForPurpose } from './lib/vrchat/crypto';
 import {
-  type CertEnvelope,
-  type LicenseClaims,
   base64ToBytes,
+  type CertEnvelope,
   getPublicKeyFromPrivate,
+  type LicenseClaims,
   signLicenseJwt,
   verifyCertEnvelope,
 } from './lib/yucpCrypto';
@@ -71,7 +71,7 @@ import {
  *
  *   POST /v1/licenses/verify
  *        Verify a Gumroad or Jinxxy purchase license for a YUCP package.
- *        No auth header — license key is the credential.
+ *        No auth header, license key is the credential.
  *        Body: { packageId, licenseKey, provider, productPermalink,
  *                machineFingerprint, nonce, timestamp }
  *
@@ -172,7 +172,7 @@ async function parseBearerCert(
  *
  * The token is a JWT issued by Better Auth's oauth-provider plugin.
  * Profile claims (name, email) are embedded via customAccessTokenClaims so
- * that callers never need a secondary DB lookup — the token is the source of truth.
+ * that callers never need a secondary DB lookup, the token is the source of truth.
  *
  * Reference: https://www.rfc-editor.org/rfc/rfc9700.html (OAuth 2.0 Security BCP)
  */
@@ -189,15 +189,7 @@ async function verifyOAuthToken(
     const authBase = `${siteUrl.replace(/\/$/, '')}/api/auth`;
 
     // Detect token type for diagnostics: JWTs are 3 dot-separated base64 segments
-    const isJwtShape = (token.match(/\./g) ?? []).length === 2;
-    console.log(
-      '[verifyOAuthToken] token_type=' +
-        (isJwtShape ? 'jwt' : 'opaque') +
-        ' length=' +
-        token.length +
-        ' issuer=' +
-        authBase
-    );
+    const _isJwtShape = (token.match(/\./g) ?? []).length === 2;
 
     const verified = await verifyAccessToken(token, {
       verifyOptions: {
@@ -211,7 +203,6 @@ async function verifyOAuthToken(
     const claims = verified as Record<string, unknown>;
     const scope: string = (claims.scope as string) ?? '';
     const scopes = scope.split(' ');
-    console.log('[verifyOAuthToken] verified ok, scopes=' + scope);
     if (!scopes.includes(requiredScope)) {
       return { ok: false, error: `Token missing required scope: ${requiredScope}` };
     }
@@ -221,21 +212,19 @@ async function verifyOAuthToken(
     if (!userId) return { ok: false, error: 'No user identity in token' };
 
     // Read stable profile claims embedded by customAccessTokenClaims on the server.
-    // This avoids a DB lookup — the JWT is the source of truth for name/email.
+    // This avoids a DB lookup, the JWT is the source of truth for name/email.
     const name = (claims.name as string) ?? null;
     const email = (claims.email as string) ?? null;
 
     return { ok: true, yucpUserId: userId, name, email };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Token verification failed';
-    const errName = err instanceof Error ? err.name : 'unknown';
-    console.log('[verifyOAuthToken] FAILED err=' + errName + ' msg=' + msg);
     return { ok: false, error: msg };
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RFC 8252 loopback proxy — wildcard port support for Unity Editor OAuth
+// RFC 8252 loopback proxy, wildcard port support for Unity Editor OAuth
 //
 // Better Auth's oauthProvider does not yet support wildcard loopback ports
 // (https://github.com/better-auth/better-auth/issues/8426). This proxy:
@@ -249,7 +238,7 @@ async function verifyOAuthToken(
 // ─────────────────────────────────────────────────────────────────────────────
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
-const SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const _SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 function isLoopback(uri: string): boolean {
   try {
@@ -275,7 +264,7 @@ http.route({
     }
 
     if (!isLoopback(redirectUri)) {
-      // Non-loopback clients go directly — no port proxy needed
+      // Non-loopback clients go directly, no port proxy needed
       incoming.pathname = '/api/auth/oauth2/authorize';
       return Response.redirect(incoming.toString(), 302);
     }
@@ -304,8 +293,8 @@ http.route({
 
     if (!state) return errorResponse('Missing state parameter', 400);
 
-    // Look up the original loopback redirect URI
-    const session = await ctx.runQuery(internal.oauthLoopback.getSession, {
+    // Atomically look up and consume the loopback session (prevents TOCTOU)
+    const session = await ctx.runMutation(internal.oauthLoopback.consumeSession, {
       oauthState: state,
     });
 
@@ -315,9 +304,6 @@ http.route({
         { status: 400, headers: { 'Content-Type': 'text/html' } }
       );
     }
-
-    // Clean up the session record
-    await ctx.runMutation(internal.oauthLoopback.deleteSession, { oauthState: state });
 
     // Build the redirect back to the Unity local server
     const target = new URL(session.originalRedirectUri);
@@ -333,7 +319,7 @@ http.route({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /v1/me — Current authenticated creator (like Spotify GET /v1/me)
+// GET /v1/me, Current authenticated creator (like Spotify GET /v1/me)
 //
 // Validates the Bearer token, then fetches fresh user data from DB using the
 // `sub` claim (which is the user's stable primary key in Better Auth).
@@ -373,11 +359,11 @@ http.route({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /v1/products — List authenticated creator's registered products
+// GET /v1/products, List authenticated creator's registered products
 //
 // Returns all active products from product_catalog for the requesting creator.
 // Used by the Unity PackageSigning editor to populate Gumroad/Jinxxy dropdowns.
-// Pattern mirrors GET /v1/me — validate Bearer token → sub → tenant → products.
+// Pattern mirrors GET /v1/me, validate Bearer token → sub → tenant → products.
 // ─────────────────────────────────────────────────────────────────────────────
 
 http.route({
@@ -398,13 +384,13 @@ http.route({
       ownerAuthUserId: tokenResult.yucpUserId,
     });
     if (!tenant) {
-      console.log(`[products] No tenant found for user ${tokenResult.yucpUserId}`);
+      console.log(`[products] No creator profile found for user ${tokenResult.yucpUserId}`);
       return errorResponse('Creator account not found', 404);
     }
 
     // ── Own products (includes Discord if role_rules are configured) ──────────
     const ownProducts = await ctx.runQuery(internal.yucpLicenses.getProductsForTenant, {
-      tenantId: tenant._id,
+      authUserId: tokenResult.yucpUserId,
     });
 
     // Tag own products with owner=null
@@ -434,19 +420,19 @@ http.route({
         );
 
         for (const conn of collabConnections) {
-          // Skip if this is the same tenant as own (shouldn't happen, but guard)
-          if (conn.ownerTenantId === tenant._id) continue;
+          // Skip if this is the same creator as own (shouldn't happen, but guard)
+          if (conn.ownerAuthUserId === tokenResult.yucpUserId) continue;
 
-          const [collabProducts, ownerTenant] = await Promise.all([
+          const [collabProducts, ownerProfile] = await Promise.all([
             ctx.runQuery(internal.yucpLicenses.getProductsForTenant, {
-              tenantId: conn.ownerTenantId,
+              authUserId: conn.ownerAuthUserId,
             }),
-            ctx.runQuery(internal.yucpLicenses.getTenantById, {
-              tenantId: conn.ownerTenantId,
+            ctx.runQuery(internal.yucpLicenses.getTenantByAuthUser, {
+              ownerAuthUserId: conn.ownerAuthUserId,
             }),
           ]);
 
-          const ownerName = ownerTenant?.name ?? 'Collaborator';
+          const ownerName = ownerProfile?.name ?? 'Collaborator';
           for (const p of collabProducts) {
             allProducts.push({ ...p, owner: ownerName });
           }
@@ -458,17 +444,17 @@ http.route({
     }
 
     console.log(
-      `[products] tenant=${tenant._id} own=${ownProducts.length} total=${allProducts.length}`
+      `[products] authUserId=${tokenResult.yucpUserId} own=${ownProducts.length} total=${allProducts.length}`
     );
     return jsonResponse({ products: allProducts });
   }),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /v1/keys — YUCP CA root public key (JWK Set format, no auth required)
+// GET /v1/keys, YUCP CA root public key (JWK Set format, no auth required)
 //
 // Returns the trust anchor used to verify all YUCP certificates.
-// Clients (Unity) fetch this once and cache it in settings — no hardcoding.
+// Clients (Unity) fetch this once and cache it in settings, no hardcoding.
 // ─────────────────────────────────────────────────────────────────────────────
 
 http.route({
@@ -495,7 +481,7 @@ http.route({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /v1/certificates/me — Restore active cert for this machine's key
+// GET /v1/certificates/me, Restore active cert for this machine's key
 //
 // Called by new Unity projects that are already signed in but have no local
 // SigningSettings asset yet. Returns the active cert for the authenticated
@@ -535,7 +521,7 @@ http.route({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /v1/certificates — Issue cert via YUCP OAuth token (was /api/yucp/certificates/issue)
+// POST /v1/certificates, Issue cert via YUCP OAuth token (was /api/yucp/certificates/issue)
 // ─────────────────────────────────────────────────────────────────────────────
 
 http.route({
@@ -556,6 +542,7 @@ http.route({
 
     // Look up the user's subject to get their Discord ID (secondary identity anchor)
     const subjectResult = await ctx.runQuery(api.subjects.getSubjectByAuthId, {
+      apiSecret: process.env.CONVEX_API_SECRET ?? '',
       authUserId: yucpUserId,
     });
     const discordUserId = subjectResult?.found
@@ -569,16 +556,14 @@ http.route({
     } catch {
       return errorResponse('Invalid JSON body', 400);
     }
-    console.log(
-      '[cert/issue] body keys=' +
-        Object.keys(body ?? {}).join(',') +
-        ' devPublicKey_len=' +
-        (body?.devPublicKey?.length ?? 'null') +
-        ' publisherName=' +
-        (body?.publisherName ?? 'null')
-    );
     if (!body.devPublicKey || !body.publisherName) {
       return errorResponse('devPublicKey and publisherName are required', 400);
+    }
+
+    // Validate publisherName against allowlist: alphanumeric, spaces, underscore, dash, dot (1-100 chars)
+    const PUBLISHER_NAME_RE = /^[a-zA-Z0-9 _\-.]{1,100}$/;
+    if (!PUBLISHER_NAME_RE.test(body.publisherName)) {
+      return errorResponse('Invalid publisherName', 400);
     }
 
     // Validate devPublicKey is a 32-byte Ed25519 key
@@ -600,7 +585,7 @@ http.route({
       })) as CertEnvelope;
     } catch (err) {
       const raw = err instanceof Error ? err.message : '';
-      // Sanitize Convex-wrapped errors — never expose stack traces or internal paths.
+      // Sanitize Convex-wrapped errors, never expose stack traces or internal paths.
       // Map known failure modes to appropriate HTTP status codes.
       if (raw.includes('not configured') || raw.includes('not set')) {
         return errorResponse('Certificate service is not available', 503);
@@ -619,7 +604,7 @@ http.route({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /v1/packages/:hash — Consumer verification (was /api/yucp/packages/by-hash/:hash)
+// GET /v1/packages/:hash, Consumer verification (was /api/yucp/packages/by-hash/:hash)
 // ─────────────────────────────────────────────────────────────────────────────
 
 http.route({
@@ -667,7 +652,7 @@ http.route({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /v1/signatures — Register in transparency log (was /api/yucp/sign-manifest)
+// POST /v1/signatures, Register in transparency log (was /api/yucp/sign-manifest)
 // ─────────────────────────────────────────────────────────────────────────────
 
 http.route({
@@ -683,7 +668,7 @@ http.route({
     if (!certResult.ok) return errorResponse(certResult.error, 401);
     const { envelope } = certResult;
 
-    // Reject revoked certificates — revocation via /v1/certificates/revoke must
+    // Reject revoked certificates, revocation via /v1/certificates/revoke must
     // be enforced here; parseBearerCert only checks signature validity and expiry.
     const certRecord = await ctx.runQuery(internal.yucpCertificates.getCertByNonce, {
       certNonce: envelope.cert.nonce,
@@ -752,7 +737,7 @@ http.route({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /v1/certificates/revoke — Admin revocation (was /api/yucp/certificates/revoke)
+// POST /v1/certificates/revoke, Admin revocation (was /api/yucp/certificates/revoke)
 // ─────────────────────────────────────────────────────────────────────────────
 
 http.route({
@@ -761,7 +746,7 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const apiSecret = process.env.CONVEX_API_SECRET;
     const auth = request.headers.get('Authorization');
-    if (!apiSecret || auth !== `Bearer ${apiSecret}`) {
+    if (!apiSecret || !constantTimeEqual(auth ?? '', `Bearer ${apiSecret}`)) {
       return errorResponse('Unauthorized', 401);
     }
 
@@ -785,7 +770,7 @@ http.route({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /v1/licenses/verify — Unity editor license gate
+// POST /v1/licenses/verify, Unity editor license gate
 // ─────────────────────────────────────────────────────────────────────────────
 
 http.route({
@@ -830,9 +815,17 @@ http.route({
       return errorResponse('Missing required fields', 400);
     }
 
+    const licenseKeyDigest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(licenseKey),
+    );
+    const licenseKeyHash = Array.from(new Uint8Array(licenseKeyDigest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
     const result = await ctx.runAction(internal.yucpLicenses.verifyLicense, {
       packageId,
-      licenseKey,
+      licenseKey: licenseKeyHash,
       provider,
       productPermalink,
       machineFingerprint,
@@ -849,11 +842,11 @@ http.route({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /v1/licenses/verify-discord — Discord role entitlement verification
+// POST /v1/licenses/verify-discord, Discord role entitlement verification
 //
 // The buyer must have already been granted an entitlement via the creator's
 // Discord bot. This endpoint checks for that existing entitlement and issues
-// a license JWT — no license key input required.
+// a license JWT, no license key input required.
 //
 // Flow: buyer does YUCP OAuth → Bearer token → server maps to Discord user ID
 //   → checks entitlements table → issues machine-bound license JWT
@@ -930,15 +923,15 @@ http.route({
       );
     }
 
-    // Look up creator's tenant
-    const tenant = await ctx.runQuery(internal.yucpLicenses.getTenantByAuthUser, {
+    // Look up creator's profile
+    const creatorProfile = await ctx.runQuery(internal.yucpLicenses.getTenantByAuthUser, {
       ownerAuthUserId: creatorAuthUserId,
     });
-    if (!tenant) return errorResponse('Creator account not found', 404);
+    if (!creatorProfile) return errorResponse('Creator account not found', 404);
 
     // Check for an active entitlement
     const hasEntitlement = await ctx.runQuery(internal.yucpLicenses.checkSubjectEntitlement, {
-      tenantId: tenant._id,
+      authUserId: creatorAuthUserId,
       subjectId: subject._id,
       productId,
     });
@@ -990,11 +983,11 @@ http.route({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /v1/vrchat/avatar-name — Bot-internal: resolve avatar display name
+// POST /v1/vrchat/avatar-name, Bot-internal: resolve avatar display name
 // Auth: Bearer <CONVEX_API_SECRET>
-// Body: { tenantId, avatarId }
+// Body: { authUserId, avatarId }
 // Uses the tenant owner's stored VRChat session (from BetterAuth) to call
-// GET /avatars/{id} and return the avatar name. Non-fatal — returns null if
+// GET /avatars/{id} and return the avatar name. Non-fatal, returns null if
 // the owner has no linked VRChat account or the avatar is inaccessible.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1004,31 +997,31 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const apiSecret = process.env.CONVEX_API_SECRET;
     const auth = request.headers.get('Authorization');
-    if (!apiSecret || auth !== `Bearer ${apiSecret}`) {
+    if (!apiSecret || !constantTimeEqual(auth ?? '', `Bearer ${apiSecret}`)) {
       return errorResponse('Unauthorized', 401);
     }
 
-    let body: { tenantId: string; avatarId: string };
+    let body: { authUserId: string; avatarId: string };
     try {
       body = (await request.json()) as typeof body;
     } catch {
       return errorResponse('Invalid JSON body', 400);
     }
-    if (!body.tenantId || !body.avatarId) {
-      return errorResponse('tenantId and avatarId are required', 400);
+    if (!body.authUserId || !body.avatarId) {
+      return errorResponse('authUserId and avatarId are required', 400);
     }
 
-    // Get tenant to find owner's auth user ID
-    const tenant = await ctx.runQuery(internal.yucpLicenses.getTenantOwnerById, {
-      tenantId: body.tenantId as any,
+    // Get creator profile to find owner's auth user ID
+    const creatorProfile = await ctx.runQuery(internal.yucpLicenses.getTenantOwnerById, {
+      authUserId: body.authUserId,
     });
-    if (!tenant) return jsonResponse({ name: null });
+    if (!creatorProfile) return jsonResponse({ name: null });
 
     // Look up owner's VRChat account from BetterAuth
     const vrchatAccount = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: 'account',
       where: [
-        { field: 'userId', value: tenant.ownerAuthUserId },
+        { field: 'userId', value: creatorProfile.authUserId },
         { field: 'providerId', value: 'vrchat' },
       ],
       select: ['accessToken', 'idToken'],

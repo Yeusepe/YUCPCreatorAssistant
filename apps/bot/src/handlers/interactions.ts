@@ -31,6 +31,7 @@ import {
   handleSetupJinxxyModal,
   handleSetupSelect,
   runSetupStart,
+  runSetupStartUnconfigured,
 } from '../commands/setup';
 import { getApiUrls } from '../lib/apiUrls';
 import { E } from '../lib/emojis';
@@ -43,7 +44,7 @@ const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 async function getNotConfiguredMessage(
   guildId: string,
   discordUserId: string,
-  apiSecret: string,
+  _apiSecret: string,
   forAdmin = false
 ): Promise<string> {
   if (forAdmin) {
@@ -52,7 +53,7 @@ async function getNotConfiguredMessage(
     if (linkBase) {
       try {
         if (apiInternal ?? apiPublic) {
-          const token = await createConnectToken({ discordUserId });
+          const token = await createConnectToken({ discordUserId, guildId });
           if (token) {
             return `This server is not configured. [Sign in to configure](${linkBase}/dashboard?guild_id=${guildId}#token=${token})`;
           }
@@ -76,6 +77,86 @@ function requireAdmin(interaction: ChatInputCommandInteraction): boolean {
   const member = interaction.member;
   if (!member || typeof member.permissions === 'string') return false;
   return member.permissions.has(PermissionFlagsBits.Administrator);
+}
+
+function hasAdministratorPermission(interaction: {
+  member: { permissions?: { has?: (bit: bigint) => boolean } | string } | string | null;
+}): boolean {
+  const member = interaction.member;
+  if (!member || typeof member === 'string' || !('permissions' in member)) return false;
+  if (!member.permissions || typeof member.permissions === 'string') return false;
+  return member.permissions.has?.(PermissionFlagsBits.Administrator) ?? false;
+}
+
+async function rejectComponentInteraction(
+  interaction: ButtonInteraction | StringSelectMenuInteraction | UserSelectMenuInteraction,
+  content: string
+): Promise<void> {
+  if (interaction.deferred || interaction.replied) return;
+  await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => {});
+}
+
+async function validateAdminComponentContext(
+  interaction: ButtonInteraction | StringSelectMenuInteraction | UserSelectMenuInteraction,
+  ctx: InteractionHandlerContext,
+  options?: {
+    expectedAuthUserId?: string;
+    expectedGuildId?: string;
+    expectedActorId?: string;
+  }
+): Promise<boolean> {
+  const guildId = interaction.guildId;
+  if (!guildId) {
+    await rejectComponentInteraction(interaction, 'This action must be used in a server.');
+    return false;
+  }
+
+  if (!hasAdministratorPermission(interaction)) {
+    await rejectComponentInteraction(interaction, 'This action requires Administrator permission.');
+    return false;
+  }
+
+  if (options?.expectedActorId && interaction.user.id !== options.expectedActorId) {
+    await rejectComponentInteraction(
+      interaction,
+      'Only the admin who started this action can use it.'
+    );
+    return false;
+  }
+
+  if (!options?.expectedAuthUserId && !options?.expectedGuildId) {
+    return true;
+  }
+
+  const guildLink = await ctx.convex.query(api.guildLinks.getByDiscordGuildForBot, {
+    apiSecret: ctx.apiSecret,
+    discordGuildId: guildId,
+  });
+  if (!guildLink) {
+    await rejectComponentInteraction(
+      interaction,
+      await getNotConfiguredMessage(guildId, interaction.user.id, ctx.apiSecret, true)
+    );
+    return false;
+  }
+
+  if (options.expectedGuildId && options.expectedGuildId !== guildId) {
+    await rejectComponentInteraction(
+      interaction,
+      'This action belongs to a different server. Please run the command again here.'
+    );
+    return false;
+  }
+
+  if (options.expectedAuthUserId && guildLink.authUserId !== options.expectedAuthUserId) {
+    await rejectComponentInteraction(
+      interaction,
+      'This action is no longer valid for this server. Please run the command again.'
+    );
+    return false;
+  }
+
+  return true;
 }
 
 export async function handleInteraction(
@@ -156,7 +237,7 @@ async function handleAutocomplete(
           interaction,
           ctx.convex,
           ctx.apiSecret,
-          guildLink.tenantId as Id<'tenants'>,
+          guildLink.authUserId as string,
           guildId
         );
         return;
@@ -169,7 +250,8 @@ async function handleAutocomplete(
 
       // We use getByGuildWithProductNames because it lists all products currently configured for the server
       const products = await ctx.convex.query(api.role_rules.getByGuildWithProductNames, {
-        tenantId: guildLink.tenantId,
+        apiSecret: ctx.apiSecret,
+        authUserId: guildLink.authUserId,
         guildId,
       });
 
@@ -277,7 +359,7 @@ async function handleAutocomplete(
     }
 
     const products = (await ctx.convex.query(api.productResolution.getProductsForTenant, {
-      tenantId: guildLink.tenantId,
+      authUserId: guildLink.authUserId,
     })) as Array<{
       productId: string;
       provider: string;
@@ -345,34 +427,38 @@ async function handleSlashCommand(
   });
 
   if (!guildLink) {
-    await interaction.reply({
-      content: await getNotConfiguredMessage(guildId, interaction.user.id, ctx.apiSecret, true),
-      flags: MessageFlags.Ephemeral,
-    });
+    if (subcommandGroup === 'setup' && subcommand === 'start') {
+      await runSetupStartUnconfigured(interaction, guildId);
+    } else {
+      await interaction.reply({
+        content: await getNotConfiguredMessage(guildId, interaction.user.id, ctx.apiSecret, true),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
     return;
   }
 
-  const tenantId = guildLink.tenantId as Id<'tenants'>;
+  const authUserId = guildLink.authUserId as string;
   const guildLinkId = guildLink.guildLinkId as Id<'guild_links'>;
 
   track(interaction.user.id, 'command_used', {
     command: subcommand,
     subcommandGroup: subcommandGroup ?? undefined,
     guildId,
-    tenantId,
+    authUserId,
     userId: interaction.user.id,
   });
 
   try {
     if (subcommandGroup === 'setup' && subcommand === 'start') {
       await runSetupStart(interaction, ctx.convex, ctx.apiSecret, {
-        tenantId,
+        authUserId,
         guildLinkId,
         guildId,
       });
     } else if (!subcommandGroup && subcommand === 'dashboard') {
       await runSetupStart(interaction, ctx.convex, ctx.apiSecret, {
-        tenantId,
+        authUserId,
         guildLinkId,
         guildId,
       });
@@ -382,35 +468,43 @@ async function handleSlashCommand(
         '../commands/product'
       );
       if (sub === 'add') {
-        await handleProductAddInteractive(interaction, { tenantId, guildLinkId, guildId });
+        await handleProductAddInteractive(
+          interaction,
+          { authUserId, guildLinkId, guildId },
+          ctx.convex,
+          ctx.apiSecret
+        );
       } else if (sub === 'list') {
-        await handleProductList(interaction, ctx.convex, ctx.apiSecret, { tenantId, guildId });
+        await handleProductList(interaction, ctx.convex, ctx.apiSecret, { authUserId, guildId });
       } else if (sub === 'remove') {
-        await handleProductRemove(interaction, ctx.convex, ctx.apiSecret, { tenantId, guildId });
+        await handleProductRemove(interaction, ctx.convex, ctx.apiSecret, { authUserId, guildId });
       }
     } else if (subcommandGroup === 'downloads') {
       const sub = interaction.options.getSubcommand();
       const { handleDownloadsAdd, handleDownloadsManage } = await import('../commands/downloads');
       if (sub === 'setup') {
-        await handleDownloadsAdd(interaction, { tenantId, guildLinkId, guildId });
+        await handleDownloadsAdd(interaction, { authUserId, guildLinkId, guildId });
       } else if (sub === 'manage' || sub === 'list') {
-        await handleDownloadsManage(interaction, ctx.convex, ctx.apiSecret, { tenantId, guildId });
+        await handleDownloadsManage(interaction, ctx.convex, ctx.apiSecret, {
+          authUserId,
+          guildId,
+        });
       }
     } else if (subcommand === 'stats') {
       // Single subcommand (not a group) - overview with navigation buttons
       const { handleStats } = await import('../commands/stats');
-      await handleStats(interaction, ctx.convex, ctx.apiSecret, { tenantId, guildId });
+      await handleStats(interaction, ctx.convex, ctx.apiSecret, { authUserId, guildId });
     } else if (subcommand === 'spawn-verify') {
       const { handleVerifySpawn } = await import('../commands/verify');
       await handleVerifySpawn(interaction, ctx.convex, getApiUrls().apiPublic, {
-        tenantId,
+        authUserId,
         guildLinkId,
         guildId,
       });
     } else if (subcommand === 'autosetup') {
       const { handleAutosetupStart } = await import('../commands/autosetup');
       await handleAutosetupStart(interaction, ctx.convex, ctx.apiSecret, {
-        tenantId,
+        authUserId,
         guildLinkId,
         guildId,
       });
@@ -420,19 +514,19 @@ async function handleSlashCommand(
         const { handleDiscordRoleVerification } = await import(
           '../commands/discordRoleVerification'
         );
-        await handleDiscordRoleVerification(interaction, ctx.convex, ctx.apiSecret, { tenantId });
+        await handleDiscordRoleVerification(interaction, ctx.convex, ctx.apiSecret, { authUserId });
       } else if (sub === 'disconnect') {
         const { handleSettingsDisconnect } = await import('../commands/settings');
         await handleSettingsDisconnect(interaction, ctx.convex, ctx.apiSecret, {
           logger,
-          tenantId,
+          authUserId,
           guildId,
         });
       }
     } else if (subcommand === 'analytics') {
       // Single subcommand (not a group) - combined link + summary
       const { handleAnalytics } = await import('../commands/analytics');
-      await handleAnalytics(interaction, ctx.convex, ctx.apiSecret, { tenantId, guildId });
+      await handleAnalytics(interaction, ctx.convex, ctx.apiSecret, { authUserId, guildId });
     } else if (subcommandGroup === 'moderation') {
       const sub = interaction.options.getSubcommand();
       const {
@@ -442,14 +536,17 @@ async function handleSlashCommand(
         handleModerationUnverify,
       } = await import('../commands/moderation');
       if (sub === 'mark') {
-        await handleModerationMark(interaction, ctx.convex, ctx.apiSecret, { tenantId, guildId });
+        await handleModerationMark(interaction, ctx.convex, ctx.apiSecret, { authUserId, guildId });
       } else if (sub === 'list') {
-        await handleModerationList(interaction, ctx.convex, ctx.apiSecret, { tenantId, guildId });
+        await handleModerationList(interaction, ctx.convex, ctx.apiSecret, { authUserId, guildId });
       } else if (sub === 'clear') {
-        await handleModerationClear(interaction, ctx.convex, ctx.apiSecret, { tenantId, guildId });
+        await handleModerationClear(interaction, ctx.convex, ctx.apiSecret, {
+          authUserId,
+          guildId,
+        });
       } else if (sub === 'unverify') {
         await handleModerationUnverify(interaction, ctx.convex, ctx.apiSecret, {
-          tenantId,
+          authUserId,
           guildId,
         });
       }
@@ -459,11 +556,11 @@ async function handleSlashCommand(
         '../commands/collab'
       );
       if (sub === 'invite') {
-        await handleCollabInvite(interaction, ctx.apiSecret, tenantId);
+        await handleCollabInvite(interaction, ctx.apiSecret, authUserId);
       } else if (sub === 'add') {
-        await handleCollabAdd(interaction, ctx.apiSecret, tenantId);
+        await handleCollabAdd(interaction, ctx.apiSecret, authUserId);
       } else if (sub === 'list') {
-        await handleCollabList(interaction, ctx.apiSecret, tenantId);
+        await handleCollabList(interaction, ctx.apiSecret, authUserId);
       }
     } else {
       await interaction.reply({
@@ -524,7 +621,7 @@ async function handleUserCommand(
     return;
   }
 
-  const tenantId = guildLink.tenantId as Id<'tenants'>;
+  const authUserId = guildLink.authUserId as string;
 
   try {
     const subcommand = interaction.options.getSubcommand(false);
@@ -534,7 +631,7 @@ async function handleUserCommand(
     if (subcommand === 'status' || subcommand === null) {
       const { handleCreatorCommand } = await import('../commands/verify');
       await handleCreatorCommand(interaction, ctx.convex, ctx.apiSecret, getApiUrls().apiPublic, {
-        tenantId,
+        authUserId,
         guildId,
       });
       return;
@@ -558,7 +655,7 @@ async function handleUserCommand(
         'discord.js'
       );
       const modal = new ModalBuilder()
-        .setCustomId(`creator_verify:lp_modal:${tenantId}:${providerProductRef}:${provider}`)
+        .setCustomId(`creator_verify:lp_modal:${authUserId}:${providerProductRef}:${provider}`)
         .setTitle(isGumroad ? 'Enter Gumroad License Key' : 'Enter Jinxxy License Key');
       const keyInput = new TextInputBuilder()
         .setCustomId('license_key')
@@ -581,7 +678,7 @@ async function handleUserCommand(
     if (subcommand === 'refresh') {
       const { handleRefreshCommand } = await import('../commands/verify');
       await handleRefreshCommand(interaction, ctx.convex, ctx.apiSecret, {
-        tenantId,
+        authUserId,
       });
       return;
     }
@@ -603,7 +700,7 @@ async function handleUserCommand(
     // Unknown subcommand - show status panel as fallback
     const { handleCreatorCommand } = await import('../commands/verify');
     await handleCreatorCommand(interaction, ctx.convex, ctx.apiSecret, getApiUrls().apiPublic, {
-      tenantId,
+      authUserId,
       guildId,
     });
   } catch (err) {
@@ -647,7 +744,7 @@ async function handleButton(
       ctx.apiSecret,
       process.env.API_BASE_URL,
       {
-        tenantId: guildLink.tenantId as Id<'tenants'>,
+        authUserId: guildLink.authUserId as string,
         guildId,
       }
     );
@@ -655,7 +752,20 @@ async function handleButton(
   }
 
   if (customId.startsWith('creator_verify:disconnect:')) {
-    const provider = customId.split(':')[2];
+    const provider = customId.slice('creator_verify:disconnect:'.length);
+    const VALID_PROVIDERS = [
+      'gumroad',
+      'jinxxy',
+      'discord',
+      'manual',
+      'vrchat',
+      'lemon_squeezy',
+      'payhip',
+    ];
+    if (!VALID_PROVIDERS.includes(provider)) {
+      await interaction.reply({ content: 'Invalid provider.', flags: MessageFlags.Ephemeral });
+      return;
+    }
     const { handleVerifyDisconnectButton } = await import('../commands/verify');
     await handleVerifyDisconnectButton(
       interaction,
@@ -668,18 +778,18 @@ async function handleButton(
   }
 
   if (customId.startsWith('creator_verify:license:')) {
-    const tenantId = customId.slice('creator_verify:license:'.length) as Id<'tenants'>;
+    const authUserId = customId.slice('creator_verify:license:'.length) as string;
     const { showProductPicker } = await import('../commands/licenseVerify');
-    await showProductPicker(interaction, ctx.convex, ctx.apiSecret, tenantId);
+    await showProductPicker(interaction, ctx.convex, ctx.apiSecret, authUserId);
     return;
   }
 
   if (customId.startsWith('creator_verify:add_more:')) {
-    const tenantId = customId.slice('creator_verify:add_more:'.length) as Id<'tenants'>;
+    const authUserId = customId.slice('creator_verify:add_more:'.length) as string;
     const guildId = interaction.guildId ?? '';
     const { handleVerifyAddMore } = await import('../commands/verify');
     await handleVerifyAddMore(interaction, ctx.convex, ctx.apiSecret, process.env.API_BASE_URL, {
-      tenantId,
+      authUserId,
       guildId,
     });
     return;
@@ -690,98 +800,152 @@ async function handleButton(
     customId.startsWith('creator_verify:lp_filter:') ||
     customId.startsWith('creator_verify:lp_page:')
   ) {
-    // Format: creator_verify:lp_filter:{tenantId}:{filter}:{page}
-    //      OR creator_verify:lp_page:{tenantId}:{filter}:{page}
+    // Format: creator_verify:lp_filter:{authUserId}:{filter}:{page}
+    //      OR creator_verify:lp_page:{authUserId}:{filter}:{page}
     const prefix = customId.startsWith('creator_verify:lp_filter:')
       ? 'creator_verify:lp_filter:'
       : 'creator_verify:lp_page:';
     const rest = customId.slice(prefix.length);
-    const parts = rest.split(':');
-    // parts[0] = tenantId, parts[1] = filter, parts[2] = page
-    const tenantId = parts[0] as Id<'tenants'>;
-    const filter = (parts[1] ?? 'all') as string;
-    const page = Number.parseInt(parts[2] ?? '0', 10);
+    const firstColon = rest.indexOf(':');
+    const authUserId = firstColon >= 0 ? rest.slice(0, firstColon) : rest;
+    const remainder = firstColon >= 0 ? rest.slice(firstColon + 1) : '';
+    const secondColon = remainder.indexOf(':');
+    const filter = (secondColon >= 0 ? remainder.slice(0, secondColon) : remainder) || 'all';
+    const page = Number.parseInt(secondColon >= 0 ? remainder.slice(secondColon + 1) : '0', 10);
     const { handlePickerNavigation } = await import('../commands/licenseVerify');
-    await handlePickerNavigation(interaction, ctx.convex, ctx.apiSecret, tenantId, filter, page);
+    await handlePickerNavigation(interaction, ctx.convex, ctx.apiSecret, authUserId, filter, page);
     return;
   }
 
   // ─── Stats navigation ──────────────────────────────────────────────────────
-  // Format: creator_stats:view_users:{tenantId}:{guildId}
+  // Format: creator_stats:view_users:{authUserId}:{guildId}
   if (customId.startsWith('creator_stats:view_users:')) {
     const rest = customId.slice('creator_stats:view_users:'.length);
-    const parts = rest.split(':');
-    const tenantId = parts[0] as Id<'tenants'>;
-    const guildId = parts[1] ?? interaction.guildId ?? '';
+    const firstColon = rest.indexOf(':');
+    const authUserId = firstColon >= 0 ? rest.slice(0, firstColon) : rest;
+    const guildId = firstColon >= 0 ? rest.slice(firstColon + 1) : (interaction.guildId ?? '');
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsViewUsersButton } = await import('../commands/stats');
-    await handleStatsViewUsersButton(interaction, ctx.convex, ctx.apiSecret, tenantId, guildId);
+    await handleStatsViewUsersButton(interaction, ctx.convex, ctx.apiSecret, authUserId, guildId);
     return;
   }
 
-  // Format: creator_stats:view_users_page:{tenantId}:{guildId}:next|prev
+  // Format: creator_stats:view_users_page:{authUserId}:{guildId}:next|prev
   if (customId.startsWith('creator_stats:view_users_page:')) {
     const rest = customId.slice('creator_stats:view_users_page:'.length);
-    const parts = rest.split(':');
-    const tenantId = parts[0] as Id<'tenants'>;
-    const guildId = parts[1] ?? interaction.guildId ?? '';
-    const direction = parts[2] as 'next' | 'prev';
+    const firstColon = rest.indexOf(':');
+    const authUserId = firstColon >= 0 ? rest.slice(0, firstColon) : rest;
+    const remainder1 = firstColon >= 0 ? rest.slice(firstColon + 1) : '';
+    const secondColon = remainder1.indexOf(':');
+    const guildId =
+      secondColon >= 0
+        ? remainder1.slice(0, secondColon)
+        : remainder1 || (interaction.guildId ?? '');
+    const direction = (secondColon >= 0 ? remainder1.slice(secondColon + 1) : '') as
+      | 'next'
+      | 'prev';
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsViewUsersPageButton } = await import('../commands/stats');
     await handleStatsViewUsersPageButton(
       interaction,
       ctx.convex,
       ctx.apiSecret,
-      tenantId,
+      authUserId,
       guildId,
       direction
     );
     return;
   }
 
-  // Format: creator_stats:back:{tenantId}:{guildId}
+  // Format: creator_stats:back:{authUserId}:{guildId}
   if (customId.startsWith('creator_stats:back:')) {
     const rest = customId.slice('creator_stats:back:'.length);
-    const parts = rest.split(':');
-    const tenantId = parts[0] as Id<'tenants'>;
-    const guildId = parts[1] ?? interaction.guildId ?? '';
+    const firstColon = rest.indexOf(':');
+    const authUserId = firstColon >= 0 ? rest.slice(0, firstColon) : rest;
+    const guildId = firstColon >= 0 ? rest.slice(firstColon + 1) : (interaction.guildId ?? '');
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsBackButton } = await import('../commands/stats');
-    await handleStatsBackButton(interaction, ctx.convex, ctx.apiSecret, tenantId, guildId);
+    await handleStatsBackButton(interaction, ctx.convex, ctx.apiSecret, authUserId, guildId);
     return;
   }
 
-  // Format: creator_stats:view_products:{tenantId}:{guildId}
+  // Format: creator_stats:view_products:{authUserId}:{guildId}
   if (customId.startsWith('creator_stats:view_products:')) {
     const rest = customId.slice('creator_stats:view_products:'.length);
     const parts = rest.split(':');
-    const tenantId = parts[0] as Id<'tenants'>;
+    const authUserId = parts[0] as string;
     const guildId = parts[1] ?? interaction.guildId ?? '';
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsViewProductsButton } = await import('../commands/stats');
-    await handleStatsViewProductsButton(interaction, ctx.convex, ctx.apiSecret, tenantId, guildId);
+    await handleStatsViewProductsButton(
+      interaction,
+      ctx.convex,
+      ctx.apiSecret,
+      authUserId,
+      guildId
+    );
     return;
   }
 
-  // Format: creator_stats:check_user:{tenantId}:{guildId}
+  // Format: creator_stats:check_user:{authUserId}:{guildId}
   if (customId.startsWith('creator_stats:check_user:')) {
     const rest = customId.slice('creator_stats:check_user:'.length);
     const parts = rest.split(':');
-    const tenantId = parts[0] as Id<'tenants'>;
+    const authUserId = parts[0] as string;
     const guildId = parts[1] ?? interaction.guildId ?? '';
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsCheckUserButton } = await import('../commands/stats');
-    await handleStatsCheckUserButton(interaction, tenantId, guildId);
+    await handleStatsCheckUserButton(interaction, authUserId, guildId);
     return;
   }
 
   // ─── Settings (cross-server) ───────────────────────────────────────────────
   if (customId.startsWith('creator_settings:enable:')) {
-    const tenantId = customId.slice('creator_settings:enable:'.length) as Id<'tenants'>;
+    const authUserId = customId.slice('creator_settings:enable:'.length) as string;
     const { handleSettingsEnable } = await import('../commands/discordRoleVerification');
-    await handleSettingsEnable(interaction, ctx.convex, ctx.apiSecret, tenantId);
+    await handleSettingsEnable(interaction, ctx.convex, ctx.apiSecret, authUserId);
     return;
   }
 
   if (customId.startsWith('creator_settings:disable:')) {
-    const tenantId = customId.slice('creator_settings:disable:'.length) as Id<'tenants'>;
+    const authUserId = customId.slice('creator_settings:disable:'.length) as string;
     const { handleSettingsDisable } = await import('../commands/discordRoleVerification');
-    await handleSettingsDisable(interaction, ctx.convex, ctx.apiSecret, tenantId);
+    await handleSettingsDisable(interaction, ctx.convex, ctx.apiSecret, authUserId);
     return;
   }
 
@@ -790,50 +954,50 @@ async function handleButton(
     const rest = customId.slice('creator_autosetup:create_verify:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupCreateVerify } = await import('../commands/autosetup');
-    await handleAutosetupCreateVerify(interaction, ctx.convex, ctx.apiSecret, userId, tenantId);
+    await handleAutosetupCreateVerify(interaction, ctx.convex, ctx.apiSecret, userId, authUserId);
     return;
   }
   if (customId.startsWith('creator_autosetup:spawn_here:')) {
     const rest = customId.slice('creator_autosetup:spawn_here:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupSpawnHere } = await import('../commands/autosetup');
-    await handleAutosetupSpawnHere(interaction, ctx.convex, ctx.apiSecret, userId, tenantId);
+    await handleAutosetupSpawnHere(interaction, ctx.convex, ctx.apiSecret, userId, authUserId);
     return;
   }
   if (customId.startsWith('creator_autosetup:role_custom_modal:')) {
     const rest = customId.slice('creator_autosetup:role_custom_modal:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupRoleCustomModal } = await import('../commands/autosetup');
-    await handleAutosetupRoleCustomModal(interaction, userId, tenantId);
+    await handleAutosetupRoleCustomModal(interaction, userId, authUserId);
     return;
   }
   if (customId.startsWith('creator_autosetup:role_custom_done:')) {
     const rest = customId.slice('creator_autosetup:role_custom_done:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupRoleCustomDone } = await import('../commands/autosetup');
-    await handleAutosetupRoleCustomDone(interaction, ctx.convex, ctx.apiSecret, userId, tenantId);
+    await handleAutosetupRoleCustomDone(interaction, ctx.convex, ctx.apiSecret, userId, authUserId);
     return;
   }
   if (customId.startsWith('creator_autosetup:combine_yes:')) {
     const rest = customId.slice('creator_autosetup:combine_yes:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupCombineChoice } = await import('../commands/autosetup');
     await handleAutosetupCombineChoice(
       interaction,
       ctx.convex,
       ctx.apiSecret,
       userId,
-      tenantId,
+      authUserId,
       true
     );
     return;
@@ -842,14 +1006,14 @@ async function handleButton(
     const rest = customId.slice('creator_autosetup:combine_no:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupCombineChoice } = await import('../commands/autosetup');
     await handleAutosetupCombineChoice(
       interaction,
       ctx.convex,
       ctx.apiSecret,
       userId,
-      tenantId,
+      authUserId,
       false
     );
     return;
@@ -858,41 +1022,41 @@ async function handleButton(
     const rest = customId.slice('creator_autosetup:channels_skip:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupChannelsSkip } = await import('../commands/autosetup');
-    await handleAutosetupChannelsSkip(interaction, userId, tenantId);
+    await handleAutosetupChannelsSkip(interaction, userId, authUserId);
     return;
   }
   if (customId.startsWith('creator_autosetup:channels_next:')) {
     const rest = customId.slice('creator_autosetup:channels_next:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupChannelsNext } = await import('../commands/autosetup');
-    await handleAutosetupChannelsNext(interaction, ctx.convex, ctx.apiSecret, userId, tenantId);
+    await handleAutosetupChannelsNext(interaction, ctx.convex, ctx.apiSecret, userId, authUserId);
     return;
   }
   if (customId.startsWith('creator_autosetup:mp_done:')) {
     const rest = customId.slice('creator_autosetup:mp_done:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupMigrateDone } = await import('../commands/autosetup');
-    await handleAutosetupMigrateDone(interaction, userId, tenantId);
+    await handleAutosetupMigrateDone(interaction, userId, authUserId);
     return;
   }
   if (customId.startsWith('creator_autosetup:mp_another:')) {
     const rest = customId.slice('creator_autosetup:mp_another:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupMigrateMapAnother } = await import('../commands/autosetup');
     await handleAutosetupMigrateMapAnother(
       interaction,
       ctx.convex,
       ctx.apiSecret,
       userId,
-      tenantId
+      authUserId
     );
     return;
   }
@@ -900,39 +1064,39 @@ async function handleButton(
     const rest = customId.slice('creator_autosetup:mp_all:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupMigrateMapAll } = await import('../commands/autosetup');
-    await handleAutosetupMigrateMapAll(interaction, ctx.convex, ctx.apiSecret, userId, tenantId);
+    await handleAutosetupMigrateMapAll(interaction, ctx.convex, ctx.apiSecret, userId, authUserId);
     return;
   }
 
   // ─── Product add flow ──────────────────────────────────────────────────────
   if (customId.startsWith('creator_product:confirm_add:')) {
-    // Format: creator_product:confirm_add:{userId}:{tenantId}
+    // Format: creator_product:confirm_add:{userId}:{authUserId}
     const rest = customId.slice('creator_product:confirm_add:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleProductConfirmAdd } = await import('../commands/product');
-    await handleProductConfirmAdd(interaction, ctx.convex, ctx.apiSecret, userId, tenantId);
+    await handleProductConfirmAdd(interaction, ctx.convex, ctx.apiSecret, userId, authUserId);
     return;
   }
 
   if (customId.startsWith('creator_product:cancel_add:')) {
-    const tenantId = customId.slice('creator_product:cancel_add:'.length) as Id<'tenants'>;
+    const authUserId = customId.slice('creator_product:cancel_add:'.length) as string;
     const { handleProductCancelAdd } = await import('../commands/product');
-    await handleProductCancelAdd(interaction, interaction.user.id, tenantId);
+    await handleProductCancelAdd(interaction, interaction.user.id, authUserId);
     return;
   }
 
   if (customId.startsWith('creator_product:discord_role_done:')) {
-    // Format: creator_product:discord_role_done:{userId}:{tenantId}
+    // Format: creator_product:discord_role_done:{userId}:{authUserId}
     const rest = customId.slice('creator_product:discord_role_done:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleProductDiscordRoleDone } = await import('../commands/product');
-    await handleProductDiscordRoleDone(interaction, userId, tenantId);
+    await handleProductDiscordRoleDone(interaction, userId, authUserId);
     return;
   }
 
@@ -940,9 +1104,9 @@ async function handleButton(
     const rest = customId.slice('creator_downloads:to_access:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsGoToAccess } = await import('../commands/downloads');
-    await handleDownloadsGoToAccess(interaction, userId, tenantId);
+    await handleDownloadsGoToAccess(interaction, userId, authUserId);
     return;
   }
 
@@ -950,9 +1114,9 @@ async function handleButton(
     const rest = customId.slice('creator_downloads:back_to_channels:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsBackToChannels } = await import('../commands/downloads');
-    await handleDownloadsBackToChannels(interaction, userId, tenantId);
+    await handleDownloadsBackToChannels(interaction, userId, authUserId);
     return;
   }
 
@@ -960,9 +1124,9 @@ async function handleButton(
     const rest = customId.slice('creator_downloads:to_confirm:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsGoToConfirm } = await import('../commands/downloads');
-    await handleDownloadsGoToConfirm(interaction, userId, tenantId);
+    await handleDownloadsGoToConfirm(interaction, userId, authUserId);
     return;
   }
 
@@ -970,9 +1134,9 @@ async function handleButton(
     const rest = customId.slice('creator_downloads:back_to_access:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsGoToAccess } = await import('../commands/downloads');
-    await handleDownloadsGoToAccess(interaction, userId, tenantId);
+    await handleDownloadsGoToAccess(interaction, userId, authUserId);
     return;
   }
 
@@ -980,9 +1144,9 @@ async function handleButton(
     const rest = customId.slice('creator_downloads:confirm_add:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsConfirmAdd } = await import('../commands/downloads');
-    await handleDownloadsConfirmAdd(interaction, ctx.convex, ctx.apiSecret, userId, tenantId);
+    await handleDownloadsConfirmAdd(interaction, ctx.convex, ctx.apiSecret, userId, authUserId);
     return;
   }
 
@@ -990,9 +1154,9 @@ async function handleButton(
     const rest = customId.slice('creator_downloads:customize_message:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsCustomizeMessage } = await import('../commands/downloads');
-    await handleDownloadsCustomizeMessage(interaction, userId, tenantId);
+    await handleDownloadsCustomizeMessage(interaction, userId, authUserId);
     return;
   }
 
@@ -1000,29 +1164,49 @@ async function handleButton(
     const rest = customId.slice('creator_downloads:cancel_add:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsCancelAdd } = await import('../commands/downloads');
-    await handleDownloadsCancelAdd(interaction, userId, tenantId);
+    await handleDownloadsCancelAdd(interaction, userId, authUserId);
     return;
   }
 
   if (customId.startsWith('creator_downloads:autofix_prompt:')) {
     const rest = customId.slice('creator_downloads:autofix_prompt:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const routeId = rest.slice(colonIdx + 1) as Id<'download_routes'>;
+    const firstColon = rest.indexOf(':');
+    const userId = rest.slice(0, firstColon);
+    const rest2 = rest.slice(firstColon + 1);
+    const secondColon = rest2.indexOf(':');
+    const authUserId = rest2.slice(0, secondColon);
+    const routeId = rest2.slice(secondColon + 1) as Id<'download_routes'>;
     const { handleDownloadsAutofixPrompt } = await import('../commands/downloads');
-    await handleDownloadsAutofixPrompt(interaction, ctx.convex, ctx.apiSecret, userId, routeId);
+    await handleDownloadsAutofixPrompt(
+      interaction,
+      ctx.convex,
+      ctx.apiSecret,
+      userId,
+      authUserId,
+      routeId
+    );
     return;
   }
 
   if (customId.startsWith('creator_downloads:autofix_run:')) {
     const rest = customId.slice('creator_downloads:autofix_run:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const routeId = rest.slice(colonIdx + 1) as Id<'download_routes'>;
+    const firstColon = rest.indexOf(':');
+    const userId = rest.slice(0, firstColon);
+    const rest2 = rest.slice(firstColon + 1);
+    const secondColon = rest2.indexOf(':');
+    const authUserId = rest2.slice(0, secondColon);
+    const routeId = rest2.slice(secondColon + 1) as Id<'download_routes'>;
     const { handleDownloadsAutofixRun } = await import('../commands/downloads');
-    await handleDownloadsAutofixRun(interaction, ctx.convex, ctx.apiSecret, userId, routeId);
+    await handleDownloadsAutofixRun(
+      interaction,
+      ctx.convex,
+      ctx.apiSecret,
+      userId,
+      authUserId,
+      routeId
+    );
     return;
   }
 
@@ -1100,19 +1284,27 @@ async function handleButton(
 
   // ─── Moderation ────────────────────────────────────────────────────────────
   if (customId.startsWith('creator_moderation:confirm_clear:')) {
-    // Format: creator_moderation:confirm_clear:{targetUserId}:{tenantId}:{actorUserId}
+    // Format: creator_moderation:confirm_clear:{targetUserId}:{authUserId}:{actorUserId}
     const rest = customId.slice('creator_moderation:confirm_clear:'.length);
     const parts = rest.split(':');
     const targetUserId = parts[0];
-    const tenantId = parts[1] as Id<'tenants'>;
+    const authUserId = parts[1] as string;
     const actorId = parts[2];
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedActorId: actorId,
+      }))
+    ) {
+      return;
+    }
     const { handleModerationConfirmClear } = await import('../commands/moderation');
     await handleModerationConfirmClear(
       interaction,
       ctx.convex,
       ctx.apiSecret,
       targetUserId,
-      tenantId,
+      authUserId,
       actorId
     );
     return;
@@ -1123,50 +1315,52 @@ async function handleButton(
     return;
   }
 
-  // Product remove confirm: creator_product:confirm_remove:{userId}:{tenantId}
+  // Product remove confirm: creator_product:confirm_remove:{userId}:{authUserId}
   if (customId.startsWith('creator_product:confirm_remove:')) {
     const rest = customId.slice('creator_product:confirm_remove:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleProductConfirmRemove } = await import('../commands/product');
     await handleProductConfirmRemove(
       interaction as ButtonInteraction,
       ctx.convex,
       ctx.apiSecret,
       userId,
-      tenantId
+      authUserId
     );
     return;
   }
 
-  // Product remove cancel: creator_product:cancel_remove:{userId}:{tenantId}
+  // Product remove cancel: creator_product:cancel_remove:{userId}:{authUserId}
   if (customId.startsWith('creator_product:cancel_remove:')) {
     const rest = customId.slice('creator_product:cancel_remove:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleProductCancelRemove } = await import('../commands/product');
-    await handleProductCancelRemove(interaction as ButtonInteraction, userId, tenantId);
+    await handleProductCancelRemove(interaction as ButtonInteraction, userId, authUserId);
     return;
   }
 
   // ─── Collab invite ─────────────────────────────────────────────────────────
-  // creator_collab:remove:{tenantId}:{connectionId}
+  // creator_collab:remove:{authUserId}:{connectionId}
   if (customId.startsWith('creator_collab:remove:')) {
     const rest = customId.slice('creator_collab:remove:'.length);
     const colonIdx = rest.indexOf(':');
-    const tenantId = rest.slice(0, colonIdx) as Id<'tenants'>;
+    const authUserId = rest.slice(0, colonIdx) as string;
     const connectionId = rest.slice(colonIdx + 1);
     const { handleCollabRemove } = await import('../commands/collab');
-    await handleCollabRemove(interaction, ctx.apiSecret, tenantId, connectionId);
+    await handleCollabRemove(interaction, ctx.apiSecret, authUserId, connectionId);
     return;
   }
 
   // ─── Settings disconnect flow ──────────────────────────────────────────────
   if (customId.startsWith('creator_settings:disconnect')) {
-    const guildId = interaction.guildId;
-    if (!guildId) return;
+    if (!(await validateAdminComponentContext(interaction, ctx))) {
+      return;
+    }
+    const guildId = interaction.guildId as string;
 
     if (customId === 'creator_settings:disconnect_warn1:confirm') {
       const { handleDisconnectWarn1 } = await import('../commands/settings');
@@ -1206,11 +1400,9 @@ async function handleButton(
   if (customId.startsWith('creator_setup:')) {
     const parts = customId.slice('creator_setup:'.length).split(':');
     const action = parts[0];
-    const tenantId = parts[1];
-    if (action === 'next' && tenantId) {
-      const { logChannelSelect, jinxxyButton } = buildSetupStep2Components(
-        tenantId as Id<'tenants'>
-      );
+    const authUserId = parts[1];
+    if (action === 'next' && authUserId) {
+      const { logChannelSelect, jinxxyButton } = buildSetupStep2Components(authUserId as string);
       const embed = {
         title: 'Creator Setup - Step 2 of 3',
         description: 'Log channel and Jinxxy API key.',
@@ -1225,8 +1417,8 @@ async function handleButton(
       await interaction.update({ embeds: [embed], components: [row1, row2] });
       return;
     }
-    if (action === 'jinxxy_btn' && tenantId) {
-      const modal = buildJinxxyModal(tenantId as Id<'tenants'>);
+    if (action === 'jinxxy_btn' && authUserId) {
+      const modal = buildJinxxyModal(authUserId as string);
       if (modal) {
         // biome-ignore lint/suspicious/noExplicitAny: setup modal helper currently returns a looser builder shape.
         await interaction.showModal(modal as any);
@@ -1252,9 +1444,20 @@ async function handleModalSubmit(
   }
 
   if (customId.startsWith('creator_collab:add_modal:')) {
-    const tenantId = customId.slice('creator_collab:add_modal:'.length) as Id<'tenants'>;
+    const rest = customId.slice('creator_collab:add_modal:'.length);
+    const colonIdx = rest.indexOf(':');
+    // New format: providerKey:authUserId. Old format (backward compat): authUserId only.
+    let providerKey: string;
+    let authUserId: string;
+    if (colonIdx !== -1) {
+      providerKey = rest.slice(0, colonIdx);
+      authUserId = rest.slice(colonIdx + 1) as string;
+    } else {
+      providerKey = 'jinxxy';
+      authUserId = rest as string;
+    }
     const { handleCollabAddModalSubmit } = await import('../commands/collab');
-    await handleCollabAddModalSubmit(interaction, ctx.apiSecret, tenantId);
+    await handleCollabAddModalSubmit(interaction, ctx.apiSecret, authUserId, providerKey);
     return;
   }
 
@@ -1262,9 +1465,9 @@ async function handleModalSubmit(
     const rest = customId.slice('creator_autosetup:role_modal:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupRoleModalSubmit } = await import('../commands/autosetup');
-    await handleAutosetupRoleModalSubmit(interaction, userId, tenantId);
+    await handleAutosetupRoleModalSubmit(interaction, userId, authUserId);
     return;
   }
 
@@ -1274,25 +1477,50 @@ async function handleModalSubmit(
     return;
   }
 
-  // Product add - URL modal: creator_product:url_modal:{userId}:{tenantId}
+  // Product add - URL modal: creator_product:url_modal:{userId}:{authUserId}
   if (customId.startsWith('creator_product:url_modal:')) {
     const rest = customId.slice('creator_product:url_modal:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleProductUrlModal } = await import('../commands/product');
-    await handleProductUrlModal(interaction, userId, tenantId);
+    await handleProductUrlModal(interaction, userId, authUserId);
     return;
   }
 
-  // Product add - Discord role modal: creator_product:discord_modal:{userId}:{tenantId}
+  // Product add - Discord role modal: creator_product:discord_modal:{userId}:{authUserId}
   if (customId.startsWith('creator_product:discord_modal:')) {
     const rest = customId.slice('creator_product:discord_modal:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleProductDiscordModal } = await import('../commands/product');
-    await handleProductDiscordModal(interaction, userId, tenantId);
+    await handleProductDiscordModal(interaction, userId, authUserId);
+    return;
+  }
+
+  // Product add - Payhip modal: creator_product:payhip_modal:{userId}:{authUserId}
+  if (customId.startsWith('creator_product:payhip_modal:')) {
+    const rest = customId.slice('creator_product:payhip_modal:'.length);
+    const colonIdx = rest.indexOf(':');
+    const userId = rest.slice(0, colonIdx);
+    const authUserId = rest.slice(colonIdx + 1) as string;
+    const { handleProductPayhipModal } = await import('../commands/product');
+    await handleProductPayhipModal(interaction, userId, authUserId);
+    return;
+  }
+
+  // Generic per-product credential modal: creator_product:per_product_cred_modal:{provider}:{userId}:{authUserId}
+  if (customId.startsWith('creator_product:per_product_cred_modal:')) {
+    const rest = customId.slice('creator_product:per_product_cred_modal:'.length);
+    const firstColon = rest.indexOf(':');
+    const provider = rest.slice(0, firstColon);
+    const rest2 = rest.slice(firstColon + 1);
+    const colonIdx = rest2.indexOf(':');
+    const userId = rest2.slice(0, colonIdx);
+    const authUserId = rest2.slice(colonIdx + 1) as string;
+    const { handleProductPerCredentialModal } = await import('../commands/product');
+    await handleProductPerCredentialModal(interaction, provider, userId, authUserId);
     return;
   }
 
@@ -1300,9 +1528,9 @@ async function handleModalSubmit(
     const rest = customId.slice('creator_downloads:message_modal:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsMessageModal } = await import('../commands/downloads');
-    await handleDownloadsMessageModal(interaction, userId, tenantId);
+    await handleDownloadsMessageModal(interaction, userId, authUserId);
     return;
   }
 
@@ -1330,11 +1558,19 @@ async function handleSelectMenu(
     return;
   }
 
+  // Collab provider select: creator_collab:add_select:{authUserId}
+  if (customId.startsWith('creator_collab:add_select:')) {
+    const authUserId = customId.slice('creator_collab:add_select:'.length) as string;
+    const { handleCollabAddProviderSelect } = await import('../commands/collab');
+    await handleCollabAddProviderSelect(interaction, authUserId);
+    return;
+  }
+
   // Autosetup - mode select
   if (customId.startsWith('creator_autosetup:mode:')) {
-    const tenantId = customId.slice('creator_autosetup:mode:'.length) as Id<'tenants'>;
+    const authUserId = customId.slice('creator_autosetup:mode:'.length) as string;
     const { handleAutosetupModeSelect } = await import('../commands/autosetup');
-    await handleAutosetupModeSelect(interaction, ctx.convex, ctx.apiSecret, tenantId);
+    await handleAutosetupModeSelect(interaction, ctx.convex, ctx.apiSecret, authUserId);
     return;
   }
   // Autosetup - role format select
@@ -1342,9 +1578,9 @@ async function handleSelectMenu(
     const rest = customId.slice('creator_autosetup:role_format:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupRoleFormatSelect } = await import('../commands/autosetup');
-    await handleAutosetupRoleFormatSelect(interaction, userId, tenantId);
+    await handleAutosetupRoleFormatSelect(interaction, userId, authUserId);
     return;
   }
   // Autosetup - products select (roles flow)
@@ -1352,9 +1588,9 @@ async function handleSelectMenu(
     const rest = customId.slice('creator_autosetup:products:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupProductsSelect } = await import('../commands/autosetup');
-    await handleAutosetupProductsSelect(interaction, ctx.convex, ctx.apiSecret, userId, tenantId);
+    await handleAutosetupProductsSelect(interaction, ctx.convex, ctx.apiSecret, userId, authUserId);
     return;
   }
   // Autosetup - migrate product select (roleId stored in session to keep customId under 100 chars)
@@ -1362,68 +1598,82 @@ async function handleSelectMenu(
     const rest = customId.slice('creator_autosetup:mp:'.length);
     const parts = rest.split(':');
     const userId = parts[0];
-    const tenantId = parts[1] as Id<'tenants'>;
+    const authUserId = parts[1] as string;
     const { handleAutosetupMigrateProductSelect } = await import('../commands/autosetup');
     await handleAutosetupMigrateProductSelect(
       interaction,
       ctx.convex,
       ctx.apiSecret,
       userId,
-      tenantId
+      authUserId
     );
     return;
   }
 
   // Product picker - product selected
   if (customId.startsWith('creator_verify:lp_select:')) {
-    // Format: creator_verify:lp_select:{tenantId}:{filter}:{page}
+    // Format: creator_verify:lp_select:{authUserId}:{filter}:{page}
     const rest = customId.slice('creator_verify:lp_select:'.length);
     const parts = rest.split(':');
-    const tenantId = parts[0] as Id<'tenants'>;
+    const authUserId = parts[0] as string;
     const { handleProductSelected } = await import('../commands/licenseVerify');
-    await handleProductSelected(interaction, tenantId);
+    await handleProductSelected(interaction, authUserId);
     return;
   }
 
-  // Product type select: creator_product:type_select:{tenantId}
+  // Product type select: creator_product:type_select:{authUserId}
   if (customId.startsWith('creator_product:type_select:')) {
-    const tenantId = customId.slice('creator_product:type_select:'.length) as Id<'tenants'>;
+    const authUserId = customId.slice('creator_product:type_select:'.length) as string;
     const { handleProductTypeSelect } = await import('../commands/product');
-    await handleProductTypeSelect(interaction, tenantId);
+    await handleProductTypeSelect(interaction, authUserId);
     return;
   }
 
-  // Product Jinxxy product select: creator_product:jinxxy_product_select:{userId}:{tenantId}
+  // Product Jinxxy product select: creator_product:jinxxy_product_select:{userId}:{authUserId}
   if (customId.startsWith('creator_product:jinxxy_product_select:')) {
     const rest = customId.slice('creator_product:jinxxy_product_select:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleProductJinxxySelect } = await import('../commands/product');
-    await handleProductJinxxySelect(interaction, userId, tenantId);
+    await handleProductJinxxySelect(interaction, userId, authUserId);
     return;
   }
 
-  // Product Lemon Squeezy product select: creator_product:ls_product_select:{userId}:{tenantId}
+  // Product Lemon Squeezy product select: creator_product:ls_product_select:{userId}:{authUserId}
   if (customId.startsWith('creator_product:ls_product_select:')) {
     const rest = customId.slice('creator_product:ls_product_select:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleProductLemonSqueezySelect } = await import('../commands/product');
-    await handleProductLemonSqueezySelect(interaction, userId, tenantId);
+    await handleProductLemonSqueezySelect(interaction, userId, authUserId);
     return;
   }
 
-  // Product remove select: creator_product:remove_select:{tenantId}
+  // Generic catalog product select: creator_product:catalog_select:{provider}:{userId}:{authUserId}
+  if (customId.startsWith('creator_product:catalog_select:')) {
+    const rest = customId.slice('creator_product:catalog_select:'.length);
+    const firstColon = rest.indexOf(':');
+    const provider = rest.slice(0, firstColon);
+    const rest2 = rest.slice(firstColon + 1);
+    const colonIdx = rest2.indexOf(':');
+    const userId = rest2.slice(0, colonIdx);
+    const authUserId = rest2.slice(colonIdx + 1) as string;
+    const { handleProductCatalogSelect } = await import('../commands/product');
+    await handleProductCatalogSelect(interaction, provider, userId, authUserId);
+    return;
+  }
+
+  // Product remove select: creator_product:remove_select:{authUserId}
   if (customId.startsWith('creator_product:remove_select:')) {
-    const tenantId = customId.slice('creator_product:remove_select:'.length) as Id<'tenants'>;
+    const authUserId = customId.slice('creator_product:remove_select:'.length) as string;
     const { handleProductRemoveSelect } = await import('../commands/product');
     await handleProductRemoveSelect(
       interaction as StringSelectMenuInteraction,
       ctx.convex,
       ctx.apiSecret,
-      tenantId
+      authUserId
     );
     return;
   }
@@ -1432,9 +1682,13 @@ async function handleSelectMenu(
     const rest = customId.slice('creator_downloads:logic_select:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsLogicSelect } = await import('../commands/downloads');
-    await handleDownloadsLogicSelect(interaction as StringSelectMenuInteraction, userId, tenantId);
+    await handleDownloadsLogicSelect(
+      interaction as StringSelectMenuInteraction,
+      userId,
+      authUserId
+    );
     return;
   }
 
@@ -1442,12 +1696,12 @@ async function handleSelectMenu(
     const rest = customId.slice('creator_downloads:ext_select:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsExtensionSelect } = await import('../commands/downloads');
     await handleDownloadsExtensionSelect(
       interaction as StringSelectMenuInteraction,
       userId,
-      tenantId
+      authUserId
     );
     return;
   }
@@ -1464,20 +1718,28 @@ async function handleSelectMenu(
     return;
   }
 
-  // Moderation reason select: creator_moderation:reason_select:{actorId}:{tenantId}:{targetUserId}
+  // Moderation reason select: creator_moderation:reason_select:{actorId}:{authUserId}:{targetUserId}
   if (customId.startsWith('creator_moderation:reason_select:')) {
     const rest = customId.slice('creator_moderation:reason_select:'.length);
     const parts = rest.split(':');
     const actorId = parts[0];
-    const tenantId = parts[1] as Id<'tenants'>;
+    const authUserId = parts[1] as string;
     const targetUserId = parts[2];
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedActorId: actorId,
+      }))
+    ) {
+      return;
+    }
     const { handleModerationReasonSelect } = await import('../commands/moderation');
     await handleModerationReasonSelect(
       interaction,
       ctx.convex,
       ctx.apiSecret,
       actorId,
-      tenantId,
+      authUserId,
       targetUserId
     );
     return;
@@ -1501,14 +1763,14 @@ async function handleRoleSelectMenu(
     const rest = customId.slice('creator_autosetup:migrate_role:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupMigrateRoleSelect } = await import('../commands/autosetup');
     await handleAutosetupMigrateRoleSelect(
       interaction,
       ctx.convex,
       ctx.apiSecret,
       userId,
-      tenantId
+      authUserId
     );
     return;
   }
@@ -1517,26 +1779,26 @@ async function handleRoleSelectMenu(
     const rest = customId.slice('creator_autosetup:mp_all_role:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupMigrateMapAllRoleSelect } = await import('../commands/autosetup');
     await handleAutosetupMigrateMapAllRoleSelect(
       interaction,
       ctx.convex,
       ctx.apiSecret,
       userId,
-      tenantId
+      authUserId
     );
     return;
   }
 
-  // Product role select: creator_product:role_select:{userId}:{tenantId}
+  // Product role select: creator_product:role_select:{userId}:{authUserId}
   if (customId.startsWith('creator_product:role_select:')) {
     const rest = customId.slice('creator_product:role_select:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleProductRoleSelect } = await import('../commands/product');
-    await handleProductRoleSelect(interaction, userId, tenantId);
+    await handleProductRoleSelect(interaction, userId, authUserId);
     return;
   }
 
@@ -1544,9 +1806,9 @@ async function handleRoleSelectMenu(
     const rest = customId.slice('creator_downloads:roles_select:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsRoleSelect } = await import('../commands/downloads');
-    await handleDownloadsRoleSelect(interaction, userId, tenantId);
+    await handleDownloadsRoleSelect(interaction, userId, authUserId);
     return;
   }
 
@@ -1563,9 +1825,9 @@ async function handleChannelSelectMenu(
     const rest = customId.slice('creator_downloads:source_select:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsSourceSelect } = await import('../commands/downloads');
-    await handleDownloadsSourceSelect(interaction, userId, tenantId);
+    await handleDownloadsSourceSelect(interaction, userId, authUserId);
     return;
   }
 
@@ -1573,9 +1835,9 @@ async function handleChannelSelectMenu(
     const rest = customId.slice('creator_downloads:archive_select:'.length);
     const colonIdx = rest.indexOf(':');
     const userId = rest.slice(0, colonIdx);
-    const tenantId = rest.slice(colonIdx + 1) as Id<'tenants'>;
+    const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleDownloadsArchiveSelect } = await import('../commands/downloads');
-    await handleDownloadsArchiveSelect(interaction, userId, tenantId);
+    await handleDownloadsArchiveSelect(interaction, userId, authUserId);
     return;
   }
 
@@ -1590,14 +1852,22 @@ async function handleUserSelectMenu(
 ): Promise<void> {
   const customId = interaction.customId;
 
-  // Stats - check user select: creator_stats:check_user_select:{tenantId}:{guildId}
+  // Stats - check user select: creator_stats:check_user_select:{authUserId}:{guildId}
   if (customId.startsWith('creator_stats:check_user_select:')) {
     const rest = customId.slice('creator_stats:check_user_select:'.length);
     const parts = rest.split(':');
-    const tenantId = parts[0] as Id<'tenants'>;
+    const authUserId = parts[0] as string;
     const guildId = parts[1] ?? interaction.guildId ?? '';
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsCheckUserSelect } = await import('../commands/stats');
-    await handleStatsCheckUserSelect(interaction, ctx.convex, ctx.apiSecret, tenantId, guildId);
+    await handleStatsCheckUserSelect(interaction, ctx.convex, ctx.apiSecret, authUserId, guildId);
     return;
   }
 

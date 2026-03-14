@@ -5,8 +5,7 @@
  * Normalization to purchase_facts and entitlements is handled by separate pipeline.
  */
 
-import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
+import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import { ProviderV, WebhookProviderV } from './lib/providers';
 
@@ -18,13 +17,13 @@ function requireApiSecret(apiSecret: string | undefined): void {
 }
 
 /**
- * Insert a webhook event from Gumroad or Jinxxy.
- * Idempotent: (tenantId, provider, providerEventId) deduplication.
+ * Insert a webhook event from any provider.
+ * Idempotent: deduplication by (authUserId, provider, providerEventId).
  */
 export const insertWebhookEvent = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     provider: WebhookProviderV,
     providerKey: v.optional(ProviderV),
     providerConnectionId: v.optional(v.id('provider_connections')),
@@ -41,19 +40,14 @@ export const insertWebhookEvent = mutation({
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
 
-    const tenant = await ctx.db.get(args.tenantId);
-    if (!tenant) {
-      throw new Error(`Tenant not found: ${args.tenantId}`);
-    }
-
+    const authUserId = args.authUserId;
     const now = Date.now();
 
-    // Check for duplicate (tenantId, provider, providerEventId)
     const existing = await ctx.db
       .query('webhook_events')
-      .withIndex('by_tenant_provider_event', (q) =>
+      .withIndex('by_auth_user_provider_event', (q) =>
         q
-          .eq('tenantId', args.tenantId)
+          .eq('authUserId', authUserId)
           .eq('provider', args.provider)
           .eq('providerEventId', args.providerEventId)
       )
@@ -72,7 +66,7 @@ export const insertWebhookEvent = mutation({
       rawPayload: args.rawPayload,
       signatureValid: args.signatureValid,
       status: 'pending',
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       receivedAt: now,
     });
 
@@ -97,6 +91,9 @@ export const resetWebhookForReprocessing = mutation({
     if (!event) {
       return { success: false, message: 'Event not found' };
     }
+    if (event.signatureValid !== true) {
+      throw new ConvexError('Cannot requeue an unverified webhook event');
+    }
     if (event.status !== 'processed') {
       return { success: false, message: `Event status is ${event.status}, expected processed` };
     }
@@ -116,7 +113,7 @@ export const getPendingWebhookEvents = query({
   returns: v.array(
     v.object({
       _id: v.id('webhook_events'),
-      tenantId: v.optional(v.id('tenants')),
+      authUserId: v.optional(v.string()),
       provider: ProviderV,
       providerKey: v.optional(ProviderV),
       providerConnectionId: v.optional(v.id('provider_connections')),
@@ -139,3 +136,29 @@ export const getPendingWebhookEvents = query({
     return events;
   },
 });
+
+/**
+ * Resolves a webhook authUserId to one or more creator authUserIds.
+ * Returns an empty array if the authUserId doesn't match any creator profile.
+ */
+export const resolveWebhookAuthUserIds = query({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+  },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+
+    const profile = await ctx.db
+      .query('creator_profiles')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
+      .first();
+    if (profile) return [args.authUserId];
+
+    return [];
+  },
+});
+
+// Backward-compatible alias for existing callers
+export { resolveWebhookAuthUserIds as resolveWebhookTenantIds };

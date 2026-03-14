@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import {
   ACTIVE_PROVIDER_KEYS,
+  getProviderDescriptor,
   PROVIDER_REGISTRY,
   PROVIDER_REGISTRY_BY_KEY,
-  getProviderDescriptor,
   providerLabel,
 } from '../src/providers';
 
@@ -22,7 +22,7 @@ describe('shared provider registry', () => {
   });
 
   it('keeps planned commerce providers in the contract but not active', () => {
-    for (const providerKey of ['patreon', 'fourthwall', 'itchio', 'payhip'] as const) {
+    for (const providerKey of ['patreon', 'fourthwall', 'itchio'] as const) {
       const provider = PROVIDER_REGISTRY_BY_KEY[providerKey];
       expect(provider).toBeDefined();
       expect(provider.status).toBe('planned');
@@ -35,9 +35,9 @@ describe('shared provider registry', () => {
     const jinxxy = PROVIDER_REGISTRY_BY_KEY.jinxxy;
 
     expect(gumroad.compatibility?.legacyConnectRoutes).toContain('/api/connect/gumroad/begin');
-    expect(gumroad.compatibility?.legacyWebhookRoutes).toContain('/webhooks/gumroad/:tenantId');
+    expect(gumroad.compatibility?.legacyWebhookRoutes).toContain('/webhooks/gumroad/:authUserId');
     expect(jinxxy.compatibility?.legacyConnectRoutes).toContain('/api/connect/jinxxy-store');
-    expect(jinxxy.compatibility?.legacyWebhookRoutes).toContain('/webhooks/jinxxy/:tenantId');
+    expect(jinxxy.compatibility?.legacyWebhookRoutes).toContain('/webhooks/jinxxy/:authUserId');
   });
 
   it('exposes stable provider labels and unique keys', () => {

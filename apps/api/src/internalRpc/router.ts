@@ -30,17 +30,17 @@ import {
   type SuccessResponse,
   TempoServiceRegistry,
   type TokenResponse,
+  type UpsertProductCredentialRequest,
   type VerificationResultResponse,
 } from '@yucp/private-rpc';
 import { VrchatApiClient } from '@yucp/providers';
+import { timingSafeStringEqual } from '@yucp/shared';
 import { createSetupSession } from '../lib/setupSession';
 import type { VerificationRouteHandlers } from '../routes';
 import type { CollabConfig } from '../routes/collab';
 import { createCollabRoutes } from '../routes/collab';
 import { type ConnectConfig, createConnectRoutes } from '../routes/connect';
-import { handleGumroadProducts } from '../routes/gumroadProducts';
-import { handleJinxxyProducts } from '../routes/jinxxyProducts';
-import { handleLemonSqueezyProducts } from '../routes/lemonsqueezyProducts';
+import { handleProviderProducts } from '../routes/products';
 import { handleCompleteVrchat } from '../verification/completeVrchat';
 import type { VerificationConfig } from '../verification/sessionManager';
 import { createJsonRequest, readJsonResponse } from './httpAdapter';
@@ -98,20 +98,6 @@ function toTempoLogLevel(value: string | undefined): TempoLogLevel {
     default:
       return TempoLogLevel.Info;
   }
-}
-
-function timingSafeEqual(left: string, right: string): boolean {
-  const leftBytes = new TextEncoder().encode(left);
-  const rightBytes = new TextEncoder().encode(right);
-  if (leftBytes.length !== rightBytes.length) {
-    return false;
-  }
-
-  let difference = 0;
-  for (let index = 0; index < leftBytes.length; index += 1) {
-    difference |= leftBytes[index] ^ rightBytes[index];
-  }
-  return difference === 0;
 }
 
 function sanitizeForTelemetry(payload: unknown): unknown {
@@ -188,11 +174,11 @@ async function withTelemetry<TResponse>(
 
 async function createCollabSetupToken(
   encryptionSecret: string,
-  tenantId: string,
+  authUserId: string,
   guildId: string,
   actorDiscordUserId: string
 ): Promise<string> {
-  return createSetupSession(tenantId, guildId, actorDiscordUserId, encryptionSecret);
+  return createSetupSession(authUserId, guildId, actorDiscordUserId, encryptionSecret);
 }
 
 function normalizeTokenResponse(payload: Partial<TokenResponse> | null | undefined): TokenResponse {
@@ -280,7 +266,7 @@ class InternalRpcAuthInterceptor extends AuthInterceptor {
     _context: ServerContext,
     authorizationValue: string
   ): Promise<AuthContext> {
-    if (!timingSafeEqual(authorizationValue, `Bearer ${this.expectedSecret}`)) {
+    if (!timingSafeStringEqual(authorizationValue, `Bearer ${this.expectedSecret}`)) {
       throw new Error('unauthorized');
     }
 
@@ -300,11 +286,12 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         _context: ServerContext
       ): Promise<ProductsResponse> {
         return withTelemetry('CatalogService.listGumroadProducts', request, async () => {
-          const response = await handleGumroadProducts(
+          const response = await handleProviderProducts(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/gumroad/products`, {
               apiSecret: deps.config.convexApiSecret,
-              tenantId: request.tenantId ?? '',
-            })
+              authUserId: request.authUserId ?? '',
+            }),
+            'gumroad'
           );
           return normalizeProductsResponse(
             await readJsonResponse<Partial<ProductsResponse>>(response)
@@ -317,11 +304,12 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         _context: ServerContext
       ): Promise<ProductsResponse> {
         return withTelemetry('CatalogService.listJinxxyProducts', request, async () => {
-          const response = await handleJinxxyProducts(
+          const response = await handleProviderProducts(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/jinxxy/products`, {
               apiSecret: deps.config.convexApiSecret,
-              tenantId: request.tenantId ?? '',
-            })
+              authUserId: request.authUserId ?? '',
+            }),
+            'jinxxy'
           );
           return normalizeProductsResponse(
             await readJsonResponse<Partial<ProductsResponse>>(response)
@@ -334,11 +322,12 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         _context: ServerContext
       ): Promise<ProductsResponse> {
         return withTelemetry('CatalogService.listLemonSqueezyProducts', request, async () => {
-          const response = await handleLemonSqueezyProducts(
+          const response = await handleProviderProducts(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/lemonsqueezy/products`, {
               apiSecret: deps.config.convexApiSecret,
-              tenantId: request.tenantId ?? '',
-            })
+              authUserId: request.authUserId ?? '',
+            }),
+            'lemonsqueezy'
           );
           return normalizeProductsResponse(
             await readJsonResponse<Partial<ProductsResponse>>(response)
@@ -359,7 +348,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
               Authorization: `Bearer ${deps.config.convexApiSecret}`,
             },
             body: JSON.stringify({
-              tenantId: request.tenantId ?? '',
+              authUserId: request.authUserId ?? '',
               avatarId: request.avatarId ?? '',
             }),
           });
@@ -369,6 +358,25 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
           }
 
           return await readJsonResponse<ResolveVrchatAvatarNameResponse>(response);
+        });
+      }
+
+      async upsertProductCredential(
+        request: UpsertProductCredentialRequest,
+        _context: ServerContext
+      ): Promise<SuccessResponse> {
+        return withTelemetry('CatalogService.upsertProductCredential', request, async () => {
+          const result = await deps.connectRoutes.serverUpsertProductCredential({
+            authUserId: request.authUserId ?? '',
+            providerKey: request.providerKey ?? '',
+            productId: request.productId ?? '',
+            plaintextSecretKey: request.productSecretKey ?? '',
+          });
+          return {
+            success: result.success,
+            error: result.error,
+            supportCode: undefined,
+          };
         });
       }
     }
@@ -383,7 +391,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         return withTelemetry('SetupService.createSetupSession', request, async () => {
           const response = await deps.connectRoutes.createSessionEndpoint(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/setup/create-session`, {
-              tenantId: request.tenantId ?? '',
+              authUserId: request.authUserId ?? '',
               guildId: request.guildId ?? '',
               discordUserId: request.discordUserId ?? '',
               apiSecret: deps.config.convexApiSecret,
@@ -401,6 +409,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
           const response = await deps.connectRoutes.createTokenEndpoint(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/connect/create-token`, {
               discordUserId: request.discordUserId ?? '',
+              guildId: request.guildId ?? '',
               apiSecret: deps.config.convexApiSecret,
             })
           );
@@ -415,7 +424,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         return withTelemetry('SetupService.createDiscordRoleSetupSession', request, async () => {
           const response = await deps.connectRoutes.createDiscordRoleSession(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/setup/discord-role-session`, {
-              tenantId: request.tenantId ?? '',
+              authUserId: request.authUserId ?? '',
               guildId: request.guildId ?? '',
               adminDiscordUserId: request.adminDiscordUserId ?? '',
               apiSecret: deps.config.convexApiSecret,
@@ -461,7 +470,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
               interactionToken: request.interactionToken ?? '',
               messageId: request.messageId ?? '',
               panelToken: request.panelToken ?? '',
-              tenantId: request.tenantId ?? '',
+              authUserId: request.authUserId ?? '',
             })
           );
           return normalizeSuccessResponse(
@@ -485,7 +494,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
                 apiSecret: deps.config.convexApiSecret,
                 licenseKey: request.licenseKey ?? '',
                 productId: request.productId,
-                tenantId: request.tenantId ?? '',
+                authUserId: request.authUserId ?? '',
                 subjectId: request.subjectId ?? '',
                 discordUserId: request.discordUserId,
               })
@@ -515,7 +524,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
             );
             return normalizeVerificationResponse(
               await handleCompleteVrchat(createVerificationConfig(deps), {
-                tenantId: request.tenantId ?? '',
+                authUserId: request.authUserId ?? '',
                 subjectId: request.subjectId ?? '',
                 vrchatUserId: ownership.vrchatUserId,
                 displayName: ownership.displayName,
@@ -534,7 +543,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
           const response = await deps.verificationHandlers.disconnectVerification(
             createJsonRequest(`${deps.config.apiBaseUrl}/api/verification/disconnect`, {
               apiSecret: deps.config.convexApiSecret,
-              tenantId: request.tenantId ?? '',
+              authUserId: request.authUserId ?? '',
               subjectId: request.subjectId ?? '',
               provider: request.provider ?? '',
             })
@@ -558,7 +567,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         return withTelemetry('CollaboratorService.createInvite', request, async () => {
           const setupToken = await createCollabSetupToken(
             deps.collabConfig.encryptionSecret,
-            request.tenantId ?? '',
+            request.authUserId ?? '',
             request.guildId ?? '',
             request.actorDiscordUserId ?? ''
           );
@@ -576,7 +585,11 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
               }
             )
           );
-          return await readJsonResponse<CreateCollaboratorInviteResponse>(response);
+          const json = await readJsonResponse<{ inviteUrl?: string; expiresAt?: number }>(response);
+          return {
+            inviteUrl: json.inviteUrl,
+            expiresAt: json.expiresAt !== undefined ? BigInt(json.expiresAt) : undefined,
+          };
         });
       }
 
@@ -587,7 +600,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         return withTelemetry('CollaboratorService.listConnections', request, async () => {
           const setupToken = await createCollabSetupToken(
             deps.collabConfig.encryptionSecret,
-            request.tenantId ?? '',
+            request.authUserId ?? '',
             request.guildId ?? '',
             request.actorDiscordUserId ?? ''
           );
@@ -613,7 +626,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         return withTelemetry('CollaboratorService.addConnectionManual', request, async () => {
           const setupToken = await createCollabSetupToken(
             deps.collabConfig.encryptionSecret,
-            request.tenantId ?? '',
+            request.authUserId ?? '',
             request.guildId ?? '',
             request.actorDiscordUserId ?? ''
           );
@@ -644,7 +657,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         return withTelemetry('CollaboratorService.removeConnection', request, async () => {
           const setupToken = await createCollabSetupToken(
             deps.collabConfig.encryptionSecret,
-            request.tenantId ?? '',
+            request.authUserId ?? '',
             request.guildId ?? '',
             request.actorDiscordUserId ?? ''
           );

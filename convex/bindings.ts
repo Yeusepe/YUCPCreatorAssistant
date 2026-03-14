@@ -11,9 +11,10 @@
  * - Revocation cascades to entitlements
  */
 
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
-import { mutation, query } from './_generated/server';
+import { internalQuery, mutation, query } from './_generated/server';
+import type { MutationCtx } from './_generated/server';
 
 // ============================================================================
 // TYPES
@@ -50,16 +51,19 @@ function requireApiSecret(apiSecret: string | undefined): void {
  * Get tenant policy with defaults
  */
 async function getTenantPolicy(
-  ctx: any,
-  tenantId: Id<'tenants'>
+  ctx: MutationCtx,
+  authUserId: string
 ): Promise<{
   maxBindingsPerProduct: number;
   allowTransfer: boolean;
   transferCooldownHours: number;
   allowSharedUse: boolean;
 }> {
-  const tenant = await ctx.db.get(tenantId);
-  const policy = tenant?.policy || {};
+  const profile = await ctx.db
+    .query('creator_profiles')
+    .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
+    .first();
+  const policy = profile?.policy || {};
 
   return {
     maxBindingsPerProduct: policy.maxBindingsPerProduct ?? 1,
@@ -69,13 +73,24 @@ async function getTenantPolicy(
   };
 }
 
+async function requireActiveSubject(ctx: MutationCtx, subjectId: Id<'subjects'>) {
+  const subject = await ctx.db.get(subjectId);
+  if (!subject) {
+    throw new ConvexError('Subject not found');
+  }
+  if (subject.status !== 'active') {
+    throw new ConvexError(`Subject is not active: ${subject.status}`);
+  }
+  return subject;
+}
+
 /**
  * Create an audit event for binding operations
  */
 async function createAuditEvent(
-  ctx: any,
+  ctx: MutationCtx,
   params: {
-    tenantId: Id<'tenants'>;
+    authUserId: string;
     eventType: string;
     actorType: 'subject' | 'system' | 'admin';
     actorId?: string;
@@ -85,7 +100,7 @@ async function createAuditEvent(
   }
 ): Promise<void> {
   await ctx.db.insert('audit_events', {
-    tenantId: params.tenantId,
+    authUserId: params.authUserId,
     eventType: params.eventType as any,
     actorType: params.actorType,
     actorId: params.actorId,
@@ -100,18 +115,18 @@ async function createAuditEvent(
  * Revoke all entitlements associated with a binding's subject
  */
 async function revokeEntitlementsForSubject(
-  ctx: any,
-  tenantId: Id<'tenants'>,
+  ctx: MutationCtx,
+  authUserId: string,
   subjectId: Id<'subjects'>,
   reason: string
 ): Promise<number> {
   const entitlements = await ctx.db
     .query('entitlements')
-    .withIndex('by_tenant_subject', (q: any) =>
-      q.eq('tenantId', tenantId).eq('subjectId', subjectId)
+    .withIndex('by_auth_user_subject', (q) =>
+      q.eq('authUserId', authUserId).eq('subjectId', subjectId)
     )
-    .filter((q: any) => q.eq(q.field('status'), 'active'))
-    .collect();
+    .filter((q) => q.eq(q.field('status'), 'active'))
+    .take(1000);
 
   const now = Date.now();
   for (const entitlement of entitlements) {
@@ -123,7 +138,7 @@ async function revokeEntitlementsForSubject(
 
     // Create audit event for entitlement revocation
     await ctx.db.insert('audit_events', {
-      tenantId,
+      authUserId,
       eventType: 'entitlement.revoked',
       actorType: 'system',
       subjectId,
@@ -149,7 +164,7 @@ async function revokeEntitlementsForSubject(
 export const activateBinding = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     subjectId: v.id('subjects'),
     externalAccountId: v.id('external_accounts'),
     bindingType: BindingType,
@@ -174,13 +189,14 @@ export const activateBinding = mutation({
     requireApiSecret(args.apiSecret);
     const now = Date.now();
     const actorType = args.actorType || 'system';
+    await requireActiveSubject(ctx, args.subjectId);
 
     // Check for existing active ownership binding for this external account
     if (args.bindingType === 'ownership') {
       const existingOwnership = await ctx.db
         .query('bindings')
-        .withIndex('by_tenant_external', (q) =>
-          q.eq('tenantId', args.tenantId).eq('externalAccountId', args.externalAccountId)
+        .withIndex('by_auth_user_external', (q) =>
+          q.eq('authUserId', args.authUserId).eq('externalAccountId', args.externalAccountId)
         )
         .filter((q) =>
           q.and(
@@ -208,8 +224,8 @@ export const activateBinding = mutation({
     // Check for existing binding for this subject + external account
     const existingBinding = await ctx.db
       .query('bindings')
-      .withIndex('by_tenant_subject', (q) =>
-        q.eq('tenantId', args.tenantId).eq('subjectId', args.subjectId)
+      .withIndex('by_auth_user_subject', (q) =>
+        q.eq('authUserId', args.authUserId).eq('subjectId', args.subjectId)
       )
       .filter((q) => q.eq(q.field('externalAccountId'), args.externalAccountId))
       .first();
@@ -234,7 +250,7 @@ export const activateBinding = mutation({
 
         // Create audit event
         await createAuditEvent(ctx, {
-          tenantId: args.tenantId,
+          authUserId: args.authUserId,
           eventType: 'binding.activated',
           actorType,
           actorId: args.actorId,
@@ -269,7 +285,7 @@ export const activateBinding = mutation({
 
     // Create new binding
     const bindingId = await ctx.db.insert('bindings', {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       subjectId: args.subjectId,
       externalAccountId: args.externalAccountId,
       bindingType: args.bindingType,
@@ -283,7 +299,7 @@ export const activateBinding = mutation({
 
     // Create audit event
     await createAuditEvent(ctx, {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       eventType: 'binding.created',
       actorType,
       actorId: args.actorId,
@@ -314,6 +330,7 @@ export const activateBinding = mutation({
 export const revokeBinding = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     bindingId: v.id('bindings'),
     reason: v.string(),
     revokedBy: v.optional(v.id('subjects')),
@@ -336,6 +353,10 @@ export const revokeBinding = mutation({
     const binding = await ctx.db.get(args.bindingId);
     if (!binding) {
       throw new Error(`Binding not found: ${args.bindingId}`);
+    }
+
+    if (binding.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
     }
 
     const previousStatus = binding.status;
@@ -363,7 +384,7 @@ export const revokeBinding = mutation({
     if (cascadeToEntitlements) {
       entitlementsRevoked = await revokeEntitlementsForSubject(
         ctx,
-        binding.tenantId,
+        binding.authUserId,
         binding.subjectId,
         args.reason
       );
@@ -371,7 +392,7 @@ export const revokeBinding = mutation({
 
     // Create audit event
     await createAuditEvent(ctx, {
-      tenantId: binding.tenantId,
+      authUserId: binding.authUserId,
       eventType: 'binding.revoked',
       actorType,
       actorId: args.actorId,
@@ -403,6 +424,7 @@ export const revokeBinding = mutation({
 export const transferBinding = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     bindingId: v.id('bindings'),
     newSubjectId: v.id('subjects'),
     transferredBy: v.optional(v.id('subjects')),
@@ -428,6 +450,10 @@ export const transferBinding = mutation({
       throw new Error(`Binding not found: ${args.bindingId}`);
     }
 
+    if (binding.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
+    }
+
     // Check if binding can be transferred
     if (binding.status !== 'active') {
       return {
@@ -440,7 +466,7 @@ export const transferBinding = mutation({
     }
 
     // Get tenant policy
-    const policy = await getTenantPolicy(ctx, binding.tenantId);
+    const policy = await getTenantPolicy(ctx, binding.authUserId);
 
     // Check if transfers are allowed
     if (!policy.allowTransfer && !args.bypassCooldown) {
@@ -473,8 +499,8 @@ export const transferBinding = mutation({
     // Check for existing ownership binding for the new subject with this external account
     const existingForNewSubject = await ctx.db
       .query('bindings')
-      .withIndex('by_tenant_subject', (q) =>
-        q.eq('tenantId', binding.tenantId).eq('subjectId', args.newSubjectId)
+      .withIndex('by_auth_user_subject', (q) =>
+        q.eq('authUserId', binding.authUserId).eq('subjectId', args.newSubjectId)
       )
       .filter((q) =>
         q.and(
@@ -504,7 +530,7 @@ export const transferBinding = mutation({
 
     // Create new binding for new subject
     const newBindingId = await ctx.db.insert('bindings', {
-      tenantId: binding.tenantId,
+      authUserId: binding.authUserId,
       subjectId: args.newSubjectId,
       externalAccountId: binding.externalAccountId,
       bindingType: binding.bindingType,
@@ -518,7 +544,7 @@ export const transferBinding = mutation({
 
     // Create audit events
     await createAuditEvent(ctx, {
-      tenantId: binding.tenantId,
+      authUserId: binding.authUserId,
       eventType: 'binding.transferred',
       actorType,
       actorId: args.actorId,
@@ -551,6 +577,7 @@ export const transferBinding = mutation({
 export const quarantineBinding = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     bindingId: v.id('bindings'),
     reason: v.string(),
     quarantinedBy: v.optional(v.id('subjects')),
@@ -570,6 +597,10 @@ export const quarantineBinding = mutation({
     const binding = await ctx.db.get(args.bindingId);
     if (!binding) {
       throw new Error(`Binding not found: ${args.bindingId}`);
+    }
+
+    if (binding.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
     }
 
     const previousStatus = binding.status;
@@ -602,7 +633,7 @@ export const quarantineBinding = mutation({
 
     // Create audit event
     await createAuditEvent(ctx, {
-      tenantId: binding.tenantId,
+      authUserId: binding.authUserId,
       eventType: 'binding.revoked', // Using existing event type for quarantine
       actorType,
       actorId: args.actorId,
@@ -631,6 +662,7 @@ export const quarantineBinding = mutation({
 export const releaseFromQuarantine = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     bindingId: v.id('bindings'),
     releasedBy: v.optional(v.id('subjects')),
     actorType: v.optional(ActorType),
@@ -651,6 +683,10 @@ export const releaseFromQuarantine = mutation({
       throw new Error(`Binding not found: ${args.bindingId}`);
     }
 
+    if (binding.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
+    }
+
     if (binding.status !== 'quarantined') {
       throw new Error(`Binding is not quarantined: ${args.bindingId}`);
     }
@@ -665,7 +701,7 @@ export const releaseFromQuarantine = mutation({
 
     // Create audit event
     await createAuditEvent(ctx, {
-      tenantId: binding.tenantId,
+      authUserId: binding.authUserId,
       eventType: 'binding.activated',
       actorType,
       actorId: args.actorId,
@@ -692,9 +728,9 @@ export const releaseFromQuarantine = mutation({
 /**
  * Get all bindings for a subject
  */
-export const getBindingsBySubject = query({
+export const getBindingsBySubject = internalQuery({
   args: {
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     subjectId: v.id('subjects'),
     includeInactive: v.optional(v.boolean()),
   },
@@ -702,7 +738,7 @@ export const getBindingsBySubject = query({
     v.object({
       _id: v.id('bindings'),
       _creationTime: v.number(),
-      tenantId: v.id('tenants'),
+      authUserId: v.string(),
       subjectId: v.id('subjects'),
       externalAccountId: v.id('external_accounts'),
       bindingType: BindingType,
@@ -719,8 +755,8 @@ export const getBindingsBySubject = query({
 
     let query = ctx.db
       .query('bindings')
-      .withIndex('by_tenant_subject', (q) =>
-        q.eq('tenantId', args.tenantId).eq('subjectId', args.subjectId)
+      .withIndex('by_auth_user_subject', (q) =>
+        q.eq('authUserId', args.authUserId).eq('subjectId', args.subjectId)
       );
 
     if (!includeInactive) {
@@ -729,16 +765,16 @@ export const getBindingsBySubject = query({
       );
     }
 
-    return await query.collect();
+    return await query.take(1000);
   },
 });
 
 /**
  * Get all bindings for an external account
  */
-export const getBindingsByExternalAccount = query({
+export const getBindingsByExternalAccount = internalQuery({
   args: {
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     externalAccountId: v.id('external_accounts'),
     includeInactive: v.optional(v.boolean()),
   },
@@ -746,7 +782,7 @@ export const getBindingsByExternalAccount = query({
     v.object({
       _id: v.id('bindings'),
       _creationTime: v.number(),
-      tenantId: v.id('tenants'),
+      authUserId: v.string(),
       subjectId: v.id('subjects'),
       externalAccountId: v.id('external_accounts'),
       bindingType: BindingType,
@@ -763,8 +799,8 @@ export const getBindingsByExternalAccount = query({
 
     let query = ctx.db
       .query('bindings')
-      .withIndex('by_tenant_external', (q) =>
-        q.eq('tenantId', args.tenantId).eq('externalAccountId', args.externalAccountId)
+      .withIndex('by_auth_user_external', (q) =>
+        q.eq('authUserId', args.authUserId).eq('externalAccountId', args.externalAccountId)
       );
 
     if (!includeInactive) {
@@ -773,7 +809,7 @@ export const getBindingsByExternalAccount = query({
       );
     }
 
-    return await query.collect();
+    return await query.take(1000);
   },
 });
 
@@ -781,9 +817,9 @@ export const getBindingsByExternalAccount = query({
  * Get the active ownership binding for an external account
  * Used to enforce one active ownership per provider account
  */
-export const getActiveOwnershipBinding = query({
+export const getActiveOwnershipBinding = internalQuery({
   args: {
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     externalAccountId: v.id('external_accounts'),
   },
   returns: v.union(
@@ -792,7 +828,7 @@ export const getActiveOwnershipBinding = query({
       binding: v.object({
         _id: v.id('bindings'),
         _creationTime: v.number(),
-        tenantId: v.id('tenants'),
+        authUserId: v.string(),
         subjectId: v.id('subjects'),
         externalAccountId: v.id('external_accounts'),
         bindingType: BindingType,
@@ -812,8 +848,8 @@ export const getActiveOwnershipBinding = query({
   handler: async (ctx, args) => {
     const binding = await ctx.db
       .query('bindings')
-      .withIndex('by_tenant_external', (q) =>
-        q.eq('tenantId', args.tenantId).eq('externalAccountId', args.externalAccountId)
+      .withIndex('by_auth_user_external', (q) =>
+        q.eq('authUserId', args.authUserId).eq('externalAccountId', args.externalAccountId)
       )
       .filter((q) =>
         q.and(q.eq(q.field('bindingType'), 'ownership'), q.eq(q.field('status'), 'active'))
@@ -831,7 +867,7 @@ export const getActiveOwnershipBinding = query({
 /**
  * Get a single binding by ID
  */
-export const getBinding = query({
+export const getBinding = internalQuery({
   args: {
     bindingId: v.id('bindings'),
   },
@@ -841,7 +877,7 @@ export const getBinding = query({
       binding: v.object({
         _id: v.id('bindings'),
         _creationTime: v.number(),
-        tenantId: v.id('tenants'),
+        authUserId: v.string(),
         subjectId: v.id('subjects'),
         externalAccountId: v.id('external_accounts'),
         bindingType: BindingType,
@@ -872,9 +908,9 @@ export const getBinding = query({
 /**
  * Check if a subject has an active ownership binding for an external account
  */
-export const hasActiveOwnershipBinding = query({
+export const hasActiveOwnershipBinding = internalQuery({
   args: {
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     subjectId: v.id('subjects'),
     externalAccountId: v.id('external_accounts'),
   },
@@ -885,8 +921,8 @@ export const hasActiveOwnershipBinding = query({
   handler: async (ctx, args) => {
     const binding = await ctx.db
       .query('bindings')
-      .withIndex('by_tenant_subject', (q) =>
-        q.eq('tenantId', args.tenantId).eq('subjectId', args.subjectId)
+      .withIndex('by_auth_user_subject', (q) =>
+        q.eq('authUserId', args.authUserId).eq('subjectId', args.subjectId)
       )
       .filter((q) =>
         q.and(
@@ -907,9 +943,9 @@ export const hasActiveOwnershipBinding = query({
 /**
  * Get all bindings for a tenant (admin view)
  */
-export const getBindingsByTenant = query({
+export const getBindingsByTenant = internalQuery({
   args: {
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     status: v.optional(BindingStatus),
     limit: v.optional(v.number()),
   },
@@ -917,7 +953,7 @@ export const getBindingsByTenant = query({
     v.object({
       _id: v.id('bindings'),
       _creationTime: v.number(),
-      tenantId: v.id('tenants'),
+      authUserId: v.string(),
       subjectId: v.id('subjects'),
       externalAccountId: v.id('external_accounts'),
       bindingType: BindingType,
@@ -930,11 +966,11 @@ export const getBindingsByTenant = query({
     })
   ),
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 100;
+    const limit = Math.min(args.limit ?? 100, 500);
 
     let query = ctx.db
       .query('bindings')
-      .withIndex('by_tenant', (q) => q.eq('tenantId', args.tenantId));
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId));
 
     if (args.status) {
       query = query.filter((q) => q.eq(q.field('status'), args.status));

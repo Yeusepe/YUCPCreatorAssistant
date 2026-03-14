@@ -5,7 +5,7 @@
  * their Jinxxy API key so license verification works across both stores.
  */
 
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import { internalQuery, mutation, query } from './_generated/server';
 
 function requireApiSecret(apiSecret: string | undefined): void {
@@ -22,7 +22,7 @@ function requireApiSecret(apiSecret: string | undefined): void {
 export const createCollaboratorInvite = mutation({
   args: {
     apiSecret: v.string(),
-    ownerTenantId: v.id('tenants'),
+    ownerAuthUserId: v.string(),
     ownerDisplayName: v.string(),
     ownerGuildId: v.optional(v.string()),
     tokenHash: v.string(),
@@ -31,15 +31,25 @@ export const createCollaboratorInvite = mutation({
   returns: v.id('collaborator_invites'),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    return await ctx.db.insert('collaborator_invites', {
-      ownerTenantId: args.ownerTenantId,
+    const MAX_EXPIRES_AT = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    const expiresAt = Math.min(args.expiresAt, MAX_EXPIRES_AT);
+    const inviteId = await ctx.db.insert('collaborator_invites', {
+      ownerAuthUserId: args.ownerAuthUserId,
       tokenHash: args.tokenHash,
       status: 'pending',
       ownerDisplayName: args.ownerDisplayName,
       ownerGuildId: args.ownerGuildId,
-      expiresAt: args.expiresAt,
+      expiresAt,
       createdAt: Date.now(),
     });
+    await ctx.db.insert('audit_events', {
+      authUserId: args.ownerAuthUserId,
+      eventType: 'collaborator.invite.created',
+      actorType: 'system',
+      metadata: { inviteId, ownerDisplayName: args.ownerDisplayName },
+      createdAt: Date.now(),
+    });
+    return inviteId;
   },
 });
 
@@ -54,7 +64,7 @@ export const getCollaboratorInviteByTokenHash = query({
   returns: v.union(
     v.object({
       _id: v.id('collaborator_invites'),
-      ownerTenantId: v.id('tenants'),
+      ownerAuthUserId: v.string(),
       tokenHash: v.string(),
       status: v.union(v.literal('pending'), v.literal('accepted'), v.literal('revoked')),
       ownerDisplayName: v.string(),
@@ -73,7 +83,7 @@ export const getCollaboratorInviteByTokenHash = query({
     if (!invite) return null;
     return {
       _id: invite._id,
-      ownerTenantId: invite.ownerTenantId,
+      ownerAuthUserId: invite.ownerAuthUserId,
       tokenHash: invite.tokenHash,
       status: invite.status,
       ownerDisplayName: invite.ownerDisplayName,
@@ -95,7 +105,7 @@ export const getCollaboratorInviteById = query({
   returns: v.union(
     v.object({
       _id: v.id('collaborator_invites'),
-      ownerTenantId: v.id('tenants'),
+      ownerAuthUserId: v.string(),
       tokenHash: v.string(),
       status: v.union(v.literal('pending'), v.literal('accepted'), v.literal('revoked')),
       ownerDisplayName: v.string(),
@@ -111,7 +121,7 @@ export const getCollaboratorInviteById = query({
     if (!invite) return null;
     return {
       _id: invite._id,
-      ownerTenantId: invite.ownerTenantId,
+      ownerAuthUserId: invite.ownerAuthUserId,
       tokenHash: invite.tokenHash,
       status: invite.status,
       ownerDisplayName: invite.ownerDisplayName,
@@ -178,6 +188,9 @@ export const acceptCollaboratorInvite = mutation({
 
     const invite = await ctx.db.get(args.inviteId);
     if (!invite) throw new Error('Invite not found');
+    if (invite.usedAt !== undefined) {
+      throw new ConvexError('This invite has already been used');
+    }
     if (invite.status !== 'pending') throw new Error('Invite is no longer pending');
     if (Date.now() > invite.expiresAt) throw new Error('Invite has expired');
 
@@ -190,8 +203,8 @@ export const acceptCollaboratorInvite = mutation({
 
     const webhookConfigured = !!(args.webhookSecretRef && args.webhookEndpoint);
 
-    return await ctx.db.insert('collaborator_connections', {
-      ownerTenantId: invite.ownerTenantId,
+    const connectionId = await ctx.db.insert('collaborator_connections', {
+      ownerAuthUserId: invite.ownerAuthUserId,
       inviteId: args.inviteId,
       provider: 'jinxxy',
       jinxxyApiKeyEncrypted: args.jinxxyApiKeyEncrypted,
@@ -205,6 +218,19 @@ export const acceptCollaboratorInvite = mutation({
       collaboratorDisplayName: args.collaboratorDisplayName,
       createdAt: Date.now(),
     });
+    await ctx.db.patch(args.inviteId, { usedAt: Date.now() });
+    await ctx.db.insert('audit_events', {
+      authUserId: invite.ownerAuthUserId,
+      eventType: 'collaborator.invite.accepted',
+      actorType: 'system',
+      metadata: {
+        inviteId: args.inviteId,
+        connectionId,
+        collaboratorDiscordUserId: args.collaboratorDiscordUserId,
+      },
+      createdAt: Date.now(),
+    });
+    return connectionId;
   },
 });
 
@@ -216,7 +242,7 @@ export const acceptCollaboratorInvite = mutation({
 export const addCollaboratorConnectionManual = mutation({
   args: {
     apiSecret: v.string(),
-    ownerTenantId: v.id('tenants'),
+    ownerAuthUserId: v.string(),
     jinxxyApiKeyEncrypted: v.string(),
     collaboratorDisplayName: v.string(),
     collaboratorIdentity: v.string(),
@@ -225,8 +251,15 @@ export const addCollaboratorConnectionManual = mutation({
   returns: v.id('collaborator_connections'),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    return await ctx.db.insert('collaborator_connections', {
-      ownerTenantId: args.ownerTenantId,
+    const owner = await ctx.db
+      .query('creator_profiles')
+      .filter((q) => q.eq(q.field('authUserId'), args.ownerAuthUserId))
+      .first();
+    if (!owner) {
+      throw new ConvexError('Invalid ownerAuthUserId: creator not found');
+    }
+    const connectionId = await ctx.db.insert('collaborator_connections', {
+      ownerAuthUserId: args.ownerAuthUserId,
       provider: 'jinxxy',
       jinxxyApiKeyEncrypted: args.jinxxyApiKeyEncrypted,
       webhookConfigured: false,
@@ -238,6 +271,18 @@ export const addCollaboratorConnectionManual = mutation({
       addedByDiscordUserId: args.addedByDiscordUserId,
       createdAt: Date.now(),
     });
+    await ctx.db.insert('audit_events', {
+      authUserId: args.ownerAuthUserId,
+      eventType: 'collaborator.connection.added',
+      actorType: 'system',
+      metadata: {
+        connectionId,
+        collaboratorIdentity: args.collaboratorIdentity,
+        addedByDiscordUserId: args.addedByDiscordUserId,
+      },
+      createdAt: Date.now(),
+    });
+    return connectionId;
   },
 });
 
@@ -248,15 +293,22 @@ export const revokeCollaboratorInvite = mutation({
   args: {
     apiSecret: v.string(),
     inviteId: v.id('collaborator_invites'),
-    ownerTenantId: v.id('tenants'),
+    ownerAuthUserId: v.string(),
   },
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
     const invite = await ctx.db.get(args.inviteId);
-    if (!invite || invite.ownerTenantId !== args.ownerTenantId) {
+    if (!invite || invite.ownerAuthUserId !== args.ownerAuthUserId) {
       throw new Error('Invite not found or access denied');
     }
     await ctx.db.patch(args.inviteId, { status: 'revoked' });
+    await ctx.db.insert('audit_events', {
+      authUserId: args.ownerAuthUserId,
+      eventType: 'collaborator.invite.revoked',
+      actorType: 'system',
+      metadata: { inviteId: args.inviteId },
+      createdAt: Date.now(),
+    });
   },
 });
 
@@ -266,13 +318,13 @@ export const revokeCollaboratorInvite = mutation({
 export const listCollaboratorConnections = query({
   args: {
     apiSecret: v.string(),
-    ownerTenantId: v.id('tenants'),
+    ownerAuthUserId: v.string(),
   },
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
     const connections = await ctx.db
       .query('collaborator_connections')
-      .withIndex('by_owner', (q) => q.eq('ownerTenantId', args.ownerTenantId))
+      .withIndex('by_owner', (q) => q.eq('ownerAuthUserId', args.ownerAuthUserId))
       .collect();
 
     return connections.map((c) => ({
@@ -297,15 +349,22 @@ export const removeCollaboratorConnection = mutation({
   args: {
     apiSecret: v.string(),
     connectionId: v.id('collaborator_connections'),
-    ownerTenantId: v.id('tenants'),
+    ownerAuthUserId: v.string(),
   },
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
     const conn = await ctx.db.get(args.connectionId);
-    if (!conn || conn.ownerTenantId !== args.ownerTenantId) {
+    if (!conn || conn.ownerAuthUserId !== args.ownerAuthUserId) {
       throw new Error('Connection not found or access denied');
     }
     await ctx.db.patch(args.connectionId, { status: 'disconnected' });
+    await ctx.db.insert('audit_events', {
+      authUserId: args.ownerAuthUserId,
+      eventType: 'collaborator.connection.removed',
+      actorType: 'system',
+      metadata: { connectionId: args.connectionId },
+      createdAt: Date.now(),
+    });
   },
 });
 
@@ -316,7 +375,7 @@ export const removeCollaboratorConnection = mutation({
 export const getCollabConnectionsForVerification = query({
   args: {
     apiSecret: v.string(),
-    ownerTenantId: v.id('tenants'),
+    ownerAuthUserId: v.string(),
   },
   returns: v.array(
     v.object({
@@ -329,7 +388,7 @@ export const getCollabConnectionsForVerification = query({
     const connections = await ctx.db
       .query('collaborator_connections')
       .withIndex('by_owner_status', (q) =>
-        q.eq('ownerTenantId', args.ownerTenantId).eq('status', 'active')
+        q.eq('ownerAuthUserId', args.ownerAuthUserId).eq('status', 'active')
       )
       .collect();
 
@@ -369,7 +428,7 @@ export const getCollabWebhookSecret = query({
  */
 export const getActiveByCollaboratorDiscord = internalQuery({
   args: { collaboratorDiscordUserId: v.string() },
-  returns: v.array(v.object({ ownerTenantId: v.id('tenants') })),
+  returns: v.array(v.object({ ownerAuthUserId: v.string() })),
   handler: async (ctx, args) => {
     const connections = await ctx.db
       .query('collaborator_connections')
@@ -378,6 +437,6 @@ export const getActiveByCollaboratorDiscord = internalQuery({
       )
       .filter((q) => q.eq(q.field('status'), 'active'))
       .collect();
-    return connections.map((c) => ({ ownerTenantId: c.ownerTenantId }));
+    return connections.map((c) => ({ ownerAuthUserId: c.ownerAuthUserId }));
   },
 });

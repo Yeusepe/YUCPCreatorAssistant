@@ -8,7 +8,7 @@
  * Plan Phase 3: event → purchase_facts → link subject → entitlements → role_sync
  */
 
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
@@ -80,41 +80,40 @@ export const processWebhookEvent = internalMutation({
     if (!event) {
       return { success: false, error: 'Event not found' };
     }
+    if (event.signatureValid !== true) {
+      throw new ConvexError('Cannot process unverified webhook event');
+    }
     if (event.status !== 'pending') {
       return { success: true }; // Already processed
     }
-    if (!event.tenantId) {
+    if (!event.authUserId) {
       await ctx.db.patch(args.eventId, {
         status: 'failed',
-        errorMessage: 'Missing tenantId',
+        errorMessage: 'Missing authUserId',
         processedAt: Date.now(),
       });
-      return { success: false, error: 'Missing tenantId' };
+      return { success: false, error: 'Missing authUserId' };
     }
 
-    const tenantId = event.tenantId;
+    const authUserId = event.authUserId;
     const provider = (event.providerKey ?? event.provider) as string;
     const rawPayload = event.rawPayload as Record<string, unknown>;
 
     const EVENT_PROCESSORS: Record<
       string,
       // biome-ignore lint/suspicious/noExplicitAny: processor functions use any for ctx/event
-      (
-        ctx: any,
-        tenantId: Id<'tenants'>,
-        event: any,
-        payload: Record<string, unknown>
-      ) => Promise<void>
+      (ctx: any, authUserId: string, event: any, payload: Record<string, unknown>) => Promise<void>
     > = {
       gumroad: processGumroadEvent,
       jinxxy: processJinxxyEvent,
       lemonsqueezy: processLemonEvent,
+      payhip: processPayhipEvent,
     };
 
     try {
       const processor = EVENT_PROCESSORS[provider];
       if (processor) {
-        await processor(ctx, tenantId, event, rawPayload);
+        await processor(ctx, authUserId, event, rawPayload);
       } else {
         await ctx.db.patch(args.eventId, {
           status: 'failed',
@@ -143,7 +142,7 @@ export const processWebhookEvent = internalMutation({
 
 async function processGumroadEvent(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   event: any,
   payload: Record<string, unknown>
 ): Promise<void> {
@@ -151,7 +150,7 @@ async function processGumroadEvent(
   const productId = (payload.product_id ?? payload.short_product_id ?? '') as string;
   const email = (payload.email ?? '') as string;
   const refunded = payload.refunded === true || payload.refunded === 'true';
-  const eventType = event.eventType as string;
+  const _eventType = event.eventType as string;
 
   if (!saleId || !productId) {
     throw new Error('Gumroad: missing sale_id or product_id');
@@ -167,8 +166,8 @@ async function processGumroadEvent(
 
   const existing = await ctx.db
     .query('purchase_facts')
-    .withIndex('by_tenant_provider_order', (q: any) =>
-      q.eq('tenantId', tenantId).eq('provider', 'gumroad').eq('externalOrderId', saleId)
+    .withIndex('by_auth_user_provider_order', (q: any) =>
+      q.eq('authUserId', authUserId).eq('provider', 'gumroad').eq('externalOrderId', saleId)
     )
     .first();
 
@@ -184,7 +183,7 @@ async function processGumroadEvent(
     });
 
     if (refunded && existing.subjectId) {
-      await revokeEntitlementForPurchaseFact(ctx, tenantId, existing, sourceRef);
+      await revokeEntitlementForPurchaseFact(ctx, authUserId, existing, sourceRef);
     }
   } else {
     if (refunded) {
@@ -192,11 +191,11 @@ async function processGumroadEvent(
     }
 
     const subjectId = buyerEmailHash
-      ? await findSubjectByEmailHash(ctx, tenantId, buyerEmailHash)
+      ? await findSubjectByEmailHash(ctx, authUserId, buyerEmailHash)
       : undefined;
 
     await ctx.db.insert('purchase_facts', {
-      tenantId,
+      authUserId,
       provider: 'gumroad',
       externalOrderId: saleId,
       buyerEmailNormalized,
@@ -214,7 +213,7 @@ async function processGumroadEvent(
     if (subjectId) {
       await projectEntitlementFromPurchaseFact(
         ctx,
-        tenantId,
+        authUserId,
         subjectId,
         productId,
         sourceRef,
@@ -226,7 +225,7 @@ async function processGumroadEvent(
 
 async function processJinxxyEvent(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   event: any,
   payload: Record<string, unknown>
 ): Promise<void> {
@@ -254,8 +253,8 @@ async function processJinxxyEvent(
   const jinxxyUserId = (data.user as { id?: string })?.id;
 
   const subjectId =
-    (buyerEmailHash ? await findSubjectByEmailHash(ctx, tenantId, buyerEmailHash) : undefined) ??
-    (jinxxyUserId ? await findSubjectByJinxxyUserId(ctx, tenantId, jinxxyUserId) : undefined);
+    (buyerEmailHash ? await findSubjectByEmailHash(ctx, authUserId, buyerEmailHash) : undefined) ??
+    (jinxxyUserId ? await findSubjectByJinxxyUserId(ctx, authUserId, jinxxyUserId) : undefined);
 
   const now = Date.now();
 
@@ -268,8 +267,8 @@ async function processJinxxyEvent(
 
     const existing = await ctx.db
       .query('purchase_facts')
-      .withIndex('by_tenant_provider_order', (q: any) =>
-        q.eq('tenantId', tenantId).eq('provider', 'jinxxy').eq('externalOrderId', orderId)
+      .withIndex('by_auth_user_provider_order', (q: any) =>
+        q.eq('authUserId', authUserId).eq('provider', 'jinxxy').eq('externalOrderId', orderId)
       )
       .filter((q: any) => q.eq(q.field('externalLineItemId'), externalLineItemId))
       .first();
@@ -287,12 +286,12 @@ async function processJinxxyEvent(
         subjectId: resolvedSubjectId,
       });
       if (!isPaid && existing.subjectId) {
-        await revokeEntitlementForPurchaseFact(ctx, tenantId, existing, sourceRef);
+        await revokeEntitlementForPurchaseFact(ctx, authUserId, existing, sourceRef);
       } else if (isPaid && resolvedSubjectId && !existing.subjectId) {
         // Previously had no subjectId (e.g. email not linked); now we have it via Jinxxy user ID
         await projectEntitlementFromPurchaseFact(
           ctx,
-          tenantId,
+          authUserId,
           resolvedSubjectId,
           providerProductId,
           sourceRef,
@@ -301,7 +300,7 @@ async function processJinxxyEvent(
       }
     } else if (isPaid) {
       await ctx.db.insert('purchase_facts', {
-        tenantId,
+        authUserId,
         provider: 'jinxxy',
         externalOrderId: orderId,
         externalLineItemId,
@@ -321,7 +320,7 @@ async function processJinxxyEvent(
       if (subjectId) {
         await projectEntitlementFromPurchaseFact(
           ctx,
-          tenantId,
+          authUserId,
           subjectId,
           providerProductId,
           sourceRef,
@@ -334,7 +333,7 @@ async function processJinxxyEvent(
 
 async function resolveLemonCatalogProduct(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   providerRefs: string[]
 ): Promise<{ catalogProductId?: Id<'product_catalog'>; productId?: string }> {
   for (const ref of providerRefs.filter(Boolean)) {
@@ -343,7 +342,7 @@ async function resolveLemonCatalogProduct(
       .withIndex('by_external_variant', (q: any) =>
         q.eq('providerKey', 'lemonsqueezy').eq('externalVariantId', ref)
       )
-      .filter((q: any) => q.eq(q.field('tenantId'), tenantId))
+      .filter((q: any) => q.eq(q.field('authUserId'), authUserId))
       .first();
     if (mapping?.catalogProductId || mapping?.localProductId) {
       return {
@@ -355,7 +354,7 @@ async function resolveLemonCatalogProduct(
 
   const catalogProducts = await ctx.db
     .query('product_catalog')
-    .withIndex('by_tenant', (q: any) => q.eq('tenantId', tenantId))
+    .withIndex('by_auth_user', (q: any) => q.eq('authUserId', authUserId))
     .filter((q: any) => q.eq(q.field('status'), 'active'))
     .collect();
 
@@ -373,7 +372,7 @@ async function resolveLemonCatalogProduct(
 
 async function projectCanonicalEntitlement(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   subjectId: Id<'subjects'>,
   provider: 'lemonsqueezy',
   sourceRef: string,
@@ -383,8 +382,8 @@ async function projectCanonicalEntitlement(
 ): Promise<void> {
   const existing = await ctx.db
     .query('entitlements')
-    .withIndex('by_tenant_subject', (q: any) =>
-      q.eq('tenantId', tenantId).eq('subjectId', subjectId)
+    .withIndex('by_auth_user_subject', (q: any) =>
+      q.eq('authUserId', authUserId).eq('subjectId', subjectId)
     )
     .filter((q: any) => q.eq(q.field('sourceReference'), sourceRef))
     .first();
@@ -404,7 +403,7 @@ async function projectCanonicalEntitlement(
     entitlementId = existing._id;
   } else {
     entitlementId = await ctx.db.insert('entitlements', {
-      tenantId,
+      authUserId,
       subjectId,
       productId,
       sourceProvider: provider,
@@ -425,21 +424,21 @@ async function projectCanonicalEntitlement(
     !discordUserId.startsWith('jinxxy:') &&
     !discordUserId.startsWith('lemonsqueezy:')
   ) {
-    await emitRoleSyncJob(ctx, tenantId, subjectId, discordUserId, entitlementId);
+    await emitRoleSyncJob(ctx, authUserId, subjectId, discordUserId, entitlementId);
   }
 }
 
 async function revokeCanonicalEntitlementBySource(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   subjectId: Id<'subjects'> | undefined,
   sourceRef: string
 ): Promise<void> {
   if (!subjectId) return;
   const entitlement = await ctx.db
     .query('entitlements')
-    .withIndex('by_tenant_subject', (q: any) =>
-      q.eq('tenantId', tenantId).eq('subjectId', subjectId)
+    .withIndex('by_auth_user_subject', (q: any) =>
+      q.eq('authUserId', authUserId).eq('subjectId', subjectId)
     )
     .filter((q: any) => q.eq(q.field('sourceReference'), sourceRef))
     .filter((q: any) => q.eq(q.field('status'), 'active'))
@@ -462,13 +461,13 @@ async function revokeCanonicalEntitlementBySource(
     !discordUserId.startsWith('jinxxy:') &&
     !discordUserId.startsWith('lemonsqueezy:')
   ) {
-    await emitRoleRemovalJobs(ctx, tenantId, subjectId, entitlement.productId, discordUserId);
+    await emitRoleRemovalJobs(ctx, authUserId, subjectId, entitlement.productId, discordUserId);
   }
 }
 
 async function processLemonEvent(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   event: any,
   payload: Record<string, unknown>
 ): Promise<void> {
@@ -491,7 +490,9 @@ async function processLemonEvent(
       ? normalizeEmail(attributes.user_email)
       : undefined;
   const emailHash = normalizedEmail ? await sha256Hex(normalizedEmail) : undefined;
-  const subjectId = emailHash ? await findSubjectByEmailHash(ctx, tenantId, emailHash) : undefined;
+  const subjectId = emailHash
+    ? await findSubjectByEmailHash(ctx, authUserId, emailHash)
+    : undefined;
   const now = Date.now();
 
   if (eventType.startsWith('order_')) {
@@ -503,7 +504,7 @@ async function processLemonEvent(
       attributes.first_order_item && typeof attributes.first_order_item === 'object'
         ? String((attributes.first_order_item as any).product_id ?? '')
         : '';
-    const resolved = await resolveLemonCatalogProduct(ctx, tenantId, [variantId, productId]);
+    const resolved = await resolveLemonCatalogProduct(ctx, authUserId, [variantId, productId]);
     const transactionStatus =
       eventType === 'order_refunded' || attributes.refunded === true ? 'refunded' : 'paid';
 
@@ -512,7 +513,7 @@ async function processLemonEvent(
       .withIndex('by_external_id', (q: any) =>
         q.eq('providerKey', 'lemonsqueezy').eq('externalTransactionId', objectId)
       )
-      .filter((q: any) => q.eq(q.field('tenantId'), tenantId))
+      .filter((q: any) => q.eq(q.field('authUserId'), authUserId))
       .first();
     const transactionId = existing?._id
       ? (await ctx.db.patch(existing._id, {
@@ -560,7 +561,7 @@ async function processLemonEvent(
         }),
         existing._id)
       : await ctx.db.insert('provider_transactions', {
-          tenantId,
+          authUserId,
           providerConnectionId: connectionId,
           providerKey: 'lemonsqueezy',
           externalTransactionId: objectId,
@@ -620,7 +621,7 @@ async function processLemonEvent(
       });
     } else {
       await ctx.db.insert('entitlement_evidence', {
-        tenantId,
+        authUserId,
         subjectId,
         providerKey: 'lemonsqueezy',
         providerConnectionId: connectionId,
@@ -641,7 +642,7 @@ async function processLemonEvent(
     if (subjectId && resolved.productId && transactionStatus !== 'refunded') {
       await projectCanonicalEntitlement(
         ctx,
-        tenantId,
+        authUserId,
         subjectId,
         'lemonsqueezy',
         sourceRef,
@@ -650,7 +651,7 @@ async function processLemonEvent(
         typeof attributes.created_at === 'string' ? new Date(attributes.created_at).getTime() : now
       );
     } else if (transactionStatus === 'refunded') {
-      await revokeCanonicalEntitlementBySource(ctx, tenantId, subjectId, sourceRef);
+      await revokeCanonicalEntitlementBySource(ctx, authUserId, subjectId, sourceRef);
     }
     return;
   }
@@ -670,14 +671,14 @@ async function processLemonEvent(
             : attributes.status === 'on_trial'
               ? 'trialing'
               : 'active';
-    const resolved = await resolveLemonCatalogProduct(ctx, tenantId, [variantId, productId]);
+    const resolved = await resolveLemonCatalogProduct(ctx, authUserId, [variantId, productId]);
 
     const existing = await ctx.db
       .query('provider_memberships')
       .withIndex('by_external_id', (q: any) =>
         q.eq('providerKey', 'lemonsqueezy').eq('externalMembershipId', objectId)
       )
-      .filter((q: any) => q.eq(q.field('tenantId'), tenantId))
+      .filter((q: any) => q.eq(q.field('authUserId'), authUserId))
       .first();
     const membershipId = existing?._id
       ? (await ctx.db.patch(existing._id, {
@@ -714,7 +715,7 @@ async function processLemonEvent(
         }),
         existing._id)
       : await ctx.db.insert('provider_memberships', {
-          tenantId,
+          authUserId,
           providerConnectionId: connectionId,
           providerKey: 'lemonsqueezy',
           externalMembershipId: objectId,
@@ -769,7 +770,7 @@ async function processLemonEvent(
       });
     } else {
       await ctx.db.insert('entitlement_evidence', {
-        tenantId,
+        authUserId,
         subjectId,
         providerKey: 'lemonsqueezy',
         providerConnectionId: connectionId,
@@ -790,7 +791,7 @@ async function processLemonEvent(
     if (subjectId && resolved.productId && evidenceStatus === 'active') {
       await projectCanonicalEntitlement(
         ctx,
-        tenantId,
+        authUserId,
         subjectId,
         'lemonsqueezy',
         sourceRef,
@@ -799,7 +800,7 @@ async function processLemonEvent(
         typeof attributes.created_at === 'string' ? new Date(attributes.created_at).getTime() : now
       );
     } else if (evidenceStatus === 'revoked') {
-      await revokeCanonicalEntitlementBySource(ctx, tenantId, subjectId, sourceRef);
+      await revokeCanonicalEntitlementBySource(ctx, authUserId, subjectId, sourceRef);
     }
     return;
   }
@@ -820,7 +821,7 @@ async function processLemonEvent(
       .withIndex('by_external_id', (q: any) =>
         q.eq('providerKey', 'lemonsqueezy').eq('externalLicenseId', objectId)
       )
-      .filter((q: any) => q.eq(q.field('tenantId'), tenantId))
+      .filter((q: any) => q.eq(q.field('authUserId'), authUserId))
       .first();
     const licenseId = existing?._id
       ? (await ctx.db.patch(existing._id, {
@@ -861,7 +862,7 @@ async function processLemonEvent(
         }),
         existing._id)
       : await ctx.db.insert('provider_licenses', {
-          tenantId,
+          authUserId,
           providerConnectionId: connectionId,
           providerKey: 'lemonsqueezy',
           externalLicenseId: objectId,
@@ -893,7 +894,7 @@ async function processLemonEvent(
           updatedAt: now,
         });
 
-    const resolved = await resolveLemonCatalogProduct(ctx, tenantId, [variantId, productId]);
+    const resolved = await resolveLemonCatalogProduct(ctx, authUserId, [variantId, productId]);
     const sourceRef = `lemonsqueezy:license:${objectId}`;
     const evidenceStatus = licenseStatus === 'active' ? 'active' : 'revoked';
     const evidenceExisting = await ctx.db
@@ -917,7 +918,7 @@ async function processLemonEvent(
       });
     } else {
       await ctx.db.insert('entitlement_evidence', {
-        tenantId,
+        authUserId,
         subjectId,
         providerKey: 'lemonsqueezy',
         providerConnectionId: connectionId,
@@ -938,7 +939,7 @@ async function processLemonEvent(
     if (subjectId && resolved.productId && evidenceStatus === 'active') {
       await projectCanonicalEntitlement(
         ctx,
-        tenantId,
+        authUserId,
         subjectId,
         'lemonsqueezy',
         sourceRef,
@@ -947,8 +948,209 @@ async function processLemonEvent(
         typeof attributes.created_at === 'string' ? new Date(attributes.created_at).getTime() : now
       );
     } else if (evidenceStatus === 'revoked') {
-      await revokeCanonicalEntitlementBySource(ctx, tenantId, subjectId, sourceRef);
+      await revokeCanonicalEntitlementBySource(ctx, authUserId, subjectId, sourceRef);
     }
+  }
+}
+
+/**
+ * Process a Payhip webhook event.
+ *
+ * Handles `paid` and `refunded` events. Each transaction can have multiple items.
+ * The canonical product identifier is `items[].product_key` (the permalink, e.g. "RGsF"),
+ * matching the `product_link` field returned by the Payhip license key verify API.
+ * The numeric `product_id` is used only for per-line-item deduplication.
+ *
+ * Also upserts each product into `provider_catalog_mappings` so that names discovered
+ * from webhook events are available for product-listing even before any manual setup.
+ */
+async function processPayhipEvent(
+  ctx: any,
+  authUserId: string,
+  event: any,
+  payload: Record<string, unknown>
+): Promise<void> {
+  const transactionId = String(payload.id ?? '');
+  const email = String(payload.email ?? '');
+  const eventType = String(payload.type ?? '');
+  const dateSec = typeof payload.date === 'number' ? payload.date : 0;
+  const purchasedAt = dateSec > 0 ? dateSec * 1000 : Date.now();
+
+  const items = (payload.items ?? []) as Array<{
+    product_id?: string;
+    product_key?: string;
+    product_name?: string;
+    product_permalink?: string;
+  }>;
+
+  if (!transactionId) {
+    throw new Error('Payhip webhook missing id field');
+  }
+
+  const buyerEmailNormalized = email ? normalizeEmail(email) : undefined;
+  const buyerEmailHash = buyerEmailNormalized ? await sha256Hex(buyerEmailNormalized) : undefined;
+  const subjectId = buyerEmailHash
+    ? await findSubjectByEmailHash(ctx, authUserId, buyerEmailHash)
+    : undefined;
+
+  const now = Date.now();
+
+  // Upsert catalog mappings so product names are discoverable
+  const conn = await ctx.db
+    .query('provider_connections')
+    .withIndex('by_auth_user_provider', (q: any) =>
+      q.eq('authUserId', authUserId).eq('provider', 'payhip')
+    )
+    .first();
+
+  if (conn) {
+    for (const item of items) {
+      const permalink = item.product_key;
+      if (!permalink) continue;
+      await upsertPayhipCatalogMapping(ctx, authUserId, conn._id, {
+        permalink,
+        displayName: item.product_name,
+        productPermalink: item.product_permalink,
+      });
+    }
+  }
+
+  if (eventType === 'paid') {
+    for (const item of items) {
+      const permalink = item.product_key;
+      if (!permalink) continue;
+
+      const externalLineItemId = item.product_id ? String(item.product_id) : permalink;
+      const sourceRef = `payhip:${transactionId}:${externalLineItemId}`;
+
+      const existing = await ctx.db
+        .query('purchase_facts')
+        .withIndex('by_auth_user_provider_order', (q: any) =>
+          q
+            .eq('authUserId', authUserId)
+            .eq('provider', 'payhip')
+            .eq('externalOrderId', transactionId)
+        )
+        .filter((q: any) => q.eq(q.field('externalLineItemId'), externalLineItemId))
+        .first();
+
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          lifecycleStatus: 'active',
+          paymentStatus: 'paid',
+          subjectId: subjectId ?? existing.subjectId,
+          rawSourceEventId: event._id,
+          updatedAt: now,
+        });
+      } else {
+        await ctx.db.insert('purchase_facts', {
+          authUserId,
+          provider: 'payhip',
+          externalOrderId: transactionId,
+          externalLineItemId,
+          buyerEmailNormalized,
+          buyerEmailHash,
+          providerProductId: permalink,
+          paymentStatus: 'paid',
+          lifecycleStatus: 'active',
+          purchasedAt,
+          rawSourceEventId: event._id,
+          subjectId,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      if (subjectId) {
+        await projectEntitlementFromPurchaseFact(
+          ctx,
+          authUserId,
+          subjectId,
+          permalink,
+          sourceRef,
+          purchasedAt
+        );
+      }
+    }
+  } else if (eventType === 'refunded') {
+    for (const item of items) {
+      const permalink = item.product_key;
+      if (!permalink) continue;
+
+      const externalLineItemId = item.product_id ? String(item.product_id) : permalink;
+      const sourceRef = `payhip:${transactionId}:${externalLineItemId}`;
+
+      const existing = await ctx.db
+        .query('purchase_facts')
+        .withIndex('by_auth_user_provider_order', (q: any) =>
+          q
+            .eq('authUserId', authUserId)
+            .eq('provider', 'payhip')
+            .eq('externalOrderId', transactionId)
+        )
+        .filter((q: any) => q.eq(q.field('externalLineItemId'), externalLineItemId))
+        .first();
+
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          lifecycleStatus: 'refunded',
+          paymentStatus: 'refunded',
+          rawSourceEventId: event._id,
+          updatedAt: now,
+        });
+        if (existing.subjectId) {
+          await revokeEntitlementForPurchaseFact(ctx, authUserId, existing, sourceRef);
+        }
+      }
+    }
+  }
+  // subscription.created / subscription.deleted, out of scope for v1, silently ignored
+}
+
+/**
+ * Upsert a Payhip product entry into `provider_catalog_mappings`.
+ * Called from processPayhipEvent whenever a purchase webhook fires so that product
+ * names discovered from real sales are stored and available for the products UI.
+ */
+async function upsertPayhipCatalogMapping(
+  ctx: any,
+  authUserId: string,
+  connectionId: Id<'provider_connections'>,
+  product: { permalink: string; displayName?: string; productPermalink?: string }
+): Promise<void> {
+  const existing = await ctx.db
+    .query('provider_catalog_mappings')
+    .withIndex('by_connection', (q: any) => q.eq('providerConnectionId', connectionId))
+    .filter((q: any) => q.eq(q.field('externalProductId'), product.permalink))
+    .first();
+
+  const now = Date.now();
+  if (existing) {
+    if (!existing.displayName && product.displayName) {
+      await ctx.db.patch(existing._id, {
+        displayName: product.displayName,
+        metadata: {
+          ...(typeof existing.metadata === 'object' && existing.metadata !== null
+            ? existing.metadata
+            : {}),
+          productPermalink:
+            product.productPermalink ?? (existing.metadata as any)?.productPermalink,
+        },
+        updatedAt: now,
+      });
+    }
+  } else {
+    await ctx.db.insert('provider_catalog_mappings', {
+      authUserId,
+      providerConnectionId: connectionId,
+      providerKey: 'payhip',
+      externalProductId: product.permalink,
+      displayName: product.displayName,
+      status: 'active',
+      metadata: { productPermalink: product.productPermalink },
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 }
 
@@ -957,7 +1159,7 @@ async function processLemonEvent(
  */
 async function findSubjectByEmailHash(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   emailHash: string
 ): Promise<Id<'subjects'> | undefined> {
   const externalAccounts = await ctx.db
@@ -969,8 +1171,8 @@ async function findSubjectByEmailHash(
   for (const ext of externalAccounts) {
     const binding = await ctx.db
       .query('bindings')
-      .withIndex('by_tenant_external', (q: any) =>
-        q.eq('tenantId', tenantId).eq('externalAccountId', ext._id)
+      .withIndex('by_auth_user_external', (q: any) =>
+        q.eq('authUserId', authUserId).eq('externalAccountId', ext._id)
       )
       .filter((q: any) => q.eq(q.field('status'), 'active'))
       .first();
@@ -989,7 +1191,7 @@ async function findSubjectByEmailHash(
  */
 async function findSubjectByJinxxyUserId(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   jinxxyUserId: string
 ): Promise<Id<'subjects'> | undefined> {
   const ext = await ctx.db
@@ -1003,8 +1205,8 @@ async function findSubjectByJinxxyUserId(
 
   const binding = await ctx.db
     .query('bindings')
-    .withIndex('by_tenant_external', (q: any) =>
-      q.eq('tenantId', tenantId).eq('externalAccountId', ext._id)
+    .withIndex('by_auth_user_external', (q: any) =>
+      q.eq('authUserId', authUserId).eq('externalAccountId', ext._id)
     )
     .filter((q: any) => q.eq(q.field('status'), 'active'))
     .first();
@@ -1017,14 +1219,17 @@ async function findSubjectByJinxxyUserId(
  */
 async function projectEntitlementFromPurchaseFact(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   subjectId: Id<'subjects'>,
   providerProductId: string,
   sourceRef: string,
   purchasedAt: number
 ): Promise<void> {
-  const tenant = await ctx.db.get(tenantId);
-  const verificationScope = tenant?.policy?.verificationScope ?? 'account';
+  const creatorProfile = await ctx.db
+    .query('creator_profiles')
+    .withIndex('by_auth_user', (q: any) => q.eq('authUserId', authUserId))
+    .first();
+  const verificationScope = creatorProfile?.policy?.verificationScope ?? 'account';
 
   if (verificationScope === 'license') {
     return; // Do not project until subject proves ownership via license flow
@@ -1032,7 +1237,7 @@ async function projectEntitlementFromPurchaseFact(
 
   const catalogProducts = await ctx.db
     .query('product_catalog')
-    .withIndex('by_tenant', (q: any) => q.eq('tenantId', tenantId))
+    .withIndex('by_auth_user', (q: any) => q.eq('authUserId', authUserId))
     .filter((q: any) => q.eq(q.field('providerProductRef'), providerProductId))
     .filter((q: any) => q.eq(q.field('status'), 'active'))
     .collect();
@@ -1043,8 +1248,8 @@ async function projectEntitlementFromPurchaseFact(
 
   const existing = await ctx.db
     .query('entitlements')
-    .withIndex('by_tenant_subject', (q: any) =>
-      q.eq('tenantId', tenantId).eq('subjectId', subjectId)
+    .withIndex('by_auth_user_subject', (q: any) =>
+      q.eq('authUserId', authUserId).eq('subjectId', subjectId)
     )
     .filter((q: any) => q.eq(q.field('sourceReference'), sourceRef))
     .first();
@@ -1066,7 +1271,7 @@ async function projectEntitlementFromPurchaseFact(
     entitlementId = existing._id;
   } else {
     entitlementId = await ctx.db.insert('entitlements', {
-      tenantId,
+      authUserId,
       subjectId,
       productId,
       sourceProvider: catalogProduct?.provider ?? 'gumroad',
@@ -1086,7 +1291,7 @@ async function projectEntitlementFromPurchaseFact(
     !discordUserId.startsWith('gumroad:') &&
     !discordUserId.startsWith('jinxxy:')
   ) {
-    await emitRoleSyncJob(ctx, tenantId, subjectId, discordUserId, entitlementId);
+    await emitRoleSyncJob(ctx, authUserId, subjectId, discordUserId, entitlementId);
   }
 }
 
@@ -1095,14 +1300,14 @@ async function projectEntitlementFromPurchaseFact(
  */
 async function revokeEntitlementForPurchaseFact(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   purchaseFact: any,
   sourceRef: string
 ): Promise<void> {
   const entitlement = await ctx.db
     .query('entitlements')
-    .withIndex('by_tenant_subject', (q: any) =>
-      q.eq('tenantId', tenantId).eq('subjectId', purchaseFact.subjectId)
+    .withIndex('by_auth_user_subject', (q: any) =>
+      q.eq('authUserId', authUserId).eq('subjectId', purchaseFact.subjectId)
     )
     .filter((q: any) => q.eq(q.field('sourceReference'), sourceRef))
     .filter((q: any) => q.eq(q.field('status'), 'active'))
@@ -1125,7 +1330,7 @@ async function revokeEntitlementForPurchaseFact(
     ) {
       await emitRoleRemovalJobs(
         ctx,
-        tenantId,
+        authUserId,
         purchaseFact.subjectId,
         entitlement.productId,
         discordUserId
@@ -1136,13 +1341,13 @@ async function revokeEntitlementForPurchaseFact(
 
 async function emitRoleSyncJob(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   subjectId: Id<'subjects'>,
   discordUserId: string,
   entitlementId: Id<'entitlements'>
 ): Promise<void> {
   const now = Date.now();
-  const idempotencyKey = `role_sync:${tenantId}:${subjectId}:${entitlementId}:${now}`;
+  const idempotencyKey = `role_sync:${authUserId}:${subjectId}:${entitlementId}:${now}`;
 
   const existing = await ctx.db
     .query('outbox_jobs')
@@ -1151,7 +1356,7 @@ async function emitRoleSyncJob(
   if (existing) return;
 
   await ctx.db.insert('outbox_jobs', {
-    tenantId,
+    authUserId,
     jobType: 'role_sync',
     payload: { subjectId, discordUserId, entitlementId },
     status: 'pending',
@@ -1166,14 +1371,14 @@ async function emitRoleSyncJob(
 
 async function emitRoleRemovalJobs(
   ctx: any,
-  tenantId: Id<'tenants'>,
+  authUserId: string,
   subjectId: Id<'subjects'>,
   productId: string,
   discordUserId: string
 ): Promise<void> {
   const roleRules = await ctx.db
     .query('role_rules')
-    .withIndex('by_tenant', (q: any) => q.eq('tenantId', tenantId))
+    .withIndex('by_auth_user', (q: any) => q.eq('authUserId', authUserId))
     .filter((q: any) => q.eq(q.field('productId'), productId))
     .filter((q: any) => q.eq(q.field('enabled'), true))
     .filter((q: any) => q.eq(q.field('removeOnRevoke'), true))
@@ -1181,7 +1386,7 @@ async function emitRoleRemovalJobs(
 
   const now = Date.now();
   for (const rule of roleRules) {
-    const idempotencyKey = `role_removal:${tenantId}:${subjectId}:${rule.guildId}:${productId}:${now}`;
+    const idempotencyKey = `role_removal:${authUserId}:${subjectId}:${rule.guildId}:${productId}:${now}`;
     const existing = await ctx.db
       .query('outbox_jobs')
       .withIndex('by_idempotency', (q: any) => q.eq('idempotencyKey', idempotencyKey))
@@ -1189,7 +1394,7 @@ async function emitRoleRemovalJobs(
     if (existing) continue;
 
     await ctx.db.insert('outbox_jobs', {
-      tenantId,
+      authUserId,
       jobType: 'role_removal',
       payload: {
         subjectId,

@@ -83,7 +83,7 @@ async function getClients(): Promise<PrivateRpcClients> {
 export async function createSetupSessionToken(params: {
   discordUserId: string;
   guildId: string;
-  tenantId: string;
+  authUserId: string;
 }): Promise<string | undefined> {
   const response = await (await getClients()).setup.createSetupSession(params);
   return response.token;
@@ -91,6 +91,7 @@ export async function createSetupSessionToken(params: {
 
 export async function createConnectToken(params: {
   discordUserId: string;
+  guildId: string;
 }): Promise<string | undefined> {
   const response = await (await getClients()).setup.createConnectToken(params);
   return response.token;
@@ -99,7 +100,7 @@ export async function createConnectToken(params: {
 export async function createDiscordRoleSetupSessionToken(params: {
   adminDiscordUserId: string;
   guildId: string;
-  tenantId: string;
+  authUserId: string;
 }): Promise<string | undefined> {
   const response = await (await getClients()).setup.createDiscordRoleSetupSession(params);
   return response.token;
@@ -135,42 +136,62 @@ function normalizeProducts(
   }));
 }
 
-export async function listGumroadProducts(tenantId: string): Promise<{
+export async function listGumroadProducts(authUserId: string): Promise<{
   error?: string;
   products: Array<{ collaboratorName?: string; id: string; name: string }>;
 }> {
-  const response = await (await getClients()).catalog.listGumroadProducts({ tenantId });
+  const response = await (await getClients()).catalog.listGumroadProducts({ authUserId });
   return {
     products: normalizeProducts(response.products),
     error: response.error,
   };
 }
 
-export async function listJinxxyProducts(tenantId: string): Promise<{
+export async function listJinxxyProducts(authUserId: string): Promise<{
   error?: string;
   products: Array<{ collaboratorName?: string; id: string; name: string }>;
 }> {
-  const response = await (await getClients()).catalog.listJinxxyProducts({ tenantId });
+  const response = await (await getClients()).catalog.listJinxxyProducts({ authUserId });
   return {
     products: normalizeProducts(response.products),
     error: response.error,
   };
 }
 
-export async function listLemonSqueezyProducts(tenantId: string): Promise<{
+export async function listLemonSqueezyProducts(authUserId: string): Promise<{
   error?: string;
   products: Array<{ collaboratorName?: string; id: string; name: string }>;
 }> {
-  const response = await (await getClients()).catalog.listLemonSqueezyProducts({ tenantId });
+  const response = await (await getClients()).catalog.listLemonSqueezyProducts({ authUserId });
   return {
     products: normalizeProducts(response.products),
     error: response.error,
   };
+}
+
+/** Generic product listing — dispatches to the provider-specific RPC. */
+export async function listProducts(
+  provider: string,
+  authUserId: string
+): Promise<{
+  error?: string;
+  products: Array<{ collaboratorName?: string; id: string; name: string }>;
+}> {
+  switch (provider) {
+    case 'gumroad':
+      return listGumroadProducts(authUserId);
+    case 'jinxxy':
+      return listJinxxyProducts(authUserId);
+    case 'lemonsqueezy':
+      return listLemonSqueezyProducts(authUserId);
+    default:
+      return { products: [], error: `No product listing available for provider: ${provider}` };
+  }
 }
 
 export async function resolveVrchatAvatarName(params: {
   avatarId: string;
-  tenantId: string;
+  authUserId: string;
 }): Promise<ResolveVrchatAvatarNameResponse> {
   const response = await (await getClients()).catalog.resolveVrchatAvatarName(params);
   return {
@@ -185,7 +206,7 @@ export async function bindVerifyPanel(params: {
   interactionToken: string;
   messageId: string;
   panelToken: string;
-  tenantId: string;
+  authUserId: string;
 }): Promise<SuccessResponse> {
   const response = await (await getClients()).verification.bindVerifyPanel(params);
   return {
@@ -200,7 +221,7 @@ export async function completeLicenseVerification(params: {
   licenseKey: string;
   productId?: string;
   subjectId: string;
-  tenantId: string;
+  authUserId: string;
 }): Promise<VerificationResultResponse> {
   const response = await (await getClients()).verification.completeLicenseVerification(params);
   return {
@@ -215,7 +236,7 @@ export async function completeLicenseVerification(params: {
 export async function completeVrchatVerification(params: {
   password: string;
   subjectId: string;
-  tenantId: string;
+  authUserId: string;
   twoFactorCode?: string;
   username: string;
 }): Promise<VerificationResultResponse> {
@@ -232,7 +253,7 @@ export async function completeVrchatVerification(params: {
 export async function disconnectVerification(params: {
   provider: string;
   subjectId: string;
-  tenantId: string;
+  authUserId: string;
 }): Promise<SuccessResponse> {
   const response = await (await getClients()).verification.disconnectVerification(params);
   return {
@@ -246,7 +267,7 @@ export async function createCollaboratorInvite(params: {
   actorDiscordUserId: string;
   guildId: string;
   guildName: string;
-  tenantId: string;
+  authUserId: string;
 }): Promise<CreateCollaboratorInviteResponse> {
   const response = await (await getClients()).collaborator.createInvite(params);
   return {
@@ -258,7 +279,7 @@ export async function createCollaboratorInvite(params: {
 export async function listCollaboratorConnections(params: {
   actorDiscordUserId: string;
   guildId: string;
-  tenantId: string;
+  authUserId: string;
 }): Promise<
   Array<{
     collaboratorDiscordUserId: string;
@@ -287,11 +308,18 @@ export async function listCollaboratorConnections(params: {
 export async function addCollaboratorConnectionManual(params: {
   actorDiscordUserId: string;
   guildId: string;
-  jinxxyApiKey: string;
+  providerKey: string;
+  credential: string;
   serverName?: string;
-  tenantId: string;
+  authUserId: string;
 }): Promise<AddCollaboratorConnectionManualResponse> {
-  const response = await (await getClients()).collaborator.addConnectionManual(params);
+  const response = await (await getClients()).collaborator.addConnectionManual({
+    actorDiscordUserId: params.actorDiscordUserId,
+    guildId: params.guildId,
+    jinxxyApiKey: params.credential,
+    serverName: params.serverName,
+    authUserId: params.authUserId,
+  });
   return {
     success: response.success ?? false,
     connectionId: response.connectionId,
@@ -304,9 +332,23 @@ export async function removeCollaboratorConnection(params: {
   actorDiscordUserId: string;
   connectionId: string;
   guildId: string;
-  tenantId: string;
+  authUserId: string;
 }): Promise<SuccessResponse> {
   const response = await (await getClients()).collaborator.removeConnection(params);
+  return {
+    success: response.success ?? false,
+    error: response.error,
+    supportCode: response.supportCode,
+  };
+}
+
+export async function upsertProductCredential(params: {
+  authUserId: string;
+  providerKey: string;
+  productId: string;
+  productSecretKey: string;
+}): Promise<SuccessResponse> {
+  const response = await (await getClients()).catalog.upsertProductCredential(params);
   return {
     success: response.success ?? false,
     error: response.error,

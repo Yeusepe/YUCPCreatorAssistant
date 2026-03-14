@@ -17,7 +17,7 @@
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { mutation, query } from './_generated/server';
+import { internalQuery, mutation, query } from './_generated/server';
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -107,7 +107,7 @@ function requireApiSecret(apiSecret: string | undefined): void {
  * Internal query to find a subject by authUserId.
  * Used by sync operations to check for existing subjects.
  */
-export const findSubjectByAuthId = query({
+export const findSubjectByAuthId = internalQuery({
   args: {
     authUserId: v.string(),
   },
@@ -145,7 +145,7 @@ export const findSubjectByAuthId = query({
  * Internal query to find a subject by Discord user ID.
  * Used to detect account reconnection scenarios.
  */
-export const findSubjectByDiscordId = query({
+export const findSubjectByDiscordId = internalQuery({
   args: {
     discordUserId: v.string(),
   },
@@ -182,7 +182,7 @@ export const findSubjectByDiscordId = query({
 /**
  * Find external account by provider and provider user ID.
  */
-export const findExternalAccount = query({
+export const findExternalAccount = internalQuery({
   args: {
     provider: v.string(),
     providerUserId: v.string(),
@@ -720,7 +720,7 @@ export const markSubjectSuspicious = mutation({
     subjectId: v.id('subjects'),
     reason: v.string(),
     actorId: v.string(),
-    tenantId: v.optional(v.id('tenants')),
+    authUserId: v.optional(v.string()),
     quarantine: v.optional(v.boolean()),
   },
   returns: v.object({
@@ -754,7 +754,7 @@ export const markSubjectSuspicious = mutation({
     });
 
     await ctx.db.insert('audit_events', {
-      ...(args.tenantId && { tenantId: args.tenantId }),
+      ...(args.authUserId && { authUserId: args.authUserId }),
       eventType: 'subject.suspicious.marked',
       actorType: 'admin',
       actorId: args.actorId,
@@ -774,7 +774,7 @@ export const markSubjectSuspicious = mutation({
 export const listSuspiciousSubjects = query({
   args: {
     apiSecret: v.string(),
-    tenantId: v.optional(v.id('tenants')),
+    authUserId: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
   returns: v.array(
@@ -793,11 +793,11 @@ export const listSuspiciousSubjects = query({
     }
     const limit = Math.min(args.limit ?? 25, 50);
     let subjectIds: Id<'subjects'>[];
-    if (args.tenantId) {
+    if (args.authUserId) {
       const events = await ctx.db
         .query('audit_events')
-        .withIndex('by_tenant_event', (q) =>
-          q.eq('tenantId', args.tenantId!).eq('eventType', 'subject.suspicious.marked')
+        .withIndex('by_auth_user_event', (q) =>
+          q.eq('authUserId', args.authUserId!).eq('eventType', 'subject.suspicious.marked')
         )
         .order('desc')
         .take(limit * 2);
@@ -849,7 +849,7 @@ export const clearSubjectSuspicious = mutation({
     apiSecret: v.string(),
     subjectId: v.id('subjects'),
     actorId: v.string(),
-    tenantId: v.optional(v.id('tenants')),
+    authUserId: v.optional(v.string()),
   },
   returns: v.object({
     success: v.boolean(),
@@ -882,7 +882,7 @@ export const clearSubjectSuspicious = mutation({
     });
 
     await ctx.db.insert('audit_events', {
-      ...(args.tenantId && { tenantId: args.tenantId }),
+      ...(args.authUserId && { authUserId: args.authUserId }),
       eventType: 'subject.suspicious.cleared',
       actorType: 'admin',
       actorId: args.actorId,

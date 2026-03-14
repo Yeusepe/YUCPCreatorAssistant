@@ -1,4 +1,5 @@
 import { getConfig } from './config.js';
+import { escHtml } from './utils.js';
 import {
   getActiveSetupProviders,
   getDashboardProvider,
@@ -22,6 +23,8 @@ import {
   setupCompleted,
   previousQuickStartCompletion,
   completedMilestones,
+  userAccountsList,
+  setUserAccountsList,
 } from './store.js';
 
 const SETTINGS_TOUCHED_PREFIX = 'yucp_dashboard_settings_touched:';
@@ -65,6 +68,7 @@ function showSelectServerNotice() {
 
 export function loadProgressFlags() {
   try {
+    // UI state only — never store auth tokens or sensitive data in localStorage
     setSettingsTouched(localStorage.getItem(getTenantStorageKey(SETTINGS_TOUCHED_PREFIX)) === '1');
     setSetupCompleted(localStorage.getItem(getTenantStorageKey(SETUP_COMPLETE_PREFIX)) === '1');
   } catch {
@@ -116,13 +120,13 @@ function buildQuickStartButtons() {
   return platformProviders
     .map((provider) => {
       const disabled = provider.setupState !== 'ready';
-      const action = disabled ? '' : `onclick="navigateProvider('${provider.key}')"`;
+      const action = disabled ? 'disabled' : `data-provider-key="${provider.key}"`;
       const opacity = disabled ? 'opacity:0.55;cursor:not-allowed;' : '';
       const statusPill = disabled
         ? `<span style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.45);">Preview</span>`
         : '';
       return `
-        <button ${action} ${disabled ? 'disabled' : ''} style="background: ${provider.quickStartButtonBg}; border: 1px solid ${provider.quickStartButtonBorder}; color: white; border-radius: 12px; padding: 14px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 15px; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; transition: background 0.2s; ${opacity}">
+        <button ${action} style="background: ${provider.quickStartButtonBg}; border: 1px solid ${provider.quickStartButtonBorder}; color: white; border-radius: 12px; padding: 14px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 15px; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; transition: background 0.2s; ${opacity}">
           <img src="${resolveIconUrl(provider)}" style="width: 20px; border-radius: 4px;" alt="">
           <span>${provider.quickStartDescription}</span>
           ${statusPill}
@@ -299,11 +303,21 @@ export function renderQuickStart() {
           <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
             ${buildQuickStartButtons()}
           </div>
-          <button onclick="dismissQuickStart()" style="background: transparent; color: rgba(255,255,255,0.4); border: none; font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;">I'll set this up later</button>
+          <button data-action="dismiss-quickstart" style="background: transparent; color: rgba(255,255,255,0.4); border: none; font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;">I'll set this up later</button>
         </div>
       </div>
     `;
     document.body.appendChild(modal);
+    modal.querySelectorAll('[data-provider-key]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.providerKey;
+        if (key) navigateProvider(key);
+      });
+    });
+    const dismissBtn = modal.querySelector('[data-action="dismiss-quickstart"]');
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', dismissQuickStart);
+    }
   }
 }
 
@@ -387,7 +401,8 @@ export async function navigateGumroad() {
   } else if (getHasSetupSession()) {
     window.location.href = `${getApiBase()}/api/connect/gumroad/begin`;
   } else {
-    showSelectServerNotice();
+    // User-scoped: connect without server context (auth session only)
+    window.location.href = `${getApiBase()}/api/connect/gumroad/begin`;
   }
 }
 
@@ -406,7 +421,8 @@ export async function navigateJinxxy() {
   } else if (getHasSetupSession()) {
     window.location.href = `${getApiBase()}/jinxxy-setup`;
   } else {
-    showSelectServerNotice();
+    // User-scoped: connect without server context
+    window.location.href = `${getApiBase()}/jinxxy-setup`;
   }
 }
 
@@ -422,10 +438,27 @@ export async function navigateLemonSqueezy() {
   const gid = getGuildId();
   if (tid && gid) {
     window.location.href = `${getApiBase()}/lemonsqueezy-setup?tenant_id=${encodeURIComponent(tid)}&guild_id=${encodeURIComponent(gid)}`;
-  } else if (getHasSetupSession()) {
-    window.location.href = `${getApiBase()}/lemonsqueezy-setup`;
   } else {
-    showSelectServerNotice();
+    // User-scoped: navigate without server context; session auth is sufficient.
+    window.location.href = `${getApiBase()}/lemonsqueezy-setup`;
+  }
+}
+
+export async function navigatePayhip() {
+  if (getSetupToken()) {
+    const restored = await ensureSetupSessionCookie();
+    if (!restored) {
+      redirectToExpiredLinkError();
+      return;
+    }
+  }
+  const tid = getTenantId();
+  const gid = getGuildId();
+  if (tid && gid) {
+    window.location.href = `${getApiBase()}/payhip-setup?tenant_id=${encodeURIComponent(tid)}&guild_id=${encodeURIComponent(gid)}`;
+  } else {
+    // User-scoped: navigate without server context; session auth is sufficient.
+    window.location.href = `${getApiBase()}/payhip-setup`;
   }
 }
 
@@ -439,14 +472,96 @@ export async function navigateProvider(providerKey) {
   if (providerKey === 'lemonsqueezy') {
     return navigateLemonSqueezy();
   }
+  if (providerKey === 'payhip') {
+    return navigatePayhip();
+  }
   return undefined;
 }
 
 export function updatePlatformCards() {
+  renderAccountsSection();
   platformProviders.forEach((provider) => {
     updateCard(provider.key, connectionsMap.has(provider.key));
   });
   renderQuickStart();
+}
+
+/**
+ * PROVIDER_META is derived from the DASHBOARD_PROVIDER_REGISTRY (providers.js).
+ * Adding a new provider to that registry automatically includes it here.
+ */
+const PROVIDER_META = Object.fromEntries(
+  platformProviders.map((p) => [
+    p.key,
+    {
+      name: p.label,
+      icon: resolveIconUrl(p),
+      iconBg: p.iconBg,
+      navigate: () => navigateProvider(p.key),
+    },
+  ])
+);
+
+function renderAddButtons() {
+  const container = document.getElementById('add-account-buttons');
+  if (!container) return;
+
+  container.innerHTML = platformProviders
+    .map(
+      (p) => `<button class="card-action-btn link" data-provider="${p.key}"
+          style="flex:1;min-width:160px;display:flex;align-items:center;justify-content:center;gap:8px;">
+          <img src="${resolveIconUrl(p)}" style="width:16px;border-radius:3px;" alt="">
+          Add ${p.label} Account
+        </button>`
+    )
+    .join('');
+
+  container.querySelectorAll('[data-provider]').forEach((btn) => {
+    const key = btn.getAttribute('data-provider');
+    btn.addEventListener('click', () => navigateProvider(key));
+  });
+}
+
+function renderAccountsSection() {
+  const container = document.getElementById('user-accounts-list');
+  if (!container) return;
+
+  const accounts = userAccountsList;
+  if (accounts.length === 0) {
+    container.innerHTML = `
+      <div style="color:rgba(255,255,255,0.5); font-size:14px; font-family:'DM Sans',sans-serif; padding: 16px 0;">
+        No store accounts linked yet. Use the buttons below to connect.
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = accounts.map((conn) => {
+    const meta = PROVIDER_META[conn.provider] || { name: conn.provider, icon: '', iconBg: '#333', navigate: () => {} };
+    const label = conn.label || meta.name;
+    return `
+      <div class="platform-card connected" style="position:relative;">
+        <div class="flex items-start justify-between">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden" style="background:${meta.iconBg}; flex-shrink:0;">
+            <img src="${meta.icon}" class="w-6 h-6 object-contain" alt="${meta.name}">
+          </div>
+          <span class="status-pill connected">Connected</span>
+        </div>
+        <div>
+          <h3 class="font-bold text-base mb-0.5">${meta.name}</h3>
+          <p class="text-xs text-white/60" style="font-family:'DM Sans',sans-serif;">${escHtml(label)}</p>
+        </div>
+        <button
+          class="card-action-btn disconnect"
+          data-conn-id="${escHtml(conn.id)}"
+          data-provider="${escHtml(conn.provider)}"
+        >Disconnect</button>
+      </div>`;
+  }).join('');
+  container.querySelectorAll('.card-action-btn.disconnect').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      confirmDisconnectUserAccount(btn.dataset.connId, btn.dataset.provider);
+    });
+  });
 }
 
 function updateCard(platform, isLinked) {
@@ -640,19 +755,53 @@ async function confirmDisconnect(platform) {
   }
 }
 
+export async function confirmDisconnectUserAccount(connId, provider) {
+  if (!connId || typeof connId !== 'string' || connId.length > 256) return;
+  if (!provider || typeof provider !== 'string' || provider.length > 64) return;
+  if (!confirm(`Disconnect this ${provider} account? This removes syncing for all servers.`)) return;
+  try {
+    const res = await apiFetch(`${getApiBase()}/api/connect/user/accounts?id=${encodeURIComponent(connId)}`, { method: 'DELETE' });
+    if (res.ok) {
+      setUserAccountsList(userAccountsList.filter((c) => c.id !== connId));
+      updatePlatformCards();
+    } else {
+      alert('Failed to disconnect. Please try again.');
+    }
+  } catch (e) {
+    console.error('Disconnect error:', e);
+    alert('Network error while disconnecting.');
+  }
+}
+
 export async function fetchAllData() {
   try {
+    // Always fetch user-scoped accounts (works regardless of server selection)
+    const userAccountsRes = await apiFetch(`${getApiBase()}/api/connect/user/accounts`);
+    if (userAccountsRes.ok) {
+      const userAccountsData = await userAccountsRes.json();
+      setUserAccountsList(userAccountsData.connections || []);
+    }
+
     if (getHasSetupSession()) {
+      // Also fetch setup-session-scoped connections (legacy flow)
       const statusRes = await apiFetch(`${getApiBase()}/api/connections`);
       if (statusRes.ok) {
         const statusData = await statusRes.json();
-        connectionsMap.clear();
+        // Merge setup-session connections with user accounts (deduplicate by id)
+        const existing = new Set(userAccountsList.map((c) => c.id));
+        const merged = [...userAccountsList];
         if (statusData.connections) {
           statusData.connections.forEach((c) => {
-            if (c.status === 'active') connectionsMap.set(c.providerKey || c.provider, c);
+            if (c.status === 'active') {
+              const providerKey = c.providerKey || c.provider;
+              if (!providerKey) return;
+              const normalized = { ...c, provider: c.provider || providerKey };
+              connectionsMap.set(providerKey, normalized);
+              if (!existing.has(normalized.id)) merged.push(normalized);
+            }
           });
         }
-        updatePlatformCards();
+        setUserAccountsList(merged);
       }
       const settingsRes = await apiFetch(`${getApiBase()}/api/connect/settings`);
       if (settingsRes.ok) {
@@ -680,9 +829,9 @@ export async function fetchAllData() {
           if (statusData.jinxxy) connectionsMap.set('jinxxy', { provider: 'jinxxy', status: 'active' });
           if (statusData.lemonsqueezy) connectionsMap.set('lemonsqueezy', { provider: 'lemonsqueezy', status: 'active' });
         }
-        updatePlatformCards();
       }
     }
+    updatePlatformCards();
   } catch (err) {
     console.error('Failed to fetch data', err);
   }
@@ -753,11 +902,15 @@ export function initPlatforms() {
   window.navigateGumroad = navigateGumroad;
   window.navigateJinxxy = navigateJinxxy;
   window.navigateLemonSqueezy = navigateLemonSqueezy;
+  window.navigatePayhip = navigatePayhip;
   window.navigateProvider = navigateProvider;
   window.dismissQuickStart = dismissQuickStart;
   window.toggleSetting = toggleSetting;
   window.selectSetting = selectSetting;
   window.cancelDisconnect = cancelDisconnect;
+  window.confirmDisconnectUserAccount = confirmDisconnectUserAccount;
+
+  renderAddButtons();
 
   document.querySelectorAll('.setting-select, .svr-cfg-pick').forEach((select) => {
     const key = select.id?.replace('select-', '') || '';

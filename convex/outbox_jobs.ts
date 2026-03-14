@@ -9,7 +9,6 @@
  */
 
 import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 
 /** Outbox job status values */
@@ -56,7 +55,7 @@ export const getPendingJobs = query({
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    const limit = args.limit ?? 10;
+    const limit = Math.min(args.limit ?? 10, 100);
     const now = Date.now();
 
     // Get pending jobs
@@ -67,8 +66,8 @@ export const getPendingJobs = query({
     // Filter by job types if specified
     if (args.jobTypes && args.jobTypes.length > 0) {
       // We need to filter after fetching since we can't combine index filters
-      const allPending = await pendingQuery.collect();
-      const filtered = allPending.filter((job) => args.jobTypes!.includes(job.jobType as any));
+      const allPending = await pendingQuery.take(1000);
+      const filtered = allPending.filter((job) => args.jobTypes?.includes(job.jobType as any));
       return filtered.slice(0, limit);
     }
 
@@ -90,6 +89,7 @@ export const getPendingJobs = query({
  */
 export const getByIdempotencyKey = query({
   args: {
+    apiSecret: v.string(),
     idempotencyKey: v.string(),
   },
   returns: v.union(
@@ -103,6 +103,7 @@ export const getByIdempotencyKey = query({
     })
   ),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const job = await ctx.db
       .query('outbox_jobs')
       .withIndex('by_idempotency', (q) => q.eq('idempotencyKey', args.idempotencyKey))
@@ -122,11 +123,13 @@ export const getByIdempotencyKey = query({
  */
 export const getByGuildAndUser = query({
   args: {
+    apiSecret: v.string(),
     guildId: v.string(),
     discordUserId: v.string(),
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const jobs = await ctx.db
       .query('outbox_jobs')
       .withIndex('by_guild_user', (q) =>
@@ -134,7 +137,7 @@ export const getByGuildAndUser = query({
       )
       .filter((q) => q.neq(q.field('status'), 'completed'))
       .filter((q) => q.neq(q.field('status'), 'dead_letter'))
-      .collect();
+      .take(1000);
 
     return jobs;
   },
@@ -146,7 +149,8 @@ export const getByGuildAndUser = query({
  */
 export const getFailedRoleSyncForUser = query({
   args: {
-    tenantId: v.id('tenants'),
+    apiSecret: v.string(),
+    authUserId: v.string(),
     discordUserId: v.string(),
     guildId: v.string(),
   },
@@ -156,14 +160,15 @@ export const getFailedRoleSyncForUser = query({
     })
   ),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const jobs = await ctx.db
       .query('outbox_jobs')
-      .withIndex('by_tenant', (q) => q.eq('tenantId', args.tenantId))
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
       .filter((q) => q.eq(q.field('jobType'), 'role_sync'))
       .filter((q) =>
         q.or(q.eq(q.field('status'), 'pending'), q.eq(q.field('status'), 'dead_letter'))
       )
-      .collect();
+      .take(1000);
 
     const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
     return jobs
@@ -183,13 +188,13 @@ export const getFailedRoleSyncForUser = query({
 });
 
 /**
- * Get dead letter jobs for a tenant.
+ * Get dead letter jobs for a creator/user.
  * Used for manual review and reprocessing.
  */
 export const getDeadLetterJobs = query({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     limit: v.optional(v.number()),
   },
   returns: v.array(v.any()),
@@ -199,7 +204,7 @@ export const getDeadLetterJobs = query({
 
     const jobs = await ctx.db
       .query('outbox_jobs')
-      .withIndex('by_tenant', (q) => q.eq('tenantId', args.tenantId))
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
       .filter((q) => q.eq(q.field('status'), 'dead_letter'))
       .order('desc')
       .take(limit);
@@ -219,7 +224,7 @@ export const getDeadLetterJobs = query({
 export const createJob = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     jobType: OutboxJobType,
     payload: v.any(),
     idempotencyKey: v.string(),
@@ -247,7 +252,7 @@ export const createJob = mutation({
     const now = Date.now();
 
     const jobId = await ctx.db.insert('outbox_jobs', {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       jobType: args.jobType,
       payload: args.payload,
       status: 'pending',

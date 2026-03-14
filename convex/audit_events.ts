@@ -6,7 +6,6 @@
  */
 
 import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
 import { mutation } from './_generated/server';
 
 const AuditEventType = v.union(
@@ -32,7 +31,12 @@ const AuditEventType = v.union(
   v.literal('guild.unlinked'),
   v.literal('subject.status.updated'),
   v.literal('subject.suspicious.marked'),
-  v.literal('subject.suspicious.cleared')
+  v.literal('subject.suspicious.cleared'),
+  v.literal('collaborator.invite.created'),
+  v.literal('collaborator.invite.accepted'),
+  v.literal('collaborator.invite.revoked'),
+  v.literal('collaborator.connection.added'),
+  v.literal('collaborator.connection.removed')
 );
 
 function requireApiSecret(apiSecret: string | undefined): void {
@@ -48,7 +52,7 @@ function requireApiSecret(apiSecret: string | undefined): void {
 export const createAuditEvent = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.optional(v.id('tenants')),
+    authUserId: v.optional(v.string()),
     eventType: AuditEventType,
     actorType: v.union(v.literal('subject'), v.literal('system'), v.literal('admin')),
     actorId: v.optional(v.string()),
@@ -59,7 +63,7 @@ export const createAuditEvent = mutation({
     requireApiSecret(args.apiSecret);
 
     await ctx.db.insert('audit_events', {
-      ...(args.tenantId && { tenantId: args.tenantId }),
+      ...(args.authUserId && { authUserId: args.authUserId }),
       eventType: args.eventType,
       actorType: args.actorType,
       actorId: args.actorId,

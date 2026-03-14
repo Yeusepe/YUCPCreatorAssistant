@@ -11,7 +11,7 @@
  * - Optional removal on entitlement revoke
  */
 
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
@@ -32,15 +32,17 @@ function requireApiSecret(apiSecret: string | undefined): void {
  */
 export const getByTenant = query({
   args: {
-    tenantId: v.id('tenants'),
+    apiSecret: v.string(),
+    authUserId: v.string(),
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const rules = await ctx.db
       .query('role_rules')
-      .withIndex('by_tenant', (q) => q.eq('tenantId', args.tenantId))
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
       .order('asc')
-      .collect();
+      .take(1000);
 
     return rules;
   },
@@ -54,7 +56,7 @@ export const getByTenant = query({
 export const getEnabledVerificationProvidersFromProducts = query({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     guildId: v.string(),
   },
   returns: v.object({
@@ -62,14 +64,17 @@ export const getEnabledVerificationProvidersFromProducts = query({
   }),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    const tenant = await ctx.db.get(args.tenantId);
+    const profile = await ctx.db
+      .query('creator_profiles')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
+      .first();
     const rules = await ctx.db
       .query('role_rules')
-      .withIndex('by_tenant_guild', (q) =>
-        q.eq('tenantId', args.tenantId).eq('guildId', args.guildId)
+      .withIndex('by_auth_user_guild', (q) =>
+        q.eq('authUserId', args.authUserId).eq('guildId', args.guildId)
       )
       .filter((q) => q.eq(q.field('enabled'), true))
-      .collect();
+      .take(1000);
 
     const providerSet = new Set<string>();
     let hasDiscordRole = false;
@@ -88,7 +93,7 @@ export const getEnabledVerificationProvidersFromProducts = query({
     }
 
     // Discord "Use Another Server" also requires tenant policy
-    if (hasDiscordRole && tenant?.policy?.enableDiscordRoleFromOtherServers === true) {
+    if (hasDiscordRole && profile?.policy?.enableDiscordRoleFromOtherServers === true) {
       providerSet.add('discord');
     }
 
@@ -103,7 +108,7 @@ export const getEnabledVerificationProvidersFromProducts = query({
 export const getVrchatCatalogProductsMatchingAvatars = query({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     ownedAvatarIds: v.array(v.string()),
   },
   returns: v.array(
@@ -118,9 +123,9 @@ export const getVrchatCatalogProductsMatchingAvatars = query({
     const ownedSet = new Set(args.ownedAvatarIds.map((id) => id.toLowerCase()));
     const catalogs = await ctx.db
       .query('product_catalog')
-      .withIndex('by_tenant', (q) => q.eq('tenantId', args.tenantId))
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
       .filter((q) => q.and(q.eq(q.field('provider'), 'vrchat'), q.eq(q.field('status'), 'active')))
-      .collect();
+      .take(1000);
     const matches: Array<{
       productId: string;
       catalogProductId: Id<'product_catalog'>;
@@ -144,18 +149,20 @@ export const getVrchatCatalogProductsMatchingAvatars = query({
  */
 export const getByGuild = query({
   args: {
-    tenantId: v.id('tenants'),
+    apiSecret: v.string(),
+    authUserId: v.string(),
     guildId: v.string(),
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const rules = await ctx.db
       .query('role_rules')
-      .withIndex('by_tenant_guild', (q) =>
-        q.eq('tenantId', args.tenantId).eq('guildId', args.guildId)
+      .withIndex('by_auth_user_guild', (q) =>
+        q.eq('authUserId', args.authUserId).eq('guildId', args.guildId)
       )
       .order('asc')
-      .collect();
+      .take(1000);
 
     return rules;
   },
@@ -168,7 +175,8 @@ export const getByGuild = query({
  */
 export const getByGuildWithProductNames = query({
   args: {
-    tenantId: v.id('tenants'),
+    apiSecret: v.string(),
+    authUserId: v.string(),
     guildId: v.string(),
   },
   returns: v.array(
@@ -185,13 +193,14 @@ export const getByGuildWithProductNames = query({
     })
   ),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const rules = await ctx.db
       .query('role_rules')
-      .withIndex('by_tenant_guild', (q) =>
-        q.eq('tenantId', args.tenantId).eq('guildId', args.guildId)
+      .withIndex('by_auth_user_guild', (q) =>
+        q.eq('authUserId', args.authUserId).eq('guildId', args.guildId)
       )
       .order('asc')
-      .collect();
+      .take(1000);
 
     const seen = new Set<string>();
     const result: Array<{
@@ -250,18 +259,20 @@ export const getByGuildWithProductNames = query({
  */
 export const getByProduct = query({
   args: {
-    tenantId: v.id('tenants'),
+    apiSecret: v.string(),
+    authUserId: v.string(),
     productId: v.string(),
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const rules = await ctx.db
       .query('role_rules')
-      .withIndex('by_tenant', (q) => q.eq('tenantId', args.tenantId))
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
       .filter((q) => q.eq(q.field('productId'), args.productId))
       .filter((q) => q.eq(q.field('enabled'), true))
       .order('asc')
-      .collect();
+      .take(1000);
 
     return rules;
   },
@@ -272,15 +283,17 @@ export const getByProduct = query({
  */
 export const getByGuildLink = query({
   args: {
+    apiSecret: v.string(),
     guildLinkId: v.id('guild_links'),
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const rules = await ctx.db
       .query('role_rules')
       .withIndex('by_guild_link', (q) => q.eq('guildLinkId', args.guildLinkId))
       .order('asc')
-      .collect();
+      .take(1000);
 
     return rules;
   },
@@ -291,14 +304,16 @@ export const getByGuildLink = query({
  */
 export const getByCatalogProduct = query({
   args: {
+    apiSecret: v.string(),
     catalogProductId: v.id('product_catalog'),
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const rules = await ctx.db
       .query('role_rules')
       .withIndex('by_catalog_product', (q) => q.eq('catalogProductId', args.catalogProductId))
-      .collect();
+      .take(1000);
 
     return rules;
   },
@@ -312,7 +327,7 @@ export const getByCatalogProduct = query({
 export const getDiscordRoleRulesByTenant = query({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     sourceGuildIds: v.optional(v.array(v.string())),
   },
   returns: v.array(v.any()),
@@ -320,9 +335,9 @@ export const getDiscordRoleRulesByTenant = query({
     requireApiSecret(args.apiSecret);
     let rules = await ctx.db
       .query('role_rules')
-      .withIndex('by_tenant', (q) => q.eq('tenantId', args.tenantId))
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
       .filter((q) => q.eq(q.field('enabled'), true))
-      .collect();
+      .take(1000);
 
     rules = rules.filter(
       (r) =>
@@ -349,7 +364,7 @@ export const getDiscordRoleRulesByTenant = query({
 export const createRoleRule = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     guildId: v.string(),
     guildLinkId: v.id('guild_links'),
     productId: v.string(),
@@ -365,8 +380,11 @@ export const createRoleRule = mutation({
   }),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
+    const link = await ctx.db.get(args.guildLinkId);
+    if (!link || link.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: caller does not own this guild link');
+    }
     const now = Date.now();
-
     const roleIds = args.verifiedRoleIds ?? (args.verifiedRoleId ? [args.verifiedRoleId] : []);
     if (roleIds.length === 0) {
       throw new Error('At least one verified role is required');
@@ -374,7 +392,7 @@ export const createRoleRule = mutation({
     const verifiedRoleId = roleIds[0];
 
     const ruleId = await ctx.db.insert('role_rules', {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       guildId: args.guildId,
       guildLinkId: args.guildLinkId,
       productId: args.productId,
@@ -388,16 +406,16 @@ export const createRoleRule = mutation({
       updatedAt: now,
     });
 
-    const idempotencyKey = `retroactive_rule_sync:${args.tenantId}:${args.productId}`;
+    const idempotencyKey = `retroactive_rule_sync:${args.authUserId}:${args.productId}`;
     const existingJob = await ctx.db
       .query('outbox_jobs')
       .withIndex('by_idempotency', (q) => q.eq('idempotencyKey', idempotencyKey))
       .first();
     if (!existingJob) {
       await ctx.db.insert('outbox_jobs', {
-        tenantId: args.tenantId,
+        authUserId: args.authUserId,
         jobType: 'retroactive_rule_sync',
-        payload: { tenantId: args.tenantId, productId: args.productId },
+        payload: { authUserId: args.authUserId, productId: args.productId },
         status: 'pending',
         idempotencyKey,
         retryCount: 0,
@@ -499,7 +517,7 @@ export const deleteRoleRule = mutation({
         const links = await ctx.db
           .query('catalog_product_links')
           .filter((q) => q.eq(q.field('catalogProductId'), rule.catalogProductId!))
-          .collect();
+          .take(1000);
 
         for (const link of links) {
           await ctx.db.delete(link._id);
@@ -520,7 +538,7 @@ export const deleteRoleRule = mutation({
 export const addProductFromGumroad = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     productId: v.string(),
     providerProductRef: v.string(),
     canonicalSlug: v.optional(v.string()),
@@ -546,7 +564,7 @@ export const addProductFromGumroad = mutation({
         await ctx.db.patch(existing._id, { displayName: args.displayName, updatedAt: now });
       }
       await ctx.scheduler.runAfter(0, internal.backgroundSync.backfillProductPurchases, {
-        tenantId: args.tenantId,
+        authUserId: args.authUserId,
         productId: args.productId,
         provider: 'gumroad',
         providerProductRef: args.providerProductRef,
@@ -555,7 +573,7 @@ export const addProductFromGumroad = mutation({
     }
 
     const catalogId = await ctx.db.insert('product_catalog', {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       productId: args.productId,
       provider: 'gumroad',
       providerProductRef: args.providerProductRef,
@@ -579,13 +597,13 @@ export const addProductFromGumroad = mutation({
       urlHash,
       linkKind: 'direct_product',
       status: 'active',
-      submittedByTenantId: args.tenantId,
+      submittedByAuthUserId: args.authUserId,
       createdAt: now,
       updatedAt: now,
     });
 
     await ctx.scheduler.runAfter(0, internal.backgroundSync.backfillProductPurchases, {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       productId: args.productId,
       provider: 'gumroad',
       providerProductRef: args.providerProductRef,
@@ -601,7 +619,7 @@ export const addProductFromGumroad = mutation({
 export const addProductFromJinxxy = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     productId: v.string(),
     providerProductRef: v.string(),
     displayName: v.optional(v.string()),
@@ -625,7 +643,7 @@ export const addProductFromJinxxy = mutation({
         await ctx.db.patch(existing._id, { displayName: args.displayName, updatedAt: now });
       }
       await ctx.scheduler.runAfter(0, internal.backgroundSync.backfillProductPurchases, {
-        tenantId: args.tenantId,
+        authUserId: args.authUserId,
         productId: args.productId,
         provider: 'jinxxy',
         providerProductRef: args.providerProductRef,
@@ -634,7 +652,7 @@ export const addProductFromJinxxy = mutation({
     }
 
     const catalogId = await ctx.db.insert('product_catalog', {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       productId: args.productId,
       provider: 'jinxxy',
       providerProductRef: args.providerProductRef,
@@ -657,13 +675,13 @@ export const addProductFromJinxxy = mutation({
       urlHash,
       linkKind: 'direct_product',
       status: 'active',
-      submittedByTenantId: args.tenantId,
+      submittedByAuthUserId: args.authUserId,
       createdAt: now,
       updatedAt: now,
     });
 
     await ctx.scheduler.runAfter(0, internal.backgroundSync.backfillProductPurchases, {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       productId: args.productId,
       provider: 'jinxxy',
       providerProductRef: args.providerProductRef,
@@ -676,7 +694,7 @@ export const addProductFromJinxxy = mutation({
 export const addProductFromLemonSqueezy = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     productId: v.string(),
     providerProductRef: v.string(),
     displayName: v.optional(v.string()),
@@ -693,7 +711,7 @@ export const addProductFromLemonSqueezy = mutation({
       .withIndex('by_provider_ref', (q) =>
         q.eq('provider', 'lemonsqueezy').eq('providerProductRef', args.providerProductRef)
       )
-      .filter((q) => q.eq(q.field('tenantId'), args.tenantId))
+      .filter((q) => q.eq(q.field('authUserId'), args.authUserId))
       .first();
 
     if (existing) {
@@ -701,7 +719,7 @@ export const addProductFromLemonSqueezy = mutation({
         await ctx.db.patch(existing._id, { displayName: args.displayName, updatedAt: now });
       }
       await ctx.scheduler.runAfter(0, internal.backgroundSync.backfillProductPurchases, {
-        tenantId: args.tenantId,
+        authUserId: args.authUserId,
         productId: args.productId,
         provider: 'lemonsqueezy',
         providerProductRef: args.providerProductRef,
@@ -710,7 +728,7 @@ export const addProductFromLemonSqueezy = mutation({
     }
 
     const catalogId = await ctx.db.insert('product_catalog', {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       productId: args.productId,
       provider: 'lemonsqueezy',
       providerProductRef: args.providerProductRef,
@@ -733,15 +751,105 @@ export const addProductFromLemonSqueezy = mutation({
       urlHash,
       linkKind: 'direct_product',
       status: 'active',
-      submittedByTenantId: args.tenantId,
+      submittedByAuthUserId: args.authUserId,
       createdAt: now,
       updatedAt: now,
     });
 
     await ctx.scheduler.runAfter(0, internal.backgroundSync.backfillProductPurchases, {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       productId: args.productId,
       provider: 'lemonsqueezy',
+      providerProductRef: args.providerProductRef,
+    });
+
+    return { productId: args.productId, catalogProductId: catalogId };
+  },
+});
+
+/**
+ * Generic: get or create a product catalog entry for any catalog-sync provider.
+ * Prefer this over provider-specific mutations when the provider key is dynamic.
+ */
+export const addProductForProvider = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    productId: v.string(),
+    providerProductRef: v.string(),
+    provider: v.string(),
+    displayName: v.optional(v.string()),
+  },
+  returns: v.object({
+    productId: v.string(),
+    catalogProductId: v.id('product_catalog'),
+  }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query('product_catalog')
+      .withIndex('by_provider_ref', (q) =>
+        q.eq('provider', args.provider).eq('providerProductRef', args.providerProductRef)
+      )
+      .filter((q) => q.eq(q.field('authUserId'), args.authUserId))
+      .first();
+
+    if (existing) {
+      if (args.displayName && existing.displayName !== args.displayName) {
+        await ctx.db.patch(existing._id, { displayName: args.displayName, updatedAt: now });
+      }
+      await ctx.scheduler.runAfter(0, internal.backgroundSync.backfillProductPurchases, {
+        authUserId: args.authUserId,
+        productId: args.productId,
+        provider: args.provider,
+        providerProductRef: args.providerProductRef,
+      });
+      return { productId: existing.productId, catalogProductId: existing._id };
+    }
+
+    const urlBuilders: Record<string, (ref: string) => string> = {
+      gumroad: (ref) => `https://gumroad.com/l/${ref}`,
+      jinxxy: (ref) => `https://jinxxy.app/products/${ref}`,
+      lemonsqueezy: (ref) => `https://app.lemonsqueezy.com/products/${ref}`,
+    };
+    const buildUrl = urlBuilders[args.provider];
+    const url = buildUrl
+      ? buildUrl(args.providerProductRef)
+      : `https://example.invalid/${args.provider}/${args.providerProductRef}`;
+    const normalized = url.toLowerCase().trim();
+    const urlHash = await sha256Hex(normalized);
+
+    const catalogId = await ctx.db.insert('product_catalog', {
+      authUserId: args.authUserId,
+      productId: args.productId,
+      provider: args.provider,
+      providerProductRef: args.providerProductRef,
+      displayName: args.displayName,
+      status: 'active',
+      supportsAutoDiscovery: args.provider === 'gumroad',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert('catalog_product_links', {
+      catalogProductId: catalogId,
+      provider: args.provider,
+      originalUrl: url,
+      normalizedUrl: normalized,
+      urlHash,
+      linkKind: 'direct_product',
+      status: 'active',
+      submittedByAuthUserId: args.authUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.backgroundSync.backfillProductPurchases, {
+      authUserId: args.authUserId,
+      productId: args.productId,
+      provider: args.provider,
       providerProductRef: args.providerProductRef,
     });
 
@@ -769,7 +877,7 @@ function extractVrchatAvatarId(urlOrId: string): string | null {
 export const addProductFromVrchat = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     productId: v.string(),
     providerProductRef: v.string(),
     displayName: v.optional(v.string()),
@@ -802,7 +910,7 @@ export const addProductFromVrchat = mutation({
     }
 
     const catalogId = await ctx.db.insert('product_catalog', {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       productId: args.productId,
       provider: 'vrchat',
       providerProductRef: avatarId,
@@ -825,7 +933,7 @@ export const addProductFromVrchat = mutation({
       urlHash,
       linkKind: 'direct_product',
       status: 'active',
-      submittedByTenantId: args.tenantId,
+      submittedByAuthUserId: args.authUserId,
       createdAt: now,
       updatedAt: now,
     });
@@ -851,6 +959,87 @@ function buildDiscordRoleProductId(
 }
 
 /**
+ * Get or create a product catalog entry for a Payhip product.
+ * The permalink (e.g., "RGsF") is the canonical Payhip product identifier.
+ * Does not trigger backfill — Payhip has no purchases API; events arrive via webhooks.
+ */
+export const addProductFromPayhip = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    /** Payhip product permalink (e.g., "RGsF") */
+    permalink: v.string(),
+    displayName: v.optional(v.string()),
+  },
+  returns: v.object({
+    productId: v.string(),
+    catalogProductId: v.id('product_catalog'),
+  }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query('product_catalog')
+      .withIndex('by_provider_ref', (q) =>
+        q.eq('provider', 'payhip').eq('providerProductRef', args.permalink)
+      )
+      .first();
+
+    if (existing) {
+      if (args.displayName && existing.displayName !== args.displayName) {
+        await ctx.db.patch(existing._id, { displayName: args.displayName, updatedAt: now });
+      }
+      await ctx.scheduler.runAfter(0, internal.backgroundSync.projectBackfilledPurchasesForProduct, {
+        authUserId: args.authUserId,
+        productId: args.permalink,
+        provider: 'payhip',
+        providerProductRef: args.permalink,
+      });
+      return { productId: existing.productId, catalogProductId: existing._id };
+    }
+
+    const catalogId = await ctx.db.insert('product_catalog', {
+      authUserId: args.authUserId,
+      productId: args.permalink,
+      provider: 'payhip',
+      providerProductRef: args.permalink,
+      displayName: args.displayName,
+      status: 'active',
+      supportsAutoDiscovery: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const url = `https://payhip.com/b/${args.permalink}`;
+    const normalized = url.toLowerCase().trim();
+    const urlHash = await sha256Hex(normalized);
+
+    await ctx.db.insert('catalog_product_links', {
+      catalogProductId: catalogId,
+      provider: 'payhip',
+      originalUrl: url,
+      normalizedUrl: normalized,
+      urlHash,
+      linkKind: 'direct_product',
+      status: 'active',
+      submittedByAuthUserId: args.authUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.backgroundSync.projectBackfilledPurchasesForProduct, {
+      authUserId: args.authUserId,
+      productId: args.permalink,
+      provider: 'payhip',
+      providerProductRef: args.permalink,
+    });
+
+    return { productId: args.permalink, catalogProductId: catalogId };
+  },
+});
+
+/**
  * Add a Discord cross-server role rule.
  * Creates a role rule that grants verifiedRoleId(s) when the user has requiredRoleId(s)
  * in the source guild. No product_catalog entry; uses synthetic productId.
@@ -858,7 +1047,7 @@ function buildDiscordRoleProductId(
 export const addProductFromDiscordRole = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     sourceGuildId: v.string(),
     requiredRoleId: v.optional(v.string()),
     requiredRoleIds: v.optional(v.array(v.string())),
@@ -889,8 +1078,8 @@ export const addProductFromDiscordRole = mutation({
 
     const existing = await ctx.db
       .query('role_rules')
-      .withIndex('by_tenant_guild', (q) =>
-        q.eq('tenantId', args.tenantId).eq('guildId', args.guildId)
+      .withIndex('by_auth_user_guild', (q) =>
+        q.eq('authUserId', args.authUserId).eq('guildId', args.guildId)
       )
       .filter((q) => q.eq(q.field('productId'), productId))
       .first();
@@ -906,7 +1095,7 @@ export const addProductFromDiscordRole = mutation({
     const verifiedRoleId = roleIds[0];
 
     const ruleId = await ctx.db.insert('role_rules', {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       guildId: args.guildId,
       guildLinkId: args.guildLinkId,
       productId,
@@ -925,11 +1114,11 @@ export const addProductFromDiscordRole = mutation({
 
     // Schedule retroactive sync so existing members with the source role get the target role.
     // Use ruleId in idempotency key so re-adds (after remove) create a fresh job.
-    const idempotencyKey = `retroactive_rule_sync:${args.tenantId}:${productId}:${ruleId}`;
+    const idempotencyKey = `retroactive_rule_sync:${args.authUserId}:${productId}:${ruleId}`;
     await ctx.db.insert('outbox_jobs', {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       jobType: 'retroactive_rule_sync',
-      payload: { tenantId: args.tenantId, productId },
+      payload: { authUserId: args.authUserId, productId },
       status: 'pending',
       idempotencyKey,
       retryCount: 0,
@@ -972,7 +1161,7 @@ export const resolveProductByUrl = query({
       productId: v.string(),
       provider: v.string(),
       providerProductRef: v.string(),
-      tenantId: v.id('tenants'),
+      authUserId: v.string(),
       status: v.string(),
     })
   ),
@@ -991,7 +1180,7 @@ export const resolveProductByUrl = query({
       productId: catalogProduct.productId,
       provider: catalogProduct.provider,
       providerProductRef: catalogProduct.providerProductRef,
-      tenantId: catalogProduct.tenantId,
+      authUserId: catalogProduct.authUserId,
       status: catalogProduct.status,
     };
   },
@@ -1004,7 +1193,7 @@ export const resolveProductByUrl = query({
 export const bulkCreateRoleRules = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     guildId: v.string(),
     guildLinkId: v.id('guild_links'),
     rules: v.array(
@@ -1029,7 +1218,7 @@ export const bulkCreateRoleRules = mutation({
     const uniqueProductIds = new Set<string>();
     for (const rule of args.rules) {
       const ruleId = await ctx.db.insert('role_rules', {
-        tenantId: args.tenantId,
+        authUserId: args.authUserId,
         guildId: args.guildId,
         guildLinkId: args.guildLinkId,
         productId: rule.productId,
@@ -1047,16 +1236,16 @@ export const bulkCreateRoleRules = mutation({
     }
 
     for (const productId of uniqueProductIds) {
-      const idempotencyKey = `retroactive_rule_sync:${args.tenantId}:${productId}`;
+      const idempotencyKey = `retroactive_rule_sync:${args.authUserId}:${productId}`;
       const existingJob = await ctx.db
         .query('outbox_jobs')
         .withIndex('by_idempotency', (q) => q.eq('idempotencyKey', idempotencyKey))
         .first();
       if (!existingJob) {
         await ctx.db.insert('outbox_jobs', {
-          tenantId: args.tenantId,
+          authUserId: args.authUserId,
           jobType: 'retroactive_rule_sync',
-          payload: { tenantId: args.tenantId, productId },
+          payload: { authUserId: args.authUserId, productId },
           status: 'pending',
           idempotencyKey,
           retryCount: 0,

@@ -37,12 +37,16 @@ import { sendCollabKeyAddedEmail } from '../lib/email';
 import { encrypt } from '../lib/encrypt';
 import { resolveSetupSession } from '../lib/setupSession';
 import { getStateStore } from '../lib/stateStore';
+import { PURPOSES as JINXXY } from '../providers/jinxxy';
+
+// Collab webhook secrets are scoped to collab connections, not shared with per-provider webhooks
+const COLLAB_WEBHOOK_SECRET_PURPOSE = 'collab-webhook-signing-secret' as const;
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const COLLAB_TEST_PREFIX = 'collab_test:';
-const COLLAB_TEST_TTL_MS = 60 * 1000;
+const _COLLAB_TEST_TTL_MS = 60 * 1000;
 const COLLAB_DISCORD_PREFIX = 'collab_discord:'; // keyed by inviteId
 const COLLAB_DISCORD_TTL_MS = 30 * 60 * 1000; // 30 minutes to complete setup after OAuth
 const COLLAB_SESSION_PREFIX = 'collab_session:'; // keyed by collab session id
@@ -106,7 +110,7 @@ function clearCookie(name: string, request: Request): string {
 async function resolveSetupToken(
   request: Request,
   encryptionSecret: string
-): Promise<{ tenantId: string; guildId: string; discordUserId: string } | null> {
+): Promise<{ authUserId: string; guildId: string; discordUserId: string } | null> {
   const authHeader = request.headers.get('authorization');
   const token = authHeader?.startsWith('Bearer ')
     ? authHeader.slice(7)
@@ -124,18 +128,22 @@ export function createCollabRoutes(config: CollabConfig) {
 
   async function lookupInviteByToken(rawToken: string) {
     const tokenHash = await sha256Hex(rawToken);
-    return convex.query(api.collaboratorInvites.getCollaboratorInviteByTokenHash, {
+    const invite = await (convex.query(api.collaboratorInvites.getCollaboratorInviteByTokenHash, {
       apiSecret,
       tokenHash,
     }) as Promise<{
       _id: string;
-      ownerTenantId: string;
+      ownerAuthUserId: string;
       status: string;
       ownerDisplayName: string;
       ownerGuildId?: string;
       expiresAt: number;
       createdAt: number;
-    } | null>;
+    } | null>);
+    if (invite && invite.expiresAt < Date.now()) {
+      return null; // treat expired as not found
+    }
+    return invite;
   }
 
   async function lookupInviteById(inviteId: string) {
@@ -144,7 +152,7 @@ export function createCollabRoutes(config: CollabConfig) {
       inviteId,
     }) as Promise<{
       _id: string;
-      ownerTenantId: string;
+      ownerAuthUserId: string;
       status: string;
       ownerDisplayName: string;
       ownerGuildId?: string;
@@ -204,7 +212,7 @@ export function createCollabRoutes(config: CollabConfig) {
     try {
       await convex.mutation(api.collaboratorInvites.createCollaboratorInvite, {
         apiSecret,
-        ownerTenantId: session.tenantId,
+        ownerAuthUserId: session.authUserId,
         ownerDisplayName: body.guildName ?? 'Unknown Server',
         ownerGuildId: body.guildId,
         tokenHash,
@@ -464,7 +472,7 @@ export function createCollabRoutes(config: CollabConfig) {
       return Response.json({ error: 'Discord authentication required' }, { status: 401 });
     }
 
-    const callbackUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/jinxxy-collab/${session.invite.ownerTenantId}/${session.invite._id}`;
+    const callbackUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/jinxxy-collab/${session.invite.ownerAuthUserId}/${session.invite._id}`;
 
     if (request.method === 'GET') {
       return Response.json({ callbackUrl });
@@ -492,7 +500,11 @@ export function createCollabRoutes(config: CollabConfig) {
       `${COLLAB_WEBHOOK_PREFIX}${session.invite._id}`,
       JSON.stringify({
         callbackUrl,
-        signingSecretEncrypted: await encrypt(webhookSecret, config.encryptionSecret),
+        signingSecretEncrypted: await encrypt(
+          webhookSecret,
+          config.encryptionSecret,
+          COLLAB_WEBHOOK_SECRET_PURPOSE
+        ),
       }),
       Math.min(COLLAB_DISCORD_TTL_MS, Math.max(1, session.invite.expiresAt - Date.now()))
     );
@@ -525,6 +537,9 @@ export function createCollabRoutes(config: CollabConfig) {
 
     const session = await resolveSessionInvite(request);
     if (!session) return Response.json({ error: 'not_found' }, { status: 404 });
+    if (session.invite.expiresAt < Date.now()) {
+      return Response.json({ error: 'expired' }, { status: 410 });
+    }
     const err = inviteErrorResponse(session.invite);
     if (err) return err;
 
@@ -577,7 +592,11 @@ export function createCollabRoutes(config: CollabConfig) {
       );
     }
 
-    const jinxxyApiKeyEncrypted = await encrypt(jinxxyApiKey.trim(), config.encryptionSecret);
+    const jinxxyApiKeyEncrypted = await encrypt(
+      jinxxyApiKey.trim(),
+      config.encryptionSecret,
+      JINXXY.credential
+    );
 
     let webhookSecretRef: string | undefined;
     let webhookEndpoint: string | undefined;
@@ -637,7 +656,7 @@ export function createCollabRoutes(config: CollabConfig) {
 
     const connections = await convex.query(api.collaboratorInvites.listCollaboratorConnections, {
       apiSecret,
-      ownerTenantId: session.tenantId,
+      ownerAuthUserId: session.authUserId,
     });
     return Response.json({ connections });
   }
@@ -683,7 +702,11 @@ export function createCollabRoutes(config: CollabConfig) {
       );
     }
 
-    const jinxxyApiKeyEncrypted = await encrypt(jinxxyApiKey, config.encryptionSecret);
+    const jinxxyApiKeyEncrypted = await encrypt(
+      jinxxyApiKey,
+      config.encryptionSecret,
+      JINXXY.credential
+    );
     const collaboratorIdentity = `manual:${user.id}`;
 
     let connectionId: string;
@@ -692,7 +715,7 @@ export function createCollabRoutes(config: CollabConfig) {
         api.collaboratorInvites.addCollaboratorConnectionManual,
         {
           apiSecret,
-          ownerTenantId: session.tenantId,
+          ownerAuthUserId: session.authUserId,
           jinxxyApiKeyEncrypted,
           collaboratorDisplayName: user.username,
           collaboratorIdentity,
@@ -737,7 +760,7 @@ export function createCollabRoutes(config: CollabConfig) {
       await convex.mutation(api.collaboratorInvites.removeCollaboratorConnection, {
         apiSecret,
         connectionId,
-        ownerTenantId: session.tenantId,
+        ownerAuthUserId: session.authUserId,
       });
     } catch (e) {
       return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });

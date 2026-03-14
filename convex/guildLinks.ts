@@ -5,8 +5,7 @@
  * Called by the API server after validating creator session.
  */
 
-import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
+import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 
 const GuildLinkStatus = v.union(
@@ -28,7 +27,7 @@ function requireApiSecret(apiSecret: string | undefined): void {
 export const upsertGuildLink = mutation({
   args: {
     apiSecret: v.string(),
-    tenantId: v.id('tenants'),
+    authUserId: v.string(),
     discordGuildId: v.string(),
     discordGuildName: v.optional(v.string()),
     discordGuildIcon: v.optional(v.string()),
@@ -53,13 +52,16 @@ export const upsertGuildLink = mutation({
 
     if (existing) {
       const patch: Record<string, unknown> = {
-        tenantId: args.tenantId,
+        authUserId: args.authUserId,
         installedByAuthUserId: args.installedByAuthUserId,
         botPresent: args.botPresent,
         status: args.status,
         commandScopeState: args.commandScopeState,
         updatedAt: now,
       };
+      if (existing.authUserId && existing.authUserId !== args.authUserId) {
+        throw new ConvexError('Unauthorized: guild link owned by different user');
+      }
       if (args.discordGuildName !== undefined) patch.discordGuildName = args.discordGuildName;
       if (args.discordGuildIcon !== undefined) patch.discordGuildIcon = args.discordGuildIcon;
       await ctx.db.patch(existing._id, patch);
@@ -67,7 +69,7 @@ export const upsertGuildLink = mutation({
     }
 
     return await ctx.db.insert('guild_links', {
-      tenantId: args.tenantId,
+      authUserId: args.authUserId,
       discordGuildId: args.discordGuildId,
       discordGuildName: args.discordGuildName,
       discordGuildIcon: args.discordGuildIcon,
@@ -122,7 +124,7 @@ export const updateGuildLinkStatus = mutation({
 });
 
 /**
- * Get guild link for bot command handling. Returns tenantId and guildLinkId when guild is active.
+ * Get guild link for bot command handling. Returns authUserId and guildLinkId when guild is active.
  */
 export const getByDiscordGuildForBot = query({
   args: {
@@ -136,12 +138,12 @@ export const getByDiscordGuildForBot = query({
       .withIndex('by_discord_guild', (q) => q.eq('discordGuildId', args.discordGuildId))
       .first();
     if (!link || link.status !== 'active') return null;
-    return { tenantId: link.tenantId, guildLinkId: link._id };
+    return { authUserId: link.authUserId, guildLinkId: link._id };
   },
 });
 
 /**
- * Get guild link with tenant for ownership check. API calls this before uninstall.
+ * Get guild link with creator profile for ownership check. API calls this before uninstall.
  */
 export const getGuildLinkForUninstall = query({
   args: {
@@ -158,13 +160,9 @@ export const getGuildLinkForUninstall = query({
 
     if (!link) return null;
 
-    const tenant = await ctx.db.get(link.tenantId);
-    if (!tenant) return null;
-
     return {
       guildLinkId: link._id,
-      tenantId: link.tenantId,
-      ownerAuthUserId: tenant.ownerAuthUserId,
+      authUserId: link.authUserId,
     };
   },
 });
@@ -179,24 +177,24 @@ export const getUserGuilds = query({
   },
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    const tenants = await ctx.db
-      .query('tenants')
-      .withIndex('by_owner_auth', (q) => q.eq('ownerAuthUserId', args.authUserId))
+    const profiles = await ctx.db
+      .query('creator_profiles')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
       .collect();
 
     const guilds = [];
-    for (const tenant of tenants) {
+    for (const profile of profiles) {
       const links = await ctx.db
         .query('guild_links')
-        .withIndex('by_tenant', (q) => q.eq('tenantId', tenant._id))
+        .withIndex('by_auth_user', (q) => q.eq('authUserId', profile.authUserId))
         .filter((q) => q.eq(q.field('status'), 'active'))
         .collect();
 
       for (const link of links) {
         guilds.push({
-          tenantId: tenant._id,
+          authUserId: profile.authUserId,
           guildId: link.discordGuildId,
-          name: link.discordGuildName || tenant.name,
+          name: link.discordGuildName || profile.name,
           icon: link.discordGuildIcon ?? null,
         });
       }
@@ -212,6 +210,7 @@ export const getUserGuilds = query({
 export const hardDisconnectGuild = mutation({
   args: {
     apiSecret: v.string(),
+    authUserId: v.string(),
     discordGuildId: v.string(),
   },
   handler: async (ctx, args) => {
@@ -224,6 +223,10 @@ export const hardDisconnectGuild = mutation({
 
     if (!link) {
       return { success: false, reason: 'guild_link_not_found' };
+    }
+
+    if (link.authUserId !== args.authUserId) {
+      throw new ConvexError('Unauthorized: not the owner');
     }
 
     const guildId = args.discordGuildId;
@@ -249,7 +252,9 @@ export const hardDisconnectGuild = mutation({
     // Delete all download_artifacts for this guild
     const downloadArtifacts = await ctx.db
       .query('download_artifacts')
-      .withIndex('by_tenant_guild', (q) => q.eq('tenantId', link.tenantId).eq('guildId', guildId))
+      .withIndex('by_auth_user_guild', (q) =>
+        q.eq('authUserId', link.authUserId).eq('guildId', guildId)
+      )
       .collect();
     for (const artifact of downloadArtifacts) {
       await ctx.db.delete(artifact._id);
