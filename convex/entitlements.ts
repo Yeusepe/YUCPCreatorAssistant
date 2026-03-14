@@ -12,9 +12,9 @@
  */
 
 import { ConvexError, v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
-import type { MutationCtx } from './_generated/server';
+import type { MutationCtx, QueryCtx } from './_generated/server';
 import { canReactivate } from '../packages/shared/src/entitlement/service';
 import { ProviderV } from './lib/providers';
 
@@ -78,6 +78,50 @@ function requireApiSecret(apiSecret: string | undefined): void {
   if (!expected || apiSecret !== expected) {
     throw new Error('Unauthorized: invalid or missing API secret');
   }
+}
+
+type EntitlementReaderCtx = MutationCtx | QueryCtx;
+
+async function requireActiveSubject(
+  ctx: EntitlementReaderCtx,
+  subjectId: Id<'subjects'>
+): Promise<Doc<'subjects'>> {
+  const subject = await ctx.db.get(subjectId);
+  if (!subject) {
+    throw new ConvexError('Subject not found');
+  }
+  if (subject.status !== 'active') {
+    throw new ConvexError(`Subject is not active: ${subject.status}`);
+  }
+  return subject;
+}
+
+async function listActiveEntitlementsForActiveSubjects(
+  ctx: EntitlementReaderCtx,
+  authUserId: string,
+  limit: number
+): Promise<Array<Doc<'entitlements'>>> {
+  const activeEntitlements = await ctx.db
+    .query('entitlements')
+    .withIndex('by_auth_user_status', (q) => q.eq('authUserId', authUserId).eq('status', 'active'))
+    .take(limit);
+  const activeSubjectIds = new Map<string, boolean>();
+  const filtered: Array<Doc<'entitlements'>> = [];
+
+  for (const entitlement of activeEntitlements) {
+    let isActive = activeSubjectIds.get(entitlement.subjectId);
+    if (isActive === undefined) {
+      const subject = await ctx.db.get(entitlement.subjectId);
+      isActive = subject?.status === 'active';
+      activeSubjectIds.set(entitlement.subjectId, isActive);
+    }
+
+    if (isActive) {
+      filtered.push(entitlement);
+    }
+  }
+
+  return filtered;
 }
 
 // ============================================================================
@@ -214,6 +258,7 @@ export const getActiveEntitlement = query({
   ),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
+    const subject = await ctx.db.get(args.subjectId);
     const entitlement = await ctx.db
       .query('entitlements')
       .withIndex('by_auth_user_subject', (q) =>
@@ -223,7 +268,7 @@ export const getActiveEntitlement = query({
       .filter((q) => q.eq(q.field('status'), 'active'))
       .first();
 
-    if (!entitlement) {
+    if (!entitlement || subject?.status !== 'active') {
       return { found: false as const, entitlement: null };
     }
 
@@ -243,12 +288,7 @@ export const getStatsOverview = query({
   }),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    const activeEntitlements = await ctx.db
-      .query('entitlements')
-      .withIndex('by_auth_user_status', (q) =>
-        q.eq('authUserId', args.authUserId).eq('status', 'active')
-      )
-      .take(1000);
+    const activeEntitlements = await listActiveEntitlementsForActiveSubjects(ctx, args.authUserId, 1000);
     const uniqueSubjects = new Set(activeEntitlements.map((e) => e.subjectId));
     const uniqueProducts = new Set(activeEntitlements.map((e) => e.productId));
     const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -275,12 +315,7 @@ export const getStatsOverviewExtended = query({
   }),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    const activeEntitlements = await ctx.db
-      .query('entitlements')
-      .withIndex('by_auth_user_status', (q) =>
-        q.eq('authUserId', args.authUserId).eq('status', 'active')
-      )
-      .take(1000);
+    const activeEntitlements = await listActiveEntitlementsForActiveSubjects(ctx, args.authUserId, 1000);
     const uniqueSubjects = new Set(activeEntitlements.map((e) => e.subjectId));
     const uniqueProducts = new Set(activeEntitlements.map((e) => e.productId));
     const now = Date.now();
@@ -325,12 +360,11 @@ export const getVerifiedUsersPaginated = query({
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
     const limit = Math.min(args.limit ?? 25, 50);
-    const activeEntitlements = await ctx.db
-      .query('entitlements')
-      .withIndex('by_auth_user_status', (q) =>
-        q.eq('authUserId', args.authUserId).eq('status', 'active')
-      )
-      .take(5000); // cap to prevent OOM; pagination handles larger sets
+    const activeEntitlements = await listActiveEntitlementsForActiveSubjects(
+      ctx,
+      args.authUserId,
+      5000
+    ); // cap to prevent OOM; pagination handles larger sets
     const bySubject = new Map<string, { productIds: Set<string> }>();
     for (const e of activeEntitlements) {
       const existing = bySubject.get(e.subjectId);
@@ -354,7 +388,7 @@ export const getVerifiedUsersPaginated = query({
     for (const sid of slice) {
       const subject = await ctx.db.get(sid as Id<'subjects'>);
       const data = bySubject.get(sid)!;
-      if (subject) {
+      if (subject?.status === 'active') {
         users.push({
           subjectId: subject._id,
           discordUserId: subject.primaryDiscordUserId,
@@ -381,12 +415,11 @@ export const getProductStats = query({
   ),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    const activeEntitlements = await ctx.db
-      .query('entitlements')
-      .withIndex('by_auth_user_status', (q) =>
-        q.eq('authUserId', args.authUserId).eq('status', 'active')
-      )
-      .take(5000); // cap to prevent OOM
+    const activeEntitlements = await listActiveEntitlementsForActiveSubjects(
+      ctx,
+      args.authUserId,
+      5000
+    ); // cap to prevent OOM
     const byProduct = new Map<string, number>();
     for (const e of activeEntitlements) {
       byProduct.set(e.productId, (byProduct.get(e.productId) ?? 0) + 1);
@@ -412,6 +445,10 @@ export const hasActiveEntitlement = query({
   returns: v.boolean(),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
+    const subject = await ctx.db.get(args.subjectId);
+    if (subject?.status !== 'active') {
+      return false;
+    }
     const entitlement = await ctx.db
       .query('entitlements')
       .withIndex('by_auth_user_subject', (q) =>
@@ -539,6 +576,7 @@ export const grantEntitlement = mutation({
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
     const now = Date.now();
+    await requireActiveSubject(ctx, args.subjectId);
 
     // Validate purchasedAt timestamp if provided
     if (args.evidence.purchasedAt !== undefined) {
@@ -1260,6 +1298,9 @@ export const enqueueRoleSyncsForUser = mutation({
 
     if (!subject) {
       return { success: false, jobsCreated: 0 };
+    }
+    if (subject.status !== 'active') {
+      throw new ConvexError(`Subject is not active: ${subject.status}`);
     }
 
     // Find active entitlements

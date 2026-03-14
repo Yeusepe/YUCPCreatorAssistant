@@ -73,6 +73,17 @@ async function getTenantPolicy(
   };
 }
 
+async function requireActiveSubject(ctx: MutationCtx, subjectId: Id<'subjects'>) {
+  const subject = await ctx.db.get(subjectId);
+  if (!subject) {
+    throw new ConvexError('Subject not found');
+  }
+  if (subject.status !== 'active') {
+    throw new ConvexError(`Subject is not active: ${subject.status}`);
+  }
+  return subject;
+}
+
 /**
  * Create an audit event for binding operations
  */
@@ -178,6 +189,7 @@ export const activateBinding = mutation({
     requireApiSecret(args.apiSecret);
     const now = Date.now();
     const actorType = args.actorType || 'system';
+    await requireActiveSubject(ctx, args.subjectId);
 
     // Check for existing active ownership binding for this external account
     if (args.bindingType === 'ownership') {

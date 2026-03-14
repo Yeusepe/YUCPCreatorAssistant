@@ -15,6 +15,7 @@ mock.module('../../src/lib/posthog', () => ({
 
 import { MessageFlags } from 'discord.js';
 import type { ConvexHttpClient } from 'convex/browser';
+import { handleInteraction } from '../../src/handlers/interactions';
 import {
   handleModerationClear,
   handleModerationConfirmClear,
@@ -34,7 +35,13 @@ function makeConvex(opts: ModerationConvexOpts = {}): ConvexHttpClient {
   const { subjectFound = true, subjectId = 'subject_mod_test' } = opts;
 
   return {
-    query: mock(async (_ref: unknown, _args: unknown) => {
+    query: mock(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ('discordGuildId' in args) {
+        return {
+          authUserId: 'auth_mod_secure',
+          guildLinkId: 'guild_link_mod_secure',
+        };
+      }
       // All moderation queries go through getSubjectByDiscordId pattern
       if (!subjectFound) return { found: false };
       return { found: true, subject: { _id: subjectId } };
@@ -197,5 +204,66 @@ describe('moderation commands', () => {
     // ⚠️ BUG: shows select menu instead of guild-required error
     const replyContent: string | undefined = interaction.reply.mock.calls[0]?.[0]?.content;
     expect(replyContent).toMatch(/server|guild/i);
+  });
+
+  it('handleInteraction rejects moderation slash commands in DMs before dispatch', async () => {
+    const interaction = mockSlashCommand({
+      userId: 'actor_mod_guard_1',
+      guildId: null,
+      commandName: 'creator-admin',
+      subcommandGroup: 'moderation',
+      subcommand: 'mark',
+      isAdmin: true,
+      userOptions: { user: { id: 'target_mod_guard_1', username: 'target' } },
+    });
+    const convex = makeConvex();
+
+    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+
+    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    expect(reply?.content).toMatch(/server/i);
+    expect(reply?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferReply.mock.calls).toHaveLength(0);
+    expect(interaction.editReply.mock.calls).toHaveLength(0);
+    expect((convex.query as any).mock.calls).toHaveLength(0);
+  });
+
+  it('handleInteraction rejects tampered moderation reason selects when the embedded actorId does not match the clicker', async () => {
+    const interaction = mockStringSelect({
+      userId: 'intruder_mod_guard_2',
+      guildId: 'guild_mod_guard_2',
+      customId: 'creator_moderation:reason_select:admin_mod_guard_2:auth_mod_secure:target_mod_guard_2',
+      values: ['Piracy'],
+      isAdmin: true,
+    });
+    const convex = makeConvex();
+
+    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+
+    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    expect(reply?.content).toMatch(/only the admin who started/i);
+    expect(reply?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
+    expect(interaction.editReply.mock.calls).toHaveLength(0);
+    expect((convex.mutation as any).mock.calls).toHaveLength(0);
+  });
+
+  it('handleInteraction rejects tampered moderation clear buttons with mismatched embedded authUserId', async () => {
+    const interaction = mockButton({
+      userId: 'admin_mod_guard_3',
+      guildId: 'guild_mod_guard_3',
+      customId: 'creator_moderation:confirm_clear:target_mod_guard_3:auth_mod_other:admin_mod_guard_3',
+      isAdmin: true,
+    });
+    const convex = makeConvex();
+
+    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+
+    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    expect(reply?.content).toMatch(/no longer valid/i);
+    expect(reply?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
+    expect(interaction.editReply.mock.calls).toHaveLength(0);
+    expect((convex.mutation as any).mock.calls).toHaveLength(0);
   });
 });

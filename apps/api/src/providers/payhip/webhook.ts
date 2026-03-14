@@ -2,6 +2,11 @@ import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
 import { getStateStore } from '../../lib/stateStore';
+import {
+  isWebhookContentLengthTooLarge,
+  PayloadTooLargeError,
+  readWebhookTextBody,
+} from '../../lib/webhookBody';
 import type { WebhookPlugin } from '../types';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
@@ -29,8 +34,13 @@ export const webhook: WebhookPlugin = {
       return new Response('Method not allowed', { status: 405 });
     }
 
+    if (isWebhookContentLengthTooLarge(request)) {
+      logger.warn('Payhip webhook: rejected oversized payload', { routeId });
+      return new Response('Payload too large', { status: 413 });
+    }
+
     try {
-      const rawBody = await request.text();
+      const rawBody = await readWebhookTextBody(request);
       logger.info('Webhook received', {
         provider: 'payhip',
         routeId,
@@ -176,6 +186,10 @@ export const webhook: WebhookPlugin = {
 
       return new Response('OK', { status: 200 });
     } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        logger.warn('Payhip webhook: rejected oversized payload', { routeId });
+        return new Response('Payload too large', { status: 413 });
+      }
       logger.error('Payhip webhook failed', {
         error: err instanceof Error ? err.message : String(err),
         routeId,

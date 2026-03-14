@@ -8,8 +8,9 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { ConvexHttpClient } from 'convex/browser';
 import { MessageFlags } from 'discord.js';
+import { handleInteraction } from '../../src/handlers/interactions';
 import { handleStats } from '../../src/commands/stats';
-import { mockSlashCommand } from '../helpers/mockInteraction';
+import { mockButton, mockSlashCommand } from '../helpers/mockInteraction';
 
 // ─── Convex mock factory ──────────────────────────────────────────────────────
 
@@ -32,6 +33,44 @@ function makeConvex(opts: StatsMockOpts = {}): ConvexHttpClient {
       }
       // getStatsOverviewExtended — has only apiSecret + authUserId (no guildId)
       return { totalVerified, recent24h, recent7d, recent30d };
+    }),
+    mutation: mock(async () => ({})),
+  } as unknown as ConvexHttpClient;
+}
+
+function makeInteractionConvex(opts: {
+  guildLinkAuthUserId?: string;
+  totalVerified?: number;
+  nextCursor?: string | null;
+} = {}): ConvexHttpClient {
+  const {
+    guildLinkAuthUserId = 'auth_stats_secure',
+    totalVerified = 0,
+    nextCursor = null,
+  } = opts;
+
+  return {
+    query: mock(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ('discordGuildId' in args) {
+        return {
+          authUserId: guildLinkAuthUserId,
+          guildLinkId: 'guild_link_stats_secure',
+        };
+      }
+
+      if ('limit' in args) {
+        return {
+          users: [{ discordUserId: 'viewer_1', productCount: 1 }],
+          nextCursor,
+          totalCount: totalVerified,
+        };
+      }
+
+      if ('guildId' in args) {
+        return [];
+      }
+
+      return { totalVerified, recent24h: 0, recent7d: 0, recent30d: 0 };
     }),
     mutation: mock(async () => ({})),
   } as unknown as ConvexHttpClient;
@@ -166,5 +205,70 @@ describe('handleStats', () => {
     expect(content).toMatch(/server|guild/i);
     // editReply must NOT have been called (no embed sent for DM context)
     expect(interaction.editReply.mock.calls).toHaveLength(0);
+  });
+
+  it('handleInteraction rejects non-admin /creator-admin stats before dispatch', async () => {
+    const interaction = mockSlashCommand({
+      userId: 'user_stats_guard_1',
+      guildId: 'guild_stats_guard_1',
+      commandName: 'creator-admin',
+      subcommand: 'stats',
+      isAdmin: false,
+    });
+    const convex = makeInteractionConvex();
+
+    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+
+    expect(interaction.reply.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        content: expect.stringMatching(/administrator/i),
+        flags: MessageFlags.Ephemeral,
+      }),
+    );
+    expect(interaction.deferReply.mock.calls).toHaveLength(0);
+    expect(interaction.editReply.mock.calls).toHaveLength(0);
+    expect((convex.query as ReturnType<typeof mock>).mock.calls).toHaveLength(0);
+  });
+
+  it('handleInteraction rejects stats slash commands in DMs before any query runs', async () => {
+    const interaction = mockSlashCommand({
+      userId: 'user_stats_guard_2',
+      guildId: null,
+      commandName: 'creator-admin',
+      subcommand: 'stats',
+      isAdmin: true,
+    });
+    const convex = makeInteractionConvex();
+
+    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+
+    expect(interaction.reply.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        content: expect.stringMatching(/server/i),
+        flags: MessageFlags.Ephemeral,
+      }),
+    );
+    expect(interaction.deferReply.mock.calls).toHaveLength(0);
+    expect(interaction.editReply.mock.calls).toHaveLength(0);
+    expect((convex.query as ReturnType<typeof mock>).mock.calls).toHaveLength(0);
+  });
+
+  it('handleInteraction rejects tampered stats buttons with mismatched embedded authUserId and guildId', async () => {
+    const interaction = mockButton({
+      userId: 'user_stats_guard_3',
+      guildId: 'guild_stats_guard_3',
+      customId: 'creator_stats:view_users:auth_stats_other:guild_stats_other',
+      isAdmin: true,
+    });
+    const convex = makeInteractionConvex({ guildLinkAuthUserId: 'auth_stats_guard_3' });
+
+    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+
+    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    expect(reply?.content).toMatch(/different server|no longer valid/i);
+    expect(reply?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
+    expect(interaction.editReply.mock.calls).toHaveLength(0);
+    expect((convex.query as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 });

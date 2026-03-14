@@ -22,6 +22,7 @@ mock.module('../../src/lib/posthog', () => ({
 
 import {
   extractAllCustomIds,
+  mockButton,
   mockSlashCommand,
   mockStringSelect,
 } from '../helpers/mockInteraction';
@@ -29,6 +30,7 @@ import type { MockInteraction } from '../helpers/mockInteraction';
 
 import {
   handleProductAddInteractive,
+  handleProductCancelAdd,
   handleProductTypeSelect,
 } from '../../src/commands/product';
 
@@ -168,5 +170,108 @@ describe('product command', () => {
     const updatePayload = selectInteraction.update.mock.calls[0]?.[0] as any;
     expect(updatePayload?.content).toContain('Session expired');
     expect(updatePayload?.components).toEqual([]);
+  });
+
+  it('rejects product type selects replayed from a different guild', async () => {
+    const slashInteraction = mockSlashCommand({
+      userId: 'user_prod_guard_1',
+      guildId: 'guild_product_origin',
+      commandName: 'creator-admin',
+      subcommandGroup: 'product',
+      subcommand: 'add',
+      isAdmin: true,
+    });
+    await handleProductAddInteractive(slashInteraction as any, {
+      authUserId: 'auth_product_guard_1',
+      guildLinkId: 'link_guard_1' as ProductCtx['guildLinkId'],
+      guildId: 'guild_product_origin',
+    });
+
+    const selectInteraction = mockStringSelect({
+      userId: 'user_prod_guard_1',
+      guildId: 'guild_product_other',
+      customId: 'creator_product:type_select:auth_product_guard_1',
+      values: ['gumroad'],
+    });
+
+    await handleProductTypeSelect(selectInteraction as any, 'auth_product_guard_1');
+
+    const updatePayload = selectInteraction.update.mock.calls[0]?.[0] as any;
+    expect(updatePayload?.content).toContain('Session expired');
+    expect(updatePayload?.components).toEqual([]);
+    expect(selectInteraction.deferUpdate.mock.calls).toHaveLength(0);
+    expect(selectInteraction.editReply.mock.calls).toHaveLength(0);
+    expect(selectInteraction.showModal.mock.calls).toHaveLength(0);
+  });
+
+  it('rejects tampered product type selects with mismatched embedded authUserId values', async () => {
+    const slashInteraction = mockSlashCommand({
+      userId: 'user_prod_guard_2',
+      guildId: 'guild_product_guard_2',
+      commandName: 'creator-admin',
+      subcommandGroup: 'product',
+      subcommand: 'add',
+      isAdmin: true,
+    });
+    await handleProductAddInteractive(slashInteraction as any, {
+      authUserId: 'auth_product_guard_2',
+      guildLinkId: 'link_guard_2' as ProductCtx['guildLinkId'],
+      guildId: 'guild_product_guard_2',
+    });
+
+    const selectInteraction = mockStringSelect({
+      userId: 'user_prod_guard_2',
+      guildId: 'guild_product_guard_2',
+      customId: 'creator_product:type_select:auth_product_other',
+      values: ['gumroad'],
+    });
+
+    await handleProductTypeSelect(selectInteraction as any, 'auth_product_other');
+
+    const updatePayload = selectInteraction.update.mock.calls[0]?.[0] as any;
+    expect(updatePayload?.content).toContain('Session expired');
+    expect(updatePayload?.components).toEqual([]);
+    expect(selectInteraction.deferUpdate.mock.calls).toHaveLength(0);
+    expect(selectInteraction.editReply.mock.calls).toHaveLength(0);
+    expect(selectInteraction.showModal.mock.calls).toHaveLength(0);
+  });
+
+  it('rejects replayed product type selects after the setup is cancelled', async () => {
+    const slashInteraction = mockSlashCommand({
+      userId: 'user_prod_guard_3',
+      guildId: 'guild_product_guard_3',
+      commandName: 'creator-admin',
+      subcommandGroup: 'product',
+      subcommand: 'add',
+      isAdmin: true,
+    });
+    await handleProductAddInteractive(slashInteraction as any, {
+      authUserId: 'auth_product_guard_3',
+      guildLinkId: 'link_guard_3' as ProductCtx['guildLinkId'],
+      guildId: 'guild_product_guard_3',
+    });
+
+    const cancelInteraction = mockButton({
+      userId: 'user_prod_guard_3',
+      guildId: 'guild_product_guard_3',
+      customId: 'creator_product:cancel_add:auth_product_guard_3',
+    });
+    await handleProductCancelAdd(cancelInteraction as any, 'user_prod_guard_3', 'auth_product_guard_3');
+
+    const replayInteraction = mockStringSelect({
+      userId: 'user_prod_guard_3',
+      guildId: 'guild_product_guard_3',
+      customId: 'creator_product:type_select:auth_product_guard_3',
+      values: ['gumroad'],
+    });
+
+    await handleProductTypeSelect(replayInteraction as any, 'auth_product_guard_3');
+
+    const updatePayload = replayInteraction.update.mock.calls[0]?.[0] as any;
+    expect(updatePayload?.content).toContain('Session expired');
+    expect(updatePayload?.components).toEqual([]);
+    expect(replayInteraction.deferUpdate.mock.calls).toHaveLength(0);
+    expect(replayInteraction.editReply.mock.calls).toHaveLength(0);
+    expect(replayInteraction.showModal.mock.calls).toHaveLength(0);
   });
 });

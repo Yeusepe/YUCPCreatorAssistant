@@ -8,7 +8,34 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { createAuth } from '../src/auth';
+import { DISCORD_ROLE_SETUP_COOKIE } from '../src/lib/browserSessions';
+import { createSetupSession, resolveSetupSession } from '../src/lib/setupSession';
+import { getStateStore } from '../src/lib/stateStore';
+import type { ConnectConfig } from '../src/providers/connect/types';
+import { createConnectRoutes } from '../src/routes/connect';
 import { startTestServer, type TestServerHandle } from './helpers/testServer';
+
+const TEST_CONNECT_CONFIG: ConnectConfig = {
+  apiBaseUrl: 'https://api.example.com',
+  frontendBaseUrl: 'https://app.example.com',
+  convexSiteUrl: 'https://convex.example.com',
+  convexUrl: 'https://convex.example.com',
+  convexApiSecret: 'test-api-secret-min-32-characters!!',
+  discordClientId: 'discord-client-id',
+  discordClientSecret: 'discord-client-secret',
+  encryptionSecret: 'test-encryption-secret-32-chars!!',
+};
+
+function createConnectSecurityRoutes() {
+  return createConnectRoutes(
+    createAuth({
+      baseUrl: TEST_CONNECT_CONFIG.apiBaseUrl,
+      convexSiteUrl: TEST_CONNECT_CONFIG.convexSiteUrl,
+    }),
+    TEST_CONNECT_CONFIG
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth guard tests — stub auth always returns null → 401
@@ -119,5 +146,185 @@ describe('Connect routes — token validation', () => {
     expect(res.headers.get('content-type')).toContain('application/json');
     const body = await res.json();
     expect(body).toHaveProperty('error');
+  });
+});
+
+describe('Connect routes — setup session security', () => {
+  it('rejects tampered setup-session tokens without mutating the original session', async () => {
+    const routes = createConnectSecurityRoutes();
+    const setupToken = await createSetupSession(
+      'user_tamper',
+      'guild_tamper',
+      'discord_tamper',
+      TEST_CONNECT_CONFIG.encryptionSecret
+    );
+    const tamperedToken = `${setupToken}x`;
+
+    const res = await routes.exchangeConnectBootstrap(
+      new Request(`${TEST_CONNECT_CONFIG.apiBaseUrl}/api/connect/bootstrap`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ setupToken: tamperedToken }),
+      })
+    );
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get('set-cookie')).toBeNull();
+
+    const originalSession = await resolveSetupSession(
+      setupToken,
+      TEST_CONNECT_CONFIG.encryptionSecret
+    );
+    expect(originalSession).toMatchObject({
+      authUserId: 'user_tamper',
+      guildId: 'guild_tamper',
+      discordUserId: 'discord_tamper',
+    });
+  });
+
+  it('rejects setup sessions that exceed the absolute lifetime and deletes them', async () => {
+    const routes = createConnectSecurityRoutes();
+    const setupToken = await createSetupSession(
+      'user_expired',
+      'guild_expired',
+      'discord_expired',
+      TEST_CONNECT_CONFIG.encryptionSecret
+    );
+    const store = getStateStore();
+    const key = `setup_session:${setupToken}`;
+    const now = Date.now();
+    await store.set(
+      key,
+      JSON.stringify({
+        authUserId: 'user_expired',
+        guildId: 'guild_expired',
+        discordUserId: 'discord_expired',
+        createdAt: now - 2 * 60 * 60 * 1000,
+        expiresAt: now + 5 * 60 * 1000,
+      }),
+      5 * 60 * 1000
+    );
+
+    const res = await routes.exchangeConnectBootstrap(
+      new Request(`${TEST_CONNECT_CONFIG.apiBaseUrl}/api/connect/bootstrap`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ setupToken }),
+      })
+    );
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect(await store.get(key)).toBeNull();
+  });
+});
+
+describe('Connect routes — OAuth state boundaries', () => {
+  it('replays discord-role OAuth state only once and keeps redirects pinned to the configured frontend', async () => {
+    const routes = createConnectSecurityRoutes();
+    const store = getStateStore();
+    const roleToken = `role_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const roleSessionKey = `discord_role_setup:${roleToken}`;
+    await store.set(
+      roleSessionKey,
+      JSON.stringify({
+        authUserId: 'user_oauth',
+        guildId: 'guild_oauth',
+        adminDiscordUserId: 'discord-admin',
+        completed: false,
+      }),
+      30 * 60 * 1000
+    );
+
+    const beginRes = await routes.discordRoleOAuthBegin(
+      new Request(`${TEST_CONNECT_CONFIG.apiBaseUrl}/api/setup/discord-role-oauth/begin`, {
+        headers: { cookie: `${DISCORD_ROLE_SETUP_COOKIE}=${roleToken}` },
+      })
+    );
+    expect(beginRes.status).toBe(302);
+
+    const authLocation = beginRes.headers.get('location');
+    expect(authLocation).toBeTruthy();
+    const state = new URL(authLocation as string).searchParams.get('state');
+    expect(state).toBeTruthy();
+
+    const originalFetch = globalThis.fetch;
+    let oauthFetchCalls = 0;
+    let tokenExchangeBody = '';
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      oauthFetchCalls += 1;
+      const url = String(input);
+      if (url.endsWith('/oauth2/token')) {
+        tokenExchangeBody = String(init?.body ?? '');
+        return new Response(JSON.stringify({ access_token: 'oauth-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.endsWith('/users/@me')) {
+        return new Response(JSON.stringify({ id: 'discord-admin' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.endsWith('/users/@me/guilds')) {
+        return new Response(
+          JSON.stringify([{ id: '2', name: 'Guild Z', icon: null, owner: true, permissions: '8' }]),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    try {
+      const callbackUrl = `https://evil.example/api/setup/discord-role-oauth/callback?code=oauth-code&state=${encodeURIComponent(state as string)}`;
+      const firstRes = await routes.discordRoleOAuthCallback(new Request(callbackUrl));
+      expect(firstRes.status).toBe(302);
+      expect(firstRes.headers.get('location')).toBe(
+        `${TEST_CONNECT_CONFIG.frontendBaseUrl}/discord-role-setup`
+      );
+
+      const redirectUri = new URLSearchParams(tokenExchangeBody).get('redirect_uri');
+      expect(redirectUri).toBe(
+        `${TEST_CONNECT_CONFIG.apiBaseUrl}/api/setup/discord-role-oauth/callback`
+      );
+
+      const storedSession = JSON.parse((await store.get(roleSessionKey)) as string) as {
+        guilds?: Array<{ name: string }>;
+      };
+      expect(storedSession.guilds?.map((guild) => guild.name)).toEqual(['Guild Z']);
+
+      const replayRes = await routes.discordRoleOAuthCallback(new Request(callbackUrl));
+      expect(replayRes.status).toBe(302);
+      expect(replayRes.headers.get('location')).toBe(
+        `${TEST_CONNECT_CONFIG.frontendBaseUrl}/discord-role-setup?error=invalid_state`
+      );
+      expect(oauthFetchCalls).toBe(3);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('encodes OAuth errors without allowing open redirects', async () => {
+    const routes = createConnectSecurityRoutes();
+
+    const res = await routes.discordRoleOAuthCallback(
+      new Request(
+        `${TEST_CONNECT_CONFIG.apiBaseUrl}/api/setup/discord-role-oauth/callback?error=${encodeURIComponent('https://evil.example/phish')}`
+      )
+    );
+
+    expect(res.status).toBe(302);
+    const location = res.headers.get('location');
+    expect(location).toBe(
+      `${TEST_CONNECT_CONFIG.frontendBaseUrl}/discord-role-setup?error=${encodeURIComponent('https://evil.example/phish')}`
+    );
+    expect(new URL(location as string).origin).toBe(
+      new URL(TEST_CONNECT_CONFIG.frontendBaseUrl).origin
+    );
   });
 });

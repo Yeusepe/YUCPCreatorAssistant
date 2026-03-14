@@ -2,6 +2,10 @@
  * Integration tests for Webhook Ingestion and Processing Pipeline
  *
  * Run with: npx vitest run --config convex/vitest.config.ts convex/webhooks.realtest.ts
+ *
+ * Security refs from plan.md:
+ * - https://docs.convex.dev/testing/convex-test
+ * - https://www.svix.com/resources/webhook-best-practices/receiving/
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -9,6 +13,14 @@ import { api, internal } from './_generated/api';
 import { makeTestConvex } from './testHelpers';
 
 const API_SECRET = 'test-secret';
+
+async function getWebhookSecurityCounts(t: ReturnType<typeof makeTestConvex>) {
+  return t.run(async (ctx) => ({
+    webhookEvents: (await ctx.db.query('webhook_events').collect()).length,
+    purchaseFacts: (await ctx.db.query('purchase_facts').collect()).length,
+    entitlements: (await ctx.db.query('entitlements').collect()).length,
+  }));
+}
 
 const BASE_WEBHOOK_ARGS = {
   apiSecret: API_SECRET,
@@ -73,6 +85,50 @@ describe('insertWebhookEvent', () => {
     expect(events).toHaveLength(1);
     expect(events[0].signatureValid).toBe(false);
     expect(events[0].status).toBe('pending');
+  });
+
+  it('given wrong apiSecret, when webhook inserted, then rejects and writes nothing', async () => {
+    const t = makeTestConvex();
+    const before = await getWebhookSecurityCounts(t);
+
+    await expect(
+      t.mutation(api.webhookIngestion.insertWebhookEvent, {
+        ...BASE_WEBHOOK_ARGS,
+        apiSecret: 'wrong-secret',
+        providerEventId: 'sale_wrong_secret',
+      })
+    ).rejects.toThrow('Unauthorized');
+
+    expect(await getWebhookSecurityCounts(t)).toEqual(before);
+  });
+
+  it('given same providerEventId in different tenants, then dedup remains tenant-scoped', async () => {
+    const t = makeTestConvex();
+
+    await t.mutation(api.webhookIngestion.insertWebhookEvent, {
+      ...BASE_WEBHOOK_ARGS,
+      authUserId: 'auth-tenant-a',
+      providerEventId: 'sale_tenant_scoped',
+    });
+    await t.mutation(api.webhookIngestion.insertWebhookEvent, {
+      ...BASE_WEBHOOK_ARGS,
+      authUserId: 'auth-tenant-b',
+      providerEventId: 'sale_tenant_scoped',
+    });
+
+    const events = await t.run(async (ctx) =>
+      ctx.db
+        .query('webhook_events')
+        .withIndex('by_provider_event', (q) =>
+          q.eq('provider', 'gumroad').eq('providerEventId', 'sale_tenant_scoped')
+        )
+        .collect()
+    );
+
+    expect(events).toHaveLength(2);
+    expect(new Set(events.map((event) => event.authUserId))).toEqual(
+      new Set(['auth-tenant-a', 'auth-tenant-b'])
+    );
   });
 });
 
@@ -196,6 +252,38 @@ describe('processWebhookEvent pipeline', () => {
     const facts = await t.run(async (ctx) => ctx.db.query('purchase_facts').collect());
     expect(facts).toHaveLength(1);
     expect(facts[0].subjectId).toBeUndefined();
+  });
+
+  it('given wrong apiSecret, when webhook processing is attempted, then pending event remains unchanged', async () => {
+    const t = makeTestConvex();
+
+    const insertResult = await t.mutation(api.webhookIngestion.insertWebhookEvent, {
+      apiSecret: API_SECRET,
+      authUserId: 'auth-creator-4',
+      provider: 'gumroad',
+      providerEventId: 'sale_process_wrong_secret',
+      eventType: 'sale',
+      rawPayload: {
+        sale_id: 'sale-004',
+        product_id: 'prod-abc',
+        email: 'buyer4@example.com',
+      },
+      signatureValid: true,
+    });
+    const eventId = insertResult.eventId!;
+    const before = await getWebhookSecurityCounts(t);
+
+    await expect(
+      t.run(async (ctx) =>
+        ctx.runMutation(internal.webhookProcessing.processWebhookEvent, {
+          apiSecret: 'wrong-secret',
+          eventId,
+        })
+      )
+    ).rejects.toThrow('Unauthorized');
+
+    expect(await t.run(async (ctx) => ctx.db.get(eventId))).toMatchObject({ status: 'pending' });
+    expect(await getWebhookSecurityCounts(t)).toEqual(before);
   });
 });
 

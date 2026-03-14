@@ -6,9 +6,15 @@ import type { Auth } from '../auth';
 import { getCookieValue, SETUP_SESSION_COOKIE } from '../lib/browserSessions';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { decrypt, encrypt } from '../lib/encrypt';
+import {
+  isWebhookContentLengthTooLarge,
+  PayloadTooLargeError,
+  readWebhookTextBody,
+} from '../lib/webhookBody';
 import { PURPOSES as LEMONSQUEEZY } from '../providers/lemonsqueezy';
 
 const PROVIDER_PLATFORM_CREDENTIAL_PURPOSE = 'provider-platform-credential' as const;
+
 import { resolveSetupSession } from '../lib/setupSession';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
@@ -50,7 +56,9 @@ function newRequestId(): string {
 function generateWebhookSecret(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function jsonResponse(
@@ -318,7 +326,11 @@ async function buildLemonClientForConnection(
   });
   const encryptedApiToken = secrets?.lemonApiTokenEncrypted;
   if (!encryptedApiToken) throw new Error('Lemon Squeezy API token not configured');
-  const apiToken = await decrypt(encryptedApiToken, config.encryptionSecret, LEMONSQUEEZY.credential);
+  const apiToken = await decrypt(
+    encryptedApiToken,
+    config.encryptionSecret,
+    LEMONSQUEEZY.credential
+  );
   return new LemonSqueezyApiClient({ apiToken });
 }
 
@@ -663,7 +675,11 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
           credentialKey: credential.credentialKey,
           kind: credential.kind,
           encryptedValue: credential.value
-            ? await encrypt(credential.value, config.encryptionSecret, PROVIDER_PLATFORM_CREDENTIAL_PURPOSE)
+            ? await encrypt(
+                credential.value,
+                config.encryptionSecret,
+                PROVIDER_PLATFORM_CREDENTIAL_PURPOSE
+              )
             : undefined,
           metadata: credential.metadata,
         });
@@ -703,8 +719,7 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
     if (!selectedStore)
       return jsonResponse({ error: 'No Lemon Squeezy stores found' }, requestId, 422);
 
-    const webhookSecret =
-      String(body.webhookSecret ?? '').trim() || generateWebhookSecret();
+    const webhookSecret = String(body.webhookSecret ?? '').trim() || generateWebhookSecret();
     const webhookUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/v1/webhooks/lemonsqueezy/${connection.connectionId}`;
     const webhook = await client.createWebhook({
       storeId: selectedStore.id,
@@ -713,8 +728,16 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
       secret: webhookSecret,
       testMode: Boolean(body.testMode ?? selectedStore.testMode ?? false),
     });
-    const encryptedApiToken = await encrypt(apiToken, config.encryptionSecret, LEMONSQUEEZY.credential);
-    const encryptedWebhookSecret = await encrypt(webhookSecret, config.encryptionSecret, LEMONSQUEEZY.webhookSecret);
+    const encryptedApiToken = await encrypt(
+      apiToken,
+      config.encryptionSecret,
+      LEMONSQUEEZY.credential
+    );
+    const encryptedWebhookSecret = await encrypt(
+      webhookSecret,
+      config.encryptionSecret,
+      LEMONSQUEEZY.webhookSecret
+    );
 
     for (const credential of [
       {
@@ -1035,6 +1058,11 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
     providerKey: string,
     connectionId: string
   ) {
+    if (isWebhookContentLengthTooLarge(request)) {
+      logger.warn('Lemon webhook rejected oversized payload', { connectionId, providerKey });
+      return jsonResponse({ error: 'Payload too large' }, requestId, 413);
+    }
+
     if (providerKey !== 'lemonsqueezy')
       return jsonResponse(
         { error: 'Canonical webhooks are only implemented for lemonsqueezy in phase 1' },
@@ -1057,8 +1085,21 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
     if (!encryptedWebhookSecret)
       return jsonResponse({ error: 'Webhook secret not configured' }, requestId, 409);
 
-    const rawBody = await request.text();
-    const webhookSecret = await decrypt(encryptedWebhookSecret, config.encryptionSecret, LEMONSQUEEZY.webhookSecret);
+    let rawBody: string;
+    try {
+      rawBody = await readWebhookTextBody(request);
+    } catch (error) {
+      if (error instanceof PayloadTooLargeError) {
+        logger.warn('Lemon webhook rejected oversized payload', { connectionId, providerKey });
+        return jsonResponse({ error: 'Payload too large' }, requestId, 413);
+      }
+      throw error;
+    }
+    const webhookSecret = await decrypt(
+      encryptedWebhookSecret,
+      config.encryptionSecret,
+      LEMONSQUEEZY.webhookSecret
+    );
     const signature = request.headers.get('x-signature')?.trim() ?? '';
     const expected = await hmacSha256(webhookSecret, rawBody);
     if (!signature || !timingSafeStringEqual(expected, signature)) {
@@ -1073,7 +1114,13 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
       return jsonResponse({ error: 'Forbidden' }, requestId, 403);
     }
 
-    const payload = JSON.parse(rawBody) as Record<string, unknown>;
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(rawBody) as Record<string, unknown>;
+    } catch {
+      logger.warn('Lemon webhook rejected malformed payload', { connectionId });
+      return jsonResponse({ error: 'Bad Request' }, requestId, 400);
+    }
     const meta = (payload.meta ?? {}) as Record<string, unknown>;
     const data = (payload.data ?? {}) as Record<string, unknown>;
     const eventType = typeof meta.event_name === 'string' ? meta.event_name : 'unknown';

@@ -3,9 +3,14 @@ import type { Id } from '../../../../convex/_generated/dataModel';
 import {
   extractAllCustomIds,
   getEmbedFromReply,
+  mockButton,
   mockSlashCommand,
 } from '../helpers/mockInteraction';
-import { handleDownloadsAdd, handleDownloadsManage } from '../../src/commands/downloads';
+import {
+  handleDownloadsAdd,
+  handleDownloadsManage,
+  handleDownloadsManageToggle,
+} from '../../src/commands/downloads';
 
 // ─── Shared mock factories ─────────────────────────────────────────────────────
 
@@ -13,6 +18,18 @@ function makeConvex(queryReturn: unknown) {
   return {
     query: mock(() => Promise.resolve(queryReturn)),
     mutation: mock(() => Promise.resolve({})),
+  };
+}
+
+function makeManageConvex(route = SAMPLE_ROUTE) {
+  return {
+    query: mock(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ('routeId' in args) {
+        return route;
+      }
+      return [route];
+    }),
+    mutation: mock(async () => ({})),
   };
 }
 
@@ -134,5 +151,105 @@ describe('downloads command', () => {
     expect(customIds.some((id) => id.startsWith('creator_downloads:manage_select:'))).toBe(true);
     expect(customIds.some((id) => id.startsWith('creator_downloads:manage_toggle:'))).toBe(true);
     expect(customIds.some((id) => id.startsWith('creator_downloads:manage_remove_prompt:'))).toBe(true);
+  });
+
+  it('rejects stale manage tokens before any route query runs', async () => {
+    const interaction = mockButton({
+      userId: 'user_dl_guard_1',
+      guildId: 'guild_dl_test',
+      customId: 'creator_downloads:manage_toggle:missing_token',
+    });
+    const convex = makeManageConvex();
+
+    await handleDownloadsManageToggle(interaction as any, convex as any, 'api-secret', 'missing_token');
+
+    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    expect(reply?.content).toContain('panel expired');
+    expect(interaction.update.mock.calls).toHaveLength(0);
+    expect(interaction.editReply.mock.calls).toHaveLength(0);
+    expect(convex.query.mock.calls).toHaveLength(0);
+    expect(convex.mutation.mock.calls).toHaveLength(0);
+  });
+
+  it('rejects managed-route toggles from a different user without touching the route', async () => {
+    const openInteraction = withGuildChannels(
+      mockSlashCommand({
+        userId: 'user_dl_guard_2',
+        guildId: 'guild_dl_test',
+        commandName: 'creator-admin',
+        subcommandGroup: 'downloads',
+        subcommand: 'manage',
+        isAdmin: true,
+      })
+    );
+    const convex = makeManageConvex();
+    await handleDownloadsManage(openInteraction as any, convex as any, 'api-secret', {
+      authUserId: 'auth_dl_test',
+      guildId: 'guild_dl_test',
+    });
+
+    const panelToken = extractAllCustomIds(openInteraction)
+      .find((id) => id.startsWith('creator_downloads:manage_toggle:'))
+      ?.slice('creator_downloads:manage_toggle:'.length);
+    expect(panelToken).toBeDefined();
+
+    const intruderInteraction = mockButton({
+      userId: 'user_dl_intruder_2',
+      guildId: 'guild_dl_test',
+      customId: `creator_downloads:manage_toggle:${panelToken}`,
+    });
+
+    await handleDownloadsManageToggle(
+      intruderInteraction as any,
+      convex as any,
+      'api-secret',
+      panelToken as string
+    );
+
+    const reply = intruderInteraction.reply.mock.calls[0]?.[0] as any;
+    expect(reply?.content).toContain('Only the person who opened this panel');
+    expect(intruderInteraction.update.mock.calls).toHaveLength(0);
+    expect(intruderInteraction.editReply.mock.calls).toHaveLength(0);
+  });
+
+  it('keeps managed routes isolated to their original guild when a panel token is replayed elsewhere', async () => {
+    const openInteraction = withGuildChannels(
+      mockSlashCommand({
+        userId: 'user_dl_guard_3',
+        guildId: 'guild_dl_test',
+        commandName: 'creator-admin',
+        subcommandGroup: 'downloads',
+        subcommand: 'manage',
+        isAdmin: true,
+      })
+    );
+    const convex = makeManageConvex();
+    await handleDownloadsManage(openInteraction as any, convex as any, 'api-secret', {
+      authUserId: 'auth_dl_test',
+      guildId: 'guild_dl_test',
+    });
+
+    const panelToken = extractAllCustomIds(openInteraction)
+      .find((id) => id.startsWith('creator_downloads:manage_toggle:'))
+      ?.slice('creator_downloads:manage_toggle:'.length);
+    expect(panelToken).toBeDefined();
+
+    const replayInteraction = mockButton({
+      userId: 'user_dl_guard_3',
+      guildId: 'guild_dl_other',
+      customId: `creator_downloads:manage_toggle:${panelToken}`,
+    });
+
+    await handleDownloadsManageToggle(
+      replayInteraction as any,
+      convex as any,
+      'api-secret',
+      panelToken as string
+    );
+
+    const updatePayload = replayInteraction.update.mock.calls[0]?.[0] as any;
+    expect(updatePayload?.content).toContain('no longer available');
+    expect(replayInteraction.reply.mock.calls).toHaveLength(0);
+    expect(convex.mutation.mock.calls).toHaveLength(0);
   });
 });

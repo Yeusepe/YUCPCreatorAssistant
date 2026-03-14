@@ -11,6 +11,7 @@ const VERIFICATION_SCOPE = 'verification:read';
 const SUBJECTS_SCOPE = 'subjects:read';
 const MAX_PRODUCT_IDS_PER_CHECK = 50;
 const PUBLIC_API_KEY_PERMISSION_NAMESPACE = 'publicApi';
+const PUBLIC_API_KEY_PATTERN = /^ypsk_[0-9a-f]{48}$/;
 
 export interface PublicRouteConfig {
   convexUrl: string;
@@ -77,6 +78,7 @@ interface BetterAuthPermissionStatements {
 
 interface BetterAuthVerifiedApiKey {
   id: string;
+  userId?: string;
   name?: string | null;
   prefix?: string | null;
   start?: string | null;
@@ -144,6 +146,10 @@ function extractApiKey(request: Request): string | null {
   const bearer = extractBearerToken(request);
   if (bearer?.startsWith(PUBLIC_API_KEY_PREFIX)) return bearer;
   return null;
+}
+
+function isPublicApiKeyCandidate(apiKey: string): boolean {
+  return PUBLIC_API_KEY_PATTERN.test(apiKey);
 }
 
 export function parseSubjectSelector(value: unknown): SubjectSelector | null {
@@ -327,6 +333,7 @@ async function defaultVerifyApiKey(
 
     return {
       id: result.key.id,
+      userId: result.key.userId,
       name: result.key.name,
       start: result.key.start,
       prefix: result.key.prefix,
@@ -427,6 +434,17 @@ async function authenticateServiceKey(
     };
   }
 
+  if (!isPublicApiKeyCandidate(apiKey)) {
+    return {
+      response: await errorResponseWithSupportCode(
+        'Malformed API key',
+        'Authentication failed',
+        401,
+        { stage: 'auth', authUserId }
+      ),
+    };
+  }
+
   const verified = await verifyApiKey(apiKey, config);
   if (!verified || verified.enabled === false) {
     return {
@@ -440,7 +458,11 @@ async function authenticateServiceKey(
   }
 
   const metadata = parseApiKeyMetadata(verified.metadata);
-  if (metadata?.kind !== 'public-api' || metadata.authUserId !== authUserId) {
+  if (
+    metadata?.kind !== 'public-api' ||
+    metadata.authUserId !== authUserId ||
+    (typeof verified.userId === 'string' && verified.userId !== authUserId)
+  ) {
     return {
       response: await errorResponseWithSupportCode(
         'API key is not valid for this user',

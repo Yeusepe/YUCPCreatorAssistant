@@ -9,7 +9,7 @@
  * 5. Close page, continue setup in Discord
  */
 
-import { createLogger, getProviderDescriptor } from '@yucp/shared';
+import { createLogger, getProviderDescriptor, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import type { Auth } from '../auth';
@@ -23,12 +23,12 @@ import {
 } from '../lib/browserSessions';
 import { getConvexApiSecret, getConvexClient, getConvexClientFromUrl } from '../lib/convex';
 import { encrypt } from '../lib/encrypt';
-import { PURPOSES as PAYHIP } from '../providers/payhip';
-import { CONNECT_PLUGINS } from '../providers/connect/index';
-import type { ConnectConfig, ConnectContext } from '../providers/connect/types';
 import { PUBLIC_API_KEY_PREFIX } from '../lib/publicApiKeys';
 import { createSetupSession, resolveSetupSession } from '../lib/setupSession';
 import { getStateStore } from '../lib/stateStore';
+import { CONNECT_PLUGINS } from '../providers/connect/index';
+import type { ConnectConfig, ConnectContext } from '../providers/connect/types';
+import { PURPOSES as PAYHIP } from '../providers/payhip';
 
 // Re-exported for backwards compatibility — ConnectConfig is defined in providers/connect/types.ts
 export type { ConnectConfig } from '../providers/connect/types';
@@ -36,7 +36,7 @@ export type { ConnectConfig } from '../providers/connect/types';
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const TOKEN_MAX_LEN = 256;
-const TOKEN_PATTERN = /^[a-zA-Z0-9._\-]+$/;
+const TOKEN_PATTERN = /^[a-zA-Z0-9._-]+$/;
 
 function validateToken(token: string | undefined, name: string): string | null {
   if (!token) return null;
@@ -59,6 +59,8 @@ const DISCORD_ROLE_SETUP_PREFIX = 'discord_role_setup:';
 const DISCORD_ROLE_OAUTH_STATE_PREFIX = 'discord_role_oauth:';
 const DISCORD_ROLE_SETUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+// Source: https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/09-Testing_for_Clickjacking
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
 const HTML_SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy':
     "default-src 'self'; " +
@@ -352,6 +354,7 @@ function generateSecureRandom(length: number): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
 function escapeForSingleQuotedJsString(value: string): string {
   return value
     .replace(/\\/g, '\\\\')
@@ -377,6 +380,10 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     'duplicateVerificationBehavior',
     'suspiciousAccountBehavior',
   ]);
+
+  function hasValidApiSecret(value: string | undefined): boolean {
+    return typeof value === 'string' && timingSafeStringEqual(value, config.convexApiSecret);
+  }
 
   /**
    * Fetches guild name/icon from Discord's API using the bot token.
@@ -702,7 +709,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     } catch {
       return Response.json({ error: 'Invalid JSON' }, { status: 400 });
     }
-    if (body.apiSecret !== config.convexApiSecret) {
+    if (!hasValidApiSecret(body.apiSecret)) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
     if (!body.authUserId || !body.guildId || !body.discordUserId) {
@@ -735,7 +742,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     } catch {
       return Response.json({ error: 'Invalid JSON' }, { status: 400 });
     }
-    if (body.apiSecret !== config.convexApiSecret) {
+    if (!hasValidApiSecret(body.apiSecret)) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
     if (!body.discordUserId || !body.guildId) {
@@ -765,7 +772,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Redirecting...</title></head><body><p>Redirecting...</p><script>window.location.replace(${JSON.stringify(targetUrl)} + window.location.hash);</script></body></html>`;
       return new Response(html, {
         status: 200,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
       });
     }
     const legacyGuildId = url.searchParams.get('guild_id');
@@ -834,7 +841,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       html = html.replace('__CALLBACK_URL__', JSON.stringify(callbackUrl));
       return new Response(html, {
         status: 200,
-        headers: { 'Content-Type': 'text/html' },
+        headers: { 'Content-Type': 'text/html', ...HTML_SECURITY_HEADERS },
       });
     }
 
@@ -993,7 +1000,10 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     const discordUserId: string | null = connectDiscordUserId ?? sessionDiscordUserId;
     if (!connectSession?.discordUserId || connectSession.guildId !== guildId) {
       return Response.json(
-        { error: 'A valid setup link for this server is required. Run `/creator-admin setup start` again.' },
+        {
+          error:
+            'A valid setup link for this server is required. Run `/creator-admin setup start` again.',
+        },
         { status: 403 }
       );
     }
@@ -1123,7 +1133,10 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
 
     if (!connectSession?.discordUserId || connectSession.guildId !== guildId) {
       return Response.json(
-        { error: 'A valid setup link for this server is required. Run `/creator-admin setup start` again.' },
+        {
+          error:
+            'A valid setup link for this server is required. Run `/creator-admin setup start` again.',
+        },
         { status: 403 }
       );
     }
@@ -1229,7 +1242,6 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       return Response.json({ gumroad: false, jinxxy: false });
     }
   }
-
 
   /**
    * GET /api/connections?s=TOKEN
@@ -2044,7 +2056,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     } catch {
       return Response.json({ error: 'Invalid JSON' }, { status: 400 });
     }
-    if (body.apiSecret !== config.convexApiSecret) {
+    if (!hasValidApiSecret(body.apiSecret)) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
     if (!body.authUserId || !body.guildId || !body.adminDiscordUserId) {
@@ -2501,7 +2513,6 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     );
   }
 
-
   /**
    * POST /api/connect/:provider/product-credential
    * Body: { authUserId?, productId, productSecretKey }
@@ -2563,7 +2574,11 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     }
 
     try {
-      const encryptedSecretKey = await encrypt(productSecretKey, config.encryptionSecret, PAYHIP.productSecret);
+      const encryptedSecretKey = await encrypt(
+        productSecretKey,
+        config.encryptionSecret,
+        PAYHIP.productSecret
+      );
       const convex = getConvexClientFromUrl(config.convexUrl);
       await convex.mutation(api.providerConnections.upsertProductCredential, {
         apiSecret: config.convexApiSecret,
@@ -2613,7 +2628,6 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     });
     return genericProductCredential(syntheticRequest, 'payhip');
   }
-
 
   return {
     serveConnectPage,
@@ -2672,7 +2686,11 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       };
     }
     try {
-      const encryptedSecretKey = await encrypt(params.plaintextSecretKey, config.encryptionSecret, PAYHIP.productSecret);
+      const encryptedSecretKey = await encrypt(
+        params.plaintextSecretKey,
+        config.encryptionSecret,
+        PAYHIP.productSecret
+      );
       const convex = getConvexClientFromUrl(config.convexUrl);
       await convex.mutation(api.providerConnections.upsertProductCredential, {
         apiSecret: config.convexApiSecret,
@@ -2692,7 +2710,11 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
   }
 }
 
-export function storeConnectToken(token: string, discordUserId: string, guildId: string): Promise<void> {
+export function storeConnectToken(
+  token: string,
+  discordUserId: string,
+  guildId: string
+): Promise<void> {
   const store = getStateStore();
   return store.set(
     `${CONNECT_TOKEN_PREFIX}${token}`,

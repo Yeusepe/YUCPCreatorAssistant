@@ -1,9 +1,16 @@
 import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
+
 const JINXXY_PENDING_WEBHOOK_PREFIX = 'jinxxy_webhook_pending:';
+
 import type { getConvexClientFromUrl } from '../../lib/convex';
 import { decrypt } from '../../lib/encrypt';
 import { getStateStore } from '../../lib/stateStore';
+import {
+  isWebhookContentLengthTooLarge,
+  PayloadTooLargeError,
+  readWebhookTextBody,
+} from '../../lib/webhookBody';
 import type { WebhookPlugin } from '../types';
 
 type ConvexClient = ReturnType<typeof getConvexClientFromUrl>;
@@ -28,7 +35,7 @@ async function hmacSha256(secret: string, body: string): Promise<string> {
     keyData,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign'],
+    ['sign']
   );
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
   return Array.from(new Uint8Array(signature))
@@ -39,7 +46,7 @@ async function hmacSha256(secret: string, body: string): Promise<string> {
 async function getJinxxyWebhookSecretByRouteId(
   convex: ConvexClient,
   apiSecret: string,
-  routeId: string,
+  routeId: string
 ): Promise<string | null> {
   try {
     return await convex.query(api.providerConnections.getJinxxyWebhookSecretByRouteId, {
@@ -53,7 +60,7 @@ async function getJinxxyWebhookSecretByRouteId(
 
 async function getPendingJinxxyWebhookSecret(
   encryptionSecret: string,
-  routeId: string,
+  routeId: string
 ): Promise<string | null> {
   try {
     const store = getStateStore();
@@ -70,7 +77,7 @@ async function getCollabWebhookSecret(
   convex: ConvexClient,
   apiSecret: string,
   encryptionSecret: string,
-  inviteId: string,
+  inviteId: string
 ): Promise<string | null> {
   try {
     const encryptedSecret = await convex.query(api.collaboratorInvites.getCollabWebhookSecret, {
@@ -90,14 +97,19 @@ async function handleJinxxyCollabWebhook(
   inviteId: string,
   convex: ConvexClient,
   apiSecret: string,
-  encryptionSecret: string,
+  encryptionSecret: string
 ): Promise<Response> {
   if (request.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
 
+  if (isWebhookContentLengthTooLarge(request)) {
+    logger.warn('Collab webhook: rejected oversized payload', { ownerAuthUserId, inviteId });
+    return new Response('Payload too large', { status: 413 });
+  }
+
   try {
-    const rawBody = await request.text();
+    const rawBody = await readWebhookTextBody(request);
     logger.info('Webhook received', {
       provider: 'jinxxy-collab',
       ownerAuthUserId,
@@ -106,7 +118,12 @@ async function handleJinxxyCollabWebhook(
     });
     const signature = request.headers.get('x-signature');
 
-    const webhookSecret = await getCollabWebhookSecret(convex, apiSecret, encryptionSecret, inviteId);
+    const webhookSecret = await getCollabWebhookSecret(
+      convex,
+      apiSecret,
+      encryptionSecret,
+      inviteId
+    );
     let signatureValid = false;
 
     if (webhookSecret && signature) {
@@ -166,6 +183,10 @@ async function handleJinxxyCollabWebhook(
 
     return new Response('OK', { status: 200 });
   } catch (err) {
+    if (err instanceof PayloadTooLargeError) {
+      logger.warn('Collab webhook: rejected oversized payload', { ownerAuthUserId, inviteId });
+      return new Response('Payload too large', { status: 413 });
+    }
     logger.error('Collab webhook failed', {
       error: err instanceof Error ? err.message : String(err),
       ownerAuthUserId,
@@ -195,7 +216,7 @@ export const webhook: WebhookPlugin = {
         inviteId,
         convex,
         apiSecret,
-        encryptionSecret,
+        encryptionSecret
       );
     }
 
@@ -203,8 +224,13 @@ export const webhook: WebhookPlugin = {
       return new Response('Method not allowed', { status: 405 });
     }
 
+    if (isWebhookContentLengthTooLarge(request)) {
+      logger.warn('Jinxxy webhook: rejected oversized payload', { routeId });
+      return new Response('Payload too large', { status: 413 });
+    }
+
     try {
-      const rawBody = await request.text();
+      const rawBody = await readWebhookTextBody(request);
       logger.info('Webhook received', {
         provider: 'jinxxy',
         routeId,
@@ -339,6 +365,10 @@ export const webhook: WebhookPlugin = {
 
       return new Response('OK', { status: 200 });
     } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        logger.warn('Jinxxy webhook: rejected oversized payload', { routeId });
+        return new Response('Payload too large', { status: 413 });
+      }
       logger.error('Jinxxy webhook failed', {
         error: err instanceof Error ? err.message : String(err),
         routeId,

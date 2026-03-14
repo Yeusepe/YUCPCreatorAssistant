@@ -4,6 +4,10 @@
  *
  * Run with:
  *   npx vitest run --config convex/vitest.config.ts convex/entitlements.realtest.ts
+ *
+ * Security refs from plan.md:
+ * - https://docs.convex.dev/testing/convex-test
+ * - https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -12,9 +16,20 @@ import {
   makeTestConvex,
   seedCreatorProfile,
   seedEntitlement,
-  seedGuildLink,
   seedSubject,
 } from './testHelpers';
+
+async function getEntitlementState(t: ReturnType<typeof makeTestConvex>, entitlementId: string) {
+  return t.run(async (ctx) => ctx.db.get(entitlementId as never));
+}
+
+async function getSecurityCounts(t: ReturnType<typeof makeTestConvex>) {
+  return t.run(async (ctx) => ({
+    entitlements: (await ctx.db.query('entitlements').collect()).length,
+    outboxJobs: (await ctx.db.query('outbox_jobs').collect()).length,
+    auditEvents: (await ctx.db.query('audit_events').collect()).length,
+  }));
+}
 
 // ============================================================================
 // GRANT ENTITLEMENT LIFECYCLE
@@ -108,6 +123,7 @@ describe('grantEntitlement lifecycle', () => {
     const t = makeTestConvex();
     const authUserId = 'auth-grant-auth-fail-3';
     const subjectId = await seedSubject(t, { primaryDiscordUserId: 'discord-grant-3' });
+    const before = await getSecurityCounts(t);
 
     // No creator profile seeded — the auth check should fail before that lookup
     await expect(
@@ -121,7 +137,35 @@ describe('grantEntitlement lifecycle', () => {
           sourceReference: 'order_should_fail',
         },
       })
-    ).rejects.toThrow();
+    ).rejects.toThrow('Unauthorized');
+
+    expect(await getSecurityCounts(t)).toEqual(before);
+  });
+
+  it('given quarantined subject, when grantEntitlement called, then rejects and writes nothing', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-grant-quarantine-4';
+    const subjectId = await seedSubject(t, {
+      primaryDiscordUserId: 'discord-grant-quarantine-1',
+      status: 'quarantined',
+    });
+    await seedCreatorProfile(t, { authUserId });
+    const before = await getSecurityCounts(t);
+
+    await expect(
+      t.mutation(api.entitlements.grantEntitlement, {
+        apiSecret: 'test-secret',
+        authUserId,
+        subjectId,
+        productId: 'gumroad:prod_quarantine',
+        evidence: {
+          provider: 'gumroad',
+          sourceReference: 'order_quarantine_should_fail',
+        },
+      })
+    ).rejects.toThrow('Subject is not active: quarantined');
+
+    expect(await getSecurityCounts(t)).toEqual(before);
   });
 });
 
@@ -204,6 +248,30 @@ describe('revokeEntitlement lifecycle', () => {
 
     expect(resultForB.found).toBe(false);
     expect(resultForB.entitlement).toBeNull();
+  });
+
+  it('given tenant B tries to revoke tenant A entitlement, then rejects and leaves entitlement active', async () => {
+    const t = makeTestConvex();
+    const subjectId = await seedSubject(t, { primaryDiscordUserId: 'discord-revoke-isolation-1' });
+    const entitlementId = await seedEntitlement(t, subjectId, {
+      authUserId: 'auth-tenant-a',
+      productId: 'gumroad:prod_revoke_isolation',
+      sourceReference: 'order-tenant-a',
+      status: 'active',
+    });
+    const before = await getSecurityCounts(t);
+
+    await expect(
+      t.mutation(api.entitlements.revokeEntitlement, {
+        apiSecret: 'test-secret',
+        authUserId: 'auth-tenant-b',
+        entitlementId,
+        reason: 'manual',
+      })
+    ).rejects.toThrow('Unauthorized: not the owner');
+
+    expect(await getEntitlementState(t, entitlementId)).toMatchObject({ status: 'active' });
+    expect(await getSecurityCounts(t)).toEqual(before);
   });
 });
 
@@ -338,5 +406,65 @@ describe('statistics and pagination', () => {
 
     expect(jobs.length).toBeGreaterThanOrEqual(1);
     expect(jobs.some((j) => j.jobType === 'role_sync')).toBe(true);
+  });
+
+  it('given suspended subject has active entitlement, then active entitlement lookups fail closed', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-suspended-lookup-10';
+    const subjectId = await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-suspended-lookup-1',
+      status: 'suspended',
+    });
+    await seedEntitlement(t, subjectId, {
+      authUserId,
+      productId: 'gumroad:prod_suspended_lookup',
+      sourceReference: 'ref-suspended-lookup',
+      status: 'active',
+    });
+
+    const activeEntitlement = await t.query(api.entitlements.getActiveEntitlement, {
+      apiSecret: 'test-secret',
+      authUserId,
+      subjectId,
+      productId: 'gumroad:prod_suspended_lookup',
+    });
+    const hasActiveEntitlement = await t.query(api.entitlements.hasActiveEntitlement, {
+      apiSecret: 'test-secret',
+      authUserId,
+      subjectId,
+      productId: 'gumroad:prod_suspended_lookup',
+    });
+
+    expect(activeEntitlement).toEqual({ found: false, entitlement: null });
+    expect(hasActiveEntitlement).toBe(false);
+  });
+
+  it('given suspended subject, when enqueueRoleSyncsForUser called, then rejects and writes no jobs', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-enqueue-suspended-11';
+    const discordUserId = 'discord-enqueue-suspended-1';
+    const subjectId = await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: discordUserId,
+      status: 'suspended',
+    });
+    await seedEntitlement(t, subjectId, {
+      authUserId,
+      productId: 'gumroad:prod_enqueue_suspended',
+      sourceReference: 'ref-enqueue-suspended',
+      status: 'active',
+    });
+    const before = await getSecurityCounts(t);
+
+    await expect(
+      t.mutation(api.entitlements.enqueueRoleSyncsForUser, {
+        apiSecret: 'test-secret',
+        authUserId,
+        discordUserId,
+      })
+    ).rejects.toThrow('Subject is not active: suspended');
+
+    expect(await getSecurityCounts(t)).toEqual(before);
   });
 });
