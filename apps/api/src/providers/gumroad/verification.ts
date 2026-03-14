@@ -4,6 +4,15 @@ import type { LicenseVerificationPlugin, LicenseVerificationResult } from '../ty
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
+async function sha256Hex(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 export const verification: LicenseVerificationPlugin = {
   async verifyLicense(
     licenseKey: string,
@@ -23,8 +32,6 @@ export const verification: LicenseVerificationPlugin = {
 
     logger.info('[gumroad/verification] Calling Gumroad verifyLicense', {
       productId,
-      licenseKeyPrefix: licenseKey.slice(0, 8),
-      licenseKeyLength: licenseKey.length,
       authUserId,
     });
 
@@ -39,7 +46,7 @@ export const verification: LicenseVerificationPlugin = {
     return {
       valid: result.valid,
       externalOrderId: result.saleId ?? undefined,
-      providerUserId: result.purchaseEmail ?? undefined,
+      providerUserId: result.purchaseEmail ? await sha256Hex(result.purchaseEmail) : undefined,
       error: result.error ?? undefined,
     };
   },

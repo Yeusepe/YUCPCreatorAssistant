@@ -873,6 +873,7 @@ const provider_connections = defineTable({
   webhookEndpoint: v.optional(v.string()),
   remoteWebhookId: v.optional(v.string()),
   remoteWebhookSecretRef: v.optional(v.string()),
+  webhookRouteToken: v.optional(v.string()),
   testMode: v.optional(v.boolean()),
   metadata: v.optional(v.any()),
   lastSuccessfulBackfillAt: v.optional(v.number()),
@@ -884,7 +885,8 @@ const provider_connections = defineTable({
   .index('by_auth_user', ['authUserId'])
   .index('by_auth_user_provider', ['authUserId', 'provider'])
   .index('by_auth_user_provider_key', ['authUserId', 'providerKey'])
-  .index('by_auth_user_provider_label', ['authUserId', 'provider', 'label']);
+  .index('by_auth_user_provider_label', ['authUserId', 'provider', 'label'])
+  .index('by_webhook_route_token', ['webhookRouteToken']);
 
 const provider_credentials = defineTable({
   providerConnectionId: v.id('provider_connections'),

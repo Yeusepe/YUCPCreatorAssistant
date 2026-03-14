@@ -80,11 +80,12 @@ function requireAdmin(interaction: ChatInputCommandInteraction): boolean {
 }
 
 function hasAdministratorPermission(interaction: {
-  member: { permissions?: { has?: (bit: bigint) => boolean } } | string | null;
+  member: { permissions?: { has?: (bit: bigint) => boolean } | string } | string | null;
 }): boolean {
   const member = interaction.member;
   if (!member || typeof member === 'string' || !('permissions' in member)) return false;
-  return member.permissions?.has?.(PermissionFlagsBits.Administrator) ?? false;
+  if (!member.permissions || typeof member.permissions === 'string') return false;
+  return member.permissions.has?.(PermissionFlagsBits.Administrator) ?? false;
 }
 
 async function rejectComponentInteraction(
@@ -111,10 +112,7 @@ async function validateAdminComponentContext(
   }
 
   if (!hasAdministratorPermission(interaction)) {
-    await rejectComponentInteraction(
-      interaction,
-      'This action requires Administrator permission.'
-    );
+    await rejectComponentInteraction(interaction, 'This action requires Administrator permission.');
     return false;
   }
 
@@ -750,7 +748,15 @@ async function handleButton(
 
   if (customId.startsWith('creator_verify:disconnect:')) {
     const provider = customId.slice('creator_verify:disconnect:'.length);
-    const VALID_PROVIDERS = ['gumroad', 'jinxxy', 'discord', 'manual', 'vrchat', 'lemon_squeezy', 'payhip'];
+    const VALID_PROVIDERS = [
+      'gumroad',
+      'jinxxy',
+      'discord',
+      'manual',
+      'vrchat',
+      'lemon_squeezy',
+      'payhip',
+    ];
     if (!VALID_PROVIDERS.includes(provider)) {
       await interaction.reply({ content: 'Invalid provider.', flags: MessageFlags.Ephemeral });
       return;
@@ -833,8 +839,13 @@ async function handleButton(
     const authUserId = firstColon >= 0 ? rest.slice(0, firstColon) : rest;
     const remainder1 = firstColon >= 0 ? rest.slice(firstColon + 1) : '';
     const secondColon = remainder1.indexOf(':');
-    const guildId = secondColon >= 0 ? remainder1.slice(0, secondColon) : (remainder1 || (interaction.guildId ?? ''));
-    const direction = (secondColon >= 0 ? remainder1.slice(secondColon + 1) : '') as 'next' | 'prev';
+    const guildId =
+      secondColon >= 0
+        ? remainder1.slice(0, secondColon)
+        : remainder1 || (interaction.guildId ?? '');
+    const direction = (secondColon >= 0 ? remainder1.slice(secondColon + 1) : '') as
+      | 'next'
+      | 'prev';
     if (
       !(await validateAdminComponentContext(interaction, ctx, {
         expectedAuthUserId: authUserId,

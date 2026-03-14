@@ -17,16 +17,16 @@
 
 import path from 'node:path';
 import type { Auth } from './auth';
-import { createCollabRoutes } from './routes/collab';
-import { createConnectRoutes } from './routes/connect';
-import { createProviderPlatformRoutes } from './routes/providerPlatform';
-import { createPublicRoutes } from './routes/public';
-import { createSuiteRoutes } from './routes/suite';
 import {
   createVerificationRoutes,
   mountVerificationRouteHandlers,
   type VerificationConfig,
 } from './routes';
+import { createCollabRoutes } from './routes/collab';
+import { createConnectRoutes } from './routes/connect';
+import { createProviderPlatformRoutes } from './routes/providerPlatform';
+import { createPublicRoutes } from './routes/public';
+import { createSuiteRoutes } from './routes/suite';
 import { createWebhookHandler } from './routes/webhooks';
 
 const PUBLIC_BASE_DIR = path.resolve(import.meta.dir, '..', 'public');
@@ -102,6 +102,28 @@ const DASHBOARD_HTML_SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
 };
+
+function getContentType(filePath: string): string {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.css':
+      return 'text/css; charset=utf-8';
+    case '.js':
+      return 'application/javascript; charset=utf-8';
+    case '.html':
+      return 'text/html; charset=utf-8';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.ico':
+      return 'image/x-icon';
+    default:
+      return 'application/octet-stream';
+  }
+}
 
 export interface TestServerConfig {
   /** 0 = OS assigns a free port */
@@ -214,6 +236,29 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
       return new Response(file, { headers: { 'Content-Type': 'text/css; charset=utf-8' } });
     }
 
+    if (
+      pathname.startsWith('/assets/') ||
+      pathname.startsWith('/Icons/') ||
+      pathname === '/dashboard.css' ||
+      pathname === '/dashboard-components.css'
+    ) {
+      const relativePublicPath = pathname.replace(/^\/+/, '');
+      const candidatePath = path.resolve(PUBLIC_BASE_DIR, relativePublicPath);
+      if (
+        candidatePath === PUBLIC_BASE_DIR ||
+        !candidatePath.startsWith(`${PUBLIC_BASE_DIR}${path.sep}`)
+      ) {
+        return new Response('Not found', { status: 404 });
+      }
+
+      const file = Bun.file(candidatePath);
+      if (await file.exists()) {
+        return new Response(file, {
+          headers: { 'Content-Type': getContentType(candidatePath) },
+        });
+      }
+    }
+
     // Webhook routes (Gumroad, Jinxxy, Payhip, etc.)
     if (pathname.startsWith('/webhooks/')) {
       return webhookHandler(request);
@@ -248,8 +293,10 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
     // Connect routes
     if (pathname === '/connect') return connectRoutes.serveConnectPage(request);
     if (pathname === '/api/connect/complete') return connectRoutes.completeSetup(request);
-    if (pathname === '/api/connect/bootstrap') return connectRoutes.exchangeConnectBootstrap(request);
-    if (pathname === '/api/connect/session-status') return connectRoutes.getDashboardSessionStatus(request);
+    if (pathname === '/api/connect/bootstrap')
+      return connectRoutes.exchangeConnectBootstrap(request);
+    if (pathname === '/api/connect/session-status')
+      return connectRoutes.getDashboardSessionStatus(request);
     if (pathname === '/api/connect/ensure-tenant') return connectRoutes.ensureTenant(request);
     if (pathname === '/api/connect/user/guilds') return connectRoutes.getUserGuilds(request);
     if (pathname === '/api/connect/user/accounts') {
@@ -268,15 +315,23 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
     }
     if (pathname.startsWith('/api/connect/public-api/keys/')) {
       const keyId = pathname.replace(/^\/api\/connect\/public-api\/keys\//, '').split('/')[0];
-      if (pathname.endsWith('/revoke')) return connectRoutes.revokePublicApiKey(request, decodeURIComponent(keyId ?? ''));
-      if (pathname.endsWith('/rotate')) return connectRoutes.rotatePublicApiKey(request, decodeURIComponent(keyId ?? ''));
+      if (pathname.endsWith('/revoke'))
+        return connectRoutes.revokePublicApiKey(request, decodeURIComponent(keyId ?? ''));
+      if (pathname.endsWith('/rotate'))
+        return connectRoutes.rotatePublicApiKey(request, decodeURIComponent(keyId ?? ''));
     }
     if (pathname === '/api/connect/oauth-apps') {
       if (request.method === 'POST') return connectRoutes.createOAuthApp(request);
       return connectRoutes.listOAuthApps(request);
     }
-    if (pathname.startsWith('/api/connect/oauth-apps/') && pathname.endsWith('/regenerate-secret') && request.method === 'POST') {
-      const appId = pathname.replace(/^\/api\/connect\/oauth-apps\//, '').replace(/\/regenerate-secret$/, '');
+    if (
+      pathname.startsWith('/api/connect/oauth-apps/') &&
+      pathname.endsWith('/regenerate-secret') &&
+      request.method === 'POST'
+    ) {
+      const appId = pathname
+        .replace(/^\/api\/connect\/oauth-apps\//, '')
+        .replace(/\/regenerate-secret$/, '');
       return connectRoutes.regenerateOAuthAppSecret(request, decodeURIComponent(appId));
     }
     if (pathname.startsWith('/api/connect/oauth-apps/')) {
@@ -316,7 +371,8 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
 
     if (pathname === '/verify-success' || pathname === '/verify-success.html') {
       const filePath = `${import.meta.dir}/../public/verify-success.html`;
-      const html = await Bun.file(filePath).text();
+      let html = await Bun.file(filePath).text();
+      html = html.replaceAll('__API_BASE__', browserApiBase);
       return new Response(html, {
         headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
       });
@@ -324,21 +380,26 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
 
     if (pathname === '/verify-error' || pathname === '/verify-error.html') {
       const filePath = `${import.meta.dir}/../public/verify-error.html`;
-      const html = await Bun.file(filePath).text();
+      let html = await Bun.file(filePath).text();
+      html = html.replaceAll('__API_BASE__', browserApiBase);
       return new Response(html, {
         headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
       });
     }
 
     if (pathname === '/sign-in') {
-      const redirectTo = getSafeRelativeRedirectTarget(url.searchParams.get('redirectTo')) ?? '/dashboard';
+      const redirectTo =
+        getSafeRelativeRedirectTarget(url.searchParams.get('redirectTo')) ?? '/dashboard';
       const callbackUrl = new URL(`${browserApiBase}/sign-in`);
       callbackUrl.searchParams.set('redirectTo', redirectTo);
       const signInUrl = `${browserApiBase.replace(/\/$/, '')}/api/auth/sign-in/discord?callbackURL=${encodeURIComponent(callbackUrl.toString())}`;
       const filePath = `${import.meta.dir}/../public/sign-in.html`;
       let html = await Bun.file(filePath).text();
       html = html.replaceAll('__SIGN_IN_URL__', JSON.stringify(signInUrl));
-      html = html.replaceAll('__API_BASE__', escapeHtmlAttribute(browserApiBase.replace(/\/$/, '')));
+      html = html.replaceAll(
+        '__API_BASE__',
+        escapeHtmlAttribute(browserApiBase.replace(/\/$/, ''))
+      );
       return new Response(html, {
         headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
       });
@@ -371,15 +432,10 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
       html = html.replace(/__CLIENT_ID__/g, escapeHtmlAttribute(clientId || 'unknown client'));
       html = html.replace(
         /__SCOPE__/g,
-        escapeForSingleQuotedJsString(
-          escapeHtmlAttribute(scope || 'openid verification:read')
-        )
+        escapeForSingleQuotedJsString(escapeHtmlAttribute(scope || 'openid verification:read'))
       );
       html = html.replace(/__CONSENT_CODE__/g, '');
-      html = html.replace(
-        /__CONSENT_ACTION__/g,
-        escapeForSingleQuotedJsString(consentAction)
-      );
+      html = html.replace(/__CONSENT_ACTION__/g, escapeForSingleQuotedJsString(consentAction));
       return new Response(html, {
         headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
       });
