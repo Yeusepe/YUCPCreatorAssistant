@@ -31,6 +31,78 @@ import { createWebhookHandler } from './routes/webhooks';
 
 const PUBLIC_BASE_DIR = path.resolve(import.meta.dir, '..', 'public');
 
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
+function escapeForSingleQuotedJsString(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+    .replace(/<\/script/gi, '<\\/script');
+}
+
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html
+function getSafeRelativeRedirectTarget(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  if (!value.startsWith('/')) {
+    return null;
+  }
+
+  if (value.startsWith('//')) {
+    return null;
+  }
+
+  return value;
+}
+
+// Source: https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/09-Testing_for_Clickjacking
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
+const HTML_SECURITY_HEADERS: Record<string, string> = {
+  'Content-Security-Policy':
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "img-src 'self' data: blob: https:; " +
+    "font-src 'self' data: https://fonts.gstatic.com https://db.onlinewebfonts.com https://r2cdn.perplexity.ai; " +
+    "connect-src 'self' https: wss:; " +
+    "worker-src 'self' blob:; " +
+    "child-src 'self'; " +
+    "frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'",
+  'Referrer-Policy': 'no-referrer',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+};
+
+const DASHBOARD_HTML_SECURITY_HEADERS: Record<string, string> = {
+  'Content-Security-Policy':
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' blob: https://ga.jspm.io https://unpkg.com https://esm.sh; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "img-src 'self' data: blob: https:; " +
+    "font-src 'self' data: https://fonts.gstatic.com https://db.onlinewebfonts.com https://r2cdn.perplexity.ai; " +
+    "connect-src 'self' https: wss:; " +
+    "worker-src 'self' blob:; " +
+    "child-src 'self'; " +
+    "frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'",
+  'Referrer-Policy': 'no-referrer',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+};
+
 export interface TestServerConfig {
   /** 0 = OS assigns a free port */
   port: number;
@@ -174,6 +246,7 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
     }
 
     // Connect routes
+    if (pathname === '/connect') return connectRoutes.serveConnectPage(request);
     if (pathname === '/api/connect/complete') return connectRoutes.completeSetup(request);
     if (pathname === '/api/connect/bootstrap') return connectRoutes.exchangeConnectBootstrap(request);
     if (pathname === '/api/connect/session-status') return connectRoutes.getDashboardSessionStatus(request);
@@ -241,27 +314,75 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
       if (response) return response;
     }
 
-    // HTML pages (for Playwright tests)
-    const htmlPages: Record<string, string> = {
-      '/verify-success': 'verify-success.html',
-      '/verify-error': 'verify-error.html',
-      '/sign-in': 'sign-in.html',
-      '/connect': 'connect.html',
-      '/dashboard': 'dashboard.html',
-      '/oauth/consent': 'oauth-consent.html',
-    };
-    const htmlFile = htmlPages[pathname] ?? htmlPages[pathname.replace(/\.html$/, '')];
-    if (htmlFile) {
-      const filePath = `${import.meta.dir}/../public/${htmlFile}`;
-      const exists = await Bun.file(filePath).exists();
-      if (exists) {
-        let html = await Bun.file(filePath).text();
-        html = html.replaceAll('__API_BASE__', browserApiBase);
-        html = html.replaceAll('__TENANT_ID__', '');
-        html = html.replaceAll('__GUILD_ID__', '');
-        html = html.replaceAll('__HAS_SETUP_SESSION__', 'false');
-        return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
-      }
+    if (pathname === '/verify-success' || pathname === '/verify-success.html') {
+      const filePath = `${import.meta.dir}/../public/verify-success.html`;
+      const html = await Bun.file(filePath).text();
+      return new Response(html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
+      });
+    }
+
+    if (pathname === '/verify-error' || pathname === '/verify-error.html') {
+      const filePath = `${import.meta.dir}/../public/verify-error.html`;
+      const html = await Bun.file(filePath).text();
+      return new Response(html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
+      });
+    }
+
+    if (pathname === '/sign-in') {
+      const redirectTo = getSafeRelativeRedirectTarget(url.searchParams.get('redirectTo')) ?? '/dashboard';
+      const callbackUrl = new URL(`${browserApiBase}/sign-in`);
+      callbackUrl.searchParams.set('redirectTo', redirectTo);
+      const signInUrl = `${browserApiBase.replace(/\/$/, '')}/api/auth/sign-in/discord?callbackURL=${encodeURIComponent(callbackUrl.toString())}`;
+      const filePath = `${import.meta.dir}/../public/sign-in.html`;
+      let html = await Bun.file(filePath).text();
+      html = html.replaceAll('__SIGN_IN_URL__', JSON.stringify(signInUrl));
+      html = html.replaceAll('__API_BASE__', escapeHtmlAttribute(browserApiBase.replace(/\/$/, '')));
+      return new Response(html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
+      });
+    }
+
+    if (pathname === '/dashboard' || pathname === '/dashboard.html') {
+      const filePath = `${import.meta.dir}/../public/dashboard.html`;
+      let html = await Bun.file(filePath).text();
+      const authUserId =
+        url.searchParams.get('tenant_id') ?? url.searchParams.get('authUserId') ?? '';
+      const guildId = url.searchParams.get('guild_id') ?? url.searchParams.get('guildId') ?? '';
+      html = html.replaceAll('__TENANT_ID__', escapeForSingleQuotedJsString(authUserId));
+      html = html.replaceAll('__GUILD_ID__', escapeForSingleQuotedJsString(guildId));
+      html = html.replaceAll('__API_BASE__', escapeForSingleQuotedJsString(browserApiBase));
+      html = html.replaceAll('__HAS_SETUP_SESSION__', 'false');
+      return new Response(html, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          ...DASHBOARD_HTML_SECURITY_HEADERS,
+        },
+      });
+    }
+
+    if (pathname === '/oauth/consent') {
+      const clientId = url.searchParams.get('client_id') ?? '';
+      const scope = url.searchParams.get('scope') ?? '';
+      const consentAction = '/api/auth/oauth2/consent';
+      const filePath = `${import.meta.dir}/../public/oauth-consent.html`;
+      let html = await Bun.file(filePath).text();
+      html = html.replace(/__CLIENT_ID__/g, escapeHtmlAttribute(clientId || 'unknown client'));
+      html = html.replace(
+        /__SCOPE__/g,
+        escapeForSingleQuotedJsString(
+          escapeHtmlAttribute(scope || 'openid verification:read')
+        )
+      );
+      html = html.replace(/__CONSENT_CODE__/g, '');
+      html = html.replace(
+        /__CONSENT_ACTION__/g,
+        escapeForSingleQuotedJsString(consentAction)
+      );
+      return new Response(html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8', ...HTML_SECURITY_HEADERS },
+      });
     }
 
     // 404 fallback

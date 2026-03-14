@@ -13,9 +13,10 @@
  * Tests 9–11 require a real Convex instance with seeded data and are
  * marked it.todo() until Phase 2 Convex integration is wired up.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
-import { startTestServer } from './helpers/testServer';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { createPublicRoutes, type PublicRouteConfig } from '../src/routes/public';
 import type { TestServerHandle } from './helpers/testServer';
+import { startTestServer } from './helpers/testServer';
 
 // Minimal valid body for POST /api/public/verification/check.
 // All three fields must be present to pass body validation and reach auth.
@@ -23,6 +24,12 @@ const VALID_BODY = {
   authUserId: 'test-auth-user-id',
   subject: { subjectId: 'test-subject-id' },
   productIds: ['gumroad:prod_test'],
+};
+
+const TEST_PUBLIC_CONFIG: PublicRouteConfig = {
+  convexUrl: 'https://convex.example.com',
+  convexApiSecret: 'test-api-secret-min-32-characters!!',
+  convexSiteUrl: 'https://convex.example.com',
 };
 
 function post(
@@ -161,18 +168,132 @@ describe('Public API — response shape', () => {
   it.todo(
     '200 with verified:true for a subject that has an active entitlement ' +
       '— needs real Convex + seeded ypsk_ key and entitlement record',
-    () => {},
+    () => {}
   );
 
   it.todo(
     '200 with verified:false for an unknown subjectId (graceful not-found) ' +
       '— needs real Convex + seeded ypsk_ key; subject resolution returns 200 empty',
-    () => {},
+    () => {}
   );
 
   it.todo(
     '403 when API key belongs to creator A but authUserId targets creator B ' +
       '(data isolation) — needs real Convex + two seeded creators with separate ypsk_ keys',
-    () => {},
+    () => {}
   );
+});
+
+describe('Public API — security boundaries', () => {
+  function createSecurityHarness(verifiedKey: Record<string, unknown> | null) {
+    let verifyApiKeyCalls = 0;
+    let convexQueryCalls = 0;
+
+    const routes = createPublicRoutes(TEST_PUBLIC_CONFIG, {
+      verifyApiKey: async () => {
+        verifyApiKeyCalls += 1;
+        return verifiedKey as never;
+      },
+      createConvexClient: () =>
+        ({
+          query: async () => {
+            convexQueryCalls += 1;
+            throw new Error('Convex should not be reached for rejected requests');
+          },
+        }) as never,
+    });
+
+    return {
+      routes,
+      getVerifyApiKeyCalls: () => verifyApiKeyCalls,
+      getConvexQueryCalls: () => convexQueryCalls,
+    };
+  }
+
+  async function callSecurityRoute(
+    harness: ReturnType<typeof createSecurityHarness>,
+    headers: Record<string, string>
+  ) {
+    return harness.routes.handleRequest(
+      new Request('https://api.example.com/api/public/verification/check', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(VALID_BODY),
+      }),
+      '/api/public/verification/check'
+    );
+  }
+
+  it('rejects malformed x-api-key values before verification lookup', async () => {
+    const harness = createSecurityHarness({
+      id: 'key_live',
+      userId: VALID_BODY.authUserId,
+      enabled: true,
+      metadata: { kind: 'public-api', authUserId: VALID_BODY.authUserId },
+      permissions: { publicApi: ['verification:read'] },
+    });
+
+    const res = await callSecurityRoute(harness, { 'x-api-key': 'not-a-public-api-key' });
+
+    expect(res?.status).toBe(401);
+    expect(harness.getVerifyApiKeyCalls()).toBe(0);
+    expect(harness.getConvexQueryCalls()).toBe(0);
+  });
+
+  it('rejects expired API keys before any tenant data lookup', async () => {
+    const harness = createSecurityHarness({
+      id: 'key_expired',
+      userId: VALID_BODY.authUserId,
+      enabled: true,
+      metadata: { kind: 'public-api', authUserId: VALID_BODY.authUserId },
+      permissions: { publicApi: ['verification:read'] },
+      expiresAt: Date.now() - 1_000,
+    });
+
+    const res = await callSecurityRoute(harness, {
+      'x-api-key': 'ypsk_0123456789abcdef0123456789abcdef0123456789abcdef',
+    });
+
+    expect(res?.status).toBe(401);
+    expect(harness.getVerifyApiKeyCalls()).toBe(1);
+    expect(harness.getConvexQueryCalls()).toBe(0);
+  });
+
+  it('rejects API keys scoped to a different tenant without querying subject data', async () => {
+    const harness = createSecurityHarness({
+      id: 'key_other_tenant',
+      userId: 'other-user-id',
+      enabled: true,
+      metadata: { kind: 'public-api', authUserId: 'other-user-id' },
+      permissions: { publicApi: ['verification:read'] },
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const res = await callSecurityRoute(harness, {
+      'x-api-key': 'ypsk_abcdef0123456789abcdef0123456789abcdef0123456789',
+    });
+
+    expect(res?.status).toBe(403);
+    expect(harness.getVerifyApiKeyCalls()).toBe(1);
+    expect(harness.getConvexQueryCalls()).toBe(0);
+  });
+
+  it('rejects mismatched Better Auth owner IDs even when metadata is forged to match', async () => {
+    const harness = createSecurityHarness({
+      id: 'key_forged_metadata',
+      userId: 'other-owner',
+      enabled: true,
+      metadata: { kind: 'public-api', authUserId: VALID_BODY.authUserId },
+      permissions: { publicApi: ['verification:read'] },
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const res = await callSecurityRoute(harness, {
+      'x-api-key': 'ypsk_fedcba9876543210fedcba9876543210fedcba9876543210',
+    });
+
+    expect(res?.status).toBe(403);
+    expect(harness.getVerifyApiKeyCalls()).toBe(1);
+    expect(harness.getConvexQueryCalls()).toBe(0);
+  });
 });

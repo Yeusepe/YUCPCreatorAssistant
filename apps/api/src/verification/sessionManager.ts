@@ -14,7 +14,7 @@
 
 import { type TwoFactorAuthType, VrchatApiClient, type VrchatCurrentUser } from '@yucp/providers';
 import type { VrchatSessionTokens } from '@yucp/providers/vrchat';
-import { createLogger } from '@yucp/shared';
+import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { createAuth, type VrchatOwnershipPayload, type VrchatSessionTokensPayload } from '../auth';
@@ -739,7 +739,11 @@ export function createVerificationSessionManager(
         try {
           const encryptionSecret = process.env.BETTER_AUTH_SECRET;
           if (encryptionSecret && syncResult.externalAccountId) {
-            const tokenEncrypted = await encrypt(accessToken, encryptionSecret, 'discord-oauth-access-token');
+            const tokenEncrypted = await encrypt(
+              accessToken,
+              encryptionSecret,
+              'discord-oauth-access-token'
+            );
             // Discord access tokens expire after ~7 days
             const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
             await convex.mutation(api.identitySync.storeDiscordToken, {
@@ -1144,6 +1148,10 @@ function buildVerifyPanelRefreshReply() {
 export function createVerificationRoutes(config: VerificationConfig) {
   const manager = createVerificationSessionManager(config);
 
+  function hasValidApiSecret(value: string | undefined): boolean {
+    return typeof value === 'string' && timingSafeStringEqual(value, config.convexApiSecret);
+  }
+
   /**
    * POST /api/verification/begin or GET /api/verification/begin?authUserId=&mode=&redirectUri=
    * Starts a verification session. GET returns redirect to OAuth URL (for Discord link buttons).
@@ -1341,7 +1349,7 @@ export function createVerificationRoutes(config: VerificationConfig) {
       );
     }
 
-    if (!body.apiSecret || body.apiSecret !== config.convexApiSecret) {
+    if (!hasValidApiSecret(body.apiSecret)) {
       return jsonNoStore({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -1483,7 +1491,7 @@ export function createVerificationRoutes(config: VerificationConfig) {
     try {
       body = (await request.json()) as NonNullable<typeof body>;
 
-      if (!body.apiSecret || body.apiSecret !== config.convexApiSecret) {
+      if (!hasValidApiSecret(body.apiSecret)) {
         return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
       }
 
@@ -2208,7 +2216,7 @@ export function createVerificationRoutes(config: VerificationConfig) {
     try {
       body = (await request.json()) as NonNullable<typeof body>;
 
-      if (!body.apiSecret || body.apiSecret !== config.convexApiSecret) {
+      if (!hasValidApiSecret(body.apiSecret)) {
         return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
       }
 

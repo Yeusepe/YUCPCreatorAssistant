@@ -6,13 +6,14 @@
  * No internal IDs are exposed in URLs.
  */
 
-import { createLogger } from '@yucp/shared';
+import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { getStateStore } from './stateStore';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const SETUP_SESSION_PREFIX = 'setup_session:';
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
+const SESSION_MAX_AGE_MS = SESSION_TTL_MS;
 
 export interface SetupSessionData {
   authUserId: string;
@@ -104,7 +105,7 @@ export async function resolveSetupSession(
 
   // Verify HMAC signature
   const expectedSig = await hmacSign(token, secret);
-  if (sig !== expectedSig) {
+  if (!timingSafeStringEqual(sig, expectedSig)) {
     logger.warn('Setup session HMAC verification failed', {
       tokenPrefix: `${signedToken.slice(0, 8)}...`,
     });
@@ -118,15 +119,20 @@ export async function resolveSetupSession(
   }
 
   const data = JSON.parse(raw) as SetupSessionData;
+  const now = Date.now();
 
   // Check expiration
-  if (Date.now() > data.expiresAt) {
+  if (
+    now > data.expiresAt ||
+    !Number.isFinite(data.createdAt) ||
+    now - data.createdAt > SESSION_MAX_AGE_MS
+  ) {
     await store.delete(`${SETUP_SESSION_PREFIX}${signedToken}`);
     return null;
   }
 
   // Renew TTL
-  data.expiresAt = Date.now() + SESSION_TTL_MS;
+  data.expiresAt = now + SESSION_TTL_MS;
   await store.set(`${SETUP_SESSION_PREFIX}${signedToken}`, JSON.stringify(data), SESSION_TTL_MS);
 
   return data;

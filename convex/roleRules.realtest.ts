@@ -3,11 +3,22 @@
  *
  * Uses convex-test to run against an in-memory Convex backend.
  * Run with: npx vitest run --config convex/vitest.config.ts convex/roleRules.realtest.ts
+ *
+ * Security refs from plan.md:
+ * - https://docs.convex.dev/testing/convex-test
+ * - https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { api } from './_generated/api';
 import { makeTestConvex, seedGuildLink } from './testHelpers';
+
+async function getRoleRuleCounts(t: ReturnType<typeof makeTestConvex>) {
+  return t.run(async (ctx) => ({
+    roleRules: (await ctx.db.query('role_rules').collect()).length,
+    outboxJobs: (await ctx.db.query('outbox_jobs').collect()).length,
+  }));
+}
 
 describe('role rules CRUD and isolation', () => {
   beforeEach(() => {
@@ -215,6 +226,7 @@ describe('role rules CRUD and isolation', () => {
       authUserId: 'auth-creator-5',
       discordGuildId: 'guild-E5',
     });
+    const before = await getRoleRuleCounts(t);
 
     await expect(
       t.mutation(api.role_rules.createRoleRule, {
@@ -226,5 +238,72 @@ describe('role rules CRUD and isolation', () => {
         verifiedRoleId: 'role-e-1',
       })
     ).rejects.toThrow();
+
+    expect(await getRoleRuleCounts(t)).toEqual(before);
+  });
+
+  it('given attacker uses another tenant guildLink, when creating rule, then rejects and writes nothing', async () => {
+    const t = makeTestConvex();
+    const victimGuildLinkId = await seedGuildLink(t, {
+      authUserId: 'auth-victim-1',
+      discordGuildId: 'guild-victim-1',
+    });
+    const before = await getRoleRuleCounts(t);
+
+    await expect(
+      t.mutation(api.role_rules.createRoleRule, {
+        apiSecret: 'test-secret',
+        authUserId: 'auth-attacker-1',
+        guildId: 'guild-victim-1',
+        guildLinkId: victimGuildLinkId,
+        productId: 'gumroad:prod-attack',
+        verifiedRoleId: 'role-attack',
+      })
+    ).rejects.toThrow('Unauthorized: caller does not own this guild link');
+
+    expect(await getRoleRuleCounts(t)).toEqual(before);
+  });
+
+  it('given same guildId reused across tenants, when queried, then only caller tenant rules are returned', async () => {
+    const t = makeTestConvex();
+    const guildId = 'shared-guild-id';
+    const tenantALink = await seedGuildLink(t, {
+      authUserId: 'auth-tenant-a',
+      discordGuildId: guildId,
+    });
+    const tenantBLink = await seedGuildLink(t, {
+      authUserId: 'auth-tenant-b',
+      discordGuildId: guildId,
+    });
+
+    await t.mutation(api.role_rules.createRoleRule, {
+      apiSecret: 'test-secret',
+      authUserId: 'auth-tenant-a',
+      guildId,
+      guildLinkId: tenantALink,
+      productId: 'gumroad:prod-a',
+      verifiedRoleId: 'role-a',
+    });
+    await t.mutation(api.role_rules.createRoleRule, {
+      apiSecret: 'test-secret',
+      authUserId: 'auth-tenant-b',
+      guildId,
+      guildLinkId: tenantBLink,
+      productId: 'gumroad:prod-b',
+      verifiedRoleId: 'role-b',
+    });
+
+    const tenantARules = await t.query(api.role_rules.getByGuild, {
+      apiSecret: 'test-secret',
+      authUserId: 'auth-tenant-a',
+      guildId,
+    });
+
+    expect(tenantARules).toHaveLength(1);
+    expect(tenantARules[0]).toMatchObject({
+      authUserId: 'auth-tenant-a',
+      productId: 'gumroad:prod-a',
+      verifiedRoleId: 'role-a',
+    });
   });
 });

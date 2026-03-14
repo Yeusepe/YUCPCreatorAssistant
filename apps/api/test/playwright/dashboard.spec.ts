@@ -1,7 +1,20 @@
 import { test, expect } from 'playwright/test';
 
+// Source: https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/09-Testing_for_Clickjacking
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
+
 const SKIP_REASON =
   'Requires TEST_BASE_URL env var pointing to a running API server (e.g. TEST_BASE_URL=http://localhost:3001)';
+
+function expectHtmlSecurityHeaders(headers: Record<string, string>) {
+  expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
+  expect(headers['content-security-policy']).toContain("object-src 'none'");
+  expect(headers['content-security-policy']).toContain("base-uri 'none'");
+  expect(headers['x-frame-options']).toBe('DENY');
+  expect(headers['x-content-type-options']).toBe('nosniff');
+  expect(headers['referrer-policy']).toBe('no-referrer');
+}
 
 test.describe('Dashboard page', () => {
   test.skip(!process.env.TEST_BASE_URL, SKIP_REASON);
@@ -12,6 +25,12 @@ test.describe('Dashboard page', () => {
     // Test server (createServer.ts): 200 — dashboard HTML is served without auth guard
     // so that Playwright content tests can run without credentials.
     expect(response?.status()).toBe(200);
+  });
+
+  test('dashboard page serves CSP and clickjacking protections', async ({ page }) => {
+    const response = await page.goto('/dashboard');
+    expect(response?.status()).toBe(200);
+    expectHtmlSecurityHeaders(response?.headers() ?? {});
   });
 
   test('unauthenticated access redirects to sign-in (production behaviour)', async ({ page }) => {
@@ -48,6 +67,24 @@ test.describe('Dashboard page', () => {
     expect(bodyHtml).not.toContain('__GUILD_ID__');
     expect(bodyHtml).not.toContain('__TENANT_ID__');
     expect(bodyHtml).not.toContain('__HAS_SETUP_SESSION__');
+  });
+
+  test('dashboard safely escapes tenant and guild identifiers before bootstrapping inline JS', async ({
+    page,
+  }) => {
+    const payload = `phase8'</script><script>window.__phase8DashboardXss=1</script>`;
+    const jsErrors: string[] = [];
+    page.on('pageerror', err => jsErrors.push(err.message));
+
+    const response = await page.goto(
+      `/dashboard?tenant_id=${encodeURIComponent(payload)}&guild_id=${encodeURIComponent(payload)}`
+    );
+
+    expect(response?.status()).toBe(200);
+    await expect.poll(() => page.evaluate(() => (window as any).__phase8DashboardXss)).toBeFalsy();
+    const bodyHtml = await page.evaluate(() => document.body.innerHTML);
+    expect(bodyHtml).not.toContain(payload);
+    expect(jsErrors).toHaveLength(0);
   });
 
   test('dashboard headings contain no "undefined" text', async ({ page }) => {

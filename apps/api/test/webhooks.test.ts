@@ -1,29 +1,20 @@
 /**
- * Webhook HTTP-layer integration tests
+ * Webhook security regression tests.
  *
- * These tests cover routing, auth/signature validation, replay protection, and
- * error handling for all four webhook providers. They run against a real Bun
- * HTTP server (port 0) but WITHOUT a real Convex backend.
+ * Source URLs:
+ *   - Gumroad Ping: https://gumroad.com/ping
+ *   - Lemon Squeezy signing requests: https://docs.lemonsqueezy.com/help/webhooks/signing-requests
+ *   - Lemon Squeezy webhook requests: https://docs.lemonsqueezy.com/help/webhooks/webhook-requests
+ *   - Payhip webhooks: https://help.payhip.com/article/115-webhooks
  *
- * Without a real Convex backend, certain checks (signature validation requiring
- * a stored secret, connection lookup) cannot run end-to-end. Those are marked
- * with it.todo() and explained below.
- *
- * Key behaviours verified here (all happen BEFORE any Convex I/O):
- *   - Gumroad:  method check, replay protection, missing sale_id early-return
- *   - Jinxxy:   method check, JSON parse, signature rejection (no stored secret)
- *   - Payhip:   method check, JSON parse
- *   - LS:       provider routing, GET method falls through to 404
- *
- * Reference files:
- *   apps/api/src/providers/gumroad/webhook.ts
- *   apps/api/src/providers/jinxxy/webhook.ts
- *   apps/api/src/providers/payhip/webhook.ts
- *   apps/api/src/routes/providerPlatform.ts  (LemonSqueezy: /v1/webhooks/…)
- *   apps/api/src/routes/webhooks.ts          (Gumroad/Jinxxy/Payhip: /webhooks/…)
+ * Jinxxy's signing contract is exercised against the production handler in
+ * apps/api/src/providers/jinxxy/webhook.ts; no public provider doc is checked into this repo.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { encrypt } from '../src/lib/encrypt';
+import { type FakeConvexOptions, startFakeConvexServer } from './helpers/fakeConvex';
+import { startTestServer, type TestServerHandle } from './helpers/testServer';
 import {
   gumroadSalePayload,
   jinxxyOrderPayload,
@@ -32,419 +23,677 @@ import {
   signJinxxy,
   signLemonSqueezy,
 } from './helpers/webhookSignatures';
-import { startTestServer, type TestServerHandle } from './helpers/testServer';
 
-// ---------------------------------------------------------------------------
-// Shared server instance (started once for all suites)
-// ---------------------------------------------------------------------------
+const ENCRYPTION_SECRET = 'test-encryption-secret-32-chars!!';
+const JINXXY_WEBHOOK_SECRET_PURPOSE = 'jinxxy-webhook-signing-secret' as const;
+const PAYHIP_CREDENTIAL_PURPOSE = 'payhip-api-key' as const;
+const LEMONSQUEEZY_WEBHOOK_SECRET_PURPOSE = 'lemonsqueezy-webhook-secret' as const;
 
-let server: TestServerHandle;
+const refs = {
+  getConnectionForBackfill: 'providerConnections:getConnectionForBackfill',
+  getJinxxyWebhookSecretByRouteId: 'providerConnections:getJinxxyWebhookSecretByRouteId',
+  getPayhipApiKeyByRouteId: 'providerConnections:getPayhipApiKeyByRouteId',
+  getProviderConnectionAdmin: 'providerPlatform:getProviderConnectionAdmin',
+  insertWebhookEvent: 'webhookIngestion:insertWebhookEvent',
+  markPayhipWebhookConfigured: 'providerConnections:markPayhipWebhookConfigured',
+  resolveWebhookTenantIds: 'webhookIngestion:resolveWebhookTenantIds',
+  updateProviderConnectionState: 'providerPlatform:updateProviderConnectionState',
+} as const;
 
-beforeAll(async () => {
-  server = await startTestServer();
+interface StoredWebhookEvent {
+  authUserId: string;
+  provider: string;
+  providerEventId: string;
+  eventType: string;
+}
+
+function createWebhookStore() {
+  const events = new Map<string, StoredWebhookEvent>();
+
+  return {
+    size() {
+      return events.size;
+    },
+    insert(args: Record<string, unknown>) {
+      const record: StoredWebhookEvent = {
+        authUserId: String(args.authUserId ?? ''),
+        provider: String(args.provider ?? ''),
+        providerEventId: String(args.providerEventId ?? ''),
+        eventType: String(args.eventType ?? ''),
+      };
+      const key = `${record.authUserId}:${record.provider}:${record.providerEventId}`;
+      const duplicate = events.has(key);
+      if (!duplicate) {
+        events.set(key, record);
+      }
+      return {
+        success: true,
+        duplicate,
+        ...(duplicate ? {} : { eventId: `event_${events.size}` }),
+      };
+    },
+  };
+}
+
+async function withWebhookHarness(
+  convexOptions: FakeConvexOptions,
+  run: (ctx: {
+    convex: ReturnType<typeof startFakeConvexServer>;
+    server: TestServerHandle;
+  }) => Promise<void>
+): Promise<void> {
+  const convex = startFakeConvexServer(convexOptions);
+  const server = await startTestServer({
+    convexUrl: convex.url,
+    encryptionSecret: ENCRYPTION_SECRET,
+  });
+
+  try {
+    await run({ convex, server });
+  } finally {
+    server.stop();
+    convex.stop();
+  }
+}
+
+function minutesAgo(minutes: number): string {
+  return new Date(Date.now() - minutes * 60 * 1000).toISOString();
+}
+
+function oversizedJsonBody(bytes = 270_000): string {
+  return JSON.stringify({
+    event_id: 'evt_boundary_001',
+    event_type: 'order.completed',
+    padding: 'x'.repeat(bytes),
+  });
+}
+
+describe('Webhook routing', () => {
+  it('returns 404 for unknown webhook providers', async () => {
+    await withWebhookHarness({}, async ({ server }) => {
+      const res = await server.fetch('/webhooks/unknownprovider/some-route-id', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+
+      expect(res.status).toBe(404);
+    });
+  });
+
+  it('returns 404 for incomplete jinxxy-collab webhook paths', async () => {
+    await withWebhookHarness({}, async ({ server }) => {
+      const res = await server.fetch('/webhooks/jinxxy-collab/owner-only', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+
+      expect(res.status).toBe(404);
+    });
+  });
 });
 
-afterAll(() => {
-  server.stop();
-});
+describe('Gumroad webhook security', () => {
+  it('rejects stale sale timestamps before any Convex call or event write', async () => {
+    const store = createWebhookStore();
 
-// ---------------------------------------------------------------------------
-// General routing
-// ---------------------------------------------------------------------------
-
-describe('General webhook routing', () => {
-  it('POST /webhooks/unknownprovider/id → 404', async () => {
-    // The webhook dispatcher in routes/webhooks.ts returns 404 when no
-    // matching provider plugin is found.
-    const res = await server.fetch('/webhooks/unknownprovider/some-route-id', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it('POST /v1/webhooks/unknownprovider/id → 404', async () => {
-    // The providerPlatform route (for LemonSqueezy) explicitly 404s any
-    // provider other than 'lemonsqueezy' — phase-1 restriction.
-    const res = await server.fetch('/v1/webhooks/unknownprovider/some-connection-id', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it('POST /webhooks/jinxxy-collab/id/missing-invite → 404', async () => {
-    // The jinxxy-collab extra-provider path requires a 4th path segment
-    // (inviteId). With only 3 segments, the handler returns 404.
-    const res = await server.fetch('/webhooks/jinxxy-collab/some-owner-id', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it.todo(
-    'Concurrent identical webhook events are deduplicated — requires real Convex state',
-    () => {},
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Gumroad webhooks  (/webhooks/gumroad/:routeId)
-//
-// Security model: NO HMAC. The routeId IS the secret. Content-Type is NOT
-// validated by the handler — it reads the raw body and parses as URLSearchParams
-// regardless of the declared content-type.
-// ---------------------------------------------------------------------------
-
-describe('Gumroad webhooks', () => {
-  const GUMROAD_PATH = '/webhooks/gumroad/test-route-id';
-
-  it('GET → 405 (method check happens before any Convex call)', async () => {
-    const res = await server.fetch(GUMROAD_PATH, { method: 'GET' });
-    expect(res.status).toBe(405);
-  });
-
-  it('POST with old sale_timestamp → 403 (replay protection fires before Convex lookup)', async () => {
-    // The handler rejects events older than 5 minutes BEFORE querying Convex.
-    // This test works without a real backend.
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const body = gumroadSalePayload({
-      saleId: 'sale_replay_test',
-      saleTimestamp: tenMinutesAgo,
-    });
-    const res = await server.fetch(GUMROAD_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it('POST with a fresh timestamp but just-expired boundary (exactly 5 min) → 403', async () => {
-    // Boundary: 5 minutes + 1 second → should be rejected.
-    const justOver5Min = new Date(Date.now() - 5 * 60 * 1000 - 1000).toISOString();
-    const body = gumroadSalePayload({
-      saleId: 'sale_boundary_test',
-      saleTimestamp: justOver5Min,
-    });
-    const res = await server.fetch(GUMROAD_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it('POST with missing sale_id → 200 (handler returns OK early — no DB call)', async () => {
-    // Gumroad handler explicitly returns 200 when sale_id is absent:
-    //   if (!saleId) return new Response('OK', { status: 200 });
-    // This happens BEFORE the Convex connection lookup.
-    const params = new URLSearchParams({ refunded: 'false' });
-    const res = await server.fetch(GUMROAD_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it('POST with JSON body (wrong content-type) → 200 (content-type not validated; URLSearchParams cannot find sale_id)', async () => {
-    // Gumroad does NOT validate Content-Type. It reads the raw body and parses
-    // with URLSearchParams. A JSON body fails URLSearchParams extraction of
-    // sale_id → empty string → handler returns 200 early (same path as missing
-    // sale_id). No 400/415 is emitted.
-    const res = await server.fetch(GUMROAD_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sale_id: 'should-not-matter' }),
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it('POST with valid form body and fresh timestamp → not 200 (Convex unavailable)', async () => {
-    // With a valid sale_id and fresh timestamp, the handler proceeds to the
-    // Convex connection lookup. Since there is no real Convex backend in tests,
-    // the query throws a network error, caught by the outer try/catch → 500.
-    const body = gumroadSalePayload({ saleId: 'sale_fresh_001' });
-    const res = await server.fetch(GUMROAD_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-    // Cannot be 200 — Convex lookup fails. Either 403 (no connection found) or
-    // 500 (network error). Either way, not a success.
-    expect(res.status).not.toBe(200);
-  });
-
-  it.todo(
-    'Valid form body + routeId with matching Convex connection → 200 and event stored',
-    () => {},
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Jinxxy webhooks  (/webhooks/jinxxy/:routeId)
-//
-// Security model: HMAC-SHA256 of the raw body, sent as lowercase hex in the
-// `x-signature` header. The handler retrieves the stored secret from Convex
-// (gracefully returning null on error), then validates the signature AFTER
-// parsing JSON. Without a stored secret, signatureValid is always false → 403.
-// ---------------------------------------------------------------------------
-
-describe('Jinxxy webhooks', () => {
-  const JINXXY_PATH = '/webhooks/jinxxy/test-route-id';
-
-  it('GET → 405 (method check before anything else)', async () => {
-    const res = await server.fetch(JINXXY_PATH, { method: 'GET' });
-    expect(res.status).toBe(405);
-  });
-
-  it('POST with invalid JSON body → 400 (JSON parse fails before signature enforcement)', async () => {
-    // The Jinxxy handler tries to fetch the webhook secret from Convex (catches
-    // errors silently → null), then parses JSON. Bad JSON → 400 Bad Request.
-    const res = await server.fetch(JINXXY_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: 'this is not json{{',
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('POST with wrong content-type (form-encoded body that is not valid JSON) → 400', async () => {
-    // Jinxxy always tries JSON.parse. Form-encoded body fails JSON parse → 400.
-    const res = await server.fetch(JINXXY_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: 'event_id=foo&event_type=order.completed',
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('POST with valid JSON but missing event_id → 200 (early return before signature check)', async () => {
-    // The handler returns 200 immediately if event_id (and event_type) are
-    // both absent — this happens AFTER the signature setup code but BEFORE
-    // the signatureValid guard that would reject it.
-    const res = await server.fetch(JINXXY_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ some_other_field: 'value' }),
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it('POST with valid JSON and missing x-signature header → 403', async () => {
-    // Without a stored secret AND without a signature, signatureValid=false.
-    // The handler logs "no secret configured" and then rejects with 403.
-    const body = jinxxyOrderPayload({ eventId: 'evt_no_sig_001' });
-    const res = await server.fetch(JINXXY_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body,
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it('POST with valid JSON and wrong x-signature → 403 (signature rejected)', async () => {
-    // Even a plausible-looking hex signature is rejected because the stored
-    // secret cannot be retrieved from Convex in test mode.
-    const body = jinxxyOrderPayload({ eventId: 'evt_wrong_sig_001' });
-    const res = await server.fetch(JINXXY_PATH, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-signature': 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getConnectionForBackfill]: () => ({ webhookSecretEncrypted: null }),
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
       },
-      body,
-    });
-    expect(res.status).toBe(403);
+      async ({ convex, server }) => {
+        const body = gumroadSalePayload({
+          saleId: 'sale_replay_test',
+          saleTimestamp: minutesAgo(10),
+        });
+
+        const res = await server.fetch('/webhooks/gumroad/creator-route', {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        });
+
+        expect(res.status).toBe(403);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls()).toHaveLength(0);
+      }
+    );
   });
 
-  it('POST with x-signature using sha256= prefix → 403 (prefix stripped, but still no valid secret)', async () => {
-    // The handler strips the optional "sha256=" prefix before comparing.
-    // Since no secret is available from Convex, signatureValid=false → 403.
-    const body = jinxxyOrderPayload({ eventId: 'evt_prefix_sig_001' });
-    const fakeHex = 'aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd';
-    const res = await server.fetch(JINXXY_PATH, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-signature': `sha256=${fakeHex}`,
+  it('treats an unknown routeId as unauthentic and does not insert an event', async () => {
+    const store = createWebhookStore();
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getConnectionForBackfill]: () => null,
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
       },
-      body,
-    });
-    expect(res.status).toBe(403);
+      async ({ convex, server }) => {
+        const body = gumroadSalePayload({ saleId: 'sale_auth_fail_001' });
+
+        const res = await server.fetch('/webhooks/gumroad/unknown-route', {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        });
+
+        expect(res.status).toBe(403);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(0);
+      }
+    );
   });
 
-  it('POST with valid JSON + correct HMAC but unknown routeId → 403 (no stored secret to validate against)', async () => {
-    // Without a real Convex connection, the handler cannot retrieve the stored
-    // secret, so any signature — even a correctly computed one — will fail.
-    // This demonstrates the test limitation: the secret must come from Convex.
-    const testSecret = 'my-test-webhook-secret';
-    const body = jinxxyOrderPayload({ eventId: 'evt_correct_hmac_001' });
-    const sig = await signJinxxy(testSecret, body);
-    const res = await server.fetch(JINXXY_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-signature': sig },
-      body,
-    });
-    // 403: no stored secret → signatureValid stays false regardless of the header
-    expect(res.status).toBe(403);
+  it('deduplicates replayed valid events without creating a second stored event', async () => {
+    const store = createWebhookStore();
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getConnectionForBackfill]: () => ({ gumroadAccessTokenEncrypted: null }),
+          [refs.resolveWebhookTenantIds]: () => [],
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
+      },
+      async ({ convex, server }) => {
+        const body = gumroadSalePayload({ saleId: 'sale_duplicate_001' }).toString();
+        const init: RequestInit = {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body,
+        };
+
+        const first = await server.fetch('/webhooks/gumroad/creator-route', init);
+        const second = await server.fetch('/webhooks/gumroad/creator-route', init);
+
+        expect(first.status).toBe(200);
+        expect(second.status).toBe(200);
+        expect(store.size()).toBe(1);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(2);
+      }
+    );
   });
-
-  it.todo(
-    'POST with valid JSON + correct HMAC + known routeId → 200 and event stored — requires real Convex',
-    () => {},
-  );
-
-  it.todo(
-    'POST with valid JSON + correct HMAC + old created_at → 403 (replay protection) — requires real Convex (secret must match for replay check to run)',
-    () => {},
-  );
 });
 
-// ---------------------------------------------------------------------------
-// Payhip webhooks  (/webhooks/payhip/:routeId)
-//
-// Security model: The signature is SHA256(apiKey) as lowercase hex, placed
-// inside the JSON body as the `signature` field (NOT a header). The handler
-// fetches the encrypted API key from Convex — without Convex it throws → 500.
-// ---------------------------------------------------------------------------
+describe('Jinxxy webhook security', () => {
+  it('rejects invalid signatures without storing events', async () => {
+    const store = createWebhookStore();
+    const secretRef = await encrypt(
+      'jinxxy-secret',
+      ENCRYPTION_SECRET,
+      JINXXY_WEBHOOK_SECRET_PURPOSE
+    );
 
-describe('Payhip webhooks', () => {
-  const PAYHIP_PATH = '/webhooks/payhip/test-route-id';
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getJinxxyWebhookSecretByRouteId]: () => secretRef,
+          [refs.resolveWebhookTenantIds]: () => ['creator_jinxxy'],
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
+      },
+      async ({ convex, server }) => {
+        const body = jinxxyOrderPayload({ eventId: 'evt_bad_sig_001' });
 
-  it('GET → 405 (method check before JSON parse and Convex call)', async () => {
-    const res = await server.fetch(PAYHIP_PATH, { method: 'GET' });
-    expect(res.status).toBe(405);
+        const res = await server.fetch('/webhooks/jinxxy/creator-route', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-signature': 'deadbeef'.repeat(8),
+          },
+          body,
+        });
+
+        expect(res.status).toBe(403);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(0);
+      }
+    );
   });
 
-  it('POST with invalid JSON body → 400 (JSON parse error before Convex call)', async () => {
-    // JSON parse failure is the only path that returns 4xx without a Convex call.
-    const res = await server.fetch(PAYHIP_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{ bad json !!',
+  it('rejects authenticated malformed JSON without DB writes', async () => {
+    const store = createWebhookStore();
+    const secret = 'jinxxy-secret';
+    const secretRef = await encrypt(secret, ENCRYPTION_SECRET, JINXXY_WEBHOOK_SECRET_PURPOSE);
+    const body = '{"event_id":"evt_malformed_001"';
+    const signature = await signJinxxy(secret, body);
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getJinxxyWebhookSecretByRouteId]: () => secretRef,
+          [refs.resolveWebhookTenantIds]: () => ['creator_jinxxy'],
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
+      },
+      async ({ convex, server }) => {
+        const res = await server.fetch('/webhooks/jinxxy/creator-route', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-signature': signature,
+          },
+          body,
+        });
+
+        expect(res.status).toBe(400);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(0);
+      }
+    );
+  });
+
+  it('rejects replayed stale signed events before webhook ingestion', async () => {
+    const store = createWebhookStore();
+    const secret = 'jinxxy-secret';
+    const secretRef = await encrypt(secret, ENCRYPTION_SECRET, JINXXY_WEBHOOK_SECRET_PURPOSE);
+    const body = jinxxyOrderPayload({
+      eventId: 'evt_stale_001',
+      createdAt: minutesAgo(10),
     });
-    expect(res.status).toBe(400);
+    const signature = await signJinxxy(secret, body);
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getJinxxyWebhookSecretByRouteId]: () => secretRef,
+          [refs.resolveWebhookTenantIds]: () => ['creator_jinxxy'],
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
+      },
+      async ({ convex, server }) => {
+        const res = await server.fetch('/webhooks/jinxxy/creator-route', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-signature': signature,
+          },
+          body,
+        });
+
+        expect(res.status).toBe(403);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(0);
+      }
+    );
   });
 
-  it('POST with valid JSON body → not 200 (Convex API-key lookup fails without backend)', async () => {
-    // The Payhip handler calls convex.query(getPayhipApiKeyByRouteId) — this is
-    // NOT wrapped in a try/catch inside the handler, so a network error propagates
-    // to the outer catch → 500. The signature check never runs.
+  it('deduplicates concurrent valid deliveries', async () => {
+    const store = createWebhookStore();
+    const secret = 'jinxxy-secret';
+    const secretRef = await encrypt(secret, ENCRYPTION_SECRET, JINXXY_WEBHOOK_SECRET_PURPOSE);
+    const body = jinxxyOrderPayload({ eventId: 'evt_duplicate_001' });
+    const signature = await signJinxxy(secret, body);
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getJinxxyWebhookSecretByRouteId]: () => secretRef,
+          [refs.resolveWebhookTenantIds]: () => ['creator_jinxxy'],
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
+      },
+      async ({ convex, server }) => {
+        const init: RequestInit = {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-signature': signature,
+          },
+          body,
+        };
+
+        const [first, second] = await Promise.all([
+          server.fetch('/webhooks/jinxxy/creator-route', init),
+          server.fetch('/webhooks/jinxxy/creator-route', init),
+        ]);
+
+        expect(first.status).toBe(200);
+        expect(second.status).toBe(200);
+        expect(store.size()).toBe(1);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(2);
+      }
+    );
+  });
+
+  it('rejects oversized webhook bodies before any secret lookup or write', async () => {
+    const store = createWebhookStore();
+    const secret = 'jinxxy-secret';
+    const body = oversizedJsonBody();
+    const signature = await signJinxxy(secret, body);
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getJinxxyWebhookSecretByRouteId]: async () => {
+            throw new Error('should not be called');
+          },
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
+      },
+      async ({ convex, server }) => {
+        const res = await server.fetch('/webhooks/jinxxy/creator-route', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-signature': signature,
+          },
+          body,
+        });
+
+        expect(res.status).toBe(413);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls()).toHaveLength(0);
+      }
+    );
+  });
+});
+
+describe('Payhip webhook security', () => {
+  it('rejects invalid signatures without event writes or webhook side effects', async () => {
+    const store = createWebhookStore();
+    const apiKeyRef = await encrypt(
+      'real-payhip-api-key',
+      ENCRYPTION_SECRET,
+      PAYHIP_CREDENTIAL_PURPOSE
+    );
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getPayhipApiKeyByRouteId]: () => apiKeyRef,
+          [refs.resolveWebhookTenantIds]: () => ['creator_payhip'],
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+          [refs.markPayhipWebhookConfigured]: () => 'ok',
+        },
+      },
+      async ({ convex, server }) => {
+        const res = await server.fetch('/webhooks/payhip/creator-route', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            id: 'txn_bad_sig_001',
+            type: 'paid',
+            signature: 'deadbeef'.repeat(8),
+            created_at: new Date().toISOString(),
+          }),
+        });
+
+        expect(res.status).toBe(403);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(0);
+        expect(convex.getCalls(refs.markPayhipWebhookConfigured)).toHaveLength(0);
+      }
+    );
+  });
+
+  it('rejects malformed JSON before any Convex lookup', async () => {
+    const store = createWebhookStore();
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getPayhipApiKeyByRouteId]: async () => {
+            throw new Error('should not be called');
+          },
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
+      },
+      async ({ convex, server }) => {
+        const res = await server.fetch('/webhooks/payhip/creator-route', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{ not json',
+        });
+
+        expect(res.status).toBe(400);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls()).toHaveLength(0);
+      }
+    );
+  });
+
+  it('rejects stale signed webhooks without storing an event', async () => {
+    const store = createWebhookStore();
+    const apiKey = 'payhip-api-key';
+    const apiKeyRef = await encrypt(apiKey, ENCRYPTION_SECRET, PAYHIP_CREDENTIAL_PURPOSE);
     const body = await payhipPaidPayload({
-      transactionId: 'txn_payhip_001',
-      apiKey: 'fake-api-key',
+      transactionId: 'txn_stale_001',
+      apiKey,
+      createdAt: minutesAgo(10),
     });
-    const res = await server.fetch(PAYHIP_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body,
-    });
-    expect(res.status).not.toBe(200);
-  });
 
-  it('POST with valid JSON and wrong signature field → not 200 (Convex fails before signature check)', async () => {
-    // Unlike Jinxxy, Payhip does NOT wrap its Convex query in try/catch.
-    // Any Convex error → outer catch → 500. The `signature` field in the body
-    // is never validated in the test environment.
-    const res = await server.fetch(PAYHIP_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: 'txn_002', type: 'paid', signature: 'wronghash' }),
-    });
-    expect(res.status).not.toBe(200);
-  });
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getPayhipApiKeyByRouteId]: () => apiKeyRef,
+          [refs.resolveWebhookTenantIds]: () => ['creator_payhip'],
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+          [refs.markPayhipWebhookConfigured]: () => 'ok',
+        },
+      },
+      async ({ convex, server }) => {
+        const res = await server.fetch('/webhooks/payhip/creator-route', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body,
+        });
 
-  it.todo(
-    'POST with valid JSON + correct SHA256(apiKey) signature + known routeId → 200 — requires real Convex',
-    () => {},
-  );
+        expect(res.status).toBe(403);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(0);
+        expect(convex.getCalls(refs.markPayhipWebhookConfigured)).toHaveLength(0);
+      }
+    );
+  });
 });
 
-// ---------------------------------------------------------------------------
-// LemonSqueezy webhooks  (/v1/webhooks/lemonsqueezy/:connectionId)
-//
-// Security model: HMAC-SHA256 of the raw body in `x-signature` header.
-// Route lives in providerPlatform.ts (not the generic webhook router).
-// The handler queries Convex for the connection and secret BEFORE checking
-// the signature — so without Convex any POST → 500 via the outer try/catch.
-// GET requests fall through to the global 404 handler (no method guard in
-// the route match condition).
-// ---------------------------------------------------------------------------
+describe('LemonSqueezy webhook security', () => {
+  it('rejects invalid signatures without ingestion or connection-state updates', async () => {
+    const store = createWebhookStore();
+    const secretRef = await encrypt(
+      'lemon-secret',
+      ENCRYPTION_SECRET,
+      LEMONSQUEEZY_WEBHOOK_SECRET_PURPOSE
+    );
 
-describe('LemonSqueezy webhooks', () => {
-  const LS_PATH = '/v1/webhooks/lemonsqueezy/test-connection-id';
-
-  it('GET /v1/webhooks/lemonsqueezy/:id → 404 (route only matches POST; GET falls through)', async () => {
-    // The providerPlatform handleRequest only calls handleProviderWebhook when
-    // request.method === 'POST'. A GET returns null → createServer falls
-    // through to the 404 catch-all response.
-    const res = await server.fetch(LS_PATH, { method: 'GET' });
-    expect(res.status).toBe(404);
-  });
-
-  it('POST /v1/webhooks/unknownprovider/:id → 404 (only lemonsqueezy is implemented)', async () => {
-    const res = await server.fetch('/v1/webhooks/unknownprovider/some-conn-id', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it('POST /v1/webhooks/lemonsqueezy/:id with wrong x-signature → not 200 (Convex lookup precedes sig check)', async () => {
-    // handleProviderWebhook queries Convex for the connection before verifying
-    // the signature. Without a real backend, the query throws → outer catch
-    // → 500. The signature is never evaluated.
-    const body = lemonSqueezyOrderPayload({ orderId: 'ord_ls_001' });
-    const res = await server.fetch(LS_PATH, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-signature': 'badhex000',
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getProviderConnectionAdmin]: () => ({
+            connectionId: 'conn_1',
+            authUserId: 'creator_lemon',
+            providerKey: 'lemonsqueezy',
+            provider: 'lemonsqueezy',
+            remoteWebhookSecretRef: secretRef,
+            webhookConfigured: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }),
+          [refs.getConnectionForBackfill]: () => ({ webhookSecretEncrypted: secretRef }),
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+          [refs.updateProviderConnectionState]: () => 'conn_1',
+        },
       },
-      body,
-    });
-    expect(res.status).not.toBe(200);
+      async ({ convex, server }) => {
+        const body = lemonSqueezyOrderPayload({ orderId: 'order_bad_sig_001' });
+
+        const res = await server.fetch('/v1/webhooks/lemonsqueezy/conn_1', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-signature': 'deadbeef'.repeat(8),
+          },
+          body,
+        });
+
+        expect(res.status).toBe(403);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(0);
+        expect(convex.getCalls(refs.updateProviderConnectionState)).toHaveLength(0);
+      }
+    );
   });
 
-  it('POST /v1/webhooks/lemonsqueezy/:id with missing x-signature → not 200', async () => {
-    const body = lemonSqueezyOrderPayload({ orderId: 'ord_ls_002' });
-    const res = await server.fetch(LS_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body,
-    });
-    expect(res.status).not.toBe(200);
+  it('rejects authenticated malformed JSON with 400 and no side effects', async () => {
+    const store = createWebhookStore();
+    const secret = 'lemon-secret';
+    const secretRef = await encrypt(secret, ENCRYPTION_SECRET, LEMONSQUEEZY_WEBHOOK_SECRET_PURPOSE);
+    const body = '{"meta":{"event_name":"order_created"}';
+    const signature = await signLemonSqueezy(secret, body);
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getProviderConnectionAdmin]: () => ({
+            connectionId: 'conn_1',
+            authUserId: 'creator_lemon',
+            providerKey: 'lemonsqueezy',
+            provider: 'lemonsqueezy',
+            remoteWebhookSecretRef: secretRef,
+            webhookConfigured: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }),
+          [refs.getConnectionForBackfill]: () => ({ webhookSecretEncrypted: secretRef }),
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+          [refs.updateProviderConnectionState]: () => 'conn_1',
+        },
+      },
+      async ({ convex, server }) => {
+        const res = await server.fetch('/v1/webhooks/lemonsqueezy/conn_1', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-signature': signature,
+          },
+          body,
+        });
+
+        expect(res.status).toBe(400);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(0);
+        expect(convex.getCalls(refs.updateProviderConnectionState)).toHaveLength(0);
+      }
+    );
   });
 
-  it('POST /v1/webhooks/lemonsqueezy/:id with correct HMAC but unknown connectionId → not 200', async () => {
-    // Even with a correctly signed body, the Convex connection lookup for an
-    // unknown connectionId will fail (network error → 500, or null → 404 if
-    // Convex were available). Either way, not 200.
-    const testSecret = 'ls-test-webhook-secret';
-    const body = lemonSqueezyOrderPayload({ orderId: 'ord_ls_003' });
-    const sig = await signLemonSqueezy(testSecret, body);
-    const res = await server.fetch(LS_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-signature': sig },
-      body,
-    });
-    expect(res.status).not.toBe(200);
+  it('returns duplicate=true on replayed valid deliveries while storing only one event', async () => {
+    const store = createWebhookStore();
+    const secret = 'lemon-secret';
+    const secretRef = await encrypt(secret, ENCRYPTION_SECRET, LEMONSQUEEZY_WEBHOOK_SECRET_PURPOSE);
+    const body = lemonSqueezyOrderPayload({ orderId: 'order_duplicate_001' });
+    const signature = await signLemonSqueezy(secret, body);
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getProviderConnectionAdmin]: () => ({
+            connectionId: 'conn_1',
+            authUserId: 'creator_lemon',
+            providerKey: 'lemonsqueezy',
+            provider: 'lemonsqueezy',
+            remoteWebhookSecretRef: secretRef,
+            webhookConfigured: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }),
+          [refs.getConnectionForBackfill]: () => ({ webhookSecretEncrypted: secretRef }),
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+          [refs.updateProviderConnectionState]: () => 'conn_1',
+        },
+      },
+      async ({ convex, server }) => {
+        const init: RequestInit = {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-signature': signature,
+          },
+          body,
+        };
+
+        const first = await server.fetch('/v1/webhooks/lemonsqueezy/conn_1', init);
+        const second = await server.fetch('/v1/webhooks/lemonsqueezy/conn_1', init);
+
+        expect(first.status).toBe(202);
+        expect(second.status).toBe(202);
+        expect(await first.json()).toEqual({ success: true, duplicate: false });
+        expect(await second.json()).toEqual({ success: true, duplicate: true });
+        expect(store.size()).toBe(1);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(2);
+      }
+    );
   });
 
-  it.todo(
-    'POST with valid body + correct HMAC + known connectionId → 202 and event stored — requires real Convex',
-    () => {},
-  );
+  it('rejects oversized canonical webhook bodies before any Convex lookup', async () => {
+    const store = createWebhookStore();
+    const secret = 'lemon-secret';
+    const body = JSON.stringify({
+      meta: { event_name: 'order_created' },
+      data: { id: 'order_boundary_001', attributes: { padding: 'x'.repeat(270_000) } },
+    });
+    const signature = await signLemonSqueezy(secret, body);
 
-  it.todo(
-    'POST with valid body + wrong HMAC + known connectionId → 403 Forbidden — requires real Convex (signature check runs only after successful connection lookup)',
-    () => {},
-  );
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getProviderConnectionAdmin]: async () => {
+            throw new Error('should not be called');
+          },
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
+      },
+      async ({ convex, server }) => {
+        const res = await server.fetch('/v1/webhooks/lemonsqueezy/conn_1', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-signature': signature,
+          },
+          body,
+        });
+
+        expect(res.status).toBe(413);
+        expect(store.size()).toBe(0);
+        expect(convex.getCalls()).toHaveLength(0);
+      }
+    );
+  });
 });

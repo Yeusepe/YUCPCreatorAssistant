@@ -5,6 +5,8 @@ import {
   mockButton,
   mockSlashCommand,
 } from '../helpers/mockInteraction';
+import { handleInteraction } from '../../src/handlers/interactions';
+import { MessageFlags } from 'discord.js';
 
 // settings.ts uses convex directly (not internalRpc), so no module mock needed
 import {
@@ -20,6 +22,16 @@ const makeLogger = () => ({
   debug: noop,
   child: () => makeLogger(),
 });
+
+function makeSettingsConvex() {
+  return {
+    query: mock(async () => ({
+      authUserId: 'auth_settings_secure',
+      guildLinkId: 'guild_link_settings_secure',
+    })),
+    mutation: mock(async () => ({ success: true })),
+  };
+}
 
 describe('settings command', () => {
   it('handleSettingsDisconnect shows warning embed with disconnect/cancel buttons', async () => {
@@ -70,5 +82,63 @@ describe('settings command', () => {
     expect(payload?.embeds?.[0]?.data?.description).toContain('remains connected');
     // All buttons removed on cancel
     expect(payload?.components).toEqual([]);
+  });
+
+  it('handleInteraction rejects disconnect buttons in DMs without mutating anything', async () => {
+    const interaction = mockButton({
+      userId: 'user_settings_guard_1',
+      guildId: null,
+      customId: 'creator_settings:disconnect_confirm',
+      isAdmin: true,
+    });
+    const convex = makeSettingsConvex();
+
+    await handleInteraction(interaction as any, { convex: convex as any, apiSecret: 'api-secret' });
+
+    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    expect(reply?.content).toMatch(/server/i);
+    expect(reply?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
+    expect(interaction.editReply.mock.calls).toHaveLength(0);
+    expect(convex.query.mock.calls).toHaveLength(0);
+    expect(convex.mutation.mock.calls).toHaveLength(0);
+  });
+
+  it('handleInteraction rejects non-admin disconnect confirmations before any guild lookup', async () => {
+    const interaction = mockButton({
+      userId: 'user_settings_guard_2',
+      guildId: 'guild_settings_guard_2',
+      customId: 'creator_settings:disconnect_confirm',
+      isAdmin: false,
+    });
+    const convex = makeSettingsConvex();
+
+    await handleInteraction(interaction as any, { convex: convex as any, apiSecret: 'api-secret' });
+
+    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    expect(reply?.content).toMatch(/administrator/i);
+    expect(reply?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
+    expect(interaction.editReply.mock.calls).toHaveLength(0);
+    expect(convex.query.mock.calls).toHaveLength(0);
+    expect(convex.mutation.mock.calls).toHaveLength(0);
+  });
+
+  it('handleInteraction replies with an unknown-button error for unsupported disconnect actions', async () => {
+    const interaction = mockButton({
+      userId: 'user_settings_guard_3',
+      guildId: 'guild_settings_guard_3',
+      customId: 'creator_settings:disconnect_bogus',
+      isAdmin: true,
+    });
+    const convex = makeSettingsConvex();
+
+    await handleInteraction(interaction as any, { convex: convex as any, apiSecret: 'api-secret' });
+
+    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    expect(reply?.content).toBe('Unknown button.');
+    expect(reply?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
+    expect(interaction.editReply.mock.calls).toHaveLength(0);
   });
 });

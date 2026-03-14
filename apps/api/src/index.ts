@@ -66,6 +66,7 @@ setInterval(
   5 * 60 * 1000
 ).unref();
 
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
 function escapeForSingleQuotedJsString(value: string): string {
   return value
     .replace(/\\/g, '\\\\')
@@ -77,6 +78,7 @@ function escapeForSingleQuotedJsString(value: string): string {
     .replace(/<\/script/gi, '<\\/script');
 }
 
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
 function escapeHtmlAttribute(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -102,6 +104,7 @@ function normalizeOrigin(value: string | undefined): string | null {
   }
 }
 
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html
 function getSafeRelativeRedirectTarget(value: string | null | undefined): string | null {
   if (!value) {
     return null;
@@ -967,6 +970,8 @@ async function routeRequest(request: Request): Promise<Response> {
     if (response) return response;
   }
 
+  // Source: https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/09-Testing_for_Clickjacking
+  // Source: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
   const HTML_SECURITY_HEADERS: Record<string, string> = {
     'Content-Security-Policy':
       "default-src 'self'; " +
@@ -1054,20 +1059,21 @@ async function routeRequest(request: Request): Promise<Response> {
   }
 
   if (pathname === '/oauth/consent') {
-    const consentCode = url.searchParams.get('consent_code') ?? '';
     const clientId = url.searchParams.get('client_id') ?? '';
     const scope = url.searchParams.get('scope') ?? '';
-    const escapedClientId = (clientId || 'unknown client').replace(/[<>&"'`]/g, '');
-    const escapedScope = (scope || 'openid verification:read').replace(/[<>&"'`]/g, '');
-    const escapedConsentCode = consentCode.replace(/[<>&"'`]/g, '');
+    const escapedClientId = escapeHtmlAttribute(clientId || 'unknown client');
+    const escapedScope = escapeForSingleQuotedJsString(
+      escapeHtmlAttribute(scope || 'openid verification:read')
+    );
     const convexSiteUrl = (process.env.CONVEX_SITE_URL ?? '').replace(/\/$/, '');
     const consentAction = '/api/auth/oauth2/consent';
+    const escapedConsentAction = escapeForSingleQuotedJsString(consentAction);
     const filePath = `${import.meta.dir}/../public/oauth-consent.html`;
     let html = await Bun.file(filePath).text();
     html = html.replace(/__CLIENT_ID__/g, escapedClientId);
     html = html.replace(/__SCOPE__/g, escapedScope);
-    html = html.replace(/__CONSENT_CODE__/g, escapedConsentCode);
-    html = html.replace(/__CONSENT_ACTION__/g, consentAction);
+    html = html.replace(/__CONSENT_CODE__/g, '');
+    html = html.replace(/__CONSENT_ACTION__/g, escapedConsentAction);
     const consentHeaders = {
       ...HTML_SECURITY_HEADERS,
       'Content-Security-Policy': `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://db.onlinewebfonts.com https://r2cdn.perplexity.ai; connect-src 'self' https: wss:; worker-src 'self'; child-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self' ${convexSiteUrl ? new URL(convexSiteUrl).origin : ''}`,

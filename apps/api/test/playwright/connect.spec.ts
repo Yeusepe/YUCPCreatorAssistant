@@ -1,7 +1,20 @@
 import { test, expect } from 'playwright/test';
 
+// Source: https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/09-Testing_for_Clickjacking
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
+// Source: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
+
 const SKIP_REASON =
   'Requires TEST_BASE_URL env var pointing to a running API server (e.g. TEST_BASE_URL=http://localhost:3001)';
+
+function expectHtmlSecurityHeaders(headers: Record<string, string>) {
+  expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
+  expect(headers['content-security-policy']).toContain("object-src 'none'");
+  expect(headers['content-security-policy']).toContain("base-uri 'none'");
+  expect(headers['x-frame-options']).toBe('DENY');
+  expect(headers['x-content-type-options']).toBe('nosniff');
+  expect(headers['referrer-policy']).toBe('no-referrer');
+}
 
 test.describe('Connect page', () => {
   test.skip(!process.env.TEST_BASE_URL, SKIP_REASON);
@@ -11,6 +24,14 @@ test.describe('Connect page', () => {
     // client-side sign-in redirect JavaScript executes.
     const response = await page.goto('/connect', { waitUntil: 'commit' });
     expect(response?.status()).toBe(200);
+  });
+
+  test('connect page serves CSP and framing protections on the initial browser response', async ({
+    page,
+  }) => {
+    const response = await page.goto('/connect', { waitUntil: 'commit' });
+    expect(response?.status()).toBe(200);
+    expectHtmlSecurityHeaders(response?.headers() ?? {});
   });
 
   test('connect page has a heading', async ({ page }) => {
@@ -93,5 +114,16 @@ test.describe('Connect page', () => {
     expect(bodyHtml).not.toContain('__GUILD_ID__');
     expect(bodyHtml).not.toContain('__TENANT_ID__');
     expect(bodyHtml).not.toContain('__SETUP_TOKEN__');
+  });
+
+  test('connect page does not leak fragment-delivered setup tokens into rendered HTML', async ({
+    page,
+  }) => {
+    const response = await page.goto('/connect#s=phase8-secret-setup-token', {
+      waitUntil: 'commit',
+    });
+    expect(response?.status()).toBe(200);
+    const html = await response?.text();
+    expect(html).not.toContain('phase8-secret-setup-token');
   });
 });

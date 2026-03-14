@@ -3,11 +3,23 @@
  *
  * Uses convex-test to run against an in-memory Convex backend.
  * Run with: npx vitest run --config convex/vitest.config.ts convex/identitySync.realtest.ts
+ *
+ * Security refs from plan.md:
+ * - https://docs.convex.dev/testing/convex-test
+ * - https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { api } from './_generated/api';
 import { makeTestConvex } from './testHelpers';
+
+async function getIdentityCounts(t: ReturnType<typeof makeTestConvex>) {
+  return t.run(async (ctx) => ({
+    subjects: (await ctx.db.query('subjects').collect()).length,
+    externalAccounts: (await ctx.db.query('external_accounts').collect()).length,
+    auditEvents: (await ctx.db.query('audit_events').collect()).length,
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // syncUserFromAuth
@@ -114,6 +126,24 @@ describe('syncUserFromAuth', () => {
     );
     expect(extAccount?.providerUsername).toBe('newname');
   });
+
+  it('given wrong apiSecret, when syncing user, then rejects and writes nothing', async () => {
+    const t = makeTestConvex();
+    const before = await getIdentityCounts(t);
+
+    await expect(
+      t.mutation(api.identitySync.syncUserFromAuth, {
+        apiSecret: 'wrong-secret',
+        authUserId: 'auth-secret-fail',
+        discord: {
+          discordUserId: 'discord-secret-fail',
+          username: 'attacker',
+        },
+      })
+    ).rejects.toThrow('Unauthorized');
+
+    expect(await getIdentityCounts(t)).toEqual(before);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -196,6 +226,49 @@ describe('suspicious subjects', () => {
 
     const discordIds = suspList.map((s: { discordUserId: string }) => s.discordUserId);
     expect(discordIds).not.toContain('discord-clear-1');
+  });
+
+  it('given tenant-scoped suspicious listings, then only that tenant subjects are returned', async () => {
+    const t = makeTestConvex();
+    const now = Date.now();
+    const tenantASubject = await t.run(async (ctx) =>
+      ctx.db.insert('subjects', {
+        primaryDiscordUserId: 'discord-tenant-a-suspicious',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+    const tenantBSubject = await t.run(async (ctx) =>
+      ctx.db.insert('subjects', {
+        primaryDiscordUserId: 'discord-tenant-b-suspicious',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+
+    await t.mutation(api.identitySync.markSubjectSuspicious, {
+      apiSecret: 'test-secret',
+      subjectId: tenantASubject,
+      reason: 'piracy',
+      actorId: 'admin-a',
+      authUserId: 'auth-tenant-a',
+    });
+    await t.mutation(api.identitySync.markSubjectSuspicious, {
+      apiSecret: 'test-secret',
+      subjectId: tenantBSubject,
+      reason: 'piracy',
+      actorId: 'admin-b',
+      authUserId: 'auth-tenant-b',
+    });
+
+    const tenantAList = await t.query(api.identitySync.listSuspiciousSubjects, {
+      apiSecret: 'test-secret',
+      authUserId: 'auth-tenant-a',
+    });
+
+    expect(tenantAList.map((entry) => entry.discordUserId)).toEqual(['discord-tenant-a-suspicious']);
   });
 });
 

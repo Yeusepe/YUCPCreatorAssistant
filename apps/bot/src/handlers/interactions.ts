@@ -79,6 +79,88 @@ function requireAdmin(interaction: ChatInputCommandInteraction): boolean {
   return member.permissions.has(PermissionFlagsBits.Administrator);
 }
 
+function hasAdministratorPermission(interaction: {
+  member: { permissions?: { has?: (bit: bigint) => boolean } } | string | null;
+}): boolean {
+  const member = interaction.member;
+  if (!member || typeof member === 'string' || !('permissions' in member)) return false;
+  return member.permissions?.has?.(PermissionFlagsBits.Administrator) ?? false;
+}
+
+async function rejectComponentInteraction(
+  interaction: ButtonInteraction | StringSelectMenuInteraction | UserSelectMenuInteraction,
+  content: string
+): Promise<void> {
+  if (interaction.deferred || interaction.replied) return;
+  await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => {});
+}
+
+async function validateAdminComponentContext(
+  interaction: ButtonInteraction | StringSelectMenuInteraction | UserSelectMenuInteraction,
+  ctx: InteractionHandlerContext,
+  options?: {
+    expectedAuthUserId?: string;
+    expectedGuildId?: string;
+    expectedActorId?: string;
+  }
+): Promise<boolean> {
+  const guildId = interaction.guildId;
+  if (!guildId) {
+    await rejectComponentInteraction(interaction, 'This action must be used in a server.');
+    return false;
+  }
+
+  if (!hasAdministratorPermission(interaction)) {
+    await rejectComponentInteraction(
+      interaction,
+      'This action requires Administrator permission.'
+    );
+    return false;
+  }
+
+  if (options?.expectedActorId && interaction.user.id !== options.expectedActorId) {
+    await rejectComponentInteraction(
+      interaction,
+      'Only the admin who started this action can use it.'
+    );
+    return false;
+  }
+
+  if (!options?.expectedAuthUserId && !options?.expectedGuildId) {
+    return true;
+  }
+
+  const guildLink = await ctx.convex.query(api.guildLinks.getByDiscordGuildForBot, {
+    apiSecret: ctx.apiSecret,
+    discordGuildId: guildId,
+  });
+  if (!guildLink) {
+    await rejectComponentInteraction(
+      interaction,
+      await getNotConfiguredMessage(guildId, interaction.user.id, ctx.apiSecret, true)
+    );
+    return false;
+  }
+
+  if (options.expectedGuildId && options.expectedGuildId !== guildId) {
+    await rejectComponentInteraction(
+      interaction,
+      'This action belongs to a different server. Please run the command again here.'
+    );
+    return false;
+  }
+
+  if (options.expectedAuthUserId && guildLink.authUserId !== options.expectedAuthUserId) {
+    await rejectComponentInteraction(
+      interaction,
+      'This action is no longer valid for this server. Please run the command again.'
+    );
+    return false;
+  }
+
+  return true;
+}
+
 export async function handleInteraction(
   interaction:
     | ChatInputCommandInteraction
@@ -731,6 +813,14 @@ async function handleButton(
     const firstColon = rest.indexOf(':');
     const authUserId = firstColon >= 0 ? rest.slice(0, firstColon) : rest;
     const guildId = firstColon >= 0 ? rest.slice(firstColon + 1) : (interaction.guildId ?? '');
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsViewUsersButton } = await import('../commands/stats');
     await handleStatsViewUsersButton(interaction, ctx.convex, ctx.apiSecret, authUserId, guildId);
     return;
@@ -745,6 +835,14 @@ async function handleButton(
     const secondColon = remainder1.indexOf(':');
     const guildId = secondColon >= 0 ? remainder1.slice(0, secondColon) : (remainder1 || (interaction.guildId ?? ''));
     const direction = (secondColon >= 0 ? remainder1.slice(secondColon + 1) : '') as 'next' | 'prev';
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsViewUsersPageButton } = await import('../commands/stats');
     await handleStatsViewUsersPageButton(
       interaction,
@@ -763,6 +861,14 @@ async function handleButton(
     const firstColon = rest.indexOf(':');
     const authUserId = firstColon >= 0 ? rest.slice(0, firstColon) : rest;
     const guildId = firstColon >= 0 ? rest.slice(firstColon + 1) : (interaction.guildId ?? '');
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsBackButton } = await import('../commands/stats');
     await handleStatsBackButton(interaction, ctx.convex, ctx.apiSecret, authUserId, guildId);
     return;
@@ -774,6 +880,14 @@ async function handleButton(
     const parts = rest.split(':');
     const authUserId = parts[0] as string;
     const guildId = parts[1] ?? interaction.guildId ?? '';
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsViewProductsButton } = await import('../commands/stats');
     await handleStatsViewProductsButton(
       interaction,
@@ -791,6 +905,14 @@ async function handleButton(
     const parts = rest.split(':');
     const authUserId = parts[0] as string;
     const guildId = parts[1] ?? interaction.guildId ?? '';
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsCheckUserButton } = await import('../commands/stats');
     await handleStatsCheckUserButton(interaction, authUserId, guildId);
     return;
@@ -1152,6 +1274,14 @@ async function handleButton(
     const targetUserId = parts[0];
     const authUserId = parts[1] as string;
     const actorId = parts[2];
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedActorId: actorId,
+      }))
+    ) {
+      return;
+    }
     const { handleModerationConfirmClear } = await import('../commands/moderation');
     await handleModerationConfirmClear(
       interaction,
@@ -1211,8 +1341,10 @@ async function handleButton(
 
   // ─── Settings disconnect flow ──────────────────────────────────────────────
   if (customId.startsWith('creator_settings:disconnect')) {
-    const guildId = interaction.guildId;
-    if (!guildId) return;
+    if (!(await validateAdminComponentContext(interaction, ctx))) {
+      return;
+    }
+    const guildId = interaction.guildId as string;
 
     if (customId === 'creator_settings:disconnect_warn1:confirm') {
       const { handleDisconnectWarn1 } = await import('../commands/settings');
@@ -1577,6 +1709,14 @@ async function handleSelectMenu(
     const actorId = parts[0];
     const authUserId = parts[1] as string;
     const targetUserId = parts[2];
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedActorId: actorId,
+      }))
+    ) {
+      return;
+    }
     const { handleModerationReasonSelect } = await import('../commands/moderation');
     await handleModerationReasonSelect(
       interaction,
@@ -1702,6 +1842,14 @@ async function handleUserSelectMenu(
     const parts = rest.split(':');
     const authUserId = parts[0] as string;
     const guildId = parts[1] ?? interaction.guildId ?? '';
+    if (
+      !(await validateAdminComponentContext(interaction, ctx, {
+        expectedAuthUserId: authUserId,
+        expectedGuildId: guildId,
+      }))
+    ) {
+      return;
+    }
     const { handleStatsCheckUserSelect } = await import('../commands/stats');
     await handleStatsCheckUserSelect(interaction, ctx.convex, ctx.apiSecret, authUserId, guildId);
     return;
