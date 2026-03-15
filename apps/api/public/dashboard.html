@@ -12,6 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="./tokens.css">
+    <link rel="stylesheet" href="./loading.css">
     <link rel="stylesheet" href="./dashboard-components.css">
     <link rel="stylesheet" href="./dashboard.css">
 
@@ -86,12 +87,8 @@
 </head>
 
 <body>
-    <div id="page-loading-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center px-4 sm:px-6"
-        style="background-color: var(--bg-color);">
-        <img src="__API_BASE__/Icons/MainLogo.png" alt="Creator Assistant"
-            class="h-8 sm:h-10 max-w-full w-auto object-contain object-center flex-shrink-0 mb-8" />
-        <div class="page-loading-spinner"></div>
-        <p class="mt-4 text-sm font-semibold" style="color: rgba(255,255,255,0.6);">Loading your dashboard...</p>
+    <!-- Full-page loading overlay (content injected by site.js) -->
+    <div id="page-loading-overlay"></div>
     </div>
 
     <div id="page-content" style="display: none;" class="app-shell">
@@ -586,6 +583,46 @@
                                             <svg class="save-indicator-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                                         </span>
                                         <span class="save-indicator save-indicator-error tile-save-error" data-for="suspiciousAccountBehavior" aria-live="assertive" hidden>
+                                            <svg class="save-indicator-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                                        </span>
+                                    </div>
+                                </article>
+                                <article class="svr-cfg-tile">
+                                    <div class="svr-cfg-tile-head">
+                                        <div class="svr-cfg-tile-icon"><img src="__API_BASE__/Icons/Library.png" alt=""></div>
+                                        <div class="svr-cfg-tile-text">
+                                            <span class="svr-cfg-tile-label">Logs Channel</span>
+                                            <span class="svr-cfg-tile-hint">Channel where verification activity logs are posted.</span>
+                                        </div>
+                                    </div>
+                                    <div class="svr-cfg-tile-ctrl">
+                                        <select id="select-logChannelId" class="svr-cfg-pick">
+                                            <option value="">— select a channel —</option>
+                                        </select>
+                                        <span class="save-indicator tile-save-indicator" data-for="logChannelId" aria-live="polite">
+                                            <svg class="save-indicator-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                                        </span>
+                                        <span class="save-indicator save-indicator-error tile-save-error" data-for="logChannelId" aria-live="assertive" hidden>
+                                            <svg class="save-indicator-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                                        </span>
+                                    </div>
+                                </article>
+                                <article class="svr-cfg-tile">
+                                    <div class="svr-cfg-tile-head">
+                                        <div class="svr-cfg-tile-icon"><img src="__API_BASE__/Icons/World.png" alt=""></div>
+                                        <div class="svr-cfg-tile-text">
+                                            <span class="svr-cfg-tile-label">Announcements Channel</span>
+                                            <span class="svr-cfg-tile-hint">Channel where bot updates and announcements are posted.</span>
+                                        </div>
+                                    </div>
+                                    <div class="svr-cfg-tile-ctrl">
+                                        <select id="select-announcementsChannelId" class="svr-cfg-pick">
+                                            <option value="">— select a channel —</option>
+                                        </select>
+                                        <span class="save-indicator tile-save-indicator" data-for="announcementsChannelId" aria-live="polite">
+                                            <svg class="save-indicator-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                                        </span>
+                                        <span class="save-indicator save-indicator-error tile-save-error" data-for="announcementsChannelId" aria-live="assertive" hidden>
                                             <svg class="save-indicator-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                                         </span>
                                     </div>
@@ -1127,7 +1164,7 @@
                         requestAnimationFrame(function () { content.classList.add('is-visible'); });
                     });
                 }
-                setTimeout(function () { overlay.style.display = 'none'; }, 370);
+                setTimeout(function () { overlay.style.display = 'none'; }, 1400);
             }
             var observer = new MutationObserver(function () {
                 if (overlay.style.display === 'none') {

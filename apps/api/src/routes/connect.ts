@@ -379,6 +379,8 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     'verificationScope',
     'duplicateVerificationBehavior',
     'suspiciousAccountBehavior',
+    'logChannelId',
+    'announcementsChannelId',
   ]);
 
   function hasValidApiSecret(value: string | undefined): boolean {
@@ -1331,6 +1333,48 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
         error: err instanceof Error ? err.message : String(err),
       });
       return Response.json({ error: 'Failed to get settings' }, { status: 500 });
+    }
+  }
+
+  /**
+   * GET /api/connect/guild/channels
+   * Returns text and announcement channels for the setup session's guild.
+   * Used to populate the logs/announcements channel dropdowns in the dashboard.
+   */
+  async function getGuildChannels(request: Request): Promise<Response> {
+    const setupBinding = await requireBoundSetupSession(request);
+    if (!setupBinding.ok) {
+      return setupBinding.response;
+    }
+    const guildId = setupBinding.setupSession.guildId;
+
+    if (!config.discordBotToken) {
+      return Response.json({ channels: [] });
+    }
+
+    try {
+      const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+        headers: { Authorization: `Bot ${config.discordBotToken}` },
+      });
+      if (!res.ok) {
+        logger.warn('Failed to fetch guild channels from Discord', {
+          guildId,
+          status: res.status,
+        });
+        return Response.json({ channels: [] });
+      }
+      const raw = (await res.json()) as Array<{ id: string; name: string; type: number }>;
+      // 0 = GuildText, 5 = GuildAnnouncement
+      const channels = raw
+        .filter((ch) => ch.type === 0 || ch.type === 5)
+        .map((ch) => ({ id: ch.id, name: ch.name, type: ch.type }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      return Response.json({ channels });
+    } catch (err) {
+      logger.error('Error fetching guild channels', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return Response.json({ channels: [] });
     }
   }
 
@@ -2649,6 +2693,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     disconnectConnectionHandler,
     getSettingsHandler,
     updateSettingHandler,
+    getGuildChannels,
     listPublicApiKeys,
     createPublicApiKey,
     revokePublicApiKey,

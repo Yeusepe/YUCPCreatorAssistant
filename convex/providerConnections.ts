@@ -751,6 +751,7 @@ export const updateTenantSetting = mutation({
       allowCatalogBackedVerification: { type: 'boolean' },
       autoDiscoverSupportedProductsForRememberedPurchaser: { type: 'boolean' },
       logChannelId: { type: 'string' },
+      announcementsChannelId: { type: 'string' },
       verificationScope: { type: 'string', enum: ['account', 'license'] },
       shareVerificationWithServers: { type: 'boolean' },
       shareVerificationScope: { type: 'string' },

@@ -239,6 +239,7 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
     if (
       pathname.startsWith('/assets/') ||
       pathname.startsWith('/Icons/') ||
+      pathname === '/loading.css' ||
       pathname === '/dashboard.css' ||
       pathname === '/dashboard-components.css'
     ) {
@@ -309,6 +310,7 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
       if (request.method === 'POST') return connectRoutes.updateSettingHandler(request);
       return connectRoutes.getSettingsHandler(request);
     }
+    if (pathname === '/api/connect/guild/channels') return connectRoutes.getGuildChannels(request);
     if (pathname === '/api/connect/public-api/keys') {
       if (request.method === 'POST') return connectRoutes.createPublicApiKey(request);
       return connectRoutes.listPublicApiKeys(request);
