@@ -329,6 +329,7 @@ const creator_profiles = defineTable({
         v.union(v.literal('quarantine'), v.literal('notify'), v.literal('revoke'))
       ),
       suspiciousNotifyChannelId: v.optional(v.string()),
+      announcementsChannelId: v.optional(v.string()),
       enableDiscordRoleFromOtherServers: v.optional(v.boolean()),
       allowedSourceGuildIds: v.optional(v.array(v.string())),
       allowMismatchedEmails: v.optional(v.boolean()),

@@ -611,7 +611,7 @@ function updateSettingsUI() {
     const el = document.getElementById(`toggle-${key}`);
     if (el) el.classList.toggle('active', !!settingsMap.get(key));
   });
-  ['verificationScope', 'duplicateVerificationBehavior', 'suspiciousAccountBehavior'].forEach((key) => {
+  ['verificationScope', 'duplicateVerificationBehavior', 'suspiciousAccountBehavior', 'logChannelId', 'announcementsChannelId'].forEach((key) => {
     const el = document.getElementById(`select-${key}`);
     if (el && settingsMap.has(key)) {
       el.value = settingsMap.get(key);
@@ -773,6 +773,50 @@ export async function confirmDisconnectUserAccount(connId, provider) {
   }
 }
 
+async function loadGuildChannels() {
+  try {
+    const res = await apiFetch(`${getApiBase()}/api/connect/guild/channels`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const channels = data.channels || [];
+    refreshChannelSelect('select-logChannelId', channels, settingsMap.get('logChannelId'));
+    refreshChannelSelect('select-announcementsChannelId', channels, settingsMap.get('announcementsChannelId'));
+  } catch (err) {
+    console.error('Failed to load guild channels', err);
+  }
+}
+
+function refreshChannelSelect(selectId, channels, savedValue) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+
+  // initCustomSelects inserts the wrapper as a SIBLING after the select (not a parent),
+  // so use nextElementSibling — not closest() — to find and remove it.
+  const sibling = select.nextElementSibling;
+  if (sibling?.classList.contains('custom-select-wrapper')) sibling.remove();
+  delete select.dataset.customized;
+
+  // Repopulate options
+  select.innerHTML = '<option value="">— None —</option>';
+  channels.forEach((ch) => {
+    const opt = document.createElement('option');
+    opt.value = ch.id;
+    opt.textContent = `#${ch.name}`;
+    select.appendChild(opt);
+  });
+
+  if (savedValue) {
+    select.value = savedValue;
+  }
+
+  // Re-apply the custom select widget
+  initCustomSelects();
+
+  if (savedValue) {
+    select.dispatchEvent(new CustomEvent('value-updated'));
+  }
+}
+
 export async function fetchAllData() {
   try {
     // Always fetch user-scoped accounts (works regardless of server selection)
@@ -808,11 +852,12 @@ export async function fetchAllData() {
         const settingsData = await settingsRes.json();
         if (settingsData.policy) {
           const policy = settingsData.policy;
-          ['allowMismatchedEmails', 'autoVerifyOnJoin', 'shareVerificationWithServers', 'enableDiscordRoleFromOtherServers', 'verificationScope', 'duplicateVerificationBehavior', 'suspiciousAccountBehavior'].forEach((k) => {
+          ['allowMismatchedEmails', 'autoVerifyOnJoin', 'shareVerificationWithServers', 'enableDiscordRoleFromOtherServers', 'verificationScope', 'duplicateVerificationBehavior', 'suspiciousAccountBehavior', 'logChannelId', 'announcementsChannelId'].forEach((k) => {
             if (policy[k] !== undefined) settingsMap.set(k, policy[k]);
           });
           updateSettingsUI();
         }
+        await loadGuildChannels();
       }
     } else if (getTenantId()) {
       const statusRes = await apiFetch(`${getApiBase()}/api/connect/status?tenantId=${encodeURIComponent(getTenantId())}`);
@@ -837,7 +882,7 @@ export async function fetchAllData() {
   }
 }
 
-function initCustomSelects() {
+export function initCustomSelects() {
   document.querySelectorAll('.setting-select, .svr-cfg-pick').forEach((select) => {
     if (select.dataset.customized) return;
     select.dataset.customized = 'true';

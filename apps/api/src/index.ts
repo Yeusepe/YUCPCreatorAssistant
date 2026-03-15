@@ -457,6 +457,13 @@ async function routeRequest(request: Request): Promise<Response> {
     });
   }
 
+  if (pathname === '/loading.css') {
+    const file = Bun.file(`${import.meta.dir}/../public/loading.css`);
+    return new Response(file, {
+      headers: { 'Content-Type': 'text/css; charset=utf-8' },
+    });
+  }
+
   if (pathname === '/dashboard-components.css') {
     const file = Bun.file(`${import.meta.dir}/../public/dashboard-components.css`);
     return new Response(file, {
@@ -910,6 +917,9 @@ async function routeRequest(request: Request): Promise<Response> {
       return connectRoutes.updateSettingHandler(request);
     }
     return connectRoutes.getSettingsHandler(request);
+  }
+  if (pathname === '/api/connect/guild/channels' && connectRoutes) {
+    return connectRoutes.getGuildChannels(request);
   }
   if (pathname === '/api/connect/public-api/keys' && connectRoutes) {
     if (request.method === 'POST') {
