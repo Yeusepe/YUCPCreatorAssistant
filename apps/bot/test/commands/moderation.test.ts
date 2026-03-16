@@ -14,6 +14,11 @@ mock.module('../../src/lib/posthog', () => ({
 }));
 
 import type { ConvexHttpClient } from 'convex/browser';
+import type {
+  ButtonInteraction,
+  ChatInputCommandInteraction,
+  StringSelectMenuInteraction,
+} from 'discord.js';
 import { MessageFlags } from 'discord.js';
 import {
   handleModerationClear,
@@ -22,7 +27,12 @@ import {
   handleModerationReasonSelect,
 } from '../../src/commands/moderation';
 import { handleInteraction } from '../../src/handlers/interactions';
-import { mockButton, mockSlashCommand, mockStringSelect } from '../helpers/mockInteraction';
+import {
+  type MockFn,
+  mockButton,
+  mockSlashCommand,
+  mockStringSelect,
+} from '../helpers/mockInteraction';
 
 // ─── Convex mock factory ──────────────────────────────────────────────────────
 
@@ -67,20 +77,25 @@ describe('moderation commands', () => {
     });
 
     // handleModerationMark does not use convex (_convex parameter)
-    await handleModerationMark(interaction as any, {} as ConvexHttpClient, 'api-secret', {
-      authUserId: 'auth_mod_1',
-      guildId: 'guild_mod_1',
-    });
+    await handleModerationMark(
+      interaction as unknown as ChatInputCommandInteraction,
+      {} as ConvexHttpClient,
+      'api-secret',
+      {
+        authUserId: 'auth_mod_1',
+        guildId: 'guild_mod_1',
+      }
+    );
 
     expect(interaction.reply.mock.calls).toHaveLength(1);
-    const payload = interaction.reply.mock.calls[0]?.[0] as any;
+    const payload = interaction.reply.mock.calls[0]?.[0];
 
     // Reply mentions the target user
     expect(payload?.content).toContain('<@target_mod_1>');
 
     // Select menu customId encodes actorId, authUserId, targetUserId
     const selectMenuRow = payload?.components?.[0];
-    const selectMenu = selectMenuRow?.components?.[0] as any;
+    const selectMenu = selectMenuRow?.components?.[0];
     expect(selectMenu?.data?.custom_id).toMatch(
       /^creator_moderation:reason_select:actor_mod_1:auth_mod_1:target_mod_1$/
     );
@@ -95,7 +110,7 @@ describe('moderation commands', () => {
     const convex = makeConvex({ subjectFound: true, subjectId: 'sub_mod_2' });
 
     await handleModerationConfirmClear(
-      interaction as any,
+      interaction as unknown as ButtonInteraction,
       convex,
       'api-secret',
       'target_mod_2',
@@ -106,7 +121,7 @@ describe('moderation commands', () => {
     expect(interaction.deferUpdate.mock.calls).toHaveLength(1);
     expect(interaction.editReply.mock.calls).toHaveLength(1);
 
-    const embed = interaction.editReply.mock.calls[0]?.[0]?.embeds?.[0] as any;
+    const embed = interaction.editReply.mock.calls[0]?.[0]?.embeds?.[0];
     expect(embed?.data?.title).toBe('Flag Cleared');
     // Success color: green (0x57f287)
     expect(embed?.data?.color).toBe(0x57f287);
@@ -124,10 +139,15 @@ describe('moderation commands', () => {
       userOptions: { user: { id: 'victim_mod_3', username: 'victim' } },
     });
 
-    await handleModerationMark(interaction as any, {} as ConvexHttpClient, 'api-secret', {
-      authUserId: 'auth_mod_3',
-      guildId: 'guild_mod_3',
-    });
+    await handleModerationMark(
+      interaction as unknown as ChatInputCommandInteraction,
+      {} as ConvexHttpClient,
+      'api-secret',
+      {
+        authUserId: 'auth_mod_3',
+        guildId: 'guild_mod_3',
+      }
+    );
 
     // ⚠️ BUG: command shows select menu to non-admin users instead of rejecting
     const replyContent: string | undefined = interaction.reply.mock.calls[0]?.[0]?.content;
@@ -144,7 +164,7 @@ describe('moderation commands', () => {
     const convex = makeConvex({ subjectFound: false });
 
     await handleModerationReasonSelect(
-      interaction as any,
+      interaction as unknown as StringSelectMenuInteraction,
       convex,
       'api-secret',
       'actor_mod_4', // actorId
@@ -168,12 +188,17 @@ describe('moderation commands', () => {
       userOptions: { user: { id: 'target_mod_5', username: 'some_user' } },
     });
 
-    await handleModerationMark(interaction as any, {} as ConvexHttpClient, 'api-secret', {
-      authUserId: 'auth_mod_5',
-      guildId: 'guild_mod_5',
-    });
+    await handleModerationMark(
+      interaction as unknown as ChatInputCommandInteraction,
+      {} as ConvexHttpClient,
+      'api-secret',
+      {
+        authUserId: 'auth_mod_5',
+        guildId: 'guild_mod_5',
+      }
+    );
 
-    const replyArgs = interaction.reply.mock.calls[0]?.[0] as any;
+    const replyArgs = interaction.reply.mock.calls[0]?.[0];
     expect(replyArgs?.flags).toBe(MessageFlags.Ephemeral);
   });
 
@@ -188,10 +213,15 @@ describe('moderation commands', () => {
       userOptions: { user: { id: 'target_mod_6', username: 'target' } },
     });
 
-    await handleModerationMark(interaction as any, {} as ConvexHttpClient, 'api-secret', {
-      authUserId: 'auth_mod_6',
-      guildId: null as unknown as string,
-    });
+    await handleModerationMark(
+      interaction as unknown as ChatInputCommandInteraction,
+      {} as ConvexHttpClient,
+      'api-secret',
+      {
+        authUserId: 'auth_mod_6',
+        guildId: null as unknown as string,
+      }
+    );
 
     // ⚠️ BUG: shows select menu instead of guild-required error
     const replyContent: string | undefined = interaction.reply.mock.calls[0]?.[0]?.content;
@@ -210,14 +240,17 @@ describe('moderation commands', () => {
     });
     const convex = makeConvex();
 
-    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+    await handleInteraction(interaction as unknown as ChatInputCommandInteraction, {
+      convex,
+      apiSecret: 'api-secret',
+    });
 
-    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    const reply = interaction.reply.mock.calls[0]?.[0];
     expect(reply?.content).toMatch(/server/i);
     expect(reply?.flags).toBe(MessageFlags.Ephemeral);
     expect(interaction.deferReply.mock.calls).toHaveLength(0);
     expect(interaction.editReply.mock.calls).toHaveLength(0);
-    expect((convex.query as any).mock.calls).toHaveLength(0);
+    expect((convex.query as unknown as MockFn).mock.calls).toHaveLength(0);
   });
 
   it('handleInteraction rejects tampered moderation reason selects when the embedded actorId does not match the clicker', async () => {
@@ -231,14 +264,17 @@ describe('moderation commands', () => {
     });
     const convex = makeConvex();
 
-    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+    await handleInteraction(interaction as unknown as StringSelectMenuInteraction, {
+      convex,
+      apiSecret: 'api-secret',
+    });
 
-    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    const reply = interaction.reply.mock.calls[0]?.[0];
     expect(reply?.content).toMatch(/only the admin who started/i);
     expect(reply?.flags).toBe(MessageFlags.Ephemeral);
     expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
     expect(interaction.editReply.mock.calls).toHaveLength(0);
-    expect((convex.mutation as any).mock.calls).toHaveLength(0);
+    expect((convex.mutation as unknown as MockFn).mock.calls).toHaveLength(0);
   });
 
   it('handleInteraction rejects tampered moderation clear buttons with mismatched embedded authUserId', async () => {
@@ -251,13 +287,16 @@ describe('moderation commands', () => {
     });
     const convex = makeConvex();
 
-    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+    await handleInteraction(interaction as unknown as ButtonInteraction, {
+      convex,
+      apiSecret: 'api-secret',
+    });
 
-    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    const reply = interaction.reply.mock.calls[0]?.[0];
     expect(reply?.content).toMatch(/no longer valid/i);
     expect(reply?.flags).toBe(MessageFlags.Ephemeral);
     expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
     expect(interaction.editReply.mock.calls).toHaveLength(0);
-    expect((convex.mutation as any).mock.calls).toHaveLength(0);
+    expect((convex.mutation as unknown as MockFn).mock.calls).toHaveLength(0);
   });
 });

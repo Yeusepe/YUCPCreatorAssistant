@@ -137,6 +137,12 @@ export interface TestServerConfig {
   discordClientSecret?: string;
   /** Base URL reported to templates (defaults to http://localhost:<port>) */
   baseUrl?: string;
+  /**
+   * Override the Auth implementation used by all routes.
+   * When omitted, a stub that always returns null sessions is used (default
+   * for auth-guard tests). Supply this when you need to test authenticated paths.
+   */
+  auth?: Auth;
 }
 
 export interface TestServer {
@@ -162,7 +168,7 @@ function createStubAuth(): Auth {
 export async function createServer(config: TestServerConfig): Promise<TestServer> {
   const baseUrl = config.baseUrl ?? `http://localhost:${config.port}`;
 
-  const stubAuth = createStubAuth();
+  const stubAuth = config.auth ?? createStubAuth();
 
   const verificationConfig: VerificationConfig = {
     baseUrl,

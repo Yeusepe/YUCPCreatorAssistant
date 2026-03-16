@@ -427,18 +427,23 @@ function bootLoadingOverlay() {
 function hideLoading() {
   const overlay = document.getElementById('page-loading-overlay');
   const content = document.getElementById('page-content');
+
+  // Step 1: reveal content underneath the still-opaque overlay so it can
+  // layout and paint without the user seeing anything.
   if (content) {
     content.style.display = '';
     requestAnimationFrame(() =>
       requestAnimationFrame(() => content.classList.add('is-visible')),
     );
   }
-  if (overlay) {
+
+  // Step 2: after content finishes its own 0.3s opacity transition + paint
+  // buffer, fade the overlay out over the already-visible page.
+  setTimeout(() => {
+    if (!overlay) return;
     overlay.classList.add('is-hiding');
-    setTimeout(() => {
-      overlay.style.display = 'none';
-    }, 700);
-  }
+    setTimeout(() => { overlay.style.display = 'none'; }, 900);
+  }, 400);
 }
 
 // Populate the loading overlay as early as possible (module scripts run after DOM parse).

@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test';
+import type { ChatInputCommandInteraction, ModalSubmitInteraction } from 'discord.js';
 
 // Mock internalRpc functions used by collab.ts
 const mockAddCollaboratorConnectionManual = mock(() =>
@@ -36,10 +37,14 @@ describe('collab command', () => {
       isAdmin: true,
     });
 
-    await handleCollabAdd(interaction as any, 'api-secret', 'auth_collab_1');
+    await handleCollabAdd(
+      interaction as unknown as ChatInputCommandInteraction,
+      'api-secret',
+      'auth_collab_1'
+    );
 
     expect(interaction.reply.mock.calls.length).toBe(1);
-    const payload = interaction.reply.mock.calls[0]?.[0] as any;
+    const payload = interaction.reply.mock.calls[0]?.[0];
 
     // Only jinxxy has supportsCollab:true — the select menu should be shown
     const customIds = extractAllCustomIds(interaction);
@@ -66,13 +71,18 @@ describe('collab command', () => {
         },
       });
 
-      await handleCollabAddModalSubmit(interaction as any, 'api-secret', 'auth_collab_2', 'jinxxy');
+      await handleCollabAddModalSubmit(
+        interaction as unknown as ModalSubmitInteraction,
+        'api-secret',
+        'auth_collab_2',
+        'jinxxy'
+      );
 
       // deferReply then editReply
       expect(interaction.deferReply.mock.calls.length).toBe(1);
       expect(interaction.editReply.mock.calls.length).toBe(1);
 
-      const replyPayload = interaction.editReply.mock.calls[0]?.[0] as any;
+      const replyPayload = interaction.editReply.mock.calls[0]?.[0];
       const content: string =
         typeof replyPayload === 'string' ? replyPayload : (replyPayload?.content ?? '');
       expect(content).toContain('Jinxxy Creator');

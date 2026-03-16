@@ -861,21 +861,6 @@ export async function fetchAllData() {
         await loadGuildChannels();
       }
     } else if (getTenantId()) {
-      const statusRes = await apiFetch(`${getApiBase()}/api/connect/status?tenantId=${encodeURIComponent(getTenantId())}`);
-      if (statusRes.ok) {
-        const statusData = await statusRes.json();
-        connectionsMap.clear();
-        if (Array.isArray(statusData.connections)) {
-          statusData.connections.forEach((connection) => {
-            const providerKey = connection.providerKey || connection.provider;
-            if (providerKey) connectionsMap.set(providerKey, connection);
-          });
-        } else {
-          if (statusData.gumroad) connectionsMap.set('gumroad', { provider: 'gumroad', status: 'active' });
-          if (statusData.jinxxy) connectionsMap.set('jinxxy', { provider: 'jinxxy', status: 'active' });
-          if (statusData.lemonsqueezy) connectionsMap.set('lemonsqueezy', { provider: 'lemonsqueezy', status: 'active' });
-        }
-      }
       const settingsRes = await apiFetch(`${getApiBase()}/api/connect/settings?authUserId=${encodeURIComponent(getTenantId())}`);
       if (settingsRes.ok) {
         const settingsData = await settingsRes.json();

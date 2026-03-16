@@ -7,6 +7,7 @@
 
 import { describe, expect, it, mock } from 'bun:test';
 import type { ConvexHttpClient } from 'convex/browser';
+import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 import { handleStats } from '../../src/commands/stats';
 import { handleInteraction } from '../../src/handlers/interactions';
@@ -92,9 +93,14 @@ describe('handleStats', () => {
       recent30d: 0,
     });
 
-    await handleStats(interaction as any, convex, 'api-secret', BASE_CTX);
+    await handleStats(
+      interaction as unknown as ChatInputCommandInteraction,
+      convex,
+      'api-secret',
+      BASE_CTX
+    );
 
-    const embed = interaction.editReply.mock.calls[0]?.[0]?.embeds?.[0] as any;
+    const embed = interaction.editReply.mock.calls[0]?.[0]?.embeds?.[0];
     const fields: Array<{ name: string; value: string }> = embed?.data?.fields ?? [];
 
     for (const field of fields) {
@@ -117,9 +123,14 @@ describe('handleStats', () => {
       recent30d: 3,
     });
 
-    await handleStats(interaction as any, convex, 'api-secret', BASE_CTX);
+    await handleStats(
+      interaction as unknown as ChatInputCommandInteraction,
+      convex,
+      'api-secret',
+      BASE_CTX
+    );
 
-    const embed = interaction.editReply.mock.calls[0]?.[0]?.embeds?.[0] as any;
+    const embed = interaction.editReply.mock.calls[0]?.[0]?.embeds?.[0];
     const verifiedField = embed?.data?.fields?.find(
       (f: { name: string }) => f.name === 'Verified Users'
     );
@@ -137,12 +148,17 @@ describe('handleStats', () => {
     });
     const convex = makeConvex({ totalVerified: 42 });
 
-    await handleStats(interaction as any, convex, 'api-secret', BASE_CTX);
+    await handleStats(
+      interaction as unknown as ChatInputCommandInteraction,
+      convex,
+      'api-secret',
+      BASE_CTX
+    );
 
     // Non-admin user still receives the stats embed (handler guards are external)
     expect(interaction.deferReply.mock.calls).toHaveLength(1);
     expect(interaction.editReply.mock.calls).toHaveLength(1);
-    const embed = interaction.editReply.mock.calls[0]?.[0]?.embeds?.[0] as any;
+    const embed = interaction.editReply.mock.calls[0]?.[0]?.embeds?.[0];
     expect(embed?.data?.title).toContain('Verification Stats');
   });
 
@@ -160,13 +176,18 @@ describe('handleStats', () => {
       recent30d: 8,
     });
 
-    await handleStats(interaction as any, convex, 'api-secret', BASE_CTX);
+    await handleStats(
+      interaction as unknown as ChatInputCommandInteraction,
+      convex,
+      'api-secret',
+      BASE_CTX
+    );
 
     expect(interaction.deferReply.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ flags: MessageFlags.Ephemeral })
     );
 
-    const embed = interaction.editReply.mock.calls[0]?.[0]?.embeds?.[0] as any;
+    const embed = interaction.editReply.mock.calls[0]?.[0]?.embeds?.[0];
     const fieldNames = embed?.data?.fields?.map((f: { name: string }) => f.name) ?? [];
 
     expect(fieldNames).toContain('Verified Users');
@@ -194,13 +215,13 @@ describe('handleStats', () => {
     const interaction = mockSlashCommand({ userId: 'user_stats_5', guildId: null });
     const convex = makeConvex({ totalVerified: 0, recent24h: 0, recent7d: 0, recent30d: 0 });
 
-    await handleStats(interaction as any, convex, 'api-secret', {
+    await handleStats(interaction as unknown as ChatInputCommandInteraction, convex, 'api-secret', {
       authUserId: 'auth_stats_5',
       guildId: null as unknown as string,
     });
 
     // Fix: guard calls reply() with guild-required message (no deferReply needed for early exit).
-    const replyArgs = interaction.reply.mock.calls[0]?.[0] as any;
+    const replyArgs = interaction.reply.mock.calls[0]?.[0];
     const content: string = replyArgs?.content ?? '';
     expect(content).toMatch(/server|guild/i);
     // editReply must NOT have been called (no embed sent for DM context)
@@ -217,7 +238,10 @@ describe('handleStats', () => {
     });
     const convex = makeInteractionConvex();
 
-    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+    await handleInteraction(interaction as unknown as ChatInputCommandInteraction, {
+      convex,
+      apiSecret: 'api-secret',
+    });
 
     expect(interaction.reply.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
@@ -240,7 +264,10 @@ describe('handleStats', () => {
     });
     const convex = makeInteractionConvex();
 
-    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+    await handleInteraction(interaction as unknown as ChatInputCommandInteraction, {
+      convex,
+      apiSecret: 'api-secret',
+    });
 
     expect(interaction.reply.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
@@ -262,9 +289,12 @@ describe('handleStats', () => {
     });
     const convex = makeInteractionConvex({ guildLinkAuthUserId: 'auth_stats_guard_3' });
 
-    await handleInteraction(interaction as any, { convex, apiSecret: 'api-secret' });
+    await handleInteraction(interaction as unknown as ButtonInteraction, {
+      convex,
+      apiSecret: 'api-secret',
+    });
 
-    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    const reply = interaction.reply.mock.calls[0]?.[0];
     expect(reply?.content).toMatch(/different server|no longer valid/i);
     expect(reply?.flags).toBe(MessageFlags.Ephemeral);
     expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
