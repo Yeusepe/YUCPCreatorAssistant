@@ -158,6 +158,14 @@ export function createCollabRoutes(config: CollabConfig) {
           response: Response.json({ error: 'Authentication required' }, { status: 401 }),
         };
       }
+      // Cross-check: the web session must belong to the same user as the setup token.
+      // Prevents user B from using user A's stolen setup token with B's own web session.
+      if (webSession.user.id !== setupSession.authUserId) {
+        return {
+          ok: false,
+          response: Response.json({ error: 'Forbidden' }, { status: 403 }),
+        };
+      }
       return { ok: true, authUserId: setupSession.authUserId };
     }
 
@@ -854,7 +862,7 @@ export function createCollabRoutes(config: CollabConfig) {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
-    if (pathname === '/api/collab/invite' && request.method === 'POST')
+    if (pathname === '/api/collab/invite')
       return createInvite(request);
     if (pathname === '/api/collab/session/exchange' && request.method === 'POST')
       return exchangeSession(request);

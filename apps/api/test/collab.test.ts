@@ -10,7 +10,11 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import type { Auth, SessionData } from '../src/auth/index';
+import { createSetupSession } from '../src/lib/setupSession';
 import { startTestServer, type TestServerHandle } from './helpers/testServer';
+
+/** Must match the encryption secret in testServer.ts DEFAULTS */
+const TEST_ENCRYPTION_SECRET = 'test-encryption-secret-32-chars!!';
 
 function makeWebSessionAuth(userId: string): Auth {
   const session: SessionData = {
@@ -94,6 +98,179 @@ describe('Collab routes — validation', () => {
     expect(res.headers.get('content-type')).toContain('application/json');
     const body = await res.json();
     expect(body).toHaveProperty('error');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Security: setup session / web session cross-check
+// A setup token belonging to user-A must NOT be usable by user-B's web session.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Collab routes — security: setup session user isolation', () => {
+  it('Setup session (user-A) + web session (user-B) → 403 (prevents session confusion)', async () => {
+    // This test is RED until requireOwnerAuth adds the cross-check.
+    const token = await createSetupSession(
+      'user-A',
+      'guild-iso-1',
+      'discord-iso-1',
+      TEST_ENCRYPTION_SECRET
+    );
+    const server = await startTestServer({ auth: makeWebSessionAuth('user-B') });
+    try {
+      const res = await server.fetch('/api/collab/invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ guildName: 'Server A', guildId: 'guild-iso-1' }),
+      });
+      const body = await res.json();
+      expect(res.status).toBe(403);
+      expect(body).toHaveProperty('error');
+    } finally {
+      server.stop();
+    }
+  });
+
+  it('Setup session (user-A) + web session (user-A) → auth passes (not 401/403)', async () => {
+    const token = await createSetupSession(
+      'user-A',
+      'guild-iso-2',
+      'discord-iso-2',
+      TEST_ENCRYPTION_SECRET
+    );
+    const server = await startTestServer({ auth: makeWebSessionAuth('user-A') });
+    try {
+      const res = await server.fetch('/api/collab/invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ guildName: 'Server A', guildId: 'guild-iso-2' }),
+      });
+      // Auth passes; Convex is unavailable in tests so we may get 500 — that's fine.
+      expect(res.status).not.toBe(401);
+      expect(res.status).not.toBe(403);
+    } finally {
+      server.stop();
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Security: IDOR guards — a user cannot access another user's resources
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Collab routes — security: IDOR guards', () => {
+  let server: TestServerHandle;
+
+  beforeAll(async () => {
+    server = await startTestServer({ auth: makeWebSessionAuth('user-legitimate') });
+  });
+
+  afterAll(() => server.stop());
+
+  it('GET /api/collab/connections?authUserId=<other> must not return 200', async () => {
+    let status: number | null = null;
+    try {
+      const res = await server.fetch('/api/collab/connections?authUserId=user-target');
+      status = res.status;
+    } catch {
+      return; // network error is also acceptable — auth was checked
+    }
+    expect(status).not.toBe(200);
+  });
+
+  it('DELETE /api/collab/connections/x?authUserId=<other> must not return 200', async () => {
+    let status: number | null = null;
+    try {
+      const res = await server.fetch(
+        '/api/collab/connections/some-conn-id?authUserId=user-target',
+        { method: 'DELETE' }
+      );
+      status = res.status;
+    } catch {
+      return;
+    }
+    expect(status).not.toBe(200);
+  });
+
+  it('POST /api/collab/invite with explicit authUserId=<other> must not return 200/201', async () => {
+    let status: number | null = null;
+    try {
+      const res = await server.fetch('/api/collab/invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ guildName: 'S', guildId: 'g', authUserId: 'user-target' }),
+      });
+      status = res.status;
+    } catch {
+      return;
+    }
+    expect(status).not.toBe(200);
+    expect(status).not.toBe(201);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Security: session / token validation — unauthenticated collab-session endpoints
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Collab routes — security: session and token validation', () => {
+  let server: TestServerHandle;
+
+  beforeAll(async () => {
+    server = await startTestServer(); // no auth — stub always returns null
+  });
+
+  afterAll(() => server.stop());
+
+  it('GET /api/collab/session/invite without collab cookie → 404', async () => {
+    const res = await server.fetch('/api/collab/session/invite');
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /api/collab/session/discord-status without collab cookie → 404', async () => {
+    const res = await server.fetch('/api/collab/session/discord-status');
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /api/collab/session/webhook-config without collab cookie → 404', async () => {
+    const res = await server.fetch('/api/collab/session/webhook-config');
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /api/collab/session/test-webhook without collab cookie → 404', async () => {
+    const res = await server.fetch('/api/collab/session/test-webhook');
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /api/collab/session/submit without collab cookie → 404', async () => {
+    const res = await server.fetch('/api/collab/session/submit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ linkType: 'api', jinxxyApiKey: 'test' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /api/collab/invite (wrong method) → 405', async () => {
+    // createInvite requires POST; GET should return 405
+    const res = await server.fetch('/api/collab/invite');
+    expect(res.status).toBe(405);
+  });
+
+  it('POST /api/collab/session/exchange with forged/garbage token → not 200', async () => {
+    // A token that was never stored returns 404 from Convex lookup (or 500 if Convex unreachable)
+    let status: number | null = null;
+    try {
+      const res = await server.fetch('/api/collab/session/exchange', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: 'completely-forged-garbage-token-xyz' }),
+      });
+      status = res.status;
+    } catch {
+      return;
+    }
+    expect(status).not.toBe(200);
+    expect(status).not.toBe(201);
   });
 });
 
