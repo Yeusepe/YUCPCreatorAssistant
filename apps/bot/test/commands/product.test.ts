@@ -1,4 +1,9 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import type {
+  ButtonInteraction,
+  ChatInputCommandInteraction,
+  StringSelectMenuInteraction,
+} from 'discord.js';
 
 // Mock internalRpc BEFORE importing the command (bun:test hoists mock.module)
 const mockListProducts = mock(() =>
@@ -25,7 +30,7 @@ import {
   handleProductCancelAdd,
   handleProductTypeSelect,
 } from '../../src/commands/product';
-import type { MockInteraction } from '../helpers/mockInteraction';
+import type { MockFn } from '../helpers/mockInteraction';
 import {
   extractAllCustomIds,
   mockButton,
@@ -71,10 +76,15 @@ describe('product command', () => {
       isAdmin: true,
     });
 
-    await handleProductAddInteractive(interaction as any, BASE_CTX, ALL_CONNECTED, TEST_API_SECRET);
+    await handleProductAddInteractive(
+      interaction as unknown as ChatInputCommandInteraction,
+      BASE_CTX,
+      ALL_CONNECTED,
+      TEST_API_SECRET
+    );
 
     expect(interaction.reply.mock.calls.length).toBe(1);
-    const payload = interaction.reply.mock.calls[0]?.[0] as any;
+    const payload = interaction.reply.mock.calls[0]?.[0];
     expect(payload?.content).toContain('Step 1 of 3');
 
     // The select menu custom ID contains the authUserId
@@ -120,7 +130,7 @@ describe('product command', () => {
       isAdmin: true,
     });
     await handleProductAddInteractive(
-      slashInteraction as any,
+      slashInteraction as unknown as ChatInputCommandInteraction,
       {
         authUserId: 'auth_product_url',
         guildLinkId: 'link_id_url' as ProductCtx['guildLinkId'],
@@ -136,13 +146,16 @@ describe('product command', () => {
       customId: 'creator_product:type_select:auth_product_url',
       values: ['gumroad_url'],
     });
-    selectInteraction.showModal = mock(() => Promise.resolve(undefined)) as any;
+    selectInteraction.showModal = mock(() => Promise.resolve(undefined)) as unknown as MockFn;
 
-    await handleProductTypeSelect(selectInteraction as any, 'auth_product_url');
+    await handleProductTypeSelect(
+      selectInteraction as unknown as StringSelectMenuInteraction,
+      'auth_product_url'
+    );
 
     // Should show a modal (not a catalog picker)
     expect(selectInteraction.showModal.mock.calls.length).toBe(1);
-    const modal = selectInteraction.showModal.mock.calls[0]?.[0] as any;
+    const modal = selectInteraction.showModal.mock.calls[0]?.[0];
     // Modal custom ID uses url_modal
     expect(modal?.data?.custom_id ?? modal?.customId).toContain('url_modal');
   });
@@ -160,7 +173,7 @@ describe('product command', () => {
       isAdmin: true,
     });
     await handleProductAddInteractive(
-      slashInteraction as any,
+      slashInteraction as unknown as ChatInputCommandInteraction,
       {
         authUserId: 'auth_product_test',
         guildLinkId: 'link_id_2' as ProductCtx['guildLinkId'],
@@ -178,12 +191,15 @@ describe('product command', () => {
       values: ['gumroad'],
     });
     // deferUpdate + editReply used by this handler
-    selectInteraction.deferUpdate = mock(() => Promise.resolve(undefined)) as any;
+    selectInteraction.deferUpdate = mock(() => Promise.resolve(undefined)) as unknown as MockFn;
 
-    await handleProductTypeSelect(selectInteraction as any, 'auth_product_test');
+    await handleProductTypeSelect(
+      selectInteraction as unknown as StringSelectMenuInteraction,
+      'auth_product_test'
+    );
 
     // editReply should report no products found
-    const editReplyPayload = selectInteraction.editReply.mock.calls[0]?.[0] as any;
+    const editReplyPayload = selectInteraction.editReply.mock.calls[0]?.[0];
     expect(editReplyPayload?.content ?? editReplyPayload).toContain('No Gumroad products found');
   });
 
@@ -207,7 +223,7 @@ describe('product command', () => {
       isAdmin: true,
     });
     await handleProductAddInteractive(
-      slashInteraction as any,
+      slashInteraction as unknown as ChatInputCommandInteraction,
       {
         authUserId: 'auth_product_test',
         guildLinkId: 'link_id_3' as ProductCtx['guildLinkId'],
@@ -223,12 +239,15 @@ describe('product command', () => {
       customId: `creator_product:type_select:auth_product_test`,
       values: ['gumroad'],
     });
-    selectInteraction.deferUpdate = mock(() => Promise.resolve(undefined)) as any;
+    selectInteraction.deferUpdate = mock(() => Promise.resolve(undefined)) as unknown as MockFn;
 
-    await handleProductTypeSelect(selectInteraction as any, 'auth_product_test');
+    await handleProductTypeSelect(
+      selectInteraction as unknown as StringSelectMenuInteraction,
+      'auth_product_test'
+    );
 
     // Should show catalog select menu (editReply with components)
-    const editReplyPayload = selectInteraction.editReply.mock.calls[0]?.[0] as any;
+    const editReplyPayload = selectInteraction.editReply.mock.calls[0]?.[0];
     expect(editReplyPayload).toBeDefined();
 
     // The catalog select custom ID for gumroad uses the generic pattern
@@ -249,12 +268,15 @@ describe('product command', () => {
       customId: 'creator_product:type_select:auth_ghost',
       values: ['gumroad'],
     });
-    selectInteraction.deferUpdate = mock(() => Promise.resolve(undefined)) as any;
+    selectInteraction.deferUpdate = mock(() => Promise.resolve(undefined)) as unknown as MockFn;
 
-    await handleProductTypeSelect(selectInteraction as any, 'auth_ghost');
+    await handleProductTypeSelect(
+      selectInteraction as unknown as StringSelectMenuInteraction,
+      'auth_ghost'
+    );
 
     // No deferUpdate — session check happens first; update() is called with expired message
-    const updatePayload = selectInteraction.update.mock.calls[0]?.[0] as any;
+    const updatePayload = selectInteraction.update.mock.calls[0]?.[0];
     expect(updatePayload?.content).toContain('Session expired');
     expect(updatePayload?.components).toEqual([]);
   });
@@ -269,7 +291,7 @@ describe('product command', () => {
       isAdmin: true,
     });
     await handleProductAddInteractive(
-      slashInteraction as any,
+      slashInteraction as unknown as ChatInputCommandInteraction,
       {
         authUserId: 'auth_product_guard_1',
         guildLinkId: 'link_guard_1' as ProductCtx['guildLinkId'],
@@ -286,9 +308,12 @@ describe('product command', () => {
       values: ['gumroad'],
     });
 
-    await handleProductTypeSelect(selectInteraction as any, 'auth_product_guard_1');
+    await handleProductTypeSelect(
+      selectInteraction as unknown as StringSelectMenuInteraction,
+      'auth_product_guard_1'
+    );
 
-    const updatePayload = selectInteraction.update.mock.calls[0]?.[0] as any;
+    const updatePayload = selectInteraction.update.mock.calls[0]?.[0];
     expect(updatePayload?.content).toContain('Session expired');
     expect(updatePayload?.components).toEqual([]);
     expect(selectInteraction.deferUpdate.mock.calls).toHaveLength(0);
@@ -306,7 +331,7 @@ describe('product command', () => {
       isAdmin: true,
     });
     await handleProductAddInteractive(
-      slashInteraction as any,
+      slashInteraction as unknown as ChatInputCommandInteraction,
       {
         authUserId: 'auth_product_guard_2',
         guildLinkId: 'link_guard_2' as ProductCtx['guildLinkId'],
@@ -323,9 +348,12 @@ describe('product command', () => {
       values: ['gumroad'],
     });
 
-    await handleProductTypeSelect(selectInteraction as any, 'auth_product_other');
+    await handleProductTypeSelect(
+      selectInteraction as unknown as StringSelectMenuInteraction,
+      'auth_product_other'
+    );
 
-    const updatePayload = selectInteraction.update.mock.calls[0]?.[0] as any;
+    const updatePayload = selectInteraction.update.mock.calls[0]?.[0];
     expect(updatePayload?.content).toContain('Session expired');
     expect(updatePayload?.components).toEqual([]);
     expect(selectInteraction.deferUpdate.mock.calls).toHaveLength(0);
@@ -343,7 +371,7 @@ describe('product command', () => {
       isAdmin: true,
     });
     await handleProductAddInteractive(
-      slashInteraction as any,
+      slashInteraction as unknown as ChatInputCommandInteraction,
       {
         authUserId: 'auth_product_guard_3',
         guildLinkId: 'link_guard_3' as ProductCtx['guildLinkId'],
@@ -359,7 +387,7 @@ describe('product command', () => {
       customId: 'creator_product:cancel_add:auth_product_guard_3',
     });
     await handleProductCancelAdd(
-      cancelInteraction as any,
+      cancelInteraction as unknown as ButtonInteraction,
       'user_prod_guard_3',
       'auth_product_guard_3'
     );
@@ -371,9 +399,12 @@ describe('product command', () => {
       values: ['gumroad'],
     });
 
-    await handleProductTypeSelect(replayInteraction as any, 'auth_product_guard_3');
+    await handleProductTypeSelect(
+      replayInteraction as unknown as StringSelectMenuInteraction,
+      'auth_product_guard_3'
+    );
 
-    const updatePayload = replayInteraction.update.mock.calls[0]?.[0] as any;
+    const updatePayload = replayInteraction.update.mock.calls[0]?.[0];
     expect(updatePayload?.content).toContain('Session expired');
     expect(updatePayload?.components).toEqual([]);
     expect(replayInteraction.deferUpdate.mock.calls).toHaveLength(0);
@@ -394,7 +425,7 @@ describe('product command', () => {
     });
 
     await handleProductAddInteractive(
-      interaction as any,
+      interaction as unknown as ChatInputCommandInteraction,
       {
         authUserId: 'auth_partial',
         guildLinkId: 'link_partial' as ProductCtx['guildLinkId'],
@@ -404,7 +435,7 @@ describe('product command', () => {
       TEST_API_SECRET
     );
 
-    const payload = interaction.reply.mock.calls[0]?.[0] as any;
+    const payload = interaction.reply.mock.calls[0]?.[0];
     const select = payload?.components?.[0]?.components?.[0];
     const optionValues: string[] = (select?.options ?? []).map(
       (o: { data?: { value?: string }; value?: string }) => o.data?.value ?? o.value
@@ -436,7 +467,7 @@ describe('product command', () => {
     });
 
     await handleProductAddInteractive(
-      interaction as any,
+      interaction as unknown as ChatInputCommandInteraction,
       {
         authUserId: 'auth_none',
         guildLinkId: 'link_none' as ProductCtx['guildLinkId'],
@@ -446,7 +477,7 @@ describe('product command', () => {
       TEST_API_SECRET
     );
 
-    const payload = interaction.reply.mock.calls[0]?.[0] as any;
+    const payload = interaction.reply.mock.calls[0]?.[0];
     const select = payload?.components?.[0]?.components?.[0];
     const optionValues: string[] = (select?.options ?? []).map(
       (o: { data?: { value?: string }; value?: string }) => o.data?.value ?? o.value

@@ -170,18 +170,17 @@ export function createCollabRoutes(config: CollabConfig) {
       };
     }
 
+    // If no authUserId hint is supplied, fall back to the session user's own ID.
+    // The user IS their own authUserId in the Better Auth system, so no ownership
+    // check is needed in this case.
     if (!authUserIdHint) {
-      return {
-        ok: false,
-        response: Response.json({ error: 'authUserId is required' }, { status: 400 }),
-      };
+      return { ok: true, authUserId: webSession.user.id };
     }
 
     const tenantOwned = await isTenantOwnedBySessionUser(webSession.user.id, authUserIdHint);
     if (!tenantOwned) {
       return { ok: false, response: Response.json({ error: 'Forbidden' }, { status: 403 }) };
     }
-
     return { ok: true, authUserId: authUserIdHint };
   }
 
@@ -840,6 +839,18 @@ export function createCollabRoutes(config: CollabConfig) {
   // ── Dispatcher ─────────────────────────────────────────────────────────────
 
   async function handleCollabRequest(request: Request): Promise<Response> {
+    try {
+      return await dispatchCollabRequest(request);
+    } catch (err) {
+      logger.error('Unhandled collab route error', {
+        error: err instanceof Error ? err.message : String(err),
+        url: request.url,
+      });
+      return Response.json({ error: 'Internal server error' }, { status: 500 });
+    }
+  }
+
+  async function dispatchCollabRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const pathname = url.pathname;
 

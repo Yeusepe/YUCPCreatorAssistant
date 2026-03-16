@@ -1,4 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
+import type { Logger } from '@yucp/shared';
+import type { ConvexHttpClient } from 'convex/browser';
+import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 // settings.ts uses convex directly (not internalRpc), so no module mock needed
 import { handleDisconnectCancel, handleSettingsDisconnect } from '../../src/commands/settings';
@@ -19,14 +22,14 @@ const makeLogger = () => ({
   child: () => makeLogger(),
 });
 
-function makeSettingsConvex() {
+function makeSettingsConvex(): ConvexHttpClient {
   return {
     query: mock(async () => ({
       authUserId: 'auth_settings_secure',
       guildLinkId: 'guild_link_settings_secure',
     })),
     mutation: mock(async () => ({ success: true })),
-  };
+  } as unknown as ConvexHttpClient;
 }
 
 describe('settings command', () => {
@@ -41,15 +44,22 @@ describe('settings command', () => {
     });
     const mockConvex = {} as Parameters<typeof handleSettingsDisconnect>[1];
 
-    await handleSettingsDisconnect(interaction as any, mockConvex, 'api-secret', {
-      logger: makeLogger() as any,
-      authUserId: 'auth_settings_1',
-      guildId: 'guild_settings_1',
-    });
+    await handleSettingsDisconnect(
+      interaction as unknown as ChatInputCommandInteraction,
+      mockConvex,
+      'api-secret',
+      {
+        logger: makeLogger() as unknown as Logger,
+        authUserId: 'auth_settings_1',
+        guildId: 'guild_settings_1',
+      }
+    );
 
     expect(interaction.reply.mock.calls.length).toBe(1);
 
-    const embed = getEmbedFromReply(interaction) as any;
+    const embed = getEmbedFromReply(interaction) as {
+      data?: { title?: string; description?: string };
+    };
     expect(embed?.data?.title).toBe('⚠️ Warning: Disconnect Server');
     expect(embed?.data?.description).toContain('disconnect this server');
 
@@ -66,13 +76,18 @@ describe('settings command', () => {
     });
     const mockConvex = {} as Parameters<typeof handleDisconnectCancel>[1];
 
-    await handleDisconnectCancel(interaction as any, mockConvex, 'api-secret', {
-      logger: makeLogger() as any,
-    });
+    await handleDisconnectCancel(
+      interaction as unknown as ButtonInteraction,
+      mockConvex,
+      'api-secret',
+      {
+        logger: makeLogger() as unknown as Logger,
+      }
+    );
 
     // cancel uses update(), not reply()
     expect(interaction.update.mock.calls.length).toBe(1);
-    const payload = interaction.update.mock.calls[0]?.[0] as any;
+    const payload = interaction.update.mock.calls[0]?.[0];
 
     expect(payload?.embeds?.[0]?.data?.title).toBe('✅ Cancelled');
     expect(payload?.embeds?.[0]?.data?.description).toContain('remains connected');
@@ -89,9 +104,12 @@ describe('settings command', () => {
     });
     const convex = makeSettingsConvex();
 
-    await handleInteraction(interaction as any, { convex: convex as any, apiSecret: 'api-secret' });
+    await handleInteraction(interaction as unknown as ButtonInteraction, {
+      convex,
+      apiSecret: 'api-secret',
+    });
 
-    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    const reply = interaction.reply.mock.calls[0]?.[0];
     expect(reply?.content).toMatch(/server/i);
     expect(reply?.flags).toBe(MessageFlags.Ephemeral);
     expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
@@ -109,9 +127,12 @@ describe('settings command', () => {
     });
     const convex = makeSettingsConvex();
 
-    await handleInteraction(interaction as any, { convex: convex as any, apiSecret: 'api-secret' });
+    await handleInteraction(interaction as unknown as ButtonInteraction, {
+      convex,
+      apiSecret: 'api-secret',
+    });
 
-    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    const reply = interaction.reply.mock.calls[0]?.[0];
     expect(reply?.content).toMatch(/administrator/i);
     expect(reply?.flags).toBe(MessageFlags.Ephemeral);
     expect(interaction.deferUpdate.mock.calls).toHaveLength(0);
@@ -129,9 +150,12 @@ describe('settings command', () => {
     });
     const convex = makeSettingsConvex();
 
-    await handleInteraction(interaction as any, { convex: convex as any, apiSecret: 'api-secret' });
+    await handleInteraction(interaction as unknown as ButtonInteraction, {
+      convex,
+      apiSecret: 'api-secret',
+    });
 
-    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    const reply = interaction.reply.mock.calls[0]?.[0];
     expect(reply?.content).toBe('Unknown button.');
     expect(reply?.flags).toBe(MessageFlags.Ephemeral);
     expect(interaction.deferUpdate.mock.calls).toHaveLength(0);

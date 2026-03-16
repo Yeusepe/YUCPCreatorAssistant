@@ -436,9 +436,11 @@
         }
 
         function showPage() {
-            overlay.classList.add('fade-out');
-            setTimeout(() => { overlay.style.display = 'none'; }, 650);
             content.classList.add('visible');
+            setTimeout(() => {
+                overlay.classList.add('fade-out');
+                setTimeout(() => { overlay.style.display = 'none'; }, 650);
+            }, 350);
         }
 
         function showError(msg) {

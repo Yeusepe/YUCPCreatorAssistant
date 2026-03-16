@@ -21,7 +21,6 @@ export const ADMINISTRATOR_BIT = 0x8n;
  * Structural type that is satisfied by any Bun `mock()` return value.
  * Only `calls` is required; it's the only field used by assertion helpers.
  */
-// biome-ignore lint/suspicious/noExplicitAny: intentionally broad for mock recording
 export interface MockFn {
   // biome-ignore lint/suspicious/noExplicitAny: intentionally broad for mock recording
   (...args: any[]): any;

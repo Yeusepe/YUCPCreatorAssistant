@@ -1,4 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test';
+import type { ConvexHttpClient } from 'convex/browser';
+import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import {
   handleDownloadsAdd,
@@ -35,7 +37,7 @@ function makeManageConvex(route = SAMPLE_ROUTE) {
 
 /** Extend a mock interaction's guild with a channels cache/fetch stub. */
 function withGuildChannels(interaction: ReturnType<typeof mockSlashCommand>) {
-  (interaction as any).guild = {
+  (interaction as unknown as { guild: unknown }).guild = {
     roles: { fetch: () => Promise.resolve(null) },
     channels: {
       cache: { get: (_id: string) => undefined },
@@ -90,10 +92,12 @@ describe('downloads command', () => {
       guildId: 'guild_dl_1',
     };
 
-    await handleDownloadsAdd(interaction as any, ctx);
+    await handleDownloadsAdd(interaction as unknown as ChatInputCommandInteraction, ctx);
 
     expect(interaction.reply.mock.calls.length).toBe(1);
-    const embed = getEmbedFromReply(interaction) as any;
+    const embed = getEmbedFromReply(interaction) as {
+      data?: { title?: string; footer?: { text?: string } };
+    };
     expect(embed?.data?.title).toContain('Set Up Liened Downloads');
     expect(embed?.data?.footer?.text).toContain('Step 1 of 3');
 
@@ -117,13 +121,18 @@ describe('downloads command', () => {
 
     const convex = makeConvex([]);
 
-    await handleDownloadsManage(interaction as any, convex as any, 'api-secret', {
-      authUserId: 'auth_dl_test',
-      guildId: 'guild_dl_test',
-    });
+    await handleDownloadsManage(
+      interaction as unknown as ChatInputCommandInteraction,
+      convex as unknown as ConvexHttpClient,
+      'api-secret',
+      {
+        authUserId: 'auth_dl_test',
+        guildId: 'guild_dl_test',
+      }
+    );
 
     expect(interaction.deferReply.mock.calls.length).toBe(1);
-    const replyContent = interaction.editReply.mock.calls[0]?.[0] as any;
+    const replyContent = interaction.editReply.mock.calls[0]?.[0];
     const content: string =
       typeof replyContent === 'string' ? replyContent : (replyContent?.content ?? '');
     expect(content).toContain('No routes yet');
@@ -144,15 +153,20 @@ describe('downloads command', () => {
 
     const convex = makeConvex([SAMPLE_ROUTE]);
 
-    await handleDownloadsManage(interaction as any, convex as any, 'api-secret', {
-      authUserId: 'auth_dl_test',
-      guildId: 'guild_dl_test',
-    });
+    await handleDownloadsManage(
+      interaction as unknown as ChatInputCommandInteraction,
+      convex as unknown as ConvexHttpClient,
+      'api-secret',
+      {
+        authUserId: 'auth_dl_test',
+        guildId: 'guild_dl_test',
+      }
+    );
 
     expect(interaction.deferReply.mock.calls.length).toBe(1);
 
-    const replyPayload = interaction.editReply.mock.calls[0]?.[0] as any;
-    const embed = replyPayload?.embeds?.[0] as any;
+    const replyPayload = interaction.editReply.mock.calls[0]?.[0];
+    const embed = replyPayload?.embeds?.[0];
     expect(embed?.data?.title).toContain('Manage Liened Downloads');
     // Footer shows route ID and total count
     expect(embed?.data?.footer?.text).toContain('1 total');
@@ -175,13 +189,13 @@ describe('downloads command', () => {
     const convex = makeManageConvex();
 
     await handleDownloadsManageToggle(
-      interaction as any,
-      convex as any,
+      interaction as unknown as ButtonInteraction,
+      convex as unknown as ConvexHttpClient,
       'api-secret',
       'missing_token'
     );
 
-    const reply = interaction.reply.mock.calls[0]?.[0] as any;
+    const reply = interaction.reply.mock.calls[0]?.[0];
     expect(reply?.content).toContain('panel expired');
     expect(interaction.update.mock.calls).toHaveLength(0);
     expect(interaction.editReply.mock.calls).toHaveLength(0);
@@ -201,10 +215,15 @@ describe('downloads command', () => {
       })
     );
     const convex = makeManageConvex();
-    await handleDownloadsManage(openInteraction as any, convex as any, 'api-secret', {
-      authUserId: 'auth_dl_test',
-      guildId: 'guild_dl_test',
-    });
+    await handleDownloadsManage(
+      openInteraction as unknown as ChatInputCommandInteraction,
+      convex as unknown as ConvexHttpClient,
+      'api-secret',
+      {
+        authUserId: 'auth_dl_test',
+        guildId: 'guild_dl_test',
+      }
+    );
 
     const panelToken = extractAllCustomIds(openInteraction)
       .find((id) => id.startsWith('creator_downloads:manage_toggle:'))
@@ -218,13 +237,13 @@ describe('downloads command', () => {
     });
 
     await handleDownloadsManageToggle(
-      intruderInteraction as any,
-      convex as any,
+      intruderInteraction as unknown as ButtonInteraction,
+      convex as unknown as ConvexHttpClient,
       'api-secret',
       panelToken as string
     );
 
-    const reply = intruderInteraction.reply.mock.calls[0]?.[0] as any;
+    const reply = intruderInteraction.reply.mock.calls[0]?.[0];
     expect(reply?.content).toContain('Only the person who opened this panel');
     expect(intruderInteraction.update.mock.calls).toHaveLength(0);
     expect(intruderInteraction.editReply.mock.calls).toHaveLength(0);
@@ -242,10 +261,15 @@ describe('downloads command', () => {
       })
     );
     const convex = makeManageConvex();
-    await handleDownloadsManage(openInteraction as any, convex as any, 'api-secret', {
-      authUserId: 'auth_dl_test',
-      guildId: 'guild_dl_test',
-    });
+    await handleDownloadsManage(
+      openInteraction as unknown as ChatInputCommandInteraction,
+      convex as unknown as ConvexHttpClient,
+      'api-secret',
+      {
+        authUserId: 'auth_dl_test',
+        guildId: 'guild_dl_test',
+      }
+    );
 
     const panelToken = extractAllCustomIds(openInteraction)
       .find((id) => id.startsWith('creator_downloads:manage_toggle:'))
@@ -259,13 +283,13 @@ describe('downloads command', () => {
     });
 
     await handleDownloadsManageToggle(
-      replayInteraction as any,
-      convex as any,
+      replayInteraction as unknown as ButtonInteraction,
+      convex as unknown as ConvexHttpClient,
       'api-secret',
       panelToken as string
     );
 
-    const updatePayload = replayInteraction.update.mock.calls[0]?.[0] as any;
+    const updatePayload = replayInteraction.update.mock.calls[0]?.[0];
     expect(updatePayload?.content).toContain('no longer available');
     expect(replayInteraction.reply.mock.calls).toHaveLength(0);
     expect(convex.mutation.mock.calls).toHaveLength(0);
