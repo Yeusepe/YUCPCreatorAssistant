@@ -1,7 +1,7 @@
 import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 
-const JINXXY_PENDING_WEBHOOK_PREFIX = 'jinxxy_webhook_pending:';
+const JINXXY_PENDING_WEBHOOK_TOKEN_PREFIX = 'jinxxy_webhook_pending_token:';
 
 import type { getConvexClientFromUrl } from '../../lib/convex';
 import { decrypt } from '../../lib/encrypt';
@@ -61,7 +61,8 @@ async function getPendingJinxxyWebhookSecret(
   routeId: string
 ): Promise<string | null> {
   const store = getStateStore();
-  const raw = await store.get(`${JINXXY_PENDING_WEBHOOK_PREFIX}${routeId}`);
+  // During test delivery, routeId is the opaque route token — look up under the token prefix.
+  const raw = await store.get(`${JINXXY_PENDING_WEBHOOK_TOKEN_PREFIX}${routeId}`);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as { signingSecretEncrypted: string };
@@ -307,10 +308,16 @@ export const webhook: WebhookPlugin = {
 
       let authUserIds: string[];
       try {
+        const connOwner = await convex.query(
+          api.providerConnections.getConnectionByWebhookRouteToken,
+          { apiSecret, webhookRouteToken: routeId }
+        );
+        const resolvedAuthUserId = connOwner?.authUserId ?? routeId;
         authUserIds = await convex.query(api.webhookIngestion.resolveWebhookTenantIds, {
           apiSecret,
-          authUserId: routeId,
+          authUserId: resolvedAuthUserId,
         });
+        if (authUserIds.length === 0) authUserIds = [resolvedAuthUserId];
       } catch {
         authUserIds = [routeId];
       }

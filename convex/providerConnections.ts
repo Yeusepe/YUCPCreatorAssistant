@@ -238,9 +238,8 @@ export const getJinxxyWebhookSecretByRouteId = query({
     requireApiSecret(args.apiSecret);
     const conn = await ctx.db
       .query('provider_connections')
-      .withIndex('by_auth_user_provider', (q) =>
-        q.eq('authUserId', args.routeId).eq('provider', 'jinxxy')
-      )
+      .withIndex('by_webhook_route_token', (q) => q.eq('webhookRouteToken', args.routeId))
+      .filter((q) => q.eq(q.field('provider'), 'jinxxy'))
       .first();
     if (!conn || conn.status === 'disconnected') return null;
     const credentialSecret = await getCredentialValue(ctx, conn._id, 'webhook_secret');
@@ -517,6 +516,30 @@ export const getConnectionByWebhookRouteToken = query({
   },
 });
 
+/**
+ * Get or create the webhookRouteToken for a provider connection.
+ * Returns null if no connection exists (caller must generate a pending token).
+ */
+export const getProviderConnectionWebhookRouteToken = query({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    providerKey: ProviderV,
+  },
+  returns: v.union(v.string(), v.null()),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const conn = await ctx.db
+      .query('provider_connections')
+      .withIndex('by_auth_user_provider', (q) =>
+        q.eq('authUserId', args.authUserId).eq('provider', args.providerKey)
+      )
+      .first();
+    if (!conn || conn.status === 'disconnected') return null;
+    return conn.webhookRouteToken ?? null;
+  },
+});
+
 export const createProviderConnection = mutation({
   args: {
     apiSecret: v.string(),
@@ -697,6 +720,51 @@ export const disconnectConnection = mutation({
       updatedAt: Date.now(),
     });
     return { success: true };
+  },
+});
+
+/**
+ * Return the provider key and encrypted credentials for a connection.
+ * Used by the API disconnect handler to call the provider's onDisconnect hook
+ * (e.g. unregistering external webhooks) before soft-deleting the connection.
+ */
+export const getConnectionForDisconnect = query({
+  args: {
+    apiSecret: v.string(),
+    connectionId: v.id('provider_connections'),
+    authUserId: v.string(),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      provider: v.string(),
+      credentials: v.record(v.string(), v.string()),
+      remoteWebhookId: v.optional(v.string()),
+    })
+  ),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const conn = await ctx.db.get(args.connectionId);
+    if (!conn || conn.authUserId !== args.authUserId) return null;
+    if (conn.status === 'disconnected') return null;
+
+    const credRows = await ctx.db
+      .query('provider_credentials')
+      .withIndex('by_connection', (q) => q.eq('providerConnectionId', conn._id))
+      .collect();
+
+    const credentials: Record<string, string> = {};
+    for (const row of credRows) {
+      if (row.encryptedValue) {
+        credentials[row.credentialKey] = row.encryptedValue;
+      }
+    }
+
+    return {
+      provider: conn.provider,
+      credentials,
+      remoteWebhookId: conn.remoteWebhookId,
+    };
   },
 });
 
@@ -1136,9 +1204,8 @@ export const getPayhipApiKeyByRouteId = query({
     requireApiSecret(args.apiSecret);
     const conn = await ctx.db
       .query('provider_connections')
-      .withIndex('by_auth_user_provider', (q) =>
-        q.eq('authUserId', args.routeId).eq('provider', 'payhip')
-      )
+      .withIndex('by_webhook_route_token', (q) => q.eq('webhookRouteToken', args.routeId))
+      .filter((q) => q.eq(q.field('provider'), 'payhip'))
       .first();
     if (!conn || conn.status === 'disconnected') return null;
     return getCredentialValue(ctx, conn._id, 'api_key');
@@ -1265,6 +1332,7 @@ export const upsertPayhipConnection = mutation({
   },
   returns: v.object({
     connectionId: v.id('provider_connections'),
+    webhookRouteToken: v.string(),
   }),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
@@ -1290,6 +1358,12 @@ export const upsertPayhipConnection = mutation({
         updatedAt: now,
       });
     } else {
+      // Generate an opaque route token so the webhook URL does not expose authUserId.
+      const routeTokenBytes = new Uint8Array(32);
+      crypto.getRandomValues(routeTokenBytes);
+      const webhookRouteToken = Array.from(routeTokenBytes, (b) =>
+        b.toString(16).padStart(2, '0')
+      ).join('');
       const id = await ctx.db.insert('provider_connections', {
         authUserId: args.authUserId,
         provider: 'payhip' as any,
@@ -1299,11 +1373,16 @@ export const upsertPayhipConnection = mutation({
         status: 'active',
         authMode: 'api_key',
         webhookConfigured: false,
+        webhookRouteToken,
         createdAt: now,
         updatedAt: now,
       });
       conn = await ctx.db.get(id);
       if (!conn) throw new Error('Failed to create Payhip connection');
+    }
+
+    if (!conn.webhookRouteToken) {
+      throw new Error('Payhip connection missing webhookRouteToken');
     }
 
     await upsertCredential(ctx, {
@@ -1330,14 +1409,11 @@ export const upsertPayhipConnection = mutation({
       requiredCredentialKeys: [],
     });
 
-    return { connectionId: conn._id };
+    return { connectionId: conn._id, webhookRouteToken: conn.webhookRouteToken };
   },
 });
 
 /**
- * Generic mutation for storing or updating a per-product credential for any provider
- * that declares `perProductCredential` in its ProviderDescriptor.
- *
  * Credential key format: `{credentialKeyPrefix}{productId}` (e.g., `product_key:RGsF`).
  */
 export const upsertProductCredential = mutation({
@@ -1526,6 +1602,7 @@ export const markPayhipWebhookConfigured = mutation({
   args: {
     apiSecret: v.string(),
     authUserId: v.optional(v.string()),
+    webhookRouteToken: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -1533,7 +1610,13 @@ export const markPayhipWebhookConfigured = mutation({
 
     let conn = null;
 
-    if (args.authUserId) {
+    if (args.webhookRouteToken) {
+      conn = await ctx.db
+        .query('provider_connections')
+        .withIndex('by_webhook_route_token', (q) => q.eq('webhookRouteToken', args.webhookRouteToken!))
+        .filter((q) => q.eq(q.field('provider'), 'payhip'))
+        .first();
+    } else if (args.authUserId) {
       const authUserId = args.authUserId;
       conn = await ctx.db
         .query('provider_connections')

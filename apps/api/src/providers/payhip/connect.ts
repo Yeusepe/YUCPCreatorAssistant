@@ -81,13 +81,13 @@ async function payhipFinish(request: Request, ctx: ConnectContext): Promise<Resp
   try {
     const apiKeyEncrypted = await encrypt(apiKey, config.encryptionSecret, CREDENTIAL_PURPOSE);
     const convex = getConvexClientFromUrl(config.convexUrl);
-    await convex.mutation(api.providerConnections.upsertPayhipConnection, {
+    const result = await convex.mutation(api.providerConnections.upsertPayhipConnection, {
       apiSecret: config.convexApiSecret,
       authUserId: authUserId ?? undefined,
       encryptedApiKey: apiKeyEncrypted,
     });
 
-    const webhookUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/payhip/${authUserId}`;
+    const webhookUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/payhip/${result.webhookRouteToken}`;
     return Response.json({ success: true, webhookUrl });
   } catch (err) {
     logger.error('Payhip finish failed', {
@@ -129,8 +129,18 @@ async function payhipTestWebhook(request: Request, ctx: ConnectContext): Promise
     return Response.json({ error: 'authUserId or setup token is required' }, { status: 400 });
   }
 
+  // Resolve the opaque webhook route token for this authUserId — the webhook
+  // handler sets the test flag using the token, not the authUserId.
+  const { config } = ctx;
+  const convex = getConvexClientFromUrl(config.convexUrl);
+  const webhookRouteToken = await convex.query(
+    api.providerConnections.getProviderConnectionWebhookRouteToken,
+    { apiSecret: config.convexApiSecret, authUserId: routeId, providerKey: 'payhip' }
+  );
+  const flagKey = webhookRouteToken ?? routeId;
+
   const store = getStateStore();
-  const raw = await store.get(`${PAYHIP_TEST_PREFIX}${routeId}`);
+  const raw = await store.get(`${PAYHIP_TEST_PREFIX}${flagKey}`);
   return Response.json({ received: !!raw });
 }
 

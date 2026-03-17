@@ -9,7 +9,13 @@ import { LemonSqueezyApiClient } from '@yucp/providers/lemonsqueezy';
 import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
-import type { ProductRecord, ProviderContext, ProviderPlugin, ProviderPurposes } from '../types';
+import type {
+  DisconnectContext,
+  ProductRecord,
+  ProviderContext,
+  ProviderPlugin,
+  ProviderPurposes,
+} from '../types';
 import { backfill } from './backfill';
 import { connect } from './connect';
 import { verification } from './verification';
@@ -23,6 +29,7 @@ export const PURPOSES = {
 
 const lemonSqueezyProvider: ProviderPlugin = {
   id: 'lemonsqueezy',
+  programmaticWebhooks: true,
   needsCredential: true,
   supportsCollab: true,
   purposes: PURPOSES,
@@ -148,6 +155,29 @@ const lemonSqueezyProvider: ProviderPlugin = {
     if (!result.stores[0]) throw new Error('No Lemon Squeezy stores found for this API key');
   },
   collabCredentialPurpose: PURPOSES.credential,
+
+  async onDisconnect(ctx: DisconnectContext) {
+    const encryptedToken = ctx.credentials.api_token;
+    if (!encryptedToken) {
+      logger.info('LemonSqueezy onDisconnect: no api_token, skipping webhook cleanup');
+      return;
+    }
+
+    if (!ctx.remoteWebhookId) {
+      logger.info('LemonSqueezy onDisconnect: no remoteWebhookId, skipping webhook cleanup');
+      return;
+    }
+
+    const apiToken = await decrypt(encryptedToken, ctx.encryptionSecret, PURPOSES.credential);
+    const client = new LemonSqueezyApiClient({ apiToken });
+
+    // DELETE /v1/webhooks/{webhookId}
+    // See https://docs.lemonsqueezy.com/api/webhooks#delete-a-webhook
+    await client.deleteWebhook(ctx.remoteWebhookId);
+    logger.info('LemonSqueezy onDisconnect: deleted webhook', {
+      webhookId: ctx.remoteWebhookId,
+    });
+  },
 };
 
 export default lemonSqueezyProvider;

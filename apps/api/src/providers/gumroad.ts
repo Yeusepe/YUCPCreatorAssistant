@@ -49,8 +49,13 @@ const backfill: BackfillPlugin = {
 
     while (true) {
       const res = await fetch(
-        `${GUMROAD_API_BASE}/sales?access_token=${encodeURIComponent(accessToken)}&product_id=${encodeURIComponent(productRef)}&page=${page}&per_page=${pageSize}`,
-        { headers: { 'Content-Type': 'application/json' } }
+        `${GUMROAD_API_BASE}/sales?product_id=${encodeURIComponent(productRef)}&page=${page}&per_page=${pageSize}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
       );
 
       if (res.status === 429) {
@@ -127,10 +132,18 @@ const gumroadProvider: ProviderPlugin = {
     let nextPageUrl: string | undefined = `${GUMROAD_API_BASE}/products`;
 
     while (nextPageUrl && products.length < 5000) {
-      const separator = nextPageUrl.includes('?') ? '&' : '?';
-      const url = `${nextPageUrl}${separator}access_token=${encodeURIComponent(credential)}`;
+      // Strip any access_token query param that Gumroad includes in next_page_url —
+      // credentials travel in the Authorization header, not the URL.
+      const parsedUrl = new URL(nextPageUrl);
+      parsedUrl.searchParams.delete('access_token');
 
-      const response = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+      const response = await fetch(parsedUrl.toString(), {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${credential}`,
+        },
+      });
 
       if (response.status === 429) {
         const retryAfter = response.headers.get('Retry-After');

@@ -225,6 +225,16 @@ function initializeAuth(webhookBaseUrl?: string) {
   if ((env.NODE_ENV ?? 'development') === 'production') {
     getRequired('INTERNAL_SERVICE_AUTH_SECRET');
     getRequired('VRCHAT_PENDING_STATE_SECRET');
+    // ENCRYPTION_SECRET must be set independently from BETTER_AUTH_SECRET in production.
+    // The fallback exists only for initial migration; using BETTER_AUTH_SECRET for
+    // encryption means key rotation is impossible without re-encrypting all credentials.
+    if (!env.ENCRYPTION_SECRET) {
+      logger.error(
+        'SECURITY: ENCRYPTION_SECRET is not set. Falling back to BETTER_AUTH_SECRET for ' +
+          'credential encryption — set ENCRYPTION_SECRET to an independent secret to allow ' +
+          'key rotation without a full credential re-encryption migration.'
+      );
+    }
   }
   const siteUrl = env.SITE_URL ?? 'http://localhost:3001';
   // Use a tunnel only for externally reachable webhook/install callbacks.
@@ -321,6 +331,7 @@ function initializeAuth(webhookBaseUrl?: string) {
 
   providerPlatformRoutes = createProviderPlatformRoutes(auth, {
     apiBaseUrl: publicBaseUrl,
+    frontendBaseUrl: frontendUrl,
     convexApiSecret: env.CONVEX_API_SECRET ?? '',
     convexUrl: env.CONVEX_URL ?? env.CONVEX_DEPLOYMENT ?? '',
     // MIGRATION: When first deploying, existing encrypted data uses BETTER_AUTH_SECRET as the

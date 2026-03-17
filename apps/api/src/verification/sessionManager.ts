@@ -651,9 +651,9 @@ export function createVerificationSessionManager(
       let profileUrl: string | undefined;
 
       if (provider === 'gumroad') {
-        const meRes = await fetch(
-          `https://api.gumroad.com/v2/user?access_token=${encodeURIComponent(accessToken)}`
-        );
+        const meRes = await fetch('https://api.gumroad.com/v2/user', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
         if (!meRes.ok) {
           return { success: false, error: 'Failed to fetch Gumroad user' };
         }

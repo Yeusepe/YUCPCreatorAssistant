@@ -43,6 +43,8 @@ const LEMON_WEBHOOK_EVENTS = [
 
 interface ProviderPlatformConfig {
   apiBaseUrl: string;
+  /** Frontend base URL — used to validate redirect URIs against allowed origins. */
+  frontendBaseUrl: string;
   convexUrl: string;
   convexApiSecret: string;
   encryptionSecret: string;
@@ -100,6 +102,22 @@ function getCachedIdempotentResponse(cacheKey: string, requestId: string): Respo
       'Idempotency-Replayed': 'true',
     },
   });
+}
+
+/**
+ * Validates a redirect URI against allowed application origins.
+ * Returns an error string if invalid, or null if the URI is acceptable.
+ */
+function validateRedirectUri(uri: string, allowedOrigins: Set<string>): string | null {
+  try {
+    const parsed = new URL(uri);
+    if (!allowedOrigins.has(parsed.origin)) {
+      return 'Invalid redirectUri: must belong to an allowed application origin';
+    }
+    return null;
+  } catch {
+    return 'Invalid redirectUri: not a valid URL';
+  }
 }
 
 function storeIdempotentResponse(cacheKey: string | null, response: Response, body: string): void {
@@ -890,6 +908,25 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
     }>(request);
     const access = await requireTenantAccess(auth, convex, config, request, body.authUserId);
     if (!access.ok) return access.response;
+
+    // Validate redirect URIs against allowed application origins to prevent open redirect.
+    const allowedOrigins = new Set([
+      new URL(config.apiBaseUrl).origin,
+      new URL(config.frontendBaseUrl).origin,
+    ]);
+    if (body.redirectUri) {
+      const uriError = validateRedirectUri(body.redirectUri, allowedOrigins);
+      if (uriError) {
+        return jsonResponse({ error: uriError }, requestId, 400);
+      }
+    }
+    if (body.successRedirectUri) {
+      const uriError = validateRedirectUri(body.successRedirectUri, allowedOrigins);
+      if (uriError) {
+        return jsonResponse({ error: uriError }, requestId, 400);
+      }
+    }
+
     const state = randomBytes(16).toString('hex');
     const result = await convex.mutation(api.verificationSessions.createVerificationSession, {
       apiSecret: config.convexApiSecret,

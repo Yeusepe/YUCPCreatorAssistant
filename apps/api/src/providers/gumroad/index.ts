@@ -8,7 +8,13 @@
 import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
-import type { ProductRecord, ProviderContext, ProviderPlugin, ProviderPurposes } from '../types';
+import type {
+  DisconnectContext,
+  ProductRecord,
+  ProviderContext,
+  ProviderPlugin,
+  ProviderPurposes,
+} from '../types';
 import { backfill } from './backfill';
 import { connect } from './connect';
 import { verification } from './verification';
@@ -25,6 +31,7 @@ const GUMROAD_API_BASE = 'https://api.gumroad.com/v2';
 
 const gumroadProvider: ProviderPlugin = {
   id: 'gumroad',
+  programmaticWebhooks: true,
   needsCredential: true,
   purposes: PURPOSES,
   displayMeta: {
@@ -60,13 +67,21 @@ const gumroadProvider: ProviderPlugin = {
 
     const products: ProductRecord[] = [];
     let nextPageUrl: string | undefined = `${GUMROAD_API_BASE}/products`;
-
     let rateLimitRetries = 0;
-    while (nextPageUrl && products.length < 5000) {
-      const separator = nextPageUrl.includes('?') ? '&' : '?';
-      const url = `${nextPageUrl}${separator}access_token=${encodeURIComponent(credential)}`;
 
-      const response = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+    while (nextPageUrl && products.length < 5000) {
+      // Strip any access_token query param that Gumroad includes in next_page_url —
+      // credentials travel in the Authorization header, not the URL.
+      const parsedUrl = new URL(nextPageUrl);
+      parsedUrl.searchParams.delete('access_token');
+
+      const response = await fetch(parsedUrl.toString(), {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${credential}`,
+        },
+      });
 
       if (response.status === 429) {
         rateLimitRetries++;
@@ -111,6 +126,54 @@ const gumroadProvider: ProviderPlugin = {
   webhook,
   connect,
   verification,
+
+  async onDisconnect(ctx: DisconnectContext) {
+    const encryptedToken = ctx.credentials.oauth_access_token;
+    if (!encryptedToken) {
+      logger.info('Gumroad onDisconnect: no access token, skipping webhook cleanup');
+      return;
+    }
+
+    const accessToken = await decrypt(encryptedToken, ctx.encryptionSecret, PURPOSES.credential);
+    const webhookBase = `${ctx.apiBaseUrl.replace(/\/$/, '')}/webhooks/gumroad/`;
+
+    // List all resource subscriptions and delete ones pointing at our webhook base URL.
+    // See https://gumroad.com/api — GET/DELETE /v2/resource_subscriptions
+    const listRes = await fetch('https://api.gumroad.com/v2/resource_subscriptions', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!listRes.ok) {
+      logger.warn('Gumroad onDisconnect: failed to list resource_subscriptions', {
+        status: listRes.status,
+      });
+      return;
+    }
+
+    const listData = (await listRes.json()) as {
+      success: boolean;
+      resource_subscriptions?: Array<{ id: string; resource_name: string; post_url: string }>;
+    };
+
+    for (const sub of listData.resource_subscriptions ?? []) {
+      if (sub.post_url.startsWith(webhookBase)) {
+        try {
+          await fetch(`https://api.gumroad.com/v2/resource_subscriptions/${sub.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          logger.info('Gumroad onDisconnect: deleted resource_subscription', {
+            id: sub.id,
+            resource_name: sub.resource_name,
+          });
+        } catch (err) {
+          logger.warn('Gumroad onDisconnect: failed to delete resource_subscription', {
+            id: sub.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+  },
 };
 
 export default gumroadProvider;

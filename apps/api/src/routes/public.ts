@@ -799,8 +799,13 @@ export function createPublicRoutes(config: PublicRouteConfig, deps: PublicRouteD
     if ('response' in auth) {
       return auth.response;
     }
+    // Use the authenticated identity, not the caller-supplied body value.
+    // For API keys, auth.authUserId === authUserId (enforced by authenticateServiceKey).
+    // For bearer tokens, auth.authUserId is verified.sub from the token; a caller who
+    // supplies a mismatched body authUserId would otherwise query a different tenant.
+    const verifiedAuthUserId = auth.authUserId;
 
-    const resolved = await resolveSubjectOrResponse(convex, config, authUserId, selector, 200);
+    const resolved = await resolveSubjectOrResponse(convex, config, verifiedAuthUserId, selector, 200);
     if ('response' in resolved) {
       return jsonResponse({
         verified: false,
@@ -810,7 +815,7 @@ export function createPublicRoutes(config: PublicRouteConfig, deps: PublicRouteD
 
     const hasEntitlement = (await convex.query(api.entitlements.hasActiveEntitlement, {
       apiSecret: config.convexApiSecret,
-      authUserId,
+      authUserId: verifiedAuthUserId,
       subjectId: resolved.subject._id,
       productId,
     })) as boolean;

@@ -21,6 +21,7 @@ import { createLogger } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
 import { getConvexApiSecret, getConvexClient } from '../lib/convex';
+import { rejectCrossSiteRequest } from '../lib/csrf';
 import { getStateStore } from '../lib/stateStore';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
@@ -397,6 +398,15 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
     if (!guildId) {
       return Response.json({ error: 'guildId is required' }, { status: 400 });
     }
+
+    // This GET endpoint performs state mutations (updateGuildLinkStatus).
+    // Reject cross-site requests to prevent CSRF exploitation.
+    const allowedOrigins = new Set([
+      new URL(config.baseUrl).origin,
+      new URL(config.frontendUrl).origin,
+    ]);
+    const csrfBlock = rejectCrossSiteRequest(request, allowedOrigins);
+    if (csrfBlock) return csrfBlock;
 
     let session: AuthSession = null;
     try {

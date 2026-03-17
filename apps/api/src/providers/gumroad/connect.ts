@@ -213,9 +213,9 @@ async function gumroadCallback(request: Request, ctx: ConnectContext): Promise<R
       );
     }
 
-    const meRes = await fetch(
-      `https://api.gumroad.com/v2/user?access_token=${encodeURIComponent(accessToken)}`
-    );
+    const meRes = await fetch('https://api.gumroad.com/v2/user', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
     if (!meRes.ok) {
       return Response.redirect(
         buildDashboardRedirect(
@@ -245,9 +245,9 @@ async function gumroadCallback(request: Request, ctx: ConnectContext): Promise<R
     // Clean up any stale resource_subscriptions pointing at our webhook base URL.
     const webhookBase = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/gumroad/`;
     try {
-      const listRes = await fetch(
-        `https://api.gumroad.com/v2/resource_subscriptions?access_token=${encodeURIComponent(accessToken)}`
-      );
+      const listRes = await fetch('https://api.gumroad.com/v2/resource_subscriptions', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
       if (listRes.ok) {
         const listData = (await listRes.json()) as {
           success: boolean;
@@ -256,8 +256,11 @@ async function gumroadCallback(request: Request, ctx: ConnectContext): Promise<R
         for (const sub of listData.resource_subscriptions ?? []) {
           if (sub.post_url.startsWith(webhookBase)) {
             await fetch(
-              `https://api.gumroad.com/v2/resource_subscriptions/${sub.id}?access_token=${encodeURIComponent(accessToken)}`,
-              { method: 'DELETE' }
+              `https://api.gumroad.com/v2/resource_subscriptions/${sub.id}`,
+              {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${accessToken}` },
+              }
             );
             logger.info('Gumroad: deleted stale resource_subscription', {
               id: sub.id,
