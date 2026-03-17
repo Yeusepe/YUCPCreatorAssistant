@@ -27,8 +27,8 @@ import { PUBLIC_API_KEY_PREFIX } from '../lib/publicApiKeys';
 import { createSetupSession, resolveSetupSession } from '../lib/setupSession';
 import { getStateStore } from '../lib/stateStore';
 import { PROVIDERS } from '../providers/index';
-import type { ConnectConfig, ConnectContext } from '../providers/types';
 import { PURPOSES as PAYHIP } from '../providers/payhip/index';
+import type { ConnectConfig, ConnectContext } from '../providers/types';
 
 // Re-exported for backwards compatibility — ConnectConfig is defined in providers/types.ts
 export type { ConnectConfig } from '../providers/types';

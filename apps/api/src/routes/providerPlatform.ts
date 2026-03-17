@@ -11,8 +11,8 @@ import {
   PayloadTooLargeError,
   readWebhookTextBody,
 } from '../lib/webhookBody';
-import { PURPOSES as LEMONSQUEEZY } from '../providers/lemonsqueezy';
 import { ALL_PROVIDERS } from '../providers/index';
+import { PURPOSES as LEMONSQUEEZY } from '../providers/lemonsqueezy';
 
 const PROVIDER_PLATFORM_CREDENTIAL_PURPOSE = 'provider-platform-credential' as const;
 
@@ -1153,9 +1153,8 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
       const requestId = newRequestId();
 
       if (request.method === 'GET' && url.pathname === '/api/providers') {
-        const providers = ALL_PROVIDERS
-          .filter((p) => p.displayMeta?.dashboardConnectPath)
-          .map((p) => ({
+        const providers = ALL_PROVIDERS.filter((p) => p.displayMeta?.dashboardConnectPath).map(
+          (p) => ({
             key: p.id,
             label: p.displayMeta!.label,
             icon: p.displayMeta!.icon,
@@ -1165,7 +1164,8 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
             serverTileHint: p.displayMeta!.dashboardServerTileHint,
             connectPath: p.displayMeta!.dashboardConnectPath,
             connectParamStyle: p.displayMeta!.dashboardConnectParamStyle,
-          }));
+          })
+        );
         return new Response(JSON.stringify(providers), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },

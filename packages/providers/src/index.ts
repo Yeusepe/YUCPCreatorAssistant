@@ -332,17 +332,16 @@ export function createManualAdapter(
   return new ManualAdapter(config, storage) as ManualProviderAdapter;
 }
 
-// Discord OAuth provider for buyer verification
-export * from './discord';
 export type { LicenseFormat } from './core/licenseFormat';
-
 // License format detection
 export { detectLicenseFormat } from './core/licenseFormat';
-// Manual license management module
-export * from './manual';
 export type { ProviderMeta } from './core/meta';
 // Provider metadata
 export { LICENSE_PROVIDERS, PROVIDER_META, providerLabel } from './core/meta';
 export * from './core/orchestrator';
 // Provider registry and orchestration layer
 export * from './core/registry';
+// Discord OAuth provider for buyer verification
+export * from './discord';
+// Manual license management module
+export * from './manual';

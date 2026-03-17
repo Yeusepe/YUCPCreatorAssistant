@@ -46,10 +46,7 @@ const SESSION_PURPOSE = 'vrchat-creator-session' as const;
  * Creates a short-lived state token, stores {authUserId} under it, and redirects
  * to vrchat-verify.html with mode=connect so the buyer login UI is reused.
  */
-async function handleVrchatConnectBegin(
-  request: Request,
-  ctx: ConnectContext
-): Promise<Response> {
+async function handleVrchatConnectBegin(request: Request, ctx: ConnectContext): Promise<Response> {
   const binding = await ctx.requireBoundSetupSession(request);
 
   let authUserId: string;
@@ -197,7 +194,12 @@ async function handleVrchatConnectSession(
       authUserId,
       vrchatUserId: result.user.id,
     });
-    await finishConnect(authUserId, result.session.authToken, result.session.twoFactorAuthToken, ctx);
+    await finishConnect(
+      authUserId,
+      result.session.authToken,
+      result.session.twoFactorAuthToken,
+      ctx
+    );
     await store.delete(`${CONNECT_TOKEN_PREFIX}${token}`);
     return Response.json({ success: true }, { headers: responseHeaders });
   } catch (err) {
@@ -206,7 +208,10 @@ async function handleVrchatConnectSession(
 
     if (message.includes('missing auth cookie') || message.includes('Verification failed')) {
       appendClearedConnectPendingCookie(responseHeaders, request);
-      return Response.json({ error: 'Invalid VRChat credentials' }, { status: 401, headers: responseHeaders });
+      return Response.json(
+        { error: 'Invalid VRChat credentials' },
+        { status: 401, headers: responseHeaders }
+      );
     }
 
     return Response.json({ error: 'VRChat login failed' }, { status: 500 });
@@ -236,7 +241,11 @@ async function finishConnect(
       { credentialKey: 'vrchat_session', kind: 'api_token', encryptedValue: encrypted },
     ],
     capabilities: [
-      { capabilityKey: 'catalog_sync', status: 'configured', requiredCredentialKeys: ['vrchat_session'] },
+      {
+        capabilityKey: 'catalog_sync',
+        status: 'configured',
+        requiredCredentialKeys: ['vrchat_session'],
+      },
     ],
   });
 

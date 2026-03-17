@@ -47,9 +47,20 @@ const MOCK_CONFIG = {
 };
 
 function makeContext(
-  boundResult: { ok: true; setupSession: { authUserId: string; guildId: string; discordUserId: string }; authSession: unknown; authDiscordUserId: string } | { ok: false; response: Response } = {
+  boundResult:
+    | {
+        ok: true;
+        setupSession: { authUserId: string; guildId: string; discordUserId: string };
+        authSession: unknown;
+        authDiscordUserId: string;
+      }
+    | { ok: false; response: Response } = {
     ok: true,
-    setupSession: { authUserId: 'auth_user_123', guildId: 'guild_456', discordUserId: 'discord_789' },
+    setupSession: {
+      authUserId: 'auth_user_123',
+      guildId: 'guild_456',
+      discordUserId: 'discord_789',
+    },
     authSession: { user: { id: 'auth_user_123' } },
     authDiscordUserId: 'discord_789',
   }
@@ -87,7 +98,9 @@ describe('VRChat connect — GET /begin', () => {
 
   it('forwards guild_id and tenant_id to the verify page redirect URL', async () => {
     const ctx = makeContext();
-    const beginRoute = vrchatConnect.routes.find((r) => r.method === 'GET' && r.path.endsWith('/begin'));
+    const beginRoute = vrchatConnect.routes.find(
+      (r) => r.method === 'GET' && r.path.endsWith('/begin')
+    );
 
     const request = new Request(
       'https://api.example.com/api/connect/vrchat/begin?guildId=guild_abc&tenantId=tenant_xyz'
@@ -102,13 +115,20 @@ describe('VRChat connect — GET /begin', () => {
 
   it('redirects to vrchat-verify when authenticated via dashboard session (no setup session)', async () => {
     // Dashboard flow: user has a Better Auth session but no bot-issued setup session cookie.
-    const ctx = makeContext({ ok: false, response: Response.json({ error: 'Unauthorized' }, { status: 401 }) });
+    const ctx = makeContext({
+      ok: false,
+      response: Response.json({ error: 'Unauthorized' }, { status: 401 }),
+    });
     // No setup session token in request
     ctx.getSetupSessionTokenFromRequest.mockImplementation(() => null);
     // But a valid auth session exists
-    ctx.auth.getSession.mockImplementation(async () => ({ user: { id: 'dashboard_user_456' } }) as never);
+    ctx.auth.getSession.mockImplementation(
+      async () => ({ user: { id: 'dashboard_user_456' } }) as never
+    );
 
-    const beginRoute = vrchatConnect.routes.find((r) => r.method === 'GET' && r.path.endsWith('/begin'));
+    const beginRoute = vrchatConnect.routes.find(
+      (r) => r.method === 'GET' && r.path.endsWith('/begin')
+    );
     const request = new Request('https://api.example.com/api/connect/vrchat/begin');
     const response = await beginRoute!.handler(request, ctx as unknown as ConnectContext);
 
@@ -120,11 +140,16 @@ describe('VRChat connect — GET /begin', () => {
   });
 
   it('returns 401 when no setup session and no auth session (unauthenticated)', async () => {
-    const ctx = makeContext({ ok: false, response: Response.json({ error: 'Unauthorized' }, { status: 401 }) });
+    const ctx = makeContext({
+      ok: false,
+      response: Response.json({ error: 'Unauthorized' }, { status: 401 }),
+    });
     ctx.getSetupSessionTokenFromRequest.mockImplementation(() => null);
     // auth.getSession returns null (default in makeContext)
 
-    const beginRoute = vrchatConnect.routes.find((r) => r.method === 'GET' && r.path.endsWith('/begin'));
+    const beginRoute = vrchatConnect.routes.find(
+      (r) => r.method === 'GET' && r.path.endsWith('/begin')
+    );
     const request = new Request('https://api.example.com/api/connect/vrchat/begin');
     const response = await beginRoute!.handler(request, ctx as unknown as ConnectContext);
 
@@ -132,11 +157,16 @@ describe('VRChat connect — GET /begin', () => {
   });
 
   it('returns 401 when a setup session token was present but failed validation', async () => {
-    const ctx = makeContext({ ok: false, response: Response.json({ error: 'Invalid token' }, { status: 401 }) });
+    const ctx = makeContext({
+      ok: false,
+      response: Response.json({ error: 'Invalid token' }, { status: 401 }),
+    });
     // Token IS present in request (invalid/expired)
     ctx.getSetupSessionTokenFromRequest.mockImplementation(() => 'some-bad-token');
 
-    const beginRoute = vrchatConnect.routes.find((r) => r.method === 'GET' && r.path.endsWith('/begin'));
+    const beginRoute = vrchatConnect.routes.find(
+      (r) => r.method === 'GET' && r.path.endsWith('/begin')
+    );
     const request = new Request('https://api.example.com/api/connect/vrchat/begin');
     const response = await beginRoute!.handler(request, ctx as unknown as ConnectContext);
 
@@ -181,11 +211,16 @@ describe('VRChat connect — POST /session', () => {
   });
 
   it('returns 401 when VRChat login fails (bad credentials)', async () => {
-    await activeStore.set('vrchat_connect:valid-token', JSON.stringify({ authUserId: 'auth_user_123' }), 10 * 60 * 1000);
+    await activeStore.set(
+      'vrchat_connect:valid-token',
+      JSON.stringify({ authUserId: 'auth_user_123' }),
+      10 * 60 * 1000
+    );
 
     // Mock VRChat API: login attempt returns 401 — no auth cookie
-    const fetchMock = mock(async () =>
-      new Response(JSON.stringify({ error: { message: 'Invalid credentials' } }), { status: 401 })
+    const fetchMock = mock(
+      async () =>
+        new Response(JSON.stringify({ error: { message: 'Invalid credentials' } }), { status: 401 })
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
@@ -200,16 +235,20 @@ describe('VRChat connect — POST /session', () => {
   });
 
   it('returns 200 with needsTwoFactor when VRChat requires 2FA', async () => {
-    await activeStore.set('vrchat_connect:valid-token', JSON.stringify({ authUserId: 'auth_user_123' }), 10 * 60 * 1000);
+    await activeStore.set(
+      'vrchat_connect:valid-token',
+      JSON.stringify({ authUserId: 'auth_user_123' }),
+      10 * 60 * 1000
+    );
 
     const fetchMock = mock(async (url: string) => {
       if (url.endsWith('/auth/user')) {
         const responseHeaders = new Headers();
         responseHeaders.set('set-cookie', 'auth=auth-tok; Path=/; HttpOnly');
-        return new Response(
-          JSON.stringify({ requiresTwoFactorAuth: ['emailOtp'] }),
-          { status: 200, headers: responseHeaders }
-        );
+        return new Response(JSON.stringify({ requiresTwoFactorAuth: ['emailOtp'] }), {
+          status: 200,
+          headers: responseHeaders,
+        });
       }
       throw new Error(`Unexpected URL: ${url}`);
     });
@@ -223,10 +262,9 @@ describe('VRChat connect — POST /session', () => {
     });
     const response = await sessionRoute!.handler(request, ctx as unknown as ConnectContext);
     expect(response.status).toBe(200);
-    const body = await response.json() as { twoFactorRequired?: boolean; types?: string[] };
+    const body = (await response.json()) as { twoFactorRequired?: boolean; types?: string[] };
     // Must match the canonical shape that vrchat-verify.html checks: twoFactorRequired + types
     expect(body.twoFactorRequired).toBe(true);
     expect(body.types).toEqual(['emailOtp']);
   });
 });
-

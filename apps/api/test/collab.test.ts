@@ -484,7 +484,12 @@ describe('Collab routes — provider-agnostic: addConnectionManual input validat
 describe('Collab routes — provider-agnostic: createInvite providerKey validation', () => {
   it('POST /api/collab/invite with unsupported providerKey returns 400', async () => {
     const userId = 'user-invite-pk';
-    const token = await createSetupSession(userId, 'guild-invite-pk', 'discord-invite-pk', TEST_ENCRYPTION_SECRET);
+    const token = await createSetupSession(
+      userId,
+      'guild-invite-pk',
+      'discord-invite-pk',
+      TEST_ENCRYPTION_SECRET
+    );
     const server = await startTestServer({ auth: makeWebSessionAuth(userId) });
     try {
       const res = await server.fetch('/api/collab/invite', {
@@ -502,7 +507,12 @@ describe('Collab routes — provider-agnostic: createInvite providerKey validati
 
   it('POST /api/collab/invite with unknown providerKey returns 400', async () => {
     const userId = 'user-invite-pk-2';
-    const token = await createSetupSession(userId, 'guild-invite-pk-2', 'discord-invite-pk-2', TEST_ENCRYPTION_SECRET);
+    const token = await createSetupSession(
+      userId,
+      'guild-invite-pk-2',
+      'discord-invite-pk-2',
+      TEST_ENCRYPTION_SECRET
+    );
     const server = await startTestServer({ auth: makeWebSessionAuth(userId) });
     try {
       const res = await server.fetch('/api/collab/invite', {

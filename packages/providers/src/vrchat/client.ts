@@ -441,13 +441,10 @@ export class VrchatApiClient {
       throw new VrchatSessionExpiredError();
     }
 
-    const { response, data } = await request(
-      `/user/${encodeURIComponent(user.id)}/listings`,
-      {
-        method: 'GET',
-        headers: { cookie: buildCookieHeader(session) },
-      }
-    );
+    const { response, data } = await request(`/user/${encodeURIComponent(user.id)}/listings`, {
+      method: 'GET',
+      headers: { cookie: buildCookieHeader(session) },
+    });
 
     if (response.status === 401) {
       throw new VrchatSessionExpiredError();

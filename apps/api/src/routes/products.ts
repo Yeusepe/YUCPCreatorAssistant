@@ -8,8 +8,8 @@
  * Adding a new provider: zero changes here. See apps/api/src/providers/index.ts.
  */
 
-import { api } from '../../../../convex/_generated/api';
 import { createLogger, timingSafeStringEqual } from '@yucp/shared';
+import { api } from '../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { loadEnv } from '../lib/env';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
@@ -123,10 +123,10 @@ export async function handleProviderProducts(
           });
         }
       }
-      return new Response(
-        JSON.stringify({ products: [], error: 'session_expired' }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ products: [], error: 'session_expired' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const msg = err instanceof Error ? err.message : String(err);

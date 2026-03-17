@@ -26,12 +26,25 @@ import { runSetupStart, runSetupStartUnconfigured } from '../commands/setup';
 import { getApiUrls } from '../lib/apiUrls';
 import { E } from '../lib/emojis';
 import { track } from '../lib/posthog';
-import { handleCollabButton, handleCollabModal, handleCollabStringSelect } from './interactions/collab';
-import { handleProductButton, handleProductModal, handleProductRoleSelect, handleProductStringSelect } from './interactions/product';
+import {
+  handleCollabButton,
+  handleCollabModal,
+  handleCollabStringSelect,
+} from './interactions/collab';
+import {
+  handleProductButton,
+  handleProductModal,
+  handleProductRoleSelect,
+  handleProductStringSelect,
+} from './interactions/product';
 import { handleSetupButton, handleSetupModal, handleSetupStringSelect } from './interactions/setup';
-import type { InteractionHandlerContext } from './interactions/types';
 import { getNotConfiguredMessage } from './interactions/shared';
-import { handleVerifyButton, handleVerifyModal, handleVerifyStringSelect } from './interactions/verify';
+import type { InteractionHandlerContext } from './interactions/types';
+import {
+  handleVerifyButton,
+  handleVerifyModal,
+  handleVerifyStringSelect,
+} from './interactions/verify';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 

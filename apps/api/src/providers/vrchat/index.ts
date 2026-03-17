@@ -9,9 +9,9 @@
  * Their session is stored encrypted in provider_connections with credentialKey='vrchat_session'.
  */
 
+import { extractVrchatAvatarId } from '@yucp/providers';
 import { VrchatApiClient } from '@yucp/providers/vrchat';
 import { VrchatSessionExpiredError } from '@yucp/providers/vrchat/types';
-import { extractVrchatAvatarId } from '@yucp/providers';
 import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
