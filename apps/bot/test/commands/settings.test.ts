@@ -22,14 +22,14 @@ const makeLogger = () => ({
   child: () => makeLogger(),
 });
 
-function makeSettingsConvex(): ConvexHttpClient {
+function makeSettingsConvex() {
   return {
     query: mock(async () => ({
       authUserId: 'auth_settings_secure',
       guildLinkId: 'guild_link_settings_secure',
     })),
     mutation: mock(async () => ({ success: true })),
-  } as unknown as ConvexHttpClient;
+  };
 }
 
 describe('settings command', () => {

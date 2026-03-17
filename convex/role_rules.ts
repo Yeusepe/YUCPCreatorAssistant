@@ -1133,6 +1133,7 @@ export const addProductFromVrchatCatalog = mutation({
 });
 
 
+function buildDiscordRoleKey(
   sourceGuildId: string,
   requiredRoleIds: string[],
   requiredRoleMatchMode?: 'any' | 'all'
@@ -1265,7 +1266,7 @@ export const addProductFromDiscordRole = mutation({
       throw new Error('At least one required role is needed');
     }
 
-    const productId = buildDiscordRoleProductId(
+    const productId = buildDiscordRoleKey(
       args.sourceGuildId,
       reqIds,
       args.requiredRoleMatchMode

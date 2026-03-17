@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { InMemoryStateStore } from '../../lib/stateStore';
+import type { ConnectContext } from '../types';
 
 // Ensure pending state secret is available for tests (mirrors buyer pending.ts behaviour)
 process.env.BETTER_AUTH_SECRET ??= 'test-better-auth-secret-for-pending!!';
@@ -75,7 +76,7 @@ describe('VRChat connect — GET /begin', () => {
     expect(beginRoute).toBeDefined();
 
     const request = new Request('https://api.example.com/api/connect/vrchat/begin');
-    const response = await beginRoute!.handler(request, ctx as Parameters<typeof beginRoute.handler>[1]);
+    const response = await beginRoute!.handler(request, ctx as unknown as ConnectContext);
 
     expect(response.status).toBe(302);
     const location = response.headers.get('location');
@@ -94,7 +95,7 @@ describe('VRChat connect — GET /begin', () => {
     );
 
     const request = new Request('https://api.example.com/api/connect/vrchat/begin');
-    const response = await beginRoute!.handler(request, ctx as Parameters<typeof beginRoute.handler>[1]);
+    const response = await beginRoute!.handler(request, ctx as unknown as ConnectContext);
 
     expect(response.status).toBe(401);
   });
@@ -121,7 +122,7 @@ describe('VRChat connect — POST /session', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ username: 'user', password: 'pass' }),
     });
-    const response = await sessionRoute!.handler(request, ctx as Parameters<typeof sessionRoute.handler>[1]);
+    const response = await sessionRoute!.handler(request, ctx as unknown as ConnectContext);
     expect(response.status).toBe(400);
   });
 
@@ -132,7 +133,7 @@ describe('VRChat connect — POST /session', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ token: 'nonexistent-token', username: 'user', password: 'pass' }),
     });
-    const response = await sessionRoute!.handler(request, ctx as Parameters<typeof sessionRoute.handler>[1]);
+    const response = await sessionRoute!.handler(request, ctx as unknown as ConnectContext);
     expect(response.status).toBe(400);
   });
 
@@ -151,7 +152,7 @@ describe('VRChat connect — POST /session', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ token: 'valid-token', username: 'bad-user', password: 'bad-pass' }),
     });
-    const response = await sessionRoute!.handler(request, ctx as Parameters<typeof sessionRoute.handler>[1]);
+    const response = await sessionRoute!.handler(request, ctx as unknown as ConnectContext);
     expect(response.status).toBe(401);
   });
 
@@ -177,7 +178,7 @@ describe('VRChat connect — POST /session', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ token: 'valid-token', username: 'user', password: 'pass' }),
     });
-    const response = await sessionRoute!.handler(request, ctx as Parameters<typeof sessionRoute.handler>[1]);
+    const response = await sessionRoute!.handler(request, ctx as unknown as ConnectContext);
     expect(response.status).toBe(200);
     const body = await response.json() as { needsTwoFactor?: boolean };
     expect(body.needsTwoFactor).toBe(true);

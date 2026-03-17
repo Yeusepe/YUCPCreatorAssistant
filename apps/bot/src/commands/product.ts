@@ -42,7 +42,7 @@ import { E, Emoji } from '../lib/emojis';
 import {
   createDiscordRoleSetupSessionToken,
   getDiscordRoleSetupResult,
-  listProducts,
+  listProviderProducts,
   resolveVrchatProductName,
   upsertProductCredential,
 } from '../lib/internalRpc';
@@ -418,7 +418,7 @@ export async function handleProductTypeSelect(
     const label = descriptor.label;
     await interaction.deferUpdate();
     try {
-      const data = await listProducts(selectedType, authUserId);
+      const data = await listProviderProducts(selectedType, authUserId);
 
       if (data.error && (!data.products || data.products.length === 0)) {
         const msg =
