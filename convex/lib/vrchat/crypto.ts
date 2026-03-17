@@ -10,7 +10,7 @@ export function base64ToBytes(value: string): Uint8Array {
   return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
 
-async function hmacSha256(keyBytes: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+async function hmacSha256(keyBytes: ArrayBuffer, data: ArrayBuffer): Promise<ArrayBuffer> {
   const key = await crypto.subtle.importKey(
     'raw',
     keyBytes,
@@ -18,7 +18,7 @@ async function hmacSha256(keyBytes: Uint8Array, data: Uint8Array): Promise<Uint8
     false,
     ['sign']
   );
-  return new Uint8Array(await crypto.subtle.sign('HMAC', key, data));
+  return crypto.subtle.sign('HMAC', key, data);
 }
 
 /**
@@ -33,11 +33,13 @@ async function deriveKey(secret: string, purpose: string): Promise<CryptoKey> {
 
   // HKDF-Extract: PRK = HMAC-SHA256(salt=HashLen zeros, IKM=secret)
   const salt = new Uint8Array(32);
-  const prk = await hmacSha256(salt, secretBytes);
+  const prk = await hmacSha256(salt.buffer as ArrayBuffer, secretBytes.buffer as ArrayBuffer);
 
   // HKDF-Expand T(1) = HMAC-SHA256(PRK, info || 0x01) — 32 bytes = AES-256 key
-  const expandInput = new Uint8Array([...purposeBytes, 0x01]);
-  const okm = await hmacSha256(prk, expandInput);
+  const expandInput = new Uint8Array(purposeBytes.byteLength + 1);
+  expandInput.set(purposeBytes);
+  expandInput[purposeBytes.byteLength] = 0x01;
+  const okm = await hmacSha256(prk, expandInput.buffer as ArrayBuffer);
 
   return crypto.subtle.importKey('raw', okm, { name: 'AES-GCM', length: 256 }, false, [
     'encrypt',
