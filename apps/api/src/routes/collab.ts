@@ -29,7 +29,6 @@
  */
 
 import { createLogger, getProviderDescriptor, PROVIDER_REGISTRY } from '@yucp/shared';
-import type { ProviderDescriptor } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
 import { SETUP_SESSION_COOKIE } from '../lib/browserSessions';
@@ -42,12 +41,6 @@ import { PROVIDERS } from '../providers/index';
 
 // Collab webhook secrets are scoped to collab connections, not shared with per-provider webhooks
 const COLLAB_WEBHOOK_SECRET_PURPOSE = 'collab-webhook-signing-secret' as const;
-
-// Fallback provider key for old invites created before providerKey was persisted.
-// Uses the first provider that supports collab, making this forward-compatible.
-const LEGACY_COLLAB_DEFAULT_PROVIDER =
-  (PROVIDER_REGISTRY as readonly ProviderDescriptor[]).find((p) => p.supportsCollab)?.providerKey ??
-  '';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
@@ -285,7 +278,10 @@ export function createCollabRoutes(config: CollabConfig) {
       /* use defaults */
     }
 
-    // Validate providerKey before auth — provider names are not secret
+    // Auth first — never expose body validation details to unauthenticated callers
+    const ownerAuth = await requireOwnerAuth(request, body.authUserId);
+    if (!ownerAuth.ok) return ownerAuth.response;
+
     const providerKey = body.providerKey?.trim();
     if (!providerKey) {
       return Response.json({ error: 'providerKey is required' }, { status: 400 });
@@ -297,9 +293,6 @@ export function createCollabRoutes(config: CollabConfig) {
         { status: 400 }
       );
     }
-
-    const ownerAuth = await requireOwnerAuth(request, body.authUserId);
-    if (!ownerAuth.ok) return ownerAuth.response;
 
     const rawToken = generateToken();
     const tokenHash = await sha256Hex(rawToken);
@@ -362,7 +355,7 @@ export function createCollabRoutes(config: CollabConfig) {
         ownerDisplayName: invite.ownerDisplayName,
         ownerGuildId: invite.ownerGuildId,
         expiresAt: invite.expiresAt,
-        providerKey: invite.providerKey ?? LEGACY_COLLAB_DEFAULT_PROVIDER,
+        providerKey: invite.providerKey,
       },
       {
         headers: {
@@ -536,7 +529,7 @@ export function createCollabRoutes(config: CollabConfig) {
       ownerDisplayName: session.invite.ownerDisplayName,
       ownerGuildId: session.invite.ownerGuildId,
       expiresAt: session.invite.expiresAt,
-      providerKey: session.invite.providerKey ?? LEGACY_COLLAB_DEFAULT_PROVIDER,
+      providerKey: session.invite.providerKey,
     });
   }
 
@@ -691,7 +684,7 @@ export function createCollabRoutes(config: CollabConfig) {
       return Response.json({ error: 'apiKey is required' }, { status: 400 });
     }
 
-    const inviteProviderKey = session.invite.providerKey ?? LEGACY_COLLAB_DEFAULT_PROVIDER;
+    const inviteProviderKey = session.invite.providerKey;
 
     // Validate the API key against the correct provider
     let credentialEncrypted: string;
