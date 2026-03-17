@@ -33,7 +33,7 @@ const lemonSqueezyProvider: ProviderPlugin = {
       authUserId: ctx.authUserId,
       provider: 'lemonsqueezy',
     });
-    const encryptedToken = data?.credentials['api_token'];
+    const encryptedToken = data?.credentials.api_token;
     if (!encryptedToken) return null;
     return decrypt(encryptedToken, ctx.encryptionSecret, PURPOSES.credential);
   },

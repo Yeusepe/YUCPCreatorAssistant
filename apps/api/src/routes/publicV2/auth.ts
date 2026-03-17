@@ -1,5 +1,5 @@
-import { api } from '../../../../../convex/_generated/api';
 import { createLogger } from '@yucp/shared';
+import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { verifyBetterAuthAccessToken } from '../../lib/oauthAccessToken';
 import { errorResponse, generateRequestId } from './helpers';
@@ -36,7 +36,7 @@ export async function resolveAuth(
   request: Request,
   config: PublicV2Config,
   requiredScopes: string[],
-  requestId?: string,
+  requestId?: string
 ): Promise<AuthResult | Response> {
   const reqId = requestId ?? generateRequestId();
 
@@ -58,7 +58,12 @@ export async function resolveAuth(
   }
 
   if (!apiKey && !bearerToken) {
-    return errorResponse('unauthorized', 'Missing authentication credentials. Provide x-api-key header or Authorization: Bearer token.', 401, reqId);
+    return errorResponse(
+      'unauthorized',
+      'Missing authentication credentials. Provide x-api-key header or Authorization: Bearer token.',
+      401,
+      reqId
+    );
   }
 
   if (apiKey) {
@@ -92,7 +97,7 @@ export async function resolveAuth(
           'forbidden',
           `Missing required scopes: ${requiredScopes.join(', ')}`,
           403,
-          reqId,
+          reqId
         );
       }
 
@@ -100,8 +105,7 @@ export async function resolveAuth(
         authUserId,
         scopes,
         keyId: typeof keyData.id === 'string' ? keyData.id : undefined,
-        expiresAt:
-          typeof keyData.expiresAt === 'number' ? keyData.expiresAt : undefined,
+        expiresAt: typeof keyData.expiresAt === 'number' ? keyData.expiresAt : undefined,
       };
     } catch (err) {
       logger.error('API key verification error', { error: String(err) });
@@ -124,7 +128,7 @@ export async function resolveAuth(
           'forbidden',
           `Missing required scopes: ${requiredScopes.join(', ')}`,
           403,
-          reqId,
+          reqId
         );
       }
       return errorResponse('unauthorized', 'Invalid or expired access token', 401, reqId);

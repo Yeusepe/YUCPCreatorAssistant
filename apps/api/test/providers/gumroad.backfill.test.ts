@@ -10,7 +10,7 @@
  * historical timestamps. This test catches either side regressing.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { backfill } from '../../src/providers/gumroad/backfill';
 
 const FAKE_TOKEN = 'test-access-token';

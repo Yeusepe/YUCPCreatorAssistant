@@ -21,7 +21,6 @@ import type {
 } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 import {
-  handleModerationClear,
   handleModerationConfirmClear,
   handleModerationMark,
   handleModerationReasonSelect,
@@ -60,7 +59,7 @@ function makeConvex(opts: ModerationConvexOpts = {}): ConvexHttpClient {
   } as unknown as ConvexHttpClient;
 }
 
-const BASE_CTX = {
+const _BASE_CTX = {
   authUserId: 'auth_mod_test',
   guildId: 'guild_mod_test',
 };

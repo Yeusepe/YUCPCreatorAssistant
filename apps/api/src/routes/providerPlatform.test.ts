@@ -591,7 +591,7 @@ describe('provider platform routes', () => {
 
       for (const provider of body) {
         for (const field of REQUIRED) {
-          expect(provider[field], `${provider['key']}.${field} must be present`).toBeTruthy();
+          expect(provider[field], `${provider.key}.${field} must be present`).toBeTruthy();
         }
       }
     });

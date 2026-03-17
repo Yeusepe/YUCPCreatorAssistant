@@ -325,7 +325,7 @@ async function buildLemonClientForConnection(
     authUserId,
     provider: 'lemonsqueezy',
   });
-  const encryptedApiToken = secrets?.credentials['api_token'];
+  const encryptedApiToken = secrets?.credentials.api_token;
   if (!encryptedApiToken) throw new Error('Lemon Squeezy API token not configured');
   const apiToken = await decrypt(
     encryptedApiToken,
@@ -1156,14 +1156,14 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
         const providers = ALL_PROVIDERS.filter((p) => p.displayMeta?.dashboardConnectPath).map(
           (p) => ({
             key: p.id,
-            label: p.displayMeta!.label,
-            icon: p.displayMeta!.icon,
-            iconBg: p.displayMeta!.dashboardIconBg,
-            quickStartBg: p.displayMeta!.dashboardQuickStartBg,
-            quickStartBorder: p.displayMeta!.dashboardQuickStartBorder,
-            serverTileHint: p.displayMeta!.dashboardServerTileHint,
-            connectPath: p.displayMeta!.dashboardConnectPath,
-            connectParamStyle: p.displayMeta!.dashboardConnectParamStyle,
+            label: p.displayMeta?.label,
+            icon: p.displayMeta?.icon,
+            iconBg: p.displayMeta?.dashboardIconBg,
+            quickStartBg: p.displayMeta?.dashboardQuickStartBg,
+            quickStartBorder: p.displayMeta?.dashboardQuickStartBorder,
+            serverTileHint: p.displayMeta?.dashboardServerTileHint,
+            connectPath: p.displayMeta?.dashboardConnectPath,
+            connectParamStyle: p.displayMeta?.dashboardConnectParamStyle,
           })
         );
         return new Response(JSON.stringify(providers), {

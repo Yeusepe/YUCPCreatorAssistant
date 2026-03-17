@@ -72,7 +72,7 @@ describe('errorResponse', () => {
 
   it('body has RFC-7807-style shape: {error, message, requestId, status}', async () => {
     const res = errorResponse('bad_request', 'Something wrong', 400, 'req_fixed_id_123456789');
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.error).toBe('bad_request');
     expect(body.message).toBe('Something wrong');
     expect(body.status).toBe(400);
@@ -81,14 +81,14 @@ describe('errorResponse', () => {
 
   it('echoes the provided requestId in the body', async () => {
     const res = errorResponse('forbidden', 'No access', 403, 'req_echo_me_1234567890');
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.requestId).toBe('req_echo_me_1234567890');
   });
 
   it('auto-generates requestId when not provided', async () => {
     const res = errorResponse('internal_error', 'Boom', 500);
-    const body = await res.json() as Record<string, unknown>;
-    expect((body.requestId as string)).toMatch(/^req_/);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.requestId as string).toMatch(/^req_/);
   });
 
   it('sets Content-Type and Yucp-Version headers', () => {
@@ -140,7 +140,7 @@ describe('listResponse', () => {
     const items = [{ id: 1 }, { id: 2 }];
     const res = listResponse(items, false, null);
     expect(res.status).toBe(200);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.object).toBe('list');
     expect(body.data).toEqual(items);
     expect(body.hasMore).toBe(false);
@@ -149,14 +149,14 @@ describe('listResponse', () => {
 
   it('propagates hasMore and nextCursor', async () => {
     const res = listResponse([1, 2, 3], true, 'next_abc');
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.hasMore).toBe(true);
     expect(body.nextCursor).toBe('next_abc');
   });
 
   it('coerces undefined nextCursor to null', async () => {
     const res = listResponse([], false, undefined);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.nextCursor).toBeNull();
   });
 

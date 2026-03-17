@@ -10,5 +10,5 @@ export type RouteHandler = (
   request: Request,
   pathname: string,
   authUserId: string,
-  config: PublicV2Config,
+  config: PublicV2Config
 ) => Promise<Response>;

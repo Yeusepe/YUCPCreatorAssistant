@@ -33,7 +33,6 @@ import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
 import { SETUP_SESSION_COOKIE } from '../lib/browserSessions';
 import { getConvexClientFromUrl } from '../lib/convex';
-import { sendCollabKeyAddedEmail } from '../lib/email';
 import { encrypt } from '../lib/encrypt';
 import { resolveSetupSession } from '../lib/setupSession';
 import { getStateStore } from '../lib/stateStore';

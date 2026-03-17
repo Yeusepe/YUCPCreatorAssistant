@@ -1,5 +1,5 @@
-import { api } from '../../../../../convex/_generated/api';
 import { createLogger } from '@yucp/shared';
+import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { resolveAuth } from './auth';
 import {
@@ -24,7 +24,7 @@ async function hashLicenseKey(key: string): Promise<string> {
 export async function handleManualLicensesRoutes(
   request: Request,
   subPath: string,
-  config: PublicV2Config,
+  config: PublicV2Config
 ): Promise<Response> {
   const reqId = generateRequestId();
   const url = new URL(request.url);
@@ -59,7 +59,7 @@ export async function handleManualLicensesRoutes(
           ...lic,
           hashedKey: lic.key ? await hashLicenseKey(lic.key as string) : undefined,
           key: undefined,
-        })),
+        }))
       );
 
       const result = await convex.mutation(api.manualLicenses.bulkCreate, {
@@ -244,7 +244,7 @@ export async function handleManualLicensesRoutes(
           'not_found',
           `Manual license with ID ${licenseId} was not found`,
           404,
-          reqId,
+          reqId
         );
       }
       return jsonResponse(result, 200, reqId);

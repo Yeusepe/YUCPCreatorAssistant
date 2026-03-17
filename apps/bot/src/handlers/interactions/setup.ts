@@ -16,7 +16,7 @@ import type { InteractionHandlerContext } from './types';
 
 export async function handleSetupButton(
   interaction: ButtonInteraction,
-  ctx: InteractionHandlerContext
+  _ctx: InteractionHandlerContext
 ): Promise<boolean> {
   const customId = interaction.customId;
 

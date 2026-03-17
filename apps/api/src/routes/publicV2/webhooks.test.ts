@@ -64,7 +64,7 @@ function makeRequest(
   method: string,
   subPath: string,
   body?: unknown,
-  headers: Record<string, string> = {},
+  headers: Record<string, string> = {}
 ): Request {
   const url = `http://localhost/api/public/v2${subPath}`;
   return new Request(url, {
@@ -104,7 +104,7 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('GET', '/webhook-event-types'),
         '/webhook-event-types',
-        config,
+        config
       );
       expect(res.status).toBe(200);
     });
@@ -113,9 +113,9 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('GET', '/webhook-event-types'),
         '/webhook-event-types',
-        config,
+        config
       );
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body.object).toBe('list');
       expect(Array.isArray(body.data)).toBe(true);
     });
@@ -124,9 +124,9 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('GET', '/webhook-event-types'),
         '/webhook-event-types',
-        config,
+        config
       );
-      const body = await res.json() as { data: Array<{ type: string; description: string }> };
+      const body = (await res.json()) as { data: Array<{ type: string; description: string }> };
       const types = body.data.map((e) => e.type);
       expect(types).toContain('entitlement.granted');
     });
@@ -135,9 +135,9 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('GET', '/webhook-event-types'),
         '/webhook-event-types',
-        config,
+        config
       );
-      const body = await res.json() as { data: Array<{ type: string; description: string }> };
+      const body = (await res.json()) as { data: Array<{ type: string; description: string }> };
       const types = body.data.map((e) => e.type);
       expect(types).toContain('ping');
     });
@@ -146,9 +146,9 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('GET', '/webhook-event-types'),
         '/webhook-event-types',
-        config,
+        config
       );
-      const body = await res.json() as { data: Array<Record<string, unknown>> };
+      const body = (await res.json()) as { data: Array<Record<string, unknown>> };
       for (const entry of body.data) {
         expect(typeof entry.type).toBe('string');
         expect(typeof entry.description).toBe('string');
@@ -158,30 +158,22 @@ describe('handleWebhooksRoutes', () => {
 
   describe('GET /webhooks', () => {
     it('returns 200 with list shape', async () => {
-      const res = await handleWebhooksRoutes(
-        makeRequest('GET', '/webhooks'),
-        '/webhooks',
-        config,
-      );
+      const res = await handleWebhooksRoutes(makeRequest('GET', '/webhooks'), '/webhooks', config);
       expect(res.status).toBe(200);
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body.object).toBe('list');
     });
 
     it('calls convex.query to retrieve subscriptions', async () => {
       await handleWebhooksRoutes(makeRequest('GET', '/webhooks'), '/webhooks', config);
       expect(queryMock.mock.calls).toHaveLength(1);
-      expect(queryMock.mock.calls[0]![0]).toBe(apiMock.webhookSubscriptions.list);
+      expect(queryMock.mock.calls[0]?.[0]).toBe(apiMock.webhookSubscriptions.list);
     });
 
     it('strips signingSecretEnc from list items', async () => {
       queryImpl = async () => [{ ...sampleSubscription }];
-      const res = await handleWebhooksRoutes(
-        makeRequest('GET', '/webhooks'),
-        '/webhooks',
-        config,
-      );
-      const body = await res.json() as { data: Array<Record<string, unknown>> };
+      const res = await handleWebhooksRoutes(makeRequest('GET', '/webhooks'), '/webhooks', config);
+      const body = (await res.json()) as { data: Array<Record<string, unknown>> };
       if (body.data.length > 0) {
         expect(body.data[0]).not.toHaveProperty('signingSecretEnc');
       }
@@ -196,7 +188,7 @@ describe('handleWebhooksRoutes', () => {
           events: ['entitlement.granted'],
         }),
         '/webhooks',
-        config,
+        config
       );
       expect(res.status).toBe(201);
     });
@@ -208,9 +200,9 @@ describe('handleWebhooksRoutes', () => {
           events: ['entitlement.granted'],
         }),
         '/webhooks',
-        config,
+        config
       );
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(typeof body.signingSecret).toBe('string');
       expect((body.signingSecret as string).startsWith('whsec_')).toBe(true);
     });
@@ -222,9 +214,9 @@ describe('handleWebhooksRoutes', () => {
           events: [],
         }),
         '/webhooks',
-        config,
+        config
       );
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body).not.toHaveProperty('signingSecretEnc');
     });
   });
@@ -234,10 +226,10 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('POST', '/webhooks', { events: [] }),
         '/webhooks',
-        config,
+        config
       );
       expect(res.status).toBe(400);
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body.error).toBe('bad_request');
     });
 
@@ -248,10 +240,10 @@ describe('handleWebhooksRoutes', () => {
           events: [],
         }),
         '/webhooks',
-        config,
+        config
       );
       expect(res.status).toBe(400);
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body.error).toBe('bad_request');
     });
 
@@ -259,7 +251,7 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('POST', '/webhooks', { url: '', events: [] }),
         '/webhooks',
-        config,
+        config
       );
       expect(res.status).toBe(400);
     });
@@ -270,7 +262,7 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('GET', '/webhooks/wh_001'),
         '/webhooks/wh_001',
-        config,
+        config
       );
       expect(res.status).toBe(200);
     });
@@ -279,9 +271,9 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('GET', '/webhooks/wh_001'),
         '/webhooks/wh_001',
-        config,
+        config
       );
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body).not.toHaveProperty('signingSecretEnc');
     });
 
@@ -293,7 +285,7 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('GET', '/webhooks/unknown_id'),
         '/webhooks/unknown_id',
-        config,
+        config
       );
       expect(res.status).toBe(404);
     });
@@ -304,10 +296,10 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('DELETE', '/webhooks/wh_001'),
         '/webhooks/wh_001',
-        config,
+        config
       );
       expect(res.status).toBe(200);
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body.deleted).toBe(true);
       expect(body.id).toBe('wh_001');
     });
@@ -316,12 +308,12 @@ describe('handleWebhooksRoutes', () => {
       await handleWebhooksRoutes(
         makeRequest('DELETE', '/webhooks/wh_001'),
         '/webhooks/wh_001',
-        config,
+        config
       );
       expect(
         mutationMock.mock.calls.some(
-          (call) => call[0] === apiMock.webhookSubscriptions.deleteSubscription,
-        ),
+          (call) => call[0] === apiMock.webhookSubscriptions.deleteSubscription
+        )
       ).toBe(true);
     });
   });
@@ -331,7 +323,7 @@ describe('handleWebhooksRoutes', () => {
       const res = await handleWebhooksRoutes(
         makeRequest('GET', '/unknown-route'),
         '/unknown-route',
-        config,
+        config
       );
       expect(res.status).toBe(404);
     });

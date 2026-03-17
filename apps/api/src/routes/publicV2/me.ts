@@ -1,11 +1,11 @@
-import { errorResponse, generateRequestId, jsonResponse } from './helpers';
 import { resolveAuth } from './auth';
+import { errorResponse, generateRequestId, jsonResponse } from './helpers';
 import type { PublicV2Config } from './types';
 
 export async function handleMeRoutes(
   request: Request,
   subPath: string,
-  config: PublicV2Config,
+  config: PublicV2Config
 ): Promise<Response> {
   const reqId = generateRequestId();
 
@@ -29,6 +29,6 @@ export async function handleMeRoutes(
       expiresAt: auth.expiresAt ?? null,
     },
     200,
-    reqId,
+    reqId
   );
 }

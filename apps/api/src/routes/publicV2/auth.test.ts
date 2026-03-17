@@ -7,7 +7,7 @@ let verifyBetterAuthImpl: (token: string, opts: unknown) => Promise<unknown>;
 
 const mutationMock = mock((fn: unknown, args: unknown) => mutationImpl(fn, args));
 const verifyBetterAuthMock = mock((token: string, opts: unknown) =>
-  verifyBetterAuthImpl(token, opts),
+  verifyBetterAuthImpl(token, opts)
 );
 
 mock.module('../../../../../convex/_generated/api', () => ({
@@ -26,7 +26,7 @@ const { resolveAuth } = await import('./auth');
 
 // --- Shared fixtures ---
 
-const VALID_API_KEY = 'ypsk_' + 'a'.repeat(48);
+const VALID_API_KEY = `ypsk_${'a'.repeat(48)}`;
 
 const config = {
   convexUrl: 'https://test.convex.cloud',
@@ -63,16 +63,12 @@ describe('resolveAuth', () => {
       const result = await resolveAuth(makeRequest(), config, []);
       expect(result instanceof Response).toBe(true);
       expect((result as Response).status).toBe(401);
-      const body = await (result as Response).json() as Record<string, unknown>;
+      const body = (await (result as Response).json()) as Record<string, unknown>;
       expect(body.error).toBe('unauthorized');
     });
 
     it('returns 401 when Authorization header is present but empty after Bearer prefix', async () => {
-      const result = await resolveAuth(
-        makeRequest({ authorization: 'Bearer ' }),
-        config,
-        [],
-      );
+      const result = await resolveAuth(makeRequest({ authorization: 'Bearer ' }), config, []);
       expect((result as Response).status).toBe(401);
     });
   });
@@ -80,27 +76,27 @@ describe('resolveAuth', () => {
   describe('x-api-key header — format validation', () => {
     it('returns 401 for a key with wrong prefix', async () => {
       const result = await resolveAuth(
-        makeRequest({ 'x-api-key': 'sk_' + 'a'.repeat(48) }),
+        makeRequest({ 'x-api-key': `sk_${'a'.repeat(48)}` }),
         config,
-        [],
+        []
       );
       expect((result as Response).status).toBe(401);
     });
 
     it('returns 401 for a key that is too short', async () => {
       const result = await resolveAuth(
-        makeRequest({ 'x-api-key': 'ypsk_' + 'a'.repeat(10) }),
+        makeRequest({ 'x-api-key': `ypsk_${'a'.repeat(10)}` }),
         config,
-        [],
+        []
       );
       expect((result as Response).status).toBe(401);
     });
 
     it('returns 401 for a key that contains invalid (non-hex) characters', async () => {
       const result = await resolveAuth(
-        makeRequest({ 'x-api-key': 'ypsk_' + 'z'.repeat(48) }),
+        makeRequest({ 'x-api-key': `ypsk_${'z'.repeat(48)}` }),
         config,
-        [],
+        []
       );
       expect((result as Response).status).toBe(401);
     });
@@ -109,11 +105,7 @@ describe('resolveAuth', () => {
   describe('x-api-key header — Convex verification', () => {
     it('returns 401 when Convex returns null (key not found or expired)', async () => {
       mutationImpl = async () => null;
-      const result = await resolveAuth(
-        makeRequest({ 'x-api-key': VALID_API_KEY }),
-        config,
-        [],
-      );
+      const result = await resolveAuth(makeRequest({ 'x-api-key': VALID_API_KEY }), config, []);
       expect((result as Response).status).toBe(401);
     });
 
@@ -121,33 +113,25 @@ describe('resolveAuth', () => {
       mutationImpl = async () => ({
         key: { id: 'key_id', metadata: {}, permissions: { publicApi: [] } },
       });
-      const result = await resolveAuth(
-        makeRequest({ 'x-api-key': VALID_API_KEY }),
-        config,
-        [],
-      );
+      const result = await resolveAuth(makeRequest({ 'x-api-key': VALID_API_KEY }), config, []);
       expect((result as Response).status).toBe(401);
     });
 
     it('returns 403 when the key exists but is missing a required scope', async () => {
       mutationImpl = async () => validKeyResult([]);
-      const result = await resolveAuth(
-        makeRequest({ 'x-api-key': VALID_API_KEY }),
-        config,
-        ['subjects:read'],
-      );
+      const result = await resolveAuth(makeRequest({ 'x-api-key': VALID_API_KEY }), config, [
+        'subjects:read',
+      ]);
       expect((result as Response).status).toBe(403);
-      const body = await (result as Response).json() as Record<string, unknown>;
+      const body = (await (result as Response).json()) as Record<string, unknown>;
       expect(body.error).toBe('forbidden');
     });
 
     it('returns AuthResult when key is valid and required scopes are satisfied', async () => {
       mutationImpl = async () => validKeyResult(['subjects:read', 'entitlements:read']);
-      const result = await resolveAuth(
-        makeRequest({ 'x-api-key': VALID_API_KEY }),
-        config,
-        ['subjects:read'],
-      );
+      const result = await resolveAuth(makeRequest({ 'x-api-key': VALID_API_KEY }), config, [
+        'subjects:read',
+      ]);
       expect(result instanceof Response).toBe(false);
       const auth = result as { authUserId: string; scopes: string[] };
       expect(auth.authUserId).toBe('user_abc');
@@ -156,11 +140,7 @@ describe('resolveAuth', () => {
 
     it('succeeds with no required scopes even if the key has an empty permission set', async () => {
       mutationImpl = async () => validKeyResult([]);
-      const result = await resolveAuth(
-        makeRequest({ 'x-api-key': VALID_API_KEY }),
-        config,
-        [],
-      );
+      const result = await resolveAuth(makeRequest({ 'x-api-key': VALID_API_KEY }), config, []);
       expect(result instanceof Response).toBe(false);
     });
 
@@ -173,11 +153,7 @@ describe('resolveAuth', () => {
           expiresAt: 9_999_999_999,
         },
       });
-      const result = await resolveAuth(
-        makeRequest({ 'x-api-key': VALID_API_KEY }),
-        config,
-        [],
-      );
+      const result = await resolveAuth(makeRequest({ 'x-api-key': VALID_API_KEY }), config, []);
       const auth = result as { keyId: string; expiresAt: number };
       expect(auth.keyId).toBe('key_id_xyz');
       expect(auth.expiresAt).toBe(9_999_999_999);
@@ -190,7 +166,7 @@ describe('resolveAuth', () => {
       const result = await resolveAuth(
         makeRequest({ authorization: `Bearer ${VALID_API_KEY}` }),
         config,
-        ['subjects:read'],
+        ['subjects:read']
       );
       expect(result instanceof Response).toBe(false);
       expect(mutationMock.mock.calls).toHaveLength(1);
@@ -204,10 +180,10 @@ describe('resolveAuth', () => {
       const result = await resolveAuth(
         makeRequest({ authorization: 'Bearer some.jwt.token' }),
         config,
-        ['subjects:read'],
+        ['subjects:read']
       );
       expect((result as Response).status).toBe(403);
-      const body = await (result as Response).json() as Record<string, unknown>;
+      const body = (await (result as Response).json()) as Record<string, unknown>;
       expect(body.error).toBe('forbidden');
     });
 
@@ -216,10 +192,10 @@ describe('resolveAuth', () => {
       const result = await resolveAuth(
         makeRequest({ authorization: 'Bearer some.jwt.token' }),
         config,
-        [],
+        []
       );
       expect((result as Response).status).toBe(401);
-      const body = await (result as Response).json() as Record<string, unknown>;
+      const body = (await (result as Response).json()) as Record<string, unknown>;
       expect(body.error).toBe('unauthorized');
     });
 
@@ -231,7 +207,7 @@ describe('resolveAuth', () => {
       const result = await resolveAuth(
         makeRequest({ authorization: 'Bearer valid.jwt.token' }),
         config,
-        ['subjects:read'],
+        ['subjects:read']
       );
       expect(result instanceof Response).toBe(false);
       const auth = result as { authUserId: string; scopes: string[] };
@@ -244,11 +220,7 @@ describe('resolveAuth', () => {
         ok: true,
         token: { sub: 'user_jwt', grantedScopes: [] },
       });
-      await resolveAuth(
-        makeRequest({ authorization: 'Bearer jwt.only.token' }),
-        config,
-        [],
-      );
+      await resolveAuth(makeRequest({ authorization: 'Bearer jwt.only.token' }), config, []);
       expect(mutationMock.mock.calls).toHaveLength(0);
     });
   });

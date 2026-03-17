@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { describe, expect, it, mock } from 'bun:test';
 import type {
   ButtonInteraction,
   ChatInputCommandInteraction,

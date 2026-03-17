@@ -22,7 +22,7 @@ async function resolveJinxxyApiKey(
     authUserId,
     provider: 'jinxxy',
   });
-  const encryptedKey = data?.credentials['api_key'];
+  const encryptedKey = data?.credentials.api_key;
   if (!encryptedKey) return null;
 
   try {

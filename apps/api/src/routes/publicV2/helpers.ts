@@ -1,7 +1,7 @@
 export const API_VERSION = '2025-03-01';
 
 export function generateRequestId(): string {
-  return 'req_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
+  return `req_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
 }
 
 function buildApiHeaders(requestId: string): HeadersInit {
@@ -27,7 +27,7 @@ export function errorResponse(
   error: string,
   message: string,
   status: number,
-  requestId?: string,
+  requestId?: string
 ): Response {
   const reqId = requestId ?? generateRequestId();
   return jsonResponse({ error, message, requestId: reqId, status }, status, reqId);
@@ -35,7 +35,7 @@ export function errorResponse(
 
 export function parsePagination(url: URL): { limit: number; cursor: string | undefined } {
   const rawLimit = parseInt(url.searchParams.get('limit') ?? '50', 10);
-  const limit = Math.max(1, Math.min(100, isNaN(rawLimit) ? 50 : rawLimit));
+  const limit = Math.max(1, Math.min(100, Number.isNaN(rawLimit) ? 50 : rawLimit));
   const cursor = url.searchParams.get('starting_after') ?? undefined;
   return { limit, cursor };
 }
@@ -44,13 +44,13 @@ export function listResponse(
   data: unknown[],
   hasMore: boolean,
   nextCursor: string | null | undefined,
-  requestId?: string,
+  requestId?: string
 ): Response {
   const reqId = requestId ?? generateRequestId();
   return jsonResponse(
     { object: 'list', data, hasMore, nextCursor: nextCursor ?? null },
     200,
-    reqId,
+    reqId
   );
 }
 
@@ -84,11 +84,7 @@ export function extractListData(result: unknown): {
         ? r.data
         : [];
   const hasMore =
-    typeof r.isDone === 'boolean'
-      ? !r.isDone
-      : typeof r.hasMore === 'boolean'
-        ? r.hasMore
-        : false;
+    typeof r.isDone === 'boolean' ? !r.isDone : typeof r.hasMore === 'boolean' ? r.hasMore : false;
   const nextCursor =
     typeof r.continueCursor === 'string'
       ? r.continueCursor

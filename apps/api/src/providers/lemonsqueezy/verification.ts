@@ -26,7 +26,7 @@ export const verification: LicenseVerificationPlugin = {
       provider: 'lemonsqueezy',
     });
 
-    const encryptedApiToken = secrets?.credentials['api_token'];
+    const encryptedApiToken = secrets?.credentials.api_token;
     if (!encryptedApiToken) {
       return {
         valid: false,

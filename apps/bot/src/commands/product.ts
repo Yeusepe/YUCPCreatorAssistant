@@ -231,7 +231,7 @@ export async function handleProductAddInteractive(
           if (!hasCatalog && !hasPerProduct && !hasProductInput) return false;
           // productInput entries that don't require a connection are always shown
           // (e.g. VRChat — avatars can be added by ID before the creator connects).
-          if (hasProductInput && d.productInput!.requiresConnection === false) return true;
+          if (hasProductInput && d.productInput?.requiresConnection === false) return true;
           // All other providers require an active dashboard connection.
           return !!connectionStatus[d.providerKey];
         })
@@ -250,7 +250,7 @@ export async function handleProductAddInteractive(
 
             const manualOpt = new StringSelectMenuOptionBuilder()
               .setLabel(`${d.label} (by URL or ID)`)
-              .setDescription(d.productInput!.description)
+              .setDescription(d.productInput?.description)
               .setValue(`${d.providerKey}_url`);
             if (emoji) manualOpt.setEmoji(emoji);
 
@@ -591,7 +591,7 @@ export async function handleProductTypeSelect(
 /** Step 2b: Product selected from a catalog API select menu - show role select */
 export async function handleProductCatalogSelect(
   interaction: StringSelectMenuInteraction,
-  provider: string,
+  _provider: string,
   userId: string,
   authUserId: string
 ): Promise<void> {
