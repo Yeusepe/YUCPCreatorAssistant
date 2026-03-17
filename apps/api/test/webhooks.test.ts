@@ -379,6 +379,45 @@ describe('Jinxxy webhook security', () => {
     );
   });
 
+  it('accepts valid signed payload without top-level created_at', async () => {
+    const store = createWebhookStore();
+    const secret = 'jinxxy-secret';
+    const secretRef = await encrypt(secret, ENCRYPTION_SECRET, JINXXY_WEBHOOK_SECRET_PURPOSE);
+    // Real Jinxxy webhooks do not include a top-level created_at field.
+    const body = JSON.stringify({
+      event_id: 'evt_no_created_at_001',
+      event_type: 'order.completed',
+      data: { id: 'order_123', payment_status: 'PAID', order_items: [] },
+    });
+    const signature = await signJinxxy(secret, body);
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getJinxxyWebhookSecretByRouteId]: () => secretRef,
+          [refs.resolveWebhookTenantIds]: () => ['creator_jinxxy'],
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+        },
+      },
+      async ({ convex, server }) => {
+        const res = await server.fetch('/webhooks/jinxxy/creator-route', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-signature': signature,
+          },
+          body,
+        });
+
+        expect(res.status).toBe(200);
+        expect(store.size()).toBe(1);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(1);
+      }
+    );
+  });
+
   it('rejects oversized webhook bodies before any secret lookup or write', async () => {
     const store = createWebhookStore();
     const secret = 'jinxxy-secret';

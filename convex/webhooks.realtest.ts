@@ -352,7 +352,7 @@ describe('verificationMethod trust model', () => {
     expect(result.eventId).toBeTruthy();
 
     const pending = await t.run(async (ctx) =>
-      ctx.runQuery(internal.webhookIngestion.getPendingWebhookEvents, {
+      ctx.runQuery(api.webhookIngestion.getPendingWebhookEvents, {
         apiSecret: API_SECRET,
         limit: 10,
       })
@@ -378,7 +378,7 @@ describe('verificationMethod trust model', () => {
     expect(result.eventId).toBeTruthy();
 
     const pending = await t.run(async (ctx) =>
-      ctx.runQuery(internal.webhookIngestion.getPendingWebhookEvents, {
+      ctx.runQuery(api.webhookIngestion.getPendingWebhookEvents, {
         apiSecret: API_SECRET,
         limit: 10,
       })
@@ -471,7 +471,7 @@ describe('verificationMethod trust model', () => {
 
     // Now reset for reprocessing
     await t.run(async (ctx) =>
-      ctx.runMutation(internal.webhookIngestion.resetWebhookForReprocessing, {
+      ctx.runMutation(api.webhookIngestion.resetWebhookForReprocessing, {
         apiSecret: API_SECRET,
         eventId,
       })

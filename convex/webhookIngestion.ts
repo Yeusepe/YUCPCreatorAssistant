@@ -14,8 +14,11 @@ import { requireApiSecret } from './lib/apiAuth';
  * Determines whether a webhook event is considered authenticated and may enter
  * the processing pipeline.
  *
- * Two verification models are supported:
- *   - 'hmac': the event carries a body-bound HMAC that was verified (Jinxxy, Payhip, LS).
+ * Three verification models are supported:
+ *   - 'hmac': the event carries a body-bound HMAC that was verified (Jinxxy, LemonSqueezy).
+ *             signatureValid must also be true.
+ *   - 'static-key': authenticated by comparing a static key-derived value (Payhip). The
+ *             "signature" is SHA256(apiKey) — constant per connection, not body-bound.
  *             signatureValid must also be true.
  *   - 'route-token': the event was authenticated by a private random URL token (Gumroad Ping).
  *             No body signature exists by design; the token IS the authenticator.
@@ -24,15 +27,18 @@ import { requireApiSecret } from './lib/apiAuth';
  */
 export function isAuthenticatedEvent(event: {
   signatureValid: boolean;
-  verificationMethod?: 'hmac' | 'route-token';
+  verificationMethod?: 'hmac' | 'static-key' | 'route-token';
 }): boolean {
   if (event.verificationMethod === 'route-token') return true;
   if (event.verificationMethod === 'hmac') return event.signatureValid === true;
+  if (event.verificationMethod === 'static-key') return event.signatureValid === true;
   // Legacy path: no verificationMethod stored — trust signatureValid directly.
   return event.signatureValid === true;
 }
 
-const VerificationMethodV = v.optional(v.union(v.literal('hmac'), v.literal('route-token')));
+const VerificationMethodV = v.optional(
+  v.union(v.literal('hmac'), v.literal('static-key'), v.literal('route-token'))
+);
 
 /**
  * Insert a webhook event from any provider.

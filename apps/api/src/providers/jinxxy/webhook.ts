@@ -175,6 +175,7 @@ async function handleJinxxyCollabWebhook(
       eventType,
       rawPayload: payload,
       signatureValid,
+      verificationMethod: 'hmac',
     });
 
     if (result.duplicate) {
@@ -293,18 +294,15 @@ export const webhook: WebhookPlugin = {
         return new Response('Forbidden', { status: 403 });
       }
 
-      if (!payload.created_at) {
-        logger.warn('Jinxxy webhook: rejected (missing created_at timestamp)', {
-          routeId,
-          eventId,
-        });
-        return new Response('Forbidden', { status: 403 });
-      }
-
-      const ts = Date.parse(payload.created_at);
-      if (!Number.isFinite(ts) || Date.now() - ts > WEBHOOK_MAX_AGE_MS) {
-        logger.warn('Jinxxy webhook: rejected (event too old)', { routeId, eventId });
-        return new Response('Forbidden', { status: 403 });
+      // Replay protection: if the payload includes a timestamp, validate it.
+      // Real Jinxxy webhooks may not include top-level created_at; in that case
+      // we rely on HMAC signature verification + event_id deduplication.
+      if (payload.created_at) {
+        const ts = Date.parse(payload.created_at);
+        if (!Number.isFinite(ts) || Date.now() - ts > WEBHOOK_MAX_AGE_MS) {
+          logger.warn('Jinxxy webhook: rejected (event too old)', { routeId, eventId });
+          return new Response('Forbidden', { status: 403 });
+        }
       }
 
       let authUserIds: string[];
