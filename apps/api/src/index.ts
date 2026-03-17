@@ -474,6 +474,11 @@ async function routeRequest(request: Request): Promise<Response> {
     }
   }
 
+  // Redirect root to frontend
+  if (pathname === '/') {
+    return Response.redirect('https://creators.yucp.club/', 302);
+  }
+
   // Health check endpoint
   if (pathname === '/health') {
     return new Response(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }), {
