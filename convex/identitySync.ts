@@ -607,46 +607,6 @@ export const storeDiscordToken = mutation({
     return { success: true };
   },
 });
-
-/**
- * Get Discord external accounts that have stored OAuth tokens.
- * Used by retroactive rule sync to proactively check guild membership.
- */
-export const getDiscordAccountsWithTokens = query({
-  args: {
-    apiSecret: v.string(),
-  },
-  returns: v.array(
-    v.object({
-      externalAccountId: v.id('external_accounts'),
-      providerUserId: v.string(),
-      discordAccessTokenEncrypted: v.string(),
-      discordTokenExpiresAt: v.optional(v.number()),
-      discordRefreshTokenEncrypted: v.optional(v.string()),
-    })
-  ),
-  handler: async (ctx, args) => {
-    requireApiSecret(args.apiSecret);
-    // Get all active Discord external accounts
-    const accounts = await ctx.db
-      .query('external_accounts')
-      .withIndex('by_provider', (q) => q.eq('provider', 'discord'))
-      .filter((q) => q.eq(q.field('status'), 'active'))
-      .collect();
-
-    // Filter to those with tokens
-    return accounts
-      .filter((a) => a.discordAccessTokenEncrypted)
-      .map((a) => ({
-        externalAccountId: a._id,
-        providerUserId: a.providerUserId,
-        discordAccessTokenEncrypted: a.discordAccessTokenEncrypted!,
-        discordTokenExpiresAt: a.discordTokenExpiresAt,
-        discordRefreshTokenEncrypted: a.discordRefreshTokenEncrypted,
-      }));
-  },
-});
-
 /**
  * Update subject status.
  * Used for account suspension, quarantine, or deletion.

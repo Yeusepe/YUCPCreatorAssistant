@@ -125,11 +125,12 @@ describe('Payhip webhook payload builder', () => {
     expect(body.type).toBe('refund');
   });
 
-  it('includes created_at timestamp', async () => {
+  it('includes date as Unix seconds timestamp', async () => {
     const raw = await payhipPaidPayload({ transactionId: 'txn_ts', apiKey: 'key' });
-    const body = JSON.parse(raw) as { created_at: string };
-    expect(body.created_at).toBeTruthy();
-    expect(() => new Date(body.created_at)).not.toThrow();
+    const body = JSON.parse(raw) as { date: number };
+    expect(typeof body.date).toBe('number');
+    expect(body.date).toBeGreaterThan(1_000_000_000);
+    expect(body.date).toBeLessThan(10_000_000_000);
   });
 
   it('given payload with wrong signature field, check would fail (different hash)', async () => {
@@ -220,5 +221,5 @@ describe('Payhip HTTP webhook route (/webhooks/payhip/:routeId)', () => {
 
   it.todo('POST with valid JSON + correct SHA256(apiKey) + known routeId → 200 — requires real Convex', () => {});
 
-  it.todo('POST with valid JSON + correct signature but old created_at → 403 (replay protection) — requires real Convex', () => {});
+  it.todo('POST with valid JSON + correct signature but old date → 403 (replay protection) — requires real Convex', () => {});
 });

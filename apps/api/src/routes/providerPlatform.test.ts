@@ -120,6 +120,7 @@ describe('provider platform routes', () => {
 
   const routes = createProviderPlatformRoutes(auth, {
     apiBaseUrl: 'http://localhost:3001',
+    frontendBaseUrl: 'http://localhost:3001',
     convexApiSecret: 'convex-secret',
     convexUrl: 'http://convex.invalid',
     encryptionSecret: 'encrypt-secret',

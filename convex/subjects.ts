@@ -183,9 +183,29 @@ export const resolveSubjectForPublicApi = query({
           };
         };
 
+    /**
+     * Checks whether the resolved subject has an active binding to the requesting creator.
+     * All public-API selectors must be tenant-scoped to prevent cross-tenant subject enumeration.
+     */
+    async function hasTenantBinding(subjectId: Id<'subjects'>): Promise<boolean> {
+      const binding = await ctx.db
+        .query('bindings')
+        .withIndex('by_auth_user_subject', (q) =>
+          q.eq('authUserId', args.authUserId).eq('subjectId', subjectId)
+        )
+        .filter((q) => q.eq(q.field('status'), 'active'))
+        .first();
+      return binding !== null;
+    }
+
     if ('subjectId' in selector) {
       const subject = await ctx.db.get(selector.subjectId);
-      return subject ? { found: true as const, subject } : { found: false as const, subject: null };
+      if (!subject) return { found: false as const, subject: null };
+      // Enforce tenant scope: only return the subject if this creator has an active binding.
+      if (!(await hasTenantBinding(subject._id))) {
+        return { found: false as const, subject: null };
+      }
+      return { found: true as const, subject };
     }
 
     if ('authUserId' in selector) {
@@ -193,7 +213,12 @@ export const resolveSubjectForPublicApi = query({
         .query('subjects')
         .withIndex('by_auth_user', (q) => q.eq('authUserId', selector.authUserId))
         .first();
-      return subject ? { found: true as const, subject } : { found: false as const, subject: null };
+      if (!subject) return { found: false as const, subject: null };
+      // Enforce tenant scope: only return the subject if this creator has an active binding.
+      if (!(await hasTenantBinding(subject._id))) {
+        return { found: false as const, subject: null };
+      }
+      return { found: true as const, subject };
     }
 
     if ('discordUserId' in selector) {
@@ -201,7 +226,12 @@ export const resolveSubjectForPublicApi = query({
         .query('subjects')
         .withIndex('by_discord_user', (q) => q.eq('primaryDiscordUserId', selector.discordUserId))
         .first();
-      return subject ? { found: true as const, subject } : { found: false as const, subject: null };
+      if (!subject) return { found: false as const, subject: null };
+      // Enforce tenant scope: only return the subject if this creator has an active binding.
+      if (!(await hasTenantBinding(subject._id))) {
+        return { found: false as const, subject: null };
+      }
+      return { found: true as const, subject };
     }
 
     const account = await ctx.db

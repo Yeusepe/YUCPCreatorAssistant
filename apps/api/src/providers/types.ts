@@ -73,8 +73,13 @@ export interface ProviderPurposes {
   readonly [key: string]: string;
 }
 
-/** The main contract every provider module must satisfy */
-export interface ProviderPlugin {
+/**
+ * Shared fields for all provider plugins.
+ * The final ProviderPlugin type is a discriminated union that enforces:
+ * - If programmaticWebhooks is true, onDisconnect MUST be implemented.
+ * - If programmaticWebhooks is false/omitted, onDisconnect is optional.
+ */
+interface BaseProviderPlugin {
   /** Provider identifier — must match the provider key used in Convex and Gumroad/Jinxxy/etc. */
   readonly id: string;
   /**
@@ -128,6 +133,38 @@ export interface ProviderPlugin {
   readonly collabCredentialPurpose?: string;
 }
 
+/**
+ * Provider that programmatically creates webhooks on the external platform
+ * during its connect flow (e.g. Gumroad resource_subscriptions, LemonSqueezy webhooks).
+ *
+ * MUST implement onDisconnect to clean up those webhooks when the connection
+ * is removed, preventing stale webhook traffic.
+ */
+interface ProgrammaticWebhookProvider extends BaseProviderPlugin {
+  readonly programmaticWebhooks: true;
+  /** REQUIRED: cleanup external webhooks before the connection is soft-deleted. */
+  onDisconnect(ctx: DisconnectContext): Promise<void>;
+}
+
+/**
+ * Provider that either receives webhooks passively (user configures URL manually)
+ * or does not use webhooks at all.
+ */
+interface PassiveWebhookProvider extends BaseProviderPlugin {
+  readonly programmaticWebhooks?: false;
+  /** Optional cleanup hook. */
+  onDisconnect?(ctx: DisconnectContext): Promise<void>;
+}
+
+/**
+ * The main contract every provider module must satisfy.
+ *
+ * Discriminated on `programmaticWebhooks`:
+ * - `true`  -> `onDisconnect` is **required** (compile-time enforced)
+ * - `false` / omitted -> `onDisconnect` is optional
+ */
+export type ProviderPlugin = ProgrammaticWebhookProvider | PassiveWebhookProvider;
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Webhook Plugin
 // ──────────────────────────────────────────────────────────────────────────────
@@ -146,6 +183,20 @@ export interface WebhookPlugin {
     ctx: WebhookContext
   ): Promise<Response>;
   readonly extraProviders?: readonly string[];
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Disconnect Hook
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Context passed to a provider's onDisconnect hook */
+export interface DisconnectContext {
+  /** Encrypted credentials from the provider_credentials table */
+  credentials: Record<string, string>;
+  encryptionSecret: string;
+  apiBaseUrl: string;
+  /** Remote webhook ID stored on the connection (e.g. LemonSqueezy webhook ID) */
+  remoteWebhookId?: string;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

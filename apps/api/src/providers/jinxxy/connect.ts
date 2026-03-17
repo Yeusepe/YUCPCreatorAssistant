@@ -11,6 +11,7 @@ import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 
 const JINXXY_PENDING_WEBHOOK_PREFIX = 'jinxxy_webhook_pending:';
+const JINXXY_PENDING_WEBHOOK_TOKEN_PREFIX = 'jinxxy_webhook_pending_token:';
 const JINXXY_PENDING_WEBHOOK_TTL_MS = 30 * 60 * 1000;
 
 import { getConvexClientFromUrl } from '../../lib/convex';
@@ -64,7 +65,33 @@ async function jinxxyWebhookConfig(request: Request, ctx: ConnectContext): Promi
   }
 
   try {
-    const callbackUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/jinxxy/${routeId}`;
+    // Determine the opaque webhook route token for this connection.
+    // For existing connections, reuse the stored token. For new connections,
+    // generate a pending random token stored in Redis until the API key is saved.
+    const convex = getConvexClientFromUrl(config.convexUrl);
+    let callbackRouteToken: string | null = null;
+    if (routeId) {
+      callbackRouteToken = await convex.query(
+        api.providerConnections.getProviderConnectionWebhookRouteToken,
+        { apiSecret: config.convexApiSecret, authUserId: routeId, providerKey: 'jinxxy' }
+      );
+    }
+
+    // If no existing token, generate a pending one stored alongside the webhook secret.
+    if (!callbackRouteToken) {
+      const pendingRaw = await getStateStore().get(`${JINXXY_PENDING_WEBHOOK_PREFIX}${routeId}`);
+      if (pendingRaw) {
+        const existing = JSON.parse(pendingRaw) as { routeToken?: string };
+        callbackRouteToken = existing.routeToken ?? null;
+      }
+    }
+    if (!callbackRouteToken) {
+      const tokenBytes = new Uint8Array(32);
+      crypto.getRandomValues(tokenBytes);
+      callbackRouteToken = Array.from(tokenBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    const callbackUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/jinxxy/${callbackRouteToken}`;
     if (request.method === 'GET') {
       return Response.json({ callbackUrl });
     }
@@ -94,16 +121,26 @@ async function jinxxyWebhookConfig(request: Request, ctx: ConnectContext): Promi
     }
 
     const store = getStateStore();
+    const signingSecretEncrypted = await encrypt(
+      webhookSecret,
+      config.encryptionSecret,
+      WEBHOOK_SECRET_PURPOSE
+    );
+    const pendingPayload = JSON.stringify({
+      callbackUrl,
+      routeToken: callbackRouteToken,
+      signingSecretEncrypted,
+    });
+    // Store under authUserId (for jinxxyStore to retrieve) and also under
+    // the opaque route token (for the webhook handler to look up during test delivery).
     await store.set(
       `${JINXXY_PENDING_WEBHOOK_PREFIX}${routeId}`,
-      JSON.stringify({
-        callbackUrl,
-        signingSecretEncrypted: await encrypt(
-          webhookSecret,
-          config.encryptionSecret,
-          WEBHOOK_SECRET_PURPOSE
-        ),
-      }),
+      pendingPayload,
+      JINXXY_PENDING_WEBHOOK_TTL_MS
+    );
+    await store.set(
+      `${JINXXY_PENDING_WEBHOOK_TOKEN_PREFIX}${callbackRouteToken}`,
+      pendingPayload,
       JINXXY_PENDING_WEBHOOK_TTL_MS
     );
     return Response.json({ success: true });
@@ -146,8 +183,27 @@ async function jinxxyTestWebhook(request: Request, ctx: ConnectContext): Promise
     return Response.json({ error: 'authUserId or setup token is required' }, { status: 400 });
   }
 
+  // Resolve the opaque route token — the webhook handler sets the test flag
+  // using the token, not the authUserId. Fall back to any pending token in Redis.
+  const { config } = ctx;
+  const convex = getConvexClientFromUrl(config.convexUrl);
+  let flagKey: string = routeId;
+  const existingToken = await convex.query(
+    api.providerConnections.getProviderConnectionWebhookRouteToken,
+    { apiSecret: config.convexApiSecret, authUserId: routeId, providerKey: 'jinxxy' }
+  );
+  if (existingToken) {
+    flagKey = existingToken;
+  } else {
+    const pendingRaw = await getStateStore().get(`${JINXXY_PENDING_WEBHOOK_PREFIX}${routeId}`);
+    if (pendingRaw) {
+      const parsed = JSON.parse(pendingRaw) as { routeToken?: string };
+      if (parsed.routeToken) flagKey = parsed.routeToken;
+    }
+  }
+
   const store = getStateStore();
-  const raw = await store.get(`${JINXXY_TEST_PREFIX}${routeId}`);
+  const raw = await store.get(`${JINXXY_TEST_PREFIX}${flagKey}`);
   return Response.json({ received: !!raw });
 }
 
@@ -206,13 +262,16 @@ async function jinxxyStore(request: Request, ctx: ConnectContext): Promise<Respo
     const pendingWebhookRaw = await store.get(`${JINXXY_PENDING_WEBHOOK_PREFIX}${webhookTarget}`);
     let webhookSecretRef: string | undefined;
     let webhookEndpoint: string | undefined;
+    let webhookRouteToken: string | undefined;
     if (pendingWebhookRaw) {
       const pendingWebhook = JSON.parse(pendingWebhookRaw) as {
         callbackUrl: string;
+        routeToken?: string;
         signingSecretEncrypted: string;
       };
       webhookSecretRef = pendingWebhook.signingSecretEncrypted;
       webhookEndpoint = pendingWebhook.callbackUrl;
+      webhookRouteToken = pendingWebhook.routeToken;
     } else {
       const webhookSecret = body.webhookSecret?.trim();
       if (!webhookSecret || webhookSecret.length < 16 || webhookSecret.length > 40) {
@@ -226,7 +285,11 @@ async function jinxxyStore(request: Request, ctx: ConnectContext): Promise<Respo
         config.encryptionSecret,
         WEBHOOK_SECRET_PURPOSE
       );
-      webhookEndpoint = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/jinxxy/${webhookTarget}`;
+      // Generate a fresh route token when saving directly (no pending webhook-config step).
+      const tokenBytes = new Uint8Array(32);
+      crypto.getRandomValues(tokenBytes);
+      webhookRouteToken = Array.from(tokenBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      webhookEndpoint = `${config.apiBaseUrl.replace(/\/$/, '')}/webhooks/jinxxy/${webhookRouteToken}`;
     }
     const convex = getConvexClientFromUrl(config.convexUrl);
     await convex.mutation(api.providerConnections.upsertProviderConnection, {
@@ -237,6 +300,7 @@ async function jinxxyStore(request: Request, ctx: ConnectContext): Promise<Respo
       webhookSecretRef,
       webhookEndpoint,
       webhookConfigured: !!(webhookSecretRef && webhookEndpoint),
+      webhookRouteToken,
       credentials: [
         { credentialKey: 'api_key', kind: 'api_key', encryptedValue: apiKeyEncrypted },
         ...(webhookSecretRef
@@ -263,7 +327,11 @@ async function jinxxyStore(request: Request, ctx: ConnectContext): Promise<Respo
       ],
     });
     if (pendingWebhookRaw) {
+      const pendingWebhook = JSON.parse(pendingWebhookRaw) as { routeToken?: string };
       await store.delete(`${JINXXY_PENDING_WEBHOOK_PREFIX}${webhookTarget}`);
+      if (pendingWebhook.routeToken) {
+        await store.delete(`${JINXXY_PENDING_WEBHOOK_TOKEN_PREFIX}${pendingWebhook.routeToken}`);
+      }
     }
     return Response.json({ success: true });
   } catch (err) {

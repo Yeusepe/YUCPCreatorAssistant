@@ -131,10 +131,8 @@ export async function resolveSetupSession(
     return null;
   }
 
-  // Renew TTL
-  data.expiresAt = now + SESSION_TTL_MS;
-  await store.set(`${SETUP_SESSION_PREFIX}${signedToken}`, JSON.stringify(data), SESSION_TTL_MS);
-
+  // Session is valid — do NOT renew the TTL. Setup sessions have a fixed expiry so
+  // an attacker who captures a token cannot keep it alive indefinitely by replaying it.
   return data;
 }
 

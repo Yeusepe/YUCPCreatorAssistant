@@ -158,14 +158,22 @@ export interface PayhipPaidOptions {
   apiKey: string;
   productId?: string;
   productKey?: string;
-  /** ISO timestamp; defaults to now */
-  createdAt?: string;
+  /**
+   * Unix timestamp in seconds (e.g. 1703693218).
+   * Real Payhip "paid" events include a `date` field; "refunded" events use
+   * `date_created` and `date_refunded`. Defaults to current time (seconds).
+   * Pass `null` to omit the date field entirely.
+   */
+  date?: number | null;
   refunded?: boolean;
 }
 
 /**
  * Returns a JSON string for a Payhip webhook payload with the `signature`
  * field already set to SHA256(apiKey).
+ *
+ * Matches the real Payhip webhook format documented at
+ * https://help.payhip.com/article/115-webhooks
  */
 export async function payhipPaidPayload(opts: PayhipPaidOptions): Promise<string> {
   const signature = await hashPayhip(opts.apiKey);
@@ -173,8 +181,16 @@ export async function payhipPaidPayload(opts: PayhipPaidOptions): Promise<string
     id: opts.transactionId,
     type: opts.refunded ? 'refund' : 'paid',
     signature,
-    created_at: opts.createdAt ?? new Date().toISOString(),
   };
+  // Real Payhip sends `date` (Unix seconds) for "paid", `date_created`/`date_refunded` for refunds.
+  if (opts.date !== null) {
+    if (opts.refunded) {
+      payload.date_created = opts.date ?? Math.floor(Date.now() / 1000);
+      payload.date_refunded = opts.date ?? Math.floor(Date.now() / 1000);
+    } else {
+      payload.date = opts.date ?? Math.floor(Date.now() / 1000);
+    }
+  }
   if (opts.email !== undefined) payload.email = opts.email;
   if (opts.productId !== undefined) payload.product_id = opts.productId;
   if (opts.productKey !== undefined) payload.product_key = opts.productKey;

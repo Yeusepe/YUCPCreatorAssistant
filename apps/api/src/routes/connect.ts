@@ -22,13 +22,14 @@ import {
   SETUP_SESSION_COOKIE,
 } from '../lib/browserSessions';
 import { getConvexApiSecret, getConvexClient, getConvexClientFromUrl } from '../lib/convex';
+import { rejectCrossSiteRequest } from '../lib/csrf';
 import { encrypt } from '../lib/encrypt';
 import { PUBLIC_API_KEY_PREFIX } from '../lib/publicApiKeys';
 import { createSetupSession, resolveSetupSession } from '../lib/setupSession';
 import { getStateStore } from '../lib/stateStore';
 import { PROVIDERS } from '../providers/index';
 import { PURPOSES as PAYHIP } from '../providers/payhip/index';
-import type { ConnectConfig, ConnectContext } from '../providers/types';
+import type { ConnectConfig, ConnectContext, DisconnectContext } from '../providers/types';
 
 // Re-exported for backwards compatibility — ConnectConfig is defined in providers/types.ts
 export type { ConnectConfig } from '../providers/types';
@@ -1103,6 +1104,15 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
    * Returns { authUserId }, creating tenant + guild link if missing.
    */
   async function ensureTenant(request: Request): Promise<Response> {
+    // This GET endpoint performs state mutations (createCreatorProfile, upsertGuildLink).
+    // Reject cross-site requests to prevent CSRF exploitation.
+    const allowedOrigins = new Set([
+      new URL(config.apiBaseUrl).origin,
+      new URL(config.frontendBaseUrl).origin,
+    ]);
+    const csrfBlock = rejectCrossSiteRequest(request, allowedOrigins);
+    if (csrfBlock) return csrfBlock;
+
     const session = await auth.getSession(request);
     if (!session) {
       const url = new URL(request.url);
@@ -1301,6 +1311,44 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
   }
 
   /**
+   * Best-effort provider cleanup before a connection is soft-deleted.
+   * Looks up the provider plugin and calls onDisconnect if implemented.
+   * Failures are logged but never block the local disconnect.
+   */
+  async function runProviderDisconnectHook(
+    convex: ReturnType<typeof getConvexClientFromUrl>,
+    connectionId: string,
+    authUserId: string
+  ): Promise<void> {
+    try {
+      const connInfo = await convex.query(
+        api.providerConnections.getConnectionForDisconnect,
+        {
+          apiSecret: config.convexApiSecret,
+          connectionId: connectionId as any,
+          authUserId,
+        }
+      );
+      if (!connInfo) return;
+
+      const plugin = PROVIDERS.get(connInfo.provider);
+      if (!plugin?.onDisconnect) return;
+
+      await plugin.onDisconnect({
+        credentials: connInfo.credentials,
+        encryptionSecret: config.encryptionSecret,
+        apiBaseUrl: config.apiBaseUrl,
+        remoteWebhookId: connInfo.remoteWebhookId ?? undefined,
+      });
+    } catch (err) {
+      logger.warn('Provider onDisconnect hook failed (continuing disconnect)', {
+        connectionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
    * DELETE /api/connections?id=CONNECTION_ID
    * Disconnects a connection.
    * Auth: setup session token OR Better Auth web session with authUserId query param.
@@ -1334,6 +1382,10 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
 
     try {
       const convex = getConvexClientFromUrl(config.convexUrl);
+
+      // Call provider onDisconnect hook (e.g. unregister external webhooks)
+      await runProviderDisconnectHook(convex, connectionId, authUserId);
+
       await convex.mutation(api.providerConnections.disconnectConnection, {
         apiSecret: config.convexApiSecret,
         connectionId,
@@ -2512,6 +2564,10 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     }
     try {
       const convex = getConvexClientFromUrl(config.convexUrl);
+
+      // Call provider onDisconnect hook (e.g. unregister external webhooks)
+      await runProviderDisconnectHook(convex, id, session.user.id);
+
       await convex.mutation(api.providerConnections.disconnectConnection, {
         apiSecret: config.convexApiSecret,
         connectionId: id as Id<'provider_connections'>,

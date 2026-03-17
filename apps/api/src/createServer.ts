@@ -218,6 +218,7 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
 
   const providerPlatformRoutes = createProviderPlatformRoutes(stubAuth, {
     apiBaseUrl: baseUrl,
+    frontendBaseUrl: baseUrl,
     convexUrl: config.convexUrl,
     convexApiSecret: config.convexApiSecret,
     encryptionSecret: config.encryptionSecret,

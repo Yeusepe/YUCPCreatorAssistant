@@ -28,8 +28,13 @@ export const backfill: BackfillPlugin = {
 
     while (true) {
       const res = await fetch(
-        `${GUMROAD_API_BASE}/sales?access_token=${encodeURIComponent(accessToken)}&product_id=${encodeURIComponent(productRef)}&page=${page}&per_page=${pageSize}`,
-        { headers: { 'Content-Type': 'application/json' } }
+        `${GUMROAD_API_BASE}/sales?product_id=${encodeURIComponent(productRef)}&page=${page}&per_page=${pageSize}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
       );
 
       if (res.status === 429) {

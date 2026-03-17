@@ -52,7 +52,12 @@ export const webhook: WebhookPlugin = {
         email?: string;
         type?: string;
         signature?: string;
-        created_at?: string;
+        /** Unix timestamp in seconds (present on "paid" events) */
+        date?: number;
+        /** Unix timestamp in seconds (present on "refunded" events) */
+        date_created?: number;
+        /** Unix timestamp in seconds (present on "refunded" events) */
+        date_refunded?: number;
       };
       try {
         payload = JSON.parse(rawBody) as typeof payload;
@@ -96,26 +101,35 @@ export const webhook: WebhookPlugin = {
         return new Response('Forbidden', { status: 403 });
       }
 
-      if (!payload.created_at) {
-        logger.warn('Payhip webhook: rejected (missing created_at timestamp)', {
-          routeId,
-          eventId,
-        });
-        return new Response('Forbidden', { status: 403 });
-      }
-
-      const ts = Date.parse(payload.created_at);
-      if (!Number.isFinite(ts) || Date.now() - ts > WEBHOOK_MAX_AGE_MS) {
-        logger.warn('Payhip webhook: rejected (event too old)', { routeId, eventId });
-        return new Response('Forbidden', { status: 403 });
+      // Replay protection: Payhip sends Unix-seconds timestamps.
+      // "paid" events use `date`; "refunded" events use `date_refunded`.
+      // If a recognized timestamp field is present, reject events older than WEBHOOK_MAX_AGE_MS.
+      const rawTs =
+        typeof payload.date === 'number'
+          ? payload.date
+          : typeof payload.date_refunded === 'number'
+            ? payload.date_refunded
+            : undefined;
+      if (rawTs !== undefined) {
+        const tsMs = rawTs * 1000;
+        if (!Number.isFinite(tsMs) || Date.now() - tsMs > WEBHOOK_MAX_AGE_MS) {
+          logger.warn('Payhip webhook: rejected (event too old)', { routeId, eventId });
+          return new Response('Forbidden', { status: 403 });
+        }
       }
 
       let authUserIds: string[];
       try {
+        const connOwner = await convex.query(
+          api.providerConnections.getConnectionByWebhookRouteToken,
+          { apiSecret, webhookRouteToken: routeId }
+        );
+        const resolvedAuthUserId = connOwner?.authUserId ?? routeId;
         authUserIds = await convex.query(api.webhookIngestion.resolveWebhookTenantIds, {
           apiSecret,
-          authUserId: routeId,
+          authUserId: resolvedAuthUserId,
         });
+        if (authUserIds.length === 0) authUserIds = [resolvedAuthUserId];
       } catch {
         authUserIds = [routeId];
       }
@@ -178,11 +192,11 @@ export const webhook: WebhookPlugin = {
         }
       }
 
-      // Mark webhook configured on the user-scoped connection
+      // Mark webhook configured on the connection using the opaque route token
       try {
         await convex.mutation(api.providerConnections.markPayhipWebhookConfigured, {
           apiSecret,
-          authUserId: routeId,
+          webhookRouteToken: routeId,
         });
       } catch {
         // Non-fatal

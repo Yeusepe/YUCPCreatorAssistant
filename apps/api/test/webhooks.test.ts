@@ -454,6 +454,43 @@ describe('Jinxxy webhook security', () => {
 });
 
 describe('Payhip webhook security', () => {
+  it('accepts valid signed payload with real date field (no created_at)', async () => {
+    const store = createWebhookStore();
+    const apiKey = 'payhip-api-key';
+    const apiKeyRef = await encrypt(apiKey, ENCRYPTION_SECRET, PAYHIP_CREDENTIAL_PURPOSE);
+    // Real Payhip webhooks use `date` (Unix seconds), NOT `created_at`.
+    // See https://help.payhip.com/article/115-webhooks
+    const body = await payhipPaidPayload({
+      transactionId: 'txn_real_format_001',
+      apiKey,
+    });
+
+    await withWebhookHarness(
+      {
+        query: {
+          [refs.getPayhipApiKeyByRouteId]: () => apiKeyRef,
+          [refs.resolveWebhookTenantIds]: () => ['creator_payhip'],
+        },
+        mutation: {
+          [refs.insertWebhookEvent]: (args) => store.insert(args),
+          [refs.markPayhipWebhookConfigured]: () => 'ok',
+        },
+      },
+      async ({ convex, server }) => {
+        const res = await server.fetch('/webhooks/payhip/creator-route', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body,
+        });
+
+        expect(res.status).toBe(200);
+        expect(store.size()).toBe(1);
+        expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(1);
+        expect(convex.getCalls(refs.markPayhipWebhookConfigured)).toHaveLength(1);
+      }
+    );
+  });
+
   it('rejects invalid signatures without event writes or webhook side effects', async () => {
     const store = createWebhookStore();
     const apiKeyRef = await encrypt(
@@ -481,7 +518,7 @@ describe('Payhip webhook security', () => {
             id: 'txn_bad_sig_001',
             type: 'paid',
             signature: 'deadbeef'.repeat(8),
-            created_at: new Date().toISOString(),
+            date: Math.floor(Date.now() / 1000),
           }),
         });
 
@@ -528,7 +565,7 @@ describe('Payhip webhook security', () => {
     const body = await payhipPaidPayload({
       transactionId: 'txn_stale_001',
       apiKey,
-      createdAt: minutesAgo(10),
+      date: Math.floor(Date.now() / 1000) - 10 * 60,
     });
 
     await withWebhookHarness(
