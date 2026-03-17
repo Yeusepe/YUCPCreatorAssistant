@@ -14,7 +14,7 @@
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { mutation, query } from './_generated/server';
+import { internalQuery, mutation, query } from './_generated/server';
 import { addCatalogProductImpl } from './lib/roleRules/catalog';
 import { addProductFromDiscordRoleImpl, buildDiscordRoleKey } from './lib/roleRules/discord';
 import { normalizeProductUrl, requireApiSecret, sha256Hex } from './lib/roleRules/queries';
@@ -784,6 +784,10 @@ export const addProductForProvider = mutation({
     providerProductRef: v.string(),
     provider: v.string(),
     displayName: v.optional(v.string()),
+    /** Canonical product URL. Caller derives this from PROVIDER_REGISTRY.catalogProductUrlTemplate. */
+    productUrl: v.optional(v.string()),
+    /** Whether this product supports auto-discovery. Caller reads from PROVIDER_REGISTRY. */
+    supportsAutoDiscovery: v.optional(v.boolean()),
   },
   returns: v.object({
     productId: v.string(),
@@ -814,15 +818,9 @@ export const addProductForProvider = mutation({
       return { productId: existing.productId, catalogProductId: existing._id };
     }
 
-    const urlBuilders: Record<string, (ref: string) => string> = {
-      gumroad: (ref) => `https://gumroad.com/l/${ref}`,
-      jinxxy: (ref) => `https://jinxxy.app/products/${ref}`,
-      lemonsqueezy: (ref) => `https://app.lemonsqueezy.com/products/${ref}`,
-    };
-    const buildUrl = urlBuilders[args.provider];
-    const url = buildUrl
-      ? buildUrl(args.providerProductRef)
-      : `https://example.invalid/${args.provider}/${args.providerProductRef}`;
+    const url =
+      args.productUrl ??
+      `https://example.invalid/${args.provider}/${args.providerProductRef}`;
     const normalized = url.toLowerCase().trim();
     const urlHash = await sha256Hex(normalized);
 
@@ -833,7 +831,7 @@ export const addProductForProvider = mutation({
       providerProductRef: args.providerProductRef,
       displayName: args.displayName,
       status: 'active',
-      supportsAutoDiscovery: args.provider === 'gumroad',
+      supportsAutoDiscovery: args.supportsAutoDiscovery ?? false,
       createdAt: now,
       updatedAt: now,
     });
@@ -1178,8 +1176,9 @@ export const addProductFromDiscordRole = mutation({
 
 /**
  * Resolve catalog product by URL (for cross-server verification).
+ * Internal only — exposes authUserId to unauthenticated callers if public.
  */
-export const resolveProductByUrl = query({
+export const resolveProductByUrl = internalQuery({
   args: { url: v.string() },
   returns: v.union(
     v.null(),

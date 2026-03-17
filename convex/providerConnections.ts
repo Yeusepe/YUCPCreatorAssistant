@@ -296,6 +296,70 @@ export const getGumroadWebhookSecretByRouteId = query({
 });
 
 /**
+ * Generic: look up a credential by webhookRouteToken + provider + credentialKey.
+ * Replaces per-provider queries (getJinxxyWebhookSecretByRouteId, getPayhipApiKeyByRouteId, etc.)
+ * Webhook handlers should use this instead of provider-specific Convex queries.
+ */
+export const getWebhookCredentialByRouteId = query({
+  args: {
+    apiSecret: v.string(),
+    routeId: v.string(),
+    provider: v.string(),
+    credentialKey: v.string(),
+  },
+  returns: v.union(v.string(), v.null()),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const conn = await ctx.db
+      .query('provider_connections')
+      .withIndex('by_webhook_route_token', (q) => q.eq('webhookRouteToken', args.routeId))
+      .filter((q) => q.eq(q.field('provider'), args.provider))
+      .first();
+    if (!conn || conn.status === 'disconnected') return null;
+    const value = await getCredentialValue(ctx, conn._id, args.credentialKey);
+    return value ?? conn.webhookSecretRef ?? null;
+  },
+});
+
+/**
+ * Generic: mark a connection's webhook as configured.
+ * Replaces markPayhipWebhookConfigured — works for any provider.
+ */
+export const markWebhookConfigured = mutation({
+  args: {
+    apiSecret: v.string(),
+    provider: v.string(),
+    webhookRouteToken: v.optional(v.string()),
+    authUserId: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    let conn = null;
+
+    if (args.webhookRouteToken) {
+      conn = await ctx.db
+        .query('provider_connections')
+        .withIndex('by_webhook_route_token', (q) => q.eq('webhookRouteToken', args.webhookRouteToken!))
+        .filter((q) => q.eq(q.field('provider'), args.provider))
+        .first();
+    } else if (args.authUserId) {
+      conn = await ctx.db
+        .query('provider_connections')
+        .withIndex('by_auth_user_provider', (q) =>
+          q.eq('authUserId', args.authUserId!).eq('provider', args.provider)
+        )
+        .first();
+    }
+
+    if (conn && !conn.webhookConfigured) {
+      await ctx.db.patch(conn._id, { webhookConfigured: true, updatedAt: Date.now() });
+    }
+    return null;
+  },
+});
+
+/**
  * Get connection status for a tenant. Returns a dynamic record keyed by
  * provider name so new providers are automatically included without code changes.
  */
@@ -1251,17 +1315,7 @@ export const listConnectionsForUser = query({
     return allConnections.map((c) => ({
       id: c._id,
       provider: c.provider,
-      label:
-        c.label ??
-        (c.provider === 'gumroad'
-          ? 'Gumroad Store'
-          : c.provider === 'jinxxy'
-            ? 'Jinxxy Store'
-            : c.provider === 'lemonsqueezy'
-              ? 'Lemon Squeezy Store'
-              : c.provider === 'payhip'
-                ? 'Payhip Store'
-                : `${c.provider} Store`),
+      label: c.label ?? `${c.provider} Connection`,
       connectionType: c.connectionType ?? 'setup',
       status:
         c.status ??

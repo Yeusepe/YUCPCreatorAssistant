@@ -218,6 +218,10 @@ export const PROVIDER_REGISTRY = [
     supportsTestMode: false,
     supportsAutoDiscovery: true,
     catalogProductUrlTemplate: 'https://gumroad.com/l/{ref}',
+    licenseKey: {
+      inputLabel: 'License Key (XXXX-XXXX-XXXX-XXXX)',
+      placeholder: 'XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX',
+    },
   },
   {
     providerKey: 'jinxxy',
@@ -247,6 +251,10 @@ export const PROVIDER_REGISTRY = [
     supportsLicenseVerify: true,
     supportsTestMode: false,
     catalogProductUrlTemplate: 'https://jinxxy.app/products/{ref}',
+    licenseKey: {
+      inputLabel: 'License Key',
+      placeholder: 'Enter your license key',
+    },
     supportsCollab: true,
     collabCredential: {
       label: 'Jinxxy API Key',

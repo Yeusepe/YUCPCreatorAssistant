@@ -32,11 +32,10 @@ const LEMONSQUEEZY_WEBHOOK_SECRET_PURPOSE = 'lemonsqueezy-webhook-secret' as con
 const refs = {
   getConnectionByWebhookRouteToken: 'providerConnections:getConnectionByWebhookRouteToken',
   getConnectionForBackfill: 'providerConnections:getConnectionForBackfill',
-  getJinxxyWebhookSecretByRouteId: 'providerConnections:getJinxxyWebhookSecretByRouteId',
-  getPayhipApiKeyByRouteId: 'providerConnections:getPayhipApiKeyByRouteId',
+  getWebhookCredentialByRouteId: 'providerConnections:getWebhookCredentialByRouteId',
   getProviderConnectionAdmin: 'providerPlatform:getProviderConnectionAdmin',
   insertWebhookEvent: 'webhookIngestion:insertWebhookEvent',
-  markPayhipWebhookConfigured: 'providerConnections:markPayhipWebhookConfigured',
+  markWebhookConfigured: 'providerConnections:markWebhookConfigured',
   resolveWebhookTenantIds: 'webhookIngestion:resolveWebhookTenantIds',
   updateProviderConnectionState: 'providerPlatform:updateProviderConnectionState',
 } as const;
@@ -242,7 +241,7 @@ describe('Jinxxy webhook security', () => {
     await withWebhookHarness(
       {
         query: {
-          [refs.getJinxxyWebhookSecretByRouteId]: () => secretRef,
+          [refs.getWebhookCredentialByRouteId]: () => secretRef,
           [refs.resolveWebhookTenantIds]: () => ['creator_jinxxy'],
         },
         mutation: {
@@ -278,7 +277,7 @@ describe('Jinxxy webhook security', () => {
     await withWebhookHarness(
       {
         query: {
-          [refs.getJinxxyWebhookSecretByRouteId]: () => secretRef,
+          [refs.getWebhookCredentialByRouteId]: () => secretRef,
           [refs.resolveWebhookTenantIds]: () => ['creator_jinxxy'],
         },
         mutation: {
@@ -315,7 +314,7 @@ describe('Jinxxy webhook security', () => {
     await withWebhookHarness(
       {
         query: {
-          [refs.getJinxxyWebhookSecretByRouteId]: () => secretRef,
+          [refs.getWebhookCredentialByRouteId]: () => secretRef,
           [refs.resolveWebhookTenantIds]: () => ['creator_jinxxy'],
         },
         mutation: {
@@ -349,7 +348,7 @@ describe('Jinxxy webhook security', () => {
     await withWebhookHarness(
       {
         query: {
-          [refs.getJinxxyWebhookSecretByRouteId]: () => secretRef,
+          [refs.getWebhookCredentialByRouteId]: () => secretRef,
           [refs.resolveWebhookTenantIds]: () => ['creator_jinxxy'],
         },
         mutation: {
@@ -394,7 +393,7 @@ describe('Jinxxy webhook security', () => {
     await withWebhookHarness(
       {
         query: {
-          [refs.getJinxxyWebhookSecretByRouteId]: () => secretRef,
+          [refs.getWebhookCredentialByRouteId]: () => secretRef,
           [refs.resolveWebhookTenantIds]: () => ['creator_jinxxy'],
         },
         mutation: {
@@ -427,7 +426,7 @@ describe('Jinxxy webhook security', () => {
     await withWebhookHarness(
       {
         query: {
-          [refs.getJinxxyWebhookSecretByRouteId]: async () => {
+          [refs.getWebhookCredentialByRouteId]: async () => {
             throw new Error('should not be called');
           },
         },
@@ -468,12 +467,12 @@ describe('Payhip webhook security', () => {
     await withWebhookHarness(
       {
         query: {
-          [refs.getPayhipApiKeyByRouteId]: () => apiKeyRef,
+          [refs.getWebhookCredentialByRouteId]: () => apiKeyRef,
           [refs.resolveWebhookTenantIds]: () => ['creator_payhip'],
         },
         mutation: {
           [refs.insertWebhookEvent]: (args) => store.insert(args),
-          [refs.markPayhipWebhookConfigured]: () => 'ok',
+          [refs.markWebhookConfigured]: () => 'ok',
         },
       },
       async ({ convex, server }) => {
@@ -486,7 +485,7 @@ describe('Payhip webhook security', () => {
         expect(res.status).toBe(200);
         expect(store.size()).toBe(1);
         expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(1);
-        expect(convex.getCalls(refs.markPayhipWebhookConfigured)).toHaveLength(1);
+        expect(convex.getCalls(refs.markWebhookConfigured)).toHaveLength(1);
       }
     );
   });
@@ -502,12 +501,12 @@ describe('Payhip webhook security', () => {
     await withWebhookHarness(
       {
         query: {
-          [refs.getPayhipApiKeyByRouteId]: () => apiKeyRef,
+          [refs.getWebhookCredentialByRouteId]: () => apiKeyRef,
           [refs.resolveWebhookTenantIds]: () => ['creator_payhip'],
         },
         mutation: {
           [refs.insertWebhookEvent]: (args) => store.insert(args),
-          [refs.markPayhipWebhookConfigured]: () => 'ok',
+          [refs.markWebhookConfigured]: () => 'ok',
         },
       },
       async ({ convex, server }) => {
@@ -525,7 +524,7 @@ describe('Payhip webhook security', () => {
         expect(res.status).toBe(403);
         expect(store.size()).toBe(0);
         expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(0);
-        expect(convex.getCalls(refs.markPayhipWebhookConfigured)).toHaveLength(0);
+        expect(convex.getCalls(refs.markWebhookConfigured)).toHaveLength(0);
       }
     );
   });
@@ -536,7 +535,7 @@ describe('Payhip webhook security', () => {
     await withWebhookHarness(
       {
         query: {
-          [refs.getPayhipApiKeyByRouteId]: async () => {
+          [refs.getWebhookCredentialByRouteId]: async () => {
             throw new Error('should not be called');
           },
         },
@@ -571,12 +570,12 @@ describe('Payhip webhook security', () => {
     await withWebhookHarness(
       {
         query: {
-          [refs.getPayhipApiKeyByRouteId]: () => apiKeyRef,
+          [refs.getWebhookCredentialByRouteId]: () => apiKeyRef,
           [refs.resolveWebhookTenantIds]: () => ['creator_payhip'],
         },
         mutation: {
           [refs.insertWebhookEvent]: (args) => store.insert(args),
-          [refs.markPayhipWebhookConfigured]: () => 'ok',
+          [refs.markWebhookConfigured]: () => 'ok',
         },
       },
       async ({ convex, server }) => {
@@ -589,7 +588,7 @@ describe('Payhip webhook security', () => {
         expect(res.status).toBe(403);
         expect(store.size()).toBe(0);
         expect(convex.getCalls(refs.insertWebhookEvent)).toHaveLength(0);
-        expect(convex.getCalls(refs.markPayhipWebhookConfigured)).toHaveLength(0);
+        expect(convex.getCalls(refs.markWebhookConfigured)).toHaveLength(0);
       }
     );
   });

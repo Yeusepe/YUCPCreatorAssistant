@@ -48,11 +48,11 @@ async function getJinxxyWebhookSecretByRouteId(
   apiSecret: string,
   routeId: string
 ): Promise<string | null> {
-  // Allow query failures to propagate so the caller can return 5xx instead of
-  // silently treating an infra error as "no secret configured".
-  return await convex.query(api.providerConnections.getJinxxyWebhookSecretByRouteId, {
+  return await convex.query(api.providerConnections.getWebhookCredentialByRouteId, {
     apiSecret,
     routeId,
+    provider: 'jinxxy',
+    credentialKey: 'webhook_secret',
   });
 }
 

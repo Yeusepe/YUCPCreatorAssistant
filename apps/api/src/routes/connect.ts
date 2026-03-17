@@ -1257,7 +1257,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
 
       if (!authUserId) {
         // User-scoped status: check all connections owned by this user
-        const status = await convex.query(api.providerConnections.getConnectionStatusForUser, {
+        const status = await convex.query(api.providerConnections.getConnectionStatus, {
           apiSecret: config.convexApiSecret,
           authUserId: session.user.id,
         });

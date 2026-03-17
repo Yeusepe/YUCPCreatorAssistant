@@ -67,9 +67,11 @@ export const webhook: WebhookPlugin = {
       }
 
       // Payhip signature = SHA256(apiKey) — static, not HMAC of the body.
-      const encryptedKey = await convex.query(api.providerConnections.getPayhipApiKeyByRouteId, {
+      const encryptedKey = await convex.query(api.providerConnections.getWebhookCredentialByRouteId, {
         apiSecret,
         routeId,
+        provider: 'payhip',
+        credentialKey: 'api_key',
       });
       const apiKey = encryptedKey
         ? await decrypt(encryptedKey, encryptionSecret, CREDENTIAL_PURPOSE)
@@ -194,8 +196,9 @@ export const webhook: WebhookPlugin = {
 
       // Mark webhook configured on the connection using the opaque route token
       try {
-        await convex.mutation(api.providerConnections.markPayhipWebhookConfigured, {
+        await convex.mutation(api.providerConnections.markWebhookConfigured, {
           apiSecret,
+          provider: 'payhip',
           webhookRouteToken: routeId,
         });
       } catch {
