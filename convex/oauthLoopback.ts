@@ -21,23 +21,21 @@ export const storeSession = internalMutation({
     originalRedirectUri: v.string(),
   },
   handler: async (ctx, args) => {
-    // Upsert: if the state was already stored (retry), overwrite
+    // c69: Insert-only — reject duplicate state values. A state is a one-time PKCE
+    // nonce; allowing an overwrite would let an attacker swap the originalRedirectUri
+    // for an existing in-flight state (open-redirect in the OAuth callback).
     const existing = await ctx.db
       .query('oauth_loopback_sessions')
       .withIndex('by_oauth_state', (q) => q.eq('oauthState', args.oauthState))
       .first();
     if (existing) {
-      await ctx.db.patch(existing._id, {
-        originalRedirectUri: args.originalRedirectUri,
-        createdAt: Date.now(),
-      });
-    } else {
-      await ctx.db.insert('oauth_loopback_sessions', {
-        oauthState: args.oauthState,
-        originalRedirectUri: args.originalRedirectUri,
-        createdAt: Date.now(),
-      });
+      throw new Error(`Duplicate OAuth state: ${args.oauthState}`);
     }
+    await ctx.db.insert('oauth_loopback_sessions', {
+      oauthState: args.oauthState,
+      originalRedirectUri: args.originalRedirectUri,
+      createdAt: Date.now(),
+    });
   },
 });
 
