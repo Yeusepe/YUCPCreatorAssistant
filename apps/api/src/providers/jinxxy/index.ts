@@ -141,6 +141,24 @@ const jinxxyProvider: ProviderPlugin = {
   webhook,
   connect,
   verification,
+  displayMeta: {
+    label: 'Jinxxy™',
+    icon: 'Jinxxy.png',
+    color: '#9146FF',
+    shadowColor: '#9146FF',
+    textColor: '#ffffff',
+    connectedColor: '#7b3be6',
+    confettiColors: ['#9146FF', '#7b3be6', '#b980ff', '#ffffff'],
+    description: 'Marketplace',
+  },
+  async collabValidate(credential: string): Promise<void> {
+    const client = new JinxxyApiClient({
+      apiKey: credential,
+      apiBaseUrl: process.env.JINXXY_API_BASE_URL,
+    });
+    await client.getProducts({ per_page: 1 });
+  },
+  collabCredentialPurpose: PURPOSES.credential,
 };
 
 export default jinxxyProvider;

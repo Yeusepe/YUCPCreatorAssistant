@@ -489,6 +489,7 @@ export const getConnectionForBackfill = query({
       jinxxyApiKeyEncrypted: v.optional(v.string()),
       lemonApiTokenEncrypted: v.optional(v.string()),
       webhookSecretEncrypted: v.optional(v.string()),
+      vrchatSessionEncrypted: v.optional(v.string()),
     }),
     v.null()
   ),
@@ -506,6 +507,7 @@ export const getConnectionForBackfill = query({
     const apiToken = await getCredentialValue(ctx, conn._id, 'api_token');
     const accessToken = await getCredentialValue(ctx, conn._id, 'oauth_access_token');
     const webhookSecret = await getCredentialValue(ctx, conn._id, 'webhook_secret');
+    const vrchatSession = await getCredentialValue(ctx, conn._id, 'vrchat_session');
 
     return {
       gumroadAccessTokenEncrypted: accessToken ?? conn.gumroadAccessTokenEncrypted,
@@ -516,6 +518,7 @@ export const getConnectionForBackfill = query({
         conn.remoteWebhookSecretRef ??
         conn.webhookSecretRef ??
         conn.gumroadWebhookSecretRef,
+      vrchatSessionEncrypted: vrchatSession ?? undefined,
     };
   },
 });
@@ -1047,6 +1050,105 @@ export const upsertJinxxyConnection = mutation({
       requiredCredentialKeys: ['webhook_secret'],
     });
     return connectionId;
+  },
+});
+
+/**
+ * Upsert a VRChat creator connection.
+ *
+ * Stores the encrypted VRChat session (authToken + twoFactorAuthToken) in the
+ * provider_credentials table under credentialKey='vrchat_session', kind='api_token'.
+ * The plaintext value is NEVER stored; the caller must encrypt it first using
+ * HKDF purpose 'vrchat-creator-session' before passing it here.
+ */
+export const upsertVrchatConnection = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    vrchatSessionEncrypted: v.string(),
+  },
+  returns: v.id('provider_connections'),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query('provider_connections')
+      .withIndex('by_auth_user_provider', (q) =>
+        q.eq('authUserId', args.authUserId).eq('provider', 'vrchat')
+      )
+      .first();
+
+    let connectionId: Id<'provider_connections'>;
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        providerKey: 'vrchat',
+        status: 'active',
+        authMode: 'session',
+        updatedAt: now,
+      });
+      connectionId = existing._id;
+    } else {
+      connectionId = await ctx.db.insert('provider_connections', {
+        authUserId: args.authUserId,
+        provider: 'vrchat',
+        providerKey: 'vrchat',
+        label: 'VRChat Store',
+        connectionType: 'setup',
+        status: 'active',
+        authMode: 'session',
+        webhookConfigured: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    await upsertCredential(ctx, {
+      providerConnectionId: connectionId,
+      providerKey: 'vrchat',
+      credentialKey: 'vrchat_session',
+      kind: 'api_token',
+      encryptedValue: args.vrchatSessionEncrypted,
+    });
+
+    await upsertCapability(ctx, {
+      providerConnectionId: connectionId,
+      providerKey: 'vrchat',
+      capabilityKey: 'catalog_sync',
+      status: 'configured',
+      requiredCredentialKeys: ['vrchat_session'],
+    });
+
+    return connectionId;
+  },
+});
+
+/**
+ * Mark a provider connection as degraded — the credential exists but is no
+ * longer functional (e.g. VRChat session expired, API key revoked).
+ * The creator is notified to reconnect via the dashboard.
+ */
+export const markConnectionDegraded = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    provider: ProviderV,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+
+    const conn = await ctx.db
+      .query('provider_connections')
+      .withIndex('by_auth_user_provider', (q) =>
+        q.eq('authUserId', args.authUserId).eq('provider', args.provider)
+      )
+      .first();
+
+    if (!conn) return null;
+    await ctx.db.patch(conn._id, { status: 'degraded', updatedAt: Date.now() });
+    return null;
   },
 });
 

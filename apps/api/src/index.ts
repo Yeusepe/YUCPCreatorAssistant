@@ -363,6 +363,8 @@ function initializeAuth(webhookBaseUrl?: string) {
       apiBaseUrl: publicBaseUrl,
       convexApiSecret: env.CONVEX_API_SECRET ?? '',
       convexSiteUrl,
+      convexUrl: env.CONVEX_URL ?? env.CONVEX_DEPLOYMENT ?? '',
+      encryptionSecret: env.ENCRYPTION_SECRET ?? env.BETTER_AUTH_SECRET ?? '',
       internalRpcSharedSecret: env.INTERNAL_RPC_SHARED_SECRET ?? '',
       logLevel: env.LOG_LEVEL,
     },

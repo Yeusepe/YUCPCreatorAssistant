@@ -777,6 +777,8 @@ export const addProductFromLemonSqueezy = mutation({
 /**
  * Generic: get or create a product catalog entry for any catalog-sync provider.
  * Prefer this over provider-specific mutations when the provider key is dynamic.
+ * @deprecated Use `addCatalogProduct` instead — it accepts a pre-computed canonicalUrl
+ * from the caller (derived from PROVIDER_REGISTRY.catalogProductUrlTemplate).
  */
 export const addProductForProvider = mutation({
   args: {
@@ -859,6 +861,106 @@ export const addProductForProvider = mutation({
       provider: args.provider,
       providerProductRef: args.providerProductRef,
     });
+
+    return { productId: args.productId, catalogProductId: catalogId };
+  },
+});
+
+/**
+ * Generic: upsert a product catalog entry for any catalog-sync provider.
+ *
+ * The caller (bot/product.ts) is responsible for computing `canonicalUrl` from
+ * PROVIDER_REGISTRY.catalogProductUrlTemplate and `supportsAutoDiscovery` from
+ * PROVIDER_REGISTRY.supportsAutoDiscovery. This keeps the Convex mutation free
+ * from baked provider metadata.
+ *
+ * Replaces the per-provider mutations (addProductFromGumroad, addProductFromJinxxy,
+ * addProductFromLemonSqueezy, addProductFromVrchatCatalog) for the catalog-sync flow.
+ * The URL-based flows (addProductFromGumroadUrl, addProductFromVrchat) remain separate
+ * because they have distinct logic (slug parsing, avatar ID extraction).
+ */
+export const addCatalogProduct = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    /** The provider-internal product ID (used as productId in role_rules). */
+    productId: v.string(),
+    /** The provider-internal product reference (used as providerProductRef in product_catalog). */
+    providerProductRef: v.string(),
+    provider: v.string(),
+    /** Canonical URL for the product page, pre-computed by the caller from PROVIDER_REGISTRY. */
+    canonicalUrl: v.string(),
+    /** Whether this provider supports auto-discovery via backfill. Pre-computed by caller. */
+    supportsAutoDiscovery: v.boolean(),
+    displayName: v.optional(v.string()),
+  },
+  returns: v.object({
+    productId: v.string(),
+    catalogProductId: v.id('product_catalog'),
+  }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query('product_catalog')
+      .withIndex('by_provider_ref', (q) =>
+        q.eq('provider', args.provider).eq('providerProductRef', args.providerProductRef)
+      )
+      .filter((q) => q.eq(q.field('authUserId'), args.authUserId))
+      .first();
+
+    if (existing) {
+      if (args.displayName && existing.displayName !== args.displayName) {
+        await ctx.db.patch(existing._id, { displayName: args.displayName, updatedAt: now });
+      }
+      if (args.supportsAutoDiscovery) {
+        await ctx.scheduler.runAfter(0, internal.backgroundSync.backfillProductPurchases, {
+          authUserId: args.authUserId,
+          productId: args.productId,
+          provider: args.provider,
+          providerProductRef: args.providerProductRef,
+        });
+      }
+      return { productId: existing.productId, catalogProductId: existing._id };
+    }
+
+    const normalized = args.canonicalUrl.toLowerCase().trim();
+    const urlHash = await sha256Hex(normalized);
+
+    const catalogId = await ctx.db.insert('product_catalog', {
+      authUserId: args.authUserId,
+      productId: args.productId,
+      provider: args.provider,
+      providerProductRef: args.providerProductRef,
+      displayName: args.displayName,
+      status: 'active',
+      supportsAutoDiscovery: args.supportsAutoDiscovery,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert('catalog_product_links', {
+      catalogProductId: catalogId,
+      provider: args.provider,
+      originalUrl: args.canonicalUrl,
+      normalizedUrl: normalized,
+      urlHash,
+      linkKind: 'direct_product',
+      status: 'active',
+      submittedByAuthUserId: args.authUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (args.supportsAutoDiscovery) {
+      await ctx.scheduler.runAfter(0, internal.backgroundSync.backfillProductPurchases, {
+        authUserId: args.authUserId,
+        productId: args.productId,
+        provider: args.provider,
+        providerProductRef: args.providerProductRef,
+      });
+    }
 
     return { productId: args.productId, catalogProductId: catalogId };
   },
@@ -949,7 +1051,88 @@ export const addProductFromVrchat = mutation({
   },
 });
 
-function buildDiscordRoleProductId(
+/**
+ * Get or create a product catalog entry for a VRChat store listing (catalog flow).
+ *
+ * The `productId` and `providerProductRef` are VRChat listing IDs (`prod_xxx`).
+ * This is distinct from `addProductFromVrchat` which handles avatar IDs (`avtr_xxx`)
+ * entered manually by URL.
+ *
+ * Buyer verification works because `getOwnershipFromSession` collects both `avatar.id`
+ * (avtr_xxx) and `avatar.productId` (prod_xxx) from `getLicensedAvatars`.
+ * Source: packages/providers/src/vrchat/client.ts — getOwnershipFromSession
+ */
+export const addProductFromVrchatCatalog = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    productId: v.string(),
+    providerProductRef: v.string(),
+    displayName: v.optional(v.string()),
+  },
+  returns: v.object({
+    productId: v.string(),
+    catalogProductId: v.id('product_catalog'),
+  }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+
+    if (!args.providerProductRef.startsWith('prod_')) {
+      throw new Error(
+        `Invalid VRChat catalog product ID. Expected prod_xxx, got: ${args.providerProductRef}`
+      );
+    }
+
+    const now = Date.now();
+    const existing = await ctx.db
+      .query('product_catalog')
+      .withIndex('by_provider_ref', (q) =>
+        q.eq('provider', 'vrchat').eq('providerProductRef', args.providerProductRef)
+      )
+      .first();
+
+    if (existing) {
+      if (args.displayName && existing.displayName !== args.displayName) {
+        await ctx.db.patch(existing._id, { displayName: args.displayName, updatedAt: now });
+      }
+      return { productId: existing.productId, catalogProductId: existing._id };
+    }
+
+    const catalogId = await ctx.db.insert('product_catalog', {
+      authUserId: args.authUserId,
+      productId: args.productId,
+      provider: 'vrchat',
+      providerProductRef: args.providerProductRef,
+      displayName: args.displayName,
+      status: 'active',
+      supportsAutoDiscovery: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Use the VRChat store listing URL as the canonical link
+    const url = `https://vrchat.com/store/listing/${args.providerProductRef}`;
+    const normalized = url.toLowerCase().trim();
+    const urlHash = await sha256Hex(normalized);
+
+    await ctx.db.insert('catalog_product_links', {
+      catalogProductId: catalogId,
+      provider: 'vrchat',
+      originalUrl: url,
+      normalizedUrl: normalized,
+      urlHash,
+      linkKind: 'direct_product',
+      status: 'active',
+      submittedByAuthUserId: args.authUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return { productId: args.productId, catalogProductId: catalogId };
+  },
+});
+
+
   sourceGuildId: string,
   requiredRoleIds: string[],
   requiredRoleMatchMode?: 'any' | 'all'

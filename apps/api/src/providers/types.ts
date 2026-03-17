@@ -105,6 +105,27 @@ export interface ProviderPlugin {
   readonly verification?: LicenseVerificationPlugin;
   readonly supportsCollab?: boolean;
   readonly productCredentialPurpose?: string;
+  /** Display metadata for dynamic UI rendering */
+  readonly displayMeta?: ConnectDisplayMeta;
+  /**
+   * Resolve a human-readable display name for a product given a URL or ID.
+   * credential is pre-decrypted (null if not connected).
+   */
+  resolveProductName?(
+    credential: string | null,
+    urlOrId: string,
+    ctx: ProviderContext
+  ): Promise<{ name: string; error?: string }>;
+  /**
+   * Validate a collaborator API credential (throw on failure).
+   * Only providers with supportsCollab=true need to implement this.
+   */
+  collabValidate?(credential: string): Promise<void>;
+  /**
+   * HKDF purpose string for encrypting collaborator credentials.
+   * Must be set when collabValidate is defined.
+   */
+  readonly collabCredentialPurpose?: string;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -196,4 +217,35 @@ export function generateSecureRandom(length: number): string {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Thrown by a ProviderPlugin when the stored credential is rejected by the external API (HTTP 401).
+ * The API router catches this, marks the connection as 'degraded' in Convex, and returns
+ * error: "session_expired" to the caller so the bot can surface a reconnect prompt.
+ */
+export class CredentialExpiredError extends Error {
+  constructor(public readonly provider: string) {
+    super(`Credential expired for provider: ${provider}`);
+    this.name = 'CredentialExpiredError';
+  }
+}
+
+export interface ConnectDisplayMeta {
+  /** Human-readable provider name for UI */
+  readonly label: string;
+  /** Image filename under /Icons/ */
+  readonly icon: string;
+  /** CSS background color for the connect button (not connected state) */
+  readonly color: string;
+  /** CSS box-shadow color */
+  readonly shadowColor: string;
+  /** CSS text color — '#000000' for dark buttons, '#ffffff' for light */
+  readonly textColor: string;
+  /** CSS background color when connected */
+  readonly connectedColor: string;
+  /** Colors for confetti animation */
+  readonly confettiColors: readonly string[];
+  /** Short description shown below label */
+  readonly description: string;
 }

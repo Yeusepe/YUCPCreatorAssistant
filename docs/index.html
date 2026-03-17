@@ -37,6 +37,18 @@
             <feGaussianBlur in="noise" stdDeviation="2" result="blurred" />
             <feDisplacementMap in="SourceGraphic" in2="blurred" scale="45" xChannelSelector="R" yChannelSelector="G" />
         </filter>
+        <!-- Liquid glass — gentle, for sections-glass panel & pill-nav -->
+        <filter id="liq-sm" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+            <feTurbulence type="fractalNoise" baseFrequency="0.018 0.024" numOctaves="3" seed="7" result="noise"/>
+            <feGaussianBlur in="noise" stdDeviation="2.5" result="smooth"/>
+            <feDisplacementMap in="SourceGraphic" in2="smooth" scale="6" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+        <!-- Liquid glass — medium, for discord mockup cards -->
+        <filter id="liq-md" x="-12%" y="-12%" width="124%" height="124%" color-interpolation-filters="sRGB">
+            <feTurbulence type="fractalNoise" baseFrequency="0.022 0.030" numOctaves="3" seed="3" result="noise"/>
+            <feGaussianBlur in="noise" stdDeviation="1.8" result="smooth"/>
+            <feDisplacementMap in="SourceGraphic" in2="smooth" scale="12" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
     </svg>
 
     <style>        
@@ -70,7 +82,7 @@
             height: 650px;
             border-radius: 50%;
             filter: blur(110px);
-            opacity: calc(0.5 * var(--blob-intensity, 1));
+            opacity: calc(0.72 * var(--blob-intensity, 1));
             will-change: transform;
             transition: opacity 0.2s ease;
         }
@@ -82,7 +94,7 @@
         .blob:nth-child(5) { background: #70E2FF; }
 
         .blob.latched {
-            opacity: calc(0.7 * var(--blob-intensity, 1));
+            opacity: calc(0.92 * var(--blob-intensity, 1));
             filter: blur(110px);
         }
 
@@ -218,28 +230,24 @@
         /* ── Reveal on scroll ────────────────────────────────────────────────── */
         .reveal {
             opacity: 0;
-            transform: translateY(18px);
-            filter: blur(8px);
-            transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), filter 0.5s ease-out;
+            transform: translateY(30px) scale(0.975);
+            filter: blur(10px);
+            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                        filter 0.6s ease-out;
         }
 
         .reveal.visible {
             opacity: 1;
-            transform: translateY(0);
+            transform: translateY(0) scale(1);
             filter: blur(0);
         }
 
-        .reveal-delay-1 {
-            transition-delay: 0.1s;
-        }
-
-        .reveal-delay-2 {
-            transition-delay: 0.2s;
-        }
-
-        .reveal-delay-3 {
-            transition-delay: 0.35s;
-        }
+        .reveal-delay-1 { transition-delay: 0.10s; }
+        .reveal-delay-2 { transition-delay: 0.20s; }
+        .reveal-delay-3 { transition-delay: 0.35s; }
+        .reveal-delay-4 { transition-delay: 0.50s; }
+        .reveal-delay-5 { transition-delay: 0.65s; }
 
         /* ── Typography effects ──────────────────────────────────────────────── */
         ::selection {
@@ -364,15 +372,15 @@
             padding: 4px 6px;
             min-height: 36px;
             border-radius: 999px;
-            background: rgba(255, 255, 255, 0.07);
-            backdrop-filter: blur(48px) saturate(180%);
-            -webkit-backdrop-filter: blur(48px) saturate(180%);
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.10);
+            backdrop-filter: blur(48px) saturate(200%) brightness(1.05);
+            -webkit-backdrop-filter: blur(48px) saturate(200%) brightness(1.05);
+            border: 1px solid rgba(255, 255, 255, 0.22);
             box-shadow:
-                0 1px 0 rgba(255, 255, 255, 0.22) inset,
-                0 -1px 0 rgba(0, 0, 0, 0.15) inset,
-                0 8px 40px rgba(0, 0, 0, 0.45),
-                0 2px 8px rgba(0, 0, 0, 0.25);
+                0 1px 0 rgba(255, 255, 255, 0.30) inset,
+                0 -1px 0 rgba(0, 0, 0, 0.12) inset,
+                0 8px 40px rgba(0, 0, 0, 0.40),
+                0 2px 8px rgba(0, 0, 0, 0.20);
         }
         @media (min-width: 640px) {
             .pill-nav { padding: 5px 8px; min-height: 40px; }
@@ -547,14 +555,15 @@
 
         /* ── Discord® Mockup ──────────────────────────────────────────────────── */
         .discord-mockup {
-            background: rgba(6, 8, 20, 0.75);
-            backdrop-filter: blur(22px) saturate(140%);
-            -webkit-backdrop-filter: blur(22px) saturate(140%);
+            background: rgba(4, 6, 16, 0.52);
+            backdrop-filter: blur(20px) saturate(170%) contrast(1.06);
+            -webkit-backdrop-filter: blur(20px) saturate(170%) contrast(1.06);
             border-radius: 16px;
             box-shadow:
-                0 40px 80px rgba(0, 0, 0, 0.65),
-                0 0 0 1px rgba(255, 255, 255, 0.07),
-                inset 0 1px 0 rgba(255, 255, 255, 0.09);
+                0 40px 90px rgba(0, 0, 0, 0.55),
+                0 0 0 1px rgba(255, 255, 255, 0.13),
+                inset 0 1px 0 rgba(255, 255, 255, 0.16),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.25);
             overflow: hidden;
             border: none;
             position: relative;
@@ -565,7 +574,8 @@
             content: '';
             position: absolute;
             inset: 0;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, transparent 55%);
+            filter: url(#liq-md);
             pointer-events: none;
             z-index: 1;
         }
@@ -575,10 +585,10 @@
             z-index: 2;
         }
 
-        /* Feature section mockup inner cards — glass instead of solid */
+        /* Feature section mockup inner cards */
         .discord-mockup .bg-\[\#1e1f22\] {
-            background: rgba(255, 255, 255, 0.05) !important;
-            border-color: rgba(255, 255, 255, 0.08) !important;
+            background: rgba(0, 0, 0, 0.25) !important;
+            border-color: rgba(255, 255, 255, 0.09) !important;
         }
 
         .mockup-header {
@@ -962,49 +972,117 @@
             pointer-events: none;
         }
 
-        /* ── Page loading ────────────────────────────────────────────────────── */
-        .page-loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid rgba(255, 255, 255, 0.1);
-            border-top-color: #5865F2;
-            border-radius: 50%;
-            animation: page-loading-spin 0.8s linear infinite;
-        }
-
-        @keyframes page-loading-spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        /* ── Loading overlay fade ──────────────────────────────────────────── */
+        /* ── Page loading (matches dashboard loading.css) ───────────────────── */
         #page-loading-overlay {
-            transition: opacity 0.35s ease;
-            pointer-events: none;
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #09090f;
+            overflow: hidden;
+            transition: opacity 0.5s ease;
         }
-
         #page-loading-overlay.is-hiding {
             opacity: 0;
+            pointer-events: none;
+        }
+        .plo-bag-scene {
+            position: relative;
+            width: 80px;
+            height: 91px;
+            flex-shrink: 0;
+            overflow: visible;
+            transform: scale(1);
+            transition: transform 0.55s cubic-bezier(0.7, 0, 1, 1);
+        }
+        #page-loading-overlay.is-hiding .plo-bag-scene {
+            transform: scale(28);
+        }
+        @keyframes plo-glow {
+            0%   { filter: drop-shadow(0 0 12px rgba(255,117,195,0.5)) drop-shadow(0 0 30px rgba(112,226,255,0.2)); }
+            25%  { filter: drop-shadow(0 0 12px rgba(255,166,71,0.5))  drop-shadow(0 0 30px rgba(159,255,91,0.2)); }
+            50%  { filter: drop-shadow(0 0 12px rgba(112,226,255,0.5)) drop-shadow(0 0 30px rgba(129,140,248,0.2)); }
+            75%  { filter: drop-shadow(0 0 12px rgba(159,255,91,0.5))  drop-shadow(0 0 30px rgba(255,117,195,0.2)); }
+            100% { filter: drop-shadow(0 0 12px rgba(255,117,195,0.5)) drop-shadow(0 0 30px rgba(112,226,255,0.2)); }
+        }
+        .plo-bag-color {
+            position: absolute;
+            inset: 0;
+            -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 58 66'%3E%3Cpath fill='white' d='M10.4532 65.9999C3.56938 65.9999 0 62.4297 0 55.5789V22.2894C0 15.4064 3.56938 11.8684 10.4532 11.8684H15.6479C16.3172 5.08187 21.7031 0 28.7781 0C35.885 0 41.271 5.0497 41.9084 11.8684H47.135C53.9869 11.8684 57.5882 15.4386 57.5882 22.2894V55.5789C57.5882 62.4297 54.0188 65.9999 47.9317 65.9999H10.4532ZM28.7781 5.62865C25.0176 5.62865 22.2768 8.13742 21.735 11.8684H35.8532C35.3114 8.13742 32.5706 5.62865 28.7781 5.62865Z'/%3E%3C/svg%3E");
+            mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 58 66'%3E%3Cpath fill='white' d='M10.4532 65.9999C3.56938 65.9999 0 62.4297 0 55.5789V22.2894C0 15.4064 3.56938 11.8684 10.4532 11.8684H15.6479C16.3172 5.08187 21.7031 0 28.7781 0C35.885 0 41.271 5.0497 41.9084 11.8684H47.135C53.9869 11.8684 57.5882 15.4386 57.5882 22.2894V55.5789C57.5882 62.4297 54.0188 65.9999 47.9317 65.9999H10.4532ZM28.7781 5.62865C25.0176 5.62865 22.2768 8.13742 21.735 11.8684H35.8532C35.3114 8.13742 32.5706 5.62865 28.7781 5.62865Z'/%3E%3C/svg%3E");
+            -webkit-mask-size: 100% 100%;
+            mask-size: 100% 100%;
+            -webkit-mask-repeat: no-repeat;
+            mask-repeat: no-repeat;
+        }
+        .plo-blob {
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            filter: blur(24px);
+            opacity: 0.85;
+            animation: plo-pan 22s infinite alternate ease-in-out;
+            will-change: transform;
+        }
+        .plo-blob-1 { background: #ff75c3; top: -10%; left: -10%; animation-delay:   0s; }
+        .plo-blob-2 { background: #ffa647; top:  10%; left:  55%; animation-delay:  -4s; }
+        .plo-blob-3 { background: #ffe83f; top:  55%; left:  15%; animation-delay:  -9s; }
+        .plo-blob-4 { background: #9fff5b; top:  70%; left:  65%; animation-delay: -14s; }
+        .plo-blob-5 { background: #70e2ff; top:  25%; left:  35%; animation-delay: -19s; }
+        @keyframes plo-pan {
+            from { transform: translate(-20px, -20px); }
+            to   { transform: translate( 45px,  45px); }
+        }
+        .plo-bag-outline {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            animation: plo-glow 4s ease infinite;
+        }
+        .plo-bar-wrap {
+            position: relative;
+            z-index: 1;
+            width: 80px;
+            height: 2px;
+            margin-top: 18px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 2px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .plo-bar {
+            position: absolute;
+            top: 0;
+            left: -60%;
+            width: 60%;
+            height: 100%;
+            border-radius: 2px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+            animation: plo-bar-sweep 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes plo-bar-sweep {
+            0%   { left: -60%; }
+            100% { left: 100%; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .plo-bag-scene    { transition: opacity 0.4s ease !important; }
+            .plo-blob         { animation: none !important; }
+            .plo-bar          { animation: none !important; left: 20%; width: 60%; opacity: 0.3; }
+            #page-loading-overlay.is-hiding .plo-bag-scene { transform: scale(1); opacity: 0; }
         }
 
         #page-content {
             opacity: 0;
             transition: opacity 0.3s ease 0.05s;
         }
-
         #page-content.is-visible {
             opacity: 1;
-        }
-
-        .page-loading-logo {
-            width: auto;
-            height: auto;
-            max-width: min(180px, 85vw);
-            max-height: 2.5rem;
-            object-fit: contain;
-            object-position: center;
-            flex-shrink: 0;
         }
 
         /* ── Section BG ─────────────────────────────────────────────────────── */
@@ -1127,104 +1205,254 @@
             will-change: opacity;
         }
 
-        /* ── Continuous glass panel wrapping all feature sections ──────────────── */
-        /* Single wrapper div (#sections-glass) gives the panel a unified look:
-           blobs glow through, top corners are rounded, no seams between sections */
+        /* ── Feature sections glass panel — dark premium ───────────────────────── */
         #sections-glass {
-            background: rgba(255, 255, 255, 0.35);
-            background-image: radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px);
-            background-size: 24px 24px;
-            backdrop-filter: blur(32px) saturate(180%);
-            -webkit-backdrop-filter: blur(32px) saturate(180%);
-            border-top: 1px solid rgba(255, 255, 255, 0.4);
+            background: rgba(4, 6, 16, 0.82);
+            background-image: radial-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+            background-size: 28px 28px;
+            backdrop-filter: blur(40px) saturate(160%) brightness(0.88);
+            -webkit-backdrop-filter: blur(40px) saturate(160%) brightness(0.88);
+            border-top: 1px solid rgba(255, 255, 255, 0.13);
             border-top-left-radius: 24px;
             border-top-right-radius: 24px;
             box-shadow:
-                inset 0 0 40px rgba(255, 255, 255, 0.2),
-                inset 0 2px 5px rgba(255, 255, 255, 0.5);
+                inset 0 1px 0 rgba(255, 255, 255, 0.10),
+                0 0 0 1px rgba(255, 255, 255, 0.06);
             position: relative;
             z-index: 20;
         }
 
-        /* Section text: flip white → dark for legibility on the light glass background */
+        /* Section text: white on dark glass */
         #sections-glass h2,
-        #sections-glass h3 { color: #0f172a !important; }
+        #sections-glass h3 { color: rgba(255,255,255,0.96) !important; }
 
         #sections-glass p,
         #sections-glass .text-white\/70,
-        #sections-glass .text-white\/65 { color: #334155 !important; }
+        #sections-glass .text-white\/65 { color: rgba(255,255,255,0.68) !important; }
 
         #sections-glass .text-white\/50,
         #sections-glass .text-white\/45,
         #sections-glass .text-white\/40,
-        #sections-glass .text-white\/35 { color: #64748b !important; }
+        #sections-glass .text-white\/35 { color: rgba(255,255,255,0.38) !important; }
 
-        /* Grad-text spans: keep gradient colors transparent clip */
+        /* Grad-text spans: keep gradient colors */
         #sections-glass .grad-text { color: transparent !important; }
 
-        /* Tag pills: white background so they read clearly against the glass panel */
+        /* Tag pills: glass style on dark */
         #sections-glass .tag-pill {
-            background: rgba(255, 255, 255, 0.82) !important;
-            border-color: rgba(0, 0, 0, 0.10) !important;
-            color: #334155 !important;
-            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
+            background: rgba(255, 255, 255, 0.08) !important;
+            border-color: rgba(255, 255, 255, 0.13) !important;
+            color: rgba(255, 255, 255, 0.82) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08) !important;
+            backdrop-filter: blur(8px);
         }
 
-        /* Int-check items: dark text */
-        #sections-glass .int-check-list span { color: #334155 !important; }
+        /* Int-check items: white on dark */
+        #sections-glass .int-check-list span { color: rgba(255,255,255,0.70) !important; }
 
-        /* Brand/accent inline text: logo palette — bright and consistent */
-        #sections-glass .text-\[var\(--accent-mustard\)\] { color: #FFA647 !important; }
-        #sections-glass .text-\[var\(--accent-sky\)\]     { color: #70E2FF !important; }
-        #sections-glass .text-\[\#FF90E8\]                { color: #FF75C3 !important; }
-        #sections-glass .text-\[\#FFD36E\]                { color: #FFE83F !important; }
-        #sections-glass .text-\[\#00e676\]                { color: #9FFF5B !important; }
-        #sections-glass .text-\[\#5865F2\]                { color: #5865F2 !important; }
-        #sections-glass .text-\[\#9146FF\]                { color: #9146FF !important; }
+        /* ── Marquee strip ──────────────────────────────────────────────────────── */
+        .section-marquee {
+            position: relative;
+            border-top: 1px solid rgba(255,255,255,0.07);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+        .section-marquee-track {
+            display: flex;
+            align-items: center;
+            width: max-content;
+            animation: marquee-scroll 32s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) { .section-marquee-track { animation: none; } }
+        @keyframes marquee-scroll {
+            from { transform: translateX(0); }
+            to   { transform: translateX(-50%); }
+        }
+        .section-marquee-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 11px 26px;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.13em;
+            color: rgba(255,255,255,0.35);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .section-marquee-item img {
+            width: 14px;
+            height: 14px;
+            object-fit: contain;
+            opacity: 0.50;
+            filter: brightness(2);
+        }
+        .section-marquee-sep {
+            width: 3px;
+            height: 3px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.15);
+            flex-shrink: 0;
+        }
 
-        /* Inside dark-glass cards: restore white text — don't let section overrides leak in */
-        #sections-glass .discord-mockup h2,
-        #sections-glass .discord-mockup h3,
-        #sections-glass .discord-mockup p,
-        #sections-glass .int-diagram h2,
-        #sections-glass .int-diagram h3,
-        #sections-glass .int-diagram p,
-        #sections-glass .bento-card h2,
-        #sections-glass .bento-card h3,
-        #sections-glass .bento-card p { color: unset !important; }
+        /* ── Feature icon box ambient glow ring ─────────────────────────────────── */
+        .feature-icon-box { position: relative; }
+        .feature-icon-box::after {
+            content: '';
+            position: absolute;
+            inset: -16px;
+            border-radius: 36px;
+            background: radial-gradient(circle, var(--icon-halo, rgba(14,165,233,0.18)) 0%, transparent 68%);
+            animation: icon-halo 4s ease-in-out infinite;
+            pointer-events: none;
+            z-index: -1;
+        }
+        @keyframes icon-halo {
+            0%, 100% { opacity: 0.50; transform: scale(0.92); }
+            50%       { opacity: 1.00; transform: scale(1.12); }
+        }
+        [data-blob-index="1"] .feature-icon-box { --icon-halo: rgba(255,117,195,0.22); }
+        [data-blob-index="2"] .feature-icon-box { --icon-halo: rgba(112,226,255,0.22); }
+        [data-blob-index="3"] .feature-icon-box { --icon-halo: rgba(255,166,71,0.25);  }
+        [data-blob-index="4"] .feature-icon-box { --icon-halo: rgba(159,255,91,0.22);  }
+        [data-blob-index="0"] .feature-icon-box { --icon-halo: rgba(255,232,63,0.22);  }
 
-        #sections-glass .discord-mockup .text-white\/70,
-        #sections-glass .discord-mockup .text-white\/65,
-        #sections-glass .discord-mockup .text-white\/60,
-        #sections-glass .discord-mockup .text-white\/50,
-        #sections-glass .discord-mockup .text-white\/45,
-        #sections-glass .discord-mockup .text-white\/40,
-        #sections-glass .discord-mockup .text-white\/35,
-        #sections-glass .discord-mockup .text-white\/30,
-        #sections-glass .discord-mockup .text-white\/25,
-        #sections-glass .discord-mockup .text-white\/20,
-        #sections-glass .int-diagram .text-white\/70,
-        #sections-glass .int-diagram .text-white\/65,
-        #sections-glass .int-diagram .text-white\/60,
-        #sections-glass .int-diagram .text-white\/50,
-        #sections-glass .int-diagram .text-white\/45,
-        #sections-glass .int-diagram .text-white\/40,
-        #sections-glass .int-diagram .text-white\/35,
-        #sections-glass .bento-card .text-white\/70,
-        #sections-glass .bento-card .text-white\/65,
-        #sections-glass .bento-card .text-white\/60,
-        #sections-glass .bento-card .text-white\/50,
-        #sections-glass .bento-card .text-white\/45,
-        #sections-glass .bento-card .text-white\/40,
-        #sections-glass .bento-card .text-white\/35 { color: unset !important; }
+        /* ── Mockup accent orb (glowing bloom behind each visual panel) ──────────── */
+        .mobile-mockup-cap { position: relative; }
+        .mobile-mockup-cap::before {
+            content: '';
+            position: absolute;
+            inset: -30% -18%;
+            background: radial-gradient(ellipse at 50% 52%, var(--orb, rgba(112,226,255,0.22)) 0%, transparent 62%);
+            pointer-events: none;
+            z-index: 0;
+            filter: blur(28px);
+            animation: orb-breathe 6s ease-in-out infinite;
+        }
+        @keyframes orb-breathe {
+            0%, 100% { opacity: 0.50; transform: scale(0.96); }
+            50%       { opacity: 1.00; transform: scale(1.05); }
+        }
+        [data-blob-index="1"] .mobile-mockup-cap::before { --orb: rgba(255,117,195,0.42); }
+        [data-blob-index="2"] .mobile-mockup-cap::before { --orb: rgba(112,226,255,0.42); }
+        [data-blob-index="3"] .mobile-mockup-cap::before { --orb: rgba(255,166,71,0.44);  }
+        [data-blob-index="4"] .mobile-mockup-cap::before { --orb: rgba(159,255,91,0.40);  }
+        [data-blob-index="0"] .mobile-mockup-cap::before { --orb: rgba(255,232,63,0.40);  }
+        .mobile-mockup-cap > .discord-mockup,
+        .mobile-mockup-cap > .int-diagram { position: relative; z-index: 1; }
 
-        #sections-glass .discord-mockup .text-\[var\(--accent-mustard\)\],
-        #sections-glass .discord-mockup .text-\[var\(--accent-sky\)\],
-        #sections-glass .discord-mockup .text-\[\#FF90E8\],
-        #sections-glass .discord-mockup .text-\[\#FFD36E\],
-        #sections-glass .discord-mockup .text-\[\#00e676\],
-        #sections-glass .discord-mockup .text-\[\#5865F2\],
-        #sections-glass .discord-mockup .text-\[\#9146FF\] { color: unset !important; }
+        /* ── Bento card cursor spotlight ──────────────────────────────────────────── */
+        .bento-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 20px;
+            background: radial-gradient(circle 200px at var(--bx,50%) var(--by,50%), rgba(255,255,255,0.07) 0%, transparent 60%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            z-index: 3;
+        }
+        .bento-card:hover::after { opacity: 1; }
+        .bento-card:hover {
+            transform: translateY(-5px) scale(1.005);
+            box-shadow:
+                0 0 0 1px rgba(255,255,255,0.16),
+                0 36px 64px rgba(0,0,0,0.60),
+                inset 0 1px 0 rgba(255,255,255,0.14);
+        }
+
+        /* ── Section beam dividers ──────────────────────────────────────────── */
+        /* Thin glowing line + soft radial bloom between every pair of sections  */
+        #sections-glass section[data-blob-index] + section[data-blob-index]::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 8%; right: 8%;
+            height: 1px;
+            background: linear-gradient(
+                90deg,
+                transparent 0%,
+                var(--beam-line, rgba(255,255,255,0.09)) 50%,
+                transparent 100%
+            );
+            pointer-events: none;
+            z-index: 2;
+            animation: beam-pulse 5s ease-in-out infinite;
+        }
+        #sections-glass section[data-blob-index] + section[data-blob-index]::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 50%;
+            transform: translateX(-50%);
+            width: 75%; height: 160px;
+            background: radial-gradient(
+                ellipse at 50% 0%,
+                var(--beam-glow, rgba(255,255,255,0.06)) 0%,
+                transparent 68%
+            );
+            pointer-events: none;
+            z-index: 2;
+        }
+        @keyframes beam-pulse {
+            0%, 100% { opacity: 0.55; }
+            50%       { opacity: 1.0;  }
+        }
+        /* ── Bigger section h2 typography ───────────────────────────────────── */
+        #sections-glass section[data-blob-index] h2 {
+            font-size: clamp(2.4rem, 5.5vw, 4.2rem);
+            line-height: 1.04;
+        }
+
+
+/* ── Section beam dividers — bolder ────────────────────────────────── */
+        #sections-glass section[data-blob-index] + section[data-blob-index]::before {
+            height: 1.5px;
+        }
+        #sections-glass section[data-blob-index="1"] { --beam-line: rgba(255,117,195,0.40); --beam-glow: rgba(255,117,195,0.14); }
+        #sections-glass section[data-blob-index="2"] { --beam-line: rgba(112,226,255,0.40); --beam-glow: rgba(112,226,255,0.14); }
+        #sections-glass section[data-blob-index="3"] { --beam-line: rgba(255,166,71,0.42);  --beam-glow: rgba(255,166,71,0.15);  }
+        #sections-glass section[data-blob-index="4"] { --beam-line: rgba(159,255,91,0.38);  --beam-glow: rgba(159,255,91,0.13);  }
+        #sections-glass section[data-blob-index="0"] { --beam-line: rgba(255,232,63,0.38);  --beam-glow: rgba(255,232,63,0.13);  }
+
+        /* ── Directional reveal variants (left ↔ right) ──────────────────── */
+        /* Override translateY with translateX for featured section columns   */
+        .reveal.reveal-l { transform: translateX(-60px) scale(0.970); }
+        .reveal.reveal-r { transform: translateX( 60px) scale(0.970); }
+        .reveal.reveal-l.visible { transform: translateX(0) scale(1); }
+        .reveal.reveal-r.visible { transform: translateX(0) scale(1); }
+        /* Mobile: fall back to vertical reveal */
+        @media (max-width: 1023px) {
+            .reveal.reveal-l,
+            .reveal.reveal-r { transform: translateY(30px) scale(0.975); }
+            .reveal.reveal-l.visible,
+            .reveal.reveal-r.visible { transform: translateY(0) scale(1); }
+        }
+
+
+        /* ── Discord mockup: diagonal sheen sweep ───────────────────────────── */
+        /* A faint light diagonal moves across the card every ~10s             */
+        .discord-mockup::after {
+            content: '';
+            position: absolute;
+            top: -100%; left: -65%;
+            width: 55%; height: 300%;
+            background: linear-gradient(
+                100deg,
+                transparent 0%,
+                rgba(255,255,255,0.025) 50%,
+                transparent 100%
+            );
+            transform: skewX(-12deg);
+            animation: mockup-sheen 11s ease-in-out infinite 2s;
+            pointer-events: none;
+            z-index: 10;
+        }
+        @keyframes mockup-sheen {
+            0%        { left: -65%; opacity: 0; }
+            4%        { opacity: 1; }
+            38%       { left: 115%; opacity: 0; }
+            100%      { left: 115%; opacity: 0; }
+        }
     </style>
 
     <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js"></script>
@@ -1241,15 +1469,26 @@
     }
     </script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
 </head>
 
 <body class="selection:bg-yellow-200">
     <!-- Loading overlay -->
-    <div id="page-loading-overlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center"
-        style="background: linear-gradient(180deg, #4A9DD9 0%, #3a8bc6 100%);">
-        <img src="Icons/MainLogo.png" alt="Creator Assistant" class="page-loading-logo mb-8">
-        <div class="page-loading-spinner"></div>
-        <p class="mt-4 text-sm font-semibold" style="color:rgba(255,255,255,0.5);">Loading...</p>
+    <div id="page-loading-overlay">
+        <div class="plo-bag-scene">
+            <svg class="plo-bag-outline" viewBox="0 0 58 66" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" overflow="visible">
+                <path d="M10.4532 65.9999C3.56938 65.9999 0 62.4297 0 55.5789V22.2894C0 15.4064 3.56938 11.8684 10.4532 11.8684H15.6479C16.3172 5.08187 21.7031 0 28.7781 0C35.885 0 41.271 5.0497 41.9084 11.8684H47.135C53.9869 11.8684 57.5882 15.4386 57.5882 22.2894V55.5789C57.5882 62.4297 54.0188 65.9999 47.9317 65.9999H10.4532ZM28.7781 5.62865C25.0176 5.62865 22.2768 8.13742 21.735 11.8684H35.8532C35.3114 8.13742 32.5706 5.62865 28.7781 5.62865Z" fill="none" stroke="white" stroke-width="10"/>
+            </svg>
+            <div class="plo-bag-color">
+                <div class="plo-blob plo-blob-1"></div>
+                <div class="plo-blob plo-blob-2"></div>
+                <div class="plo-blob plo-blob-3"></div>
+                <div class="plo-blob plo-blob-4"></div>
+                <div class="plo-blob plo-blob-5"></div>
+            </div>
+        </div>
+        <div class="plo-bar-wrap"><div class="plo-bar"></div></div>
     </div>
 
     <div id="page-content" style="display:none;" class="overflow-x-hidden w-full m-0 p-0 relative">
@@ -1395,7 +1634,7 @@
                             onclick="fireConfetti(this);window.open('https://discord.com/api/oauth2/authorize?client_id=1460374394663735582&permissions=327222946816&scope=bot%20applications.commands','_blank')">
                             <span class="btn-hero-content flex items-center gap-2.5">
                                 <img src="Icons/Discord.png" class="h-4 w-4 object-contain" alt="">
-                                Add to Discord® &mdash; Free
+                                Add to Discord® · Free
                                 <svg class="w-4 h-4 transition-transform group-hover:translate-x-1" fill="none"
                                     stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
@@ -1444,23 +1683,6 @@
                     <!-- The window -->
                     <div class="discord-mockup w-full" style="box-shadow:0 32px 80px rgba(0,0,0,0.6);">
 
-                        <!-- Title bar -->
-                        <div class="mockup-header justify-between">
-                            <div class="flex items-center gap-1.5">
-                                <div class="mockup-dot"></div>
-                                <div class="mockup-dot"></div>
-                                <div class="mockup-dot"></div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <img src="Icons/Discord.png" class="h-3 w-3 object-contain opacity-30" alt="">
-                                <span class="text-white/25 text-xs font-semibold">Creator Server &mdash; Discord®</span>
-                            </div>
-                            <div class="flex items-center gap-1.5">
-                                <div class="w-1.5 h-1.5 rounded-full"
-                                    style="background:#00e676;box-shadow:0 0 5px rgba(0,230,118,0.7);"></div>
-                                <span class="text-[10px] font-bold" style="color:#00e676;">Online</span>
-                            </div>
-                        </div>
 
                         <!-- Body: sidebar + chat -->
                         <div class="flex" style="height:310px;">
@@ -1644,7 +1866,7 @@
         <div id="sections-glass">
 
         <!-- ── Philosophy Statement ──────────────────────────────────────────────── -->
-        <section class="py-14 px-4 sm:px-6 overflow-hidden relative"
+        <section class="py-14 px-4 sm:px-6 relative"
             id="features" data-blob-index="1">
             <div class="max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-10 lg:gap-20">
                 <div class="lg:w-5/12 reveal section-graphic mouse-parallax text-center lg:text-left" data-parallax-speed="0.6">
@@ -1893,6 +2115,49 @@
             </div>
         </section>
 
+        <!-- ── Integration marquee ───────────────────────────────────────────────── -->
+        <div class="section-marquee" aria-hidden="true">
+            <div class="section-marquee-track">
+                <div class="section-marquee-item"><img src="Icons/Gumorad.png" alt="">Gumroad®</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/LemonSqueezy.png" alt="">Lemon Squeezy®</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/Jinxxy.png" alt="">Jinxxy™</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/Patreon.png" alt="">Patreon®</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/PayHip.png" alt="">Payhip®</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/ItchIo.png" alt="">Itch.io</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/VRC.png" alt="">VRChat® CE</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/Discord.png" alt="">Discord® Roles</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/Checkmark.png" alt="">Verified Instantly</div>
+                <div class="section-marquee-sep"></div>
+                <!-- duplicate for seamless loop -->
+                <div class="section-marquee-item"><img src="Icons/Gumorad.png" alt="">Gumroad®</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/LemonSqueezy.png" alt="">Lemon Squeezy®</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/Jinxxy.png" alt="">Jinxxy™</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/Patreon.png" alt="">Patreon®</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/PayHip.png" alt="">Payhip®</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/ItchIo.png" alt="">Itch.io</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/VRC.png" alt="">VRChat® CE</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/Discord.png" alt="">Discord® Roles</div>
+                <div class="section-marquee-sep"></div>
+                <div class="section-marquee-item"><img src="Icons/Checkmark.png" alt="">Verified Instantly</div>
+                <div class="section-marquee-sep"></div>
+            </div>
+        </div>
+
         <!-- ── Feature: Rules Engine ─────────────────────────────────────────────── -->
         <section class="py-14 lg:py-20 px-4 sm:px-6 relative" data-blob-index="3">
             <div class="max-w-7xl mx-auto flex flex-col lg:flex-row-reverse items-center gap-12 lg:gap-20">
@@ -2014,12 +2279,6 @@
 
                 <div class="flex-1 w-full mobile-mockup-cap reveal reveal-delay-1">
                     <div class="discord-mockup mouse-parallax section-graphic" data-parallax-speed="0.75">
-                        <div class="mockup-header">
-                            <div class="mockup-dot"></div>
-                            <div class="mockup-dot"></div>
-                            <div class="mockup-dot"></div>
-                            <span class="text-xs text-white/40 ml-1 font-bold">#share-assets</span>
-                        </div>
 
                         <div class="p-6 space-y-4">
                             <div>
@@ -2209,6 +2468,136 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </section>
+
+        <!-- ── Feature: VRChat Creator Economy ──────────────────────────────────── -->
+        <section class="py-14 lg:py-20 px-4 sm:px-6 relative" data-blob-index="2">
+            <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-12 lg:gap-20">
+
+                <!-- Text side (left) -->
+                <div class="flex-1 reveal text-center lg:text-left">
+                    <div class="inline-flex items-center gap-2 bg-[#00e676]/10 border border-[#00e676]/25 rounded-full px-3 py-1 text-xs font-bold tracking-wide uppercase mb-5" style="color:#00e676;">
+                        ★ Industry First
+                    </div>
+                    <div class="feature-icon-box sticker"
+                        style="background:rgba(0,230,118,0.15);box-shadow:0 8px 24px rgba(0,230,118,0.2);">
+                        <img src="Icons/VRC.png" alt="VRChat">
+                    </div>
+                    <h2 class="text-3xl sm:text-4xl md:text-5xl mb-5 font-extrabold tracking-tight leading-[1.1]" style="color:#a7f3d0;">
+                        VRChat® <br class="hidden md:block">
+                        <span class="grad-text" style="background-image:linear-gradient(90deg,#00e676,#1DE9B6);">Creator Economy</span>
+                    </h2>
+                    <p class="text-xl leading-relaxed mb-8" style="color:rgba(167,243,208,0.75);">
+                        We're the <span style="color:#6ee7b7;font-weight:700;">first Discord® bot</span> to support the VRChat® Creator Economy.
+                        Automatically verify avatar and world purchases, active subscriptions, and more.
+                        Roles are granted the <span style="color:#6ee7b7;font-weight:700;">moment a purchase is confirmed</span>.
+                    </p>
+                    <div class="flex flex-wrap gap-3 mb-8 justify-center lg:justify-start">
+                        <div class="tag-pill" style="color:#00e676;border-color:rgba(0,230,118,0.2);background:rgba(0,230,118,0.07);">
+                            <div class="w-2 h-2 rounded-full animate-pulse" style="background:#00e676;"></div>Avatar Purchases
+                        </div>
+                        <div class="tag-pill" style="color:#1DE9B6;border-color:rgba(29,233,182,0.2);background:rgba(29,233,182,0.07);">
+                            <div class="w-2 h-2 rounded-full" style="background:#1DE9B6;"></div>World Purchases
+                        </div>
+                        <div class="tag-pill" style="color:#34d399;border-color:rgba(52,211,153,0.2);background:rgba(52,211,153,0.07);">
+                            <div class="w-2 h-2 rounded-full" style="background:#34d399;"></div>Active Subscriptions
+                        </div>
+                    </div>
+                    <p class="text-sm" style="color:rgba(0,230,118,0.5);font-family:'DM Sans',sans-serif;">
+                        Buyer visits VRChat® &rarr; purchases avatar or world &rarr; receives
+                        <code class="px-2 py-0.5 rounded" style="background:rgba(0,230,118,0.1);color:rgba(29,233,182,0.8);">@Creator Supporter</code> in Discord® instantly.
+                    </p>
+                </div>
+
+                <!-- Visual side (right) -->
+                <div class="flex-1 w-full mobile-mockup-cap reveal reveal-delay-1">
+                    <div class="discord-mockup mouse-parallax section-graphic" data-parallax-speed="0.7">
+
+
+                        <div class="p-6 space-y-1">
+
+                            <!-- Source: VRChat CE header card -->
+                            <div class="rounded-xl p-4 flex items-center gap-4 mb-4" style="background:rgba(0,230,118,0.07);border:1px solid rgba(0,230,118,0.18);">
+                                <div class="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style="background:rgba(0,230,118,0.15);box-shadow:0 0 20px rgba(0,230,118,0.2);">
+                                    <img src="Icons/VRC.png" class="w-7 h-7 object-contain" alt="VRChat">
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-sm font-black" style="color:#a7f3d0;">VRChat® Creator Economy</div>
+                                    <div class="text-xs" style="color:rgba(0,230,118,0.5);">Avatar & world marketplace</div>
+                                </div>
+                                <div class="flex items-center gap-1.5 flex-shrink-0">
+                                    <span class="w-2 h-2 rounded-full animate-pulse" style="background:#00e676;box-shadow:0 0 6px #00e676;"></span>
+                                    <span class="text-xs font-black" style="color:#00e676;">Connected</span>
+                                </div>
+                            </div>
+
+                            <!-- IF block -->
+                            <div class="bg-black/30 rounded-lg px-3 py-1.5 mb-1">
+                                <div class="text-[10px] uppercase tracking-widest font-black" style="color:#00e676;">If purchase detected</div>
+                            </div>
+                            <div class="rounded-lg p-3 flex items-center gap-3 mb-3" style="background:rgba(0,0,0,0.35);border:1px solid rgba(0,230,118,0.12);">
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style="background:rgba(0,230,118,0.12);">
+                                    <img src="Icons/Bag.png" class="w-4 h-4 object-contain" alt="">
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-sm font-bold" style="color:#a7f3d0;">Avatar, World, or Subscription</div>
+                                    <div class="text-xs" style="color:rgba(29,233,182,0.5);">Any VRChat® Creator Economy purchase</div>
+                                </div>
+                            </div>
+
+                            <!-- Arrow -->
+                            <div class="flex justify-center py-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:rgba(0,230,118,0.3);">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                                </svg>
+                            </div>
+
+                            <!-- VERIFY block -->
+                            <div class="bg-black/30 rounded-lg px-3 py-1.5 mb-1">
+                                <div class="text-[10px] uppercase tracking-widest font-black" style="color:#1DE9B6;">Verify ownership confirmed</div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 mb-3">
+                                <div class="rounded-lg p-3 flex items-center gap-2" style="background:rgba(0,0,0,0.35);border:1px solid rgba(0,230,118,0.12);">
+                                    <img src="Icons/Checkmark.png" class="w-4 h-4 object-contain flex-shrink-0" style="filter:drop-shadow(0 0 4px #00e676);" alt="">
+                                    <div>
+                                        <div class="text-xs font-bold" style="color:#a7f3d0;">Avatar / World</div>
+                                        <div class="text-[10px] font-bold" style="color:#00e676;">Verified ✓</div>
+                                    </div>
+                                </div>
+                                <div class="rounded-lg p-3 flex items-center gap-2" style="background:rgba(0,0,0,0.35);border:1px solid rgba(29,233,182,0.12);">
+                                    <img src="Icons/CreditCard.png" class="w-4 h-4 object-contain flex-shrink-0" style="filter:drop-shadow(0 0 4px #1DE9B6);" alt="">
+                                    <div>
+                                        <div class="text-xs font-bold" style="color:#a7f3d0;">Subscription</div>
+                                        <div class="text-[10px] font-bold" style="color:#1DE9B6;">Active ✓</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Arrow -->
+                            <div class="flex justify-center py-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:rgba(0,230,118,0.3);">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                                </svg>
+                            </div>
+
+                            <!-- GRANT block -->
+                            <div class="bg-black/30 rounded-lg px-3 py-1.5 mb-1">
+                                <div class="text-[10px] uppercase tracking-widest font-black" style="color:#00e676;">Grant role instantly</div>
+                            </div>
+                            <div class="rounded-lg p-3 flex items-center gap-3" style="background:rgba(0,0,0,0.35);border:1px solid rgba(88,101,242,0.2);">
+                                <div class="w-5 h-5 rounded-full flex-shrink-0" style="background:linear-gradient(135deg,#00e676,#1DE9B6);box-shadow:0 0 10px rgba(0,230,118,0.4);"></div>
+                                <div class="flex-1 min-w-0">
+                                    <span class="text-sm font-black" style="color:#a7f3d0;">@Creator Supporter</span>
+                                    <span class="text-xs ml-2" style="color:rgba(29,233,182,0.5);">added to member</span>
+                                </div>
+                                <div class="text-xs font-black flex-shrink-0" style="color:#00e676;">⚡ Instant</div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </section>
 
@@ -2689,6 +3078,15 @@
         }, { threshold: 0.15, rootMargin: "0px 0px -50px 0px" });
         document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
 
+        // Bento card cursor spotlight
+        document.querySelectorAll('.bento-card').forEach(card => {
+            card.addEventListener('mousemove', e => {
+                const r = card.getBoundingClientRect();
+                card.style.setProperty('--bx', ((e.clientX - r.left) / r.width * 100).toFixed(1) + '%');
+                card.style.setProperty('--by', ((e.clientY - r.top) / r.height * 100).toFixed(1) + '%');
+            });
+        });
+
         document.querySelectorAll('.btn-primary').forEach(btn => {
             btn.addEventListener('mousemove', (e) => {
                 const rect = btn.getBoundingClientRect();
@@ -3075,6 +3473,67 @@
                 content.classList.add('is-visible');
                 window.dispatchEvent(new CustomEvent('page-content-visible'));
             });
+        })();
+
+        /* ── GSAP: directional reveals, watermarks, 3D bento ─────────────── */
+        (function initScrollFX() {
+            if (typeof gsap === 'undefined' || typeof ScrollTrigger === 'undefined') return;
+            gsap.registerPlugin(ScrollTrigger);
+
+            /* 1 ── Assign left/right directional reveal classes (skip philosophy & security) */
+            document.querySelectorAll('#sections-glass section[data-blob-index]:not(#features):not(#security)').forEach(function(section) {
+                var inner = section.querySelector('.max-w-7xl, .max-w-6xl');
+                if (!inner) return;
+                var cols = Array.from(inner.children);
+                if (cols.length < 2) return;
+                var isRev = inner.classList.contains('lg:flex-row-reverse');
+                var c0 = cols[0], c1 = cols[1];
+                if (c0.classList.contains('reveal')) c0.classList.add(isRev ? 'reveal-r' : 'reveal-l');
+                if (c1.classList.contains('reveal')) c1.classList.add(isRev ? 'reveal-l' : 'reveal-r');
+            });
+
+if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+            /* 3 ── Bento card 3D perspective entrance */
+            document.querySelectorAll('#sections-glass .bento-card').forEach(function(card) {
+                gsap.fromTo(card,
+                    { rotateX: 20, y: 36, transformPerspective: 1100, transformOrigin: 'center 120%' },
+                    {
+                        rotateX: 0, y: 0,
+                        duration: 0.82, ease: 'power3.out',
+                        clearProps: 'all',
+                        scrollTrigger: { trigger: card, start: 'top 82%', once: true }
+                    }
+                );
+            });
+
+            /* 4 ── Feature section h2: upward wipe reveal (skip philosophy section) */
+            document.querySelectorAll('#sections-glass section[data-blob-index]:not(#features) h2').forEach(function(h2) {
+                gsap.fromTo(h2,
+                    { clipPath: 'inset(0 0 108% 0)', y: 28 },
+                    {
+                        clipPath: 'inset(0 0 0% 0)', y: 0,
+                        duration: 0.88, ease: 'power3.out',
+                        clearProps: 'clipPath,y',
+                        scrollTrigger: { trigger: h2, start: 'top 87%', once: true }
+                    }
+                );
+            });
+
+            /* 5 ── Tag pills staggered entrance */
+            document.querySelectorAll('#sections-glass section[data-blob-index] .tag-pill').forEach(function(pill, i) {
+                gsap.fromTo(pill,
+                    { y: 14, opacity: 0 },
+                    {
+                        y: 0, opacity: 1,
+                        duration: 0.50, ease: 'power2.out',
+                        scrollTrigger: { trigger: pill, start: 'top 90%', once: true },
+                        delay: (i % 4) * 0.08
+                    }
+                );
+            });
+
+
         })();
 
         /* Text Reveal: word stagger when Philosophy section enters view */

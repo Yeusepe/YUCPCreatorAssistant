@@ -11,9 +11,10 @@ import gumroad from './gumroad/index';
 import jinxxy from './jinxxy/index';
 import lemonsqueezy from './lemonsqueezy/index';
 import payhip from './payhip/index';
+import vrchat from './vrchat/index';
 import type { ProviderPlugin } from './types';
 
-const ALL_PROVIDERS: ProviderPlugin[] = [gumroad, jinxxy, lemonsqueezy, payhip];
+const ALL_PROVIDERS: ProviderPlugin[] = [gumroad, jinxxy, lemonsqueezy, payhip, vrchat];
 
 export const PROVIDERS: ReadonlyMap<string, ProviderPlugin> = new Map(
   ALL_PROVIDERS.map((p) => [p.id, p])

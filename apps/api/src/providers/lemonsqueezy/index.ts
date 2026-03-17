@@ -24,6 +24,7 @@ export const PURPOSES = {
 const lemonSqueezyProvider: ProviderPlugin = {
   id: 'lemonsqueezy',
   needsCredential: true,
+  supportsCollab: true,
   purposes: PURPOSES,
 
   async getCredential(ctx: ProviderContext) {
@@ -123,6 +124,22 @@ const lemonSqueezyProvider: ProviderPlugin = {
   backfill,
   connect,
   verification,
+  displayMeta: {
+    label: 'Lemon Squeezy',
+    icon: 'LemonSqueezy.png',
+    color: '#ffd35a',
+    shadowColor: '#ffd35a',
+    textColor: '#000000',
+    connectedColor: '#e6b600',
+    confettiColors: ['#ffd35a', '#e6b600', '#fff0a0', '#ffffff'],
+    description: 'Marketplace',
+  },
+  async collabValidate(credential: string): Promise<void> {
+    const client = new LemonSqueezyApiClient({ apiToken: credential });
+    const result = await client.getStores(1, 1);
+    if (!result.stores[0]) throw new Error('No Lemon Squeezy stores found for this API key');
+  },
+  collabCredentialPurpose: PURPOSES.credential,
 };
 
 export default lemonSqueezyProvider;

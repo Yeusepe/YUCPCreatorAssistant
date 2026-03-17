@@ -27,6 +27,16 @@ const gumroadProvider: ProviderPlugin = {
   id: 'gumroad',
   needsCredential: true,
   purposes: PURPOSES,
+  displayMeta: {
+    label: 'Gumroad',
+    icon: 'Gumroad.png',
+    color: '#ff90e8',
+    shadowColor: '#ff90e8',
+    textColor: '#000000',
+    connectedColor: '#e269c9',
+    confettiColors: ['#ff90e8', '#e269c9', '#ff70d0', '#ffffff'],
+    description: 'Marketplace',
+  },
 
   async getCredential(ctx: ProviderContext) {
     const conn = await ctx.convex.query(api.providerConnections.getConnectionForBackfill, {

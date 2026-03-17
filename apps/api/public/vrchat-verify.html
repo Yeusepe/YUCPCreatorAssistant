@@ -465,6 +465,25 @@
         const apiBase = '__API_BASE__';
         const params = new URLSearchParams(window.location.search);
         const token = params.get('token');
+        const isConnectMode = params.get('mode') === 'connect';
+
+        // Customize UI for connect mode (creator connecting their account)
+        if (isConnectMode) {
+            document.querySelector('#form-heading').innerHTML =
+                '<img src="Icons/VRC.png" alt="" class="vrchat-heading-icon" aria-hidden="true"> Connect your VRChat® account';
+            document.querySelector('#form-subtitle').textContent =
+                'Sign in to connect your VRChat® store to Creator Assistant';
+            document.querySelector('#success-msg').textContent =
+                'VRChat® account connected! You can close this window and return to the dashboard.';
+            document.querySelector('main').setAttribute('aria-label', 'VRChat account connect');
+        }
+
+        /** API endpoint to POST to — differs between verify and connect modes */
+        function getSessionEndpoint() {
+            return isConnectMode
+                ? `${apiBase}/api/connect/vrchat/session`
+                : `${apiBase}/api/verification/vrchat-verify`;
+        }
 
         const noTokenView = document.getElementById('no-token-view');
         const formView = document.getElementById('form-view');
@@ -567,14 +586,15 @@
         }
 
         // On page load: attempt auto-verify using a stored VRChat session.
+        // Skipped in connect mode (no existing session to check for creators).
         // If the server responds with needsCredentials, show the form normally.
-        if (token) {
+        if (token && !isConnectMode) {
             restorePendingStep();
             submitBtn.disabled = true;
             submitBtn.setAttribute('aria-busy', 'true');
             submitBtn.textContent = 'Checking…';
 
-            fetch(`${apiBase}/api/verification/vrchat-verify`, {
+            fetch(getSessionEndpoint(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -616,7 +636,9 @@
             const twoFactorCode = form.twoFactorCode.value?.trim() || undefined;
 
             if (!token) {
-                showError('Invalid or expired link. Please use the Verify with VRChat button in Discord.');
+                showError(isConnectMode
+                    ? 'Invalid or expired link. Please use the Connect VRChat button in the dashboard.'
+                    : 'Invalid or expired link. Please use the Verify with VRChat button in Discord.');
                 return;
             }
 
@@ -645,7 +667,7 @@
             submitBtn.textContent = twoFactorGroup.style.display !== 'none' ? 'Verifying...' : 'Continuing...';
 
             try {
-                const res = await fetch(`${apiBase}/api/verification/vrchat-verify`, {
+                const res = await fetch(getSessionEndpoint(), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',

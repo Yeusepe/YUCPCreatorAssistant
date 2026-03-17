@@ -146,6 +146,18 @@ export interface ProviderDescriptor {
     /** Optional placeholder for the input field */
     placeholder?: string;
   };
+  /**
+   * URL template for a catalog product link.
+   * The placeholder `{ref}` is replaced with the provider product ref at runtime.
+   * Only set for providers with `catalog_sync` capability.
+   * Example: "https://gumroad.com/l/{ref}"
+   */
+  catalogProductUrlTemplate?: string;
+  /**
+   * Whether this provider supports automatic purchase discovery (backfill from sales API).
+   * Only true for providers with the `reconciliation` capability that expose a sales list API.
+   */
+  supportsAutoDiscovery?: boolean;
 }
 
 export const PROVIDER_REGISTRY = [
@@ -201,8 +213,9 @@ export const PROVIDER_REGISTRY = [
     supportsWebhook: true,
     supportsLicenseVerify: true,
     supportsTestMode: false,
+    supportsAutoDiscovery: true,
+    catalogProductUrlTemplate: 'https://gumroad.com/l/{ref}',
     compatibility: {
-      legacyConnectRoutes: ['/api/connect/gumroad/begin', '/api/connect/gumroad/callback'],
       legacyWebhookRoutes: ['/webhooks/gumroad/:authUserId'],
     },
   },
@@ -233,8 +246,8 @@ export const PROVIDER_REGISTRY = [
     supportsWebhook: true,
     supportsLicenseVerify: true,
     supportsTestMode: false,
+    catalogProductUrlTemplate: 'https://jinxxy.app/products/{ref}',
     compatibility: {
-      legacyConnectRoutes: ['/api/connect/jinxxy/webhook-config', '/api/connect/jinxxy-store'],
       legacyWebhookRoutes: ['/webhooks/jinxxy/:authUserId'],
     },
     supportsCollab: true,
@@ -273,6 +286,7 @@ export const PROVIDER_REGISTRY = [
     supportsWebhook: true,
     supportsLicenseVerify: true,
     supportsTestMode: true,
+    catalogProductUrlTemplate: 'https://app.lemonsqueezy.com/products/{ref}',
     supportsCollab: true,
     collabCredential: {
       label: 'Lemon Squeezy API Key',
@@ -416,7 +430,7 @@ export const PROVIDER_REGISTRY = [
     addProductDescription: 'Avatar from vrchat.com/...',
     creatorAuthModes: ['credentials'],
     buyerVerificationMethods: ['account_link'],
-    capabilities: ['account_link', 'ownership_verification'],
+    capabilities: ['account_link', 'ownership_verification', 'catalog_sync'],
     setupRequirements: [],
     verificationMethods: ['account_link'],
     supportsDisconnect: true,
@@ -425,8 +439,9 @@ export const PROVIDER_REGISTRY = [
     supportsWebhook: false,
     supportsLicenseVerify: false,
     supportsTestMode: false,
+    catalogProductUrlTemplate: 'https://vrchat.com/store/listing/{ref}',
     productInput: {
-      label: 'Avatar ID or URL',
+      label: 'VRChat Avatar ID or URL',
       description: 'VRChat Avatar ID (avtr_…) or vrchat.com/home/avatar/avtr_… URL',
       placeholder: 'avtr_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
     },
@@ -467,3 +482,21 @@ export const PER_PRODUCT_CREDENTIAL_PROVIDER_KEYS = (
 )
   .filter((provider) => provider.perProductCredential != null)
   .map((provider) => provider.providerKey);
+
+/** Returns providers that support catalog sync (have the 'catalog_sync' capability). */
+export const CATALOG_SYNC_PROVIDER_KEYS = (PROVIDER_REGISTRY as readonly ProviderDescriptor[])
+  .filter((p) => p.capabilities.includes('catalog_sync'))
+  .map((p) => p.providerKey);
+
+/**
+ * Build the canonical URL for a catalog product entry.
+ * Returns null if the provider has no URL template (e.g. discord_role, payhip).
+ */
+export function buildCatalogProductUrl(
+  providerKey: string,
+  productRef: string
+): string | null {
+  const descriptor = getProviderDescriptor(providerKey);
+  if (!descriptor?.catalogProductUrlTemplate) return null;
+  return descriptor.catalogProductUrlTemplate.replace('{ref}', productRef);
+}
