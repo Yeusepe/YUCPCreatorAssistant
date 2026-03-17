@@ -50,6 +50,16 @@ const payhipProvider: ProviderPlugin = {
     );
   },
 
+  displayMeta: {
+    label: 'Payhip',
+    icon: 'Payhip.png',
+    color: '#00d1b2',
+    shadowColor: '#00d1b2',
+    textColor: '#ffffff',
+    connectedColor: '#00a896',
+    confettiColors: ['#00d1b2', '#00a896', '#80ffe8', '#ffffff'],
+    description: 'Marketplace',
+  },
   backfill: undefined,
   webhook,
   connect,

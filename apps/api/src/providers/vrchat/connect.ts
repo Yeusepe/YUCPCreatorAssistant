@@ -1,0 +1,229 @@
+/**
+ * VRChat Connect Plugin
+ *
+ * Handles the creator VRChat login flow (session-based, not OAuth):
+ *   GET  /api/connect/vrchat/begin   — validates setup session, creates state token,
+ *                                      redirects to /vrchat-verify?token=TOKEN&mode=connect
+ *   POST /api/connect/vrchat/session — validates token, calls VrchatApiClient.beginLogin(),
+ *                                      handles 2FA, encrypts session, stores in Convex
+ *
+ * Reuses vrchat-verify.html (the existing buyer login UI).
+ * Separate cookie/path from the buyer flow — never touches vrchatPending.ts.
+ */
+
+import { VrchatApiClient } from '@yucp/providers/vrchat';
+import { createLogger } from '@yucp/shared';
+import { api } from '../../../../../convex/_generated/api';
+import { getConvexClientFromUrl } from '../../lib/convex';
+import { encrypt } from '../../lib/encrypt';
+import { getStateStore } from '../../lib/stateStore';
+import type { ConnectContext, ConnectPlugin, ConnectRoute } from '../types';
+import {
+  appendClearedConnectPendingCookie,
+  clearConnectPendingState,
+  createConnectPendingState,
+  readConnectPendingState,
+} from './pending';
+
+const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
+
+const CONNECT_TOKEN_PREFIX = 'vrchat_connect:';
+const CONNECT_TOKEN_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * HKDF purpose for encrypting the VRChat creator session before storing in Convex.
+ * Domain-separated from the buyer session ('vrchat-provider-session').
+ */
+const SESSION_PURPOSE = 'vrchat-creator-session' as const;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /api/connect/vrchat/begin
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Entry point for the creator VRChat connect flow.
+ * Requires a valid bound setup session (same guard as all other connect flows).
+ * Creates a short-lived state token, stores {authUserId} under it, and redirects
+ * to vrchat-verify.html with mode=connect so the buyer login UI is reused.
+ */
+async function handleVrchatConnectBegin(
+  request: Request,
+  ctx: ConnectContext
+): Promise<Response> {
+  const binding = await ctx.requireBoundSetupSession(request);
+  if (!binding.ok) return binding.response;
+
+  const { authUserId } = binding.setupSession;
+  const token = crypto.randomUUID();
+  const store = getStateStore();
+  await store.set(
+    `${CONNECT_TOKEN_PREFIX}${token}`,
+    JSON.stringify({ authUserId }),
+    CONNECT_TOKEN_TTL_MS
+  );
+
+  // Reuse the buyer login UI; mode=connect switches its API endpoint
+  const redirectUrl = `${ctx.config.frontendBaseUrl}/vrchat-verify?token=${encodeURIComponent(token)}&mode=connect`;
+  return Response.redirect(redirectUrl, 302);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST /api/connect/vrchat/session
+// ──────────────────────────────────────────────────────────────────────────────
+
+interface SessionBody {
+  token?: string;
+  username?: string;
+  password?: string;
+  twoFactorCode?: string;
+}
+
+/**
+ * Called by vrchat-verify.html (mode=connect) after the creator enters credentials.
+ *
+ * Flow:
+ * 1. Validate connect token from body → get authUserId
+ * 2a. First call (username+password): beginLogin() → if 2FA needed return needsTwoFactor
+ * 2b. 2FA call (twoFactorCode): completePendingLogin() using cookie-stored pending state
+ * 3. Encrypt session, call upsertVrchatConnection, clear state, return success
+ */
+async function handleVrchatConnectSession(
+  request: Request,
+  ctx: ConnectContext
+): Promise<Response> {
+  const store = getStateStore();
+  const responseHeaders = new Headers();
+
+  let body: SessionBody;
+  try {
+    body = (await request.json()) as SessionBody;
+  } catch {
+    return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+
+  const { token, username, password, twoFactorCode } = body;
+  if (!token) {
+    return Response.json({ error: 'token is required' }, { status: 400 });
+  }
+
+  // Resolve authUserId from the connect token (or from the pending 2FA state on retry)
+  let authUserId: string | null = null;
+  const tokenRaw = await store.get(`${CONNECT_TOKEN_PREFIX}${token}`);
+  if (tokenRaw) {
+    const parsed = JSON.parse(tokenRaw) as { authUserId?: string };
+    authUserId = parsed.authUserId ?? null;
+  }
+
+  if (!authUserId) {
+    // May be a 2FA completion where the connect token has already been consumed
+    const pending = await readConnectPendingState(store, request);
+    if (pending) {
+      authUserId = pending.state.authUserId;
+    }
+  }
+
+  if (!authUserId) {
+    return Response.json({ error: 'Connect token expired or invalid' }, { status: 400 });
+  }
+
+  const client = new VrchatApiClient();
+
+  try {
+    // ── 2FA completion ──────────────────────────────────────────────────────
+    if (twoFactorCode) {
+      const pending = await readConnectPendingState(store, request);
+      if (!pending) {
+        return Response.json({ error: 'Two-factor session expired' }, { status: 400 });
+      }
+      const { user, session } = await client.completePendingLogin(
+        pending.state.pendingState,
+        twoFactorCode
+      );
+      logger.info('[vrchat-connect] 2FA complete', {
+        authUserId,
+        vrchatUserId: user.id,
+      });
+      await finishConnect(authUserId, session.authToken, session.twoFactorAuthToken, ctx);
+      await clearConnectPendingState(store, request, responseHeaders);
+      await store.delete(`${CONNECT_TOKEN_PREFIX}${token}`);
+      return Response.json({ success: true }, { headers: responseHeaders });
+    }
+
+    // ── Initial login ───────────────────────────────────────────────────────
+    if (!username || !password) {
+      return Response.json({ error: 'username and password are required' }, { status: 400 });
+    }
+
+    const result = await client.beginLogin(username, password);
+
+    if (!result.success) {
+      // 2FA required: persist pending state in a short-lived cookie
+      const pendingCookie = await createConnectPendingState(store, request, {
+        authUserId,
+        pendingState: result.pendingState,
+        types: result.requiresTwoFactorAuth,
+      });
+      responseHeaders.append('Set-Cookie', pendingCookie);
+      return Response.json(
+        { needsTwoFactor: true, twoFactorTypes: result.requiresTwoFactorAuth },
+        { status: 200, headers: responseHeaders }
+      );
+    }
+
+    // Login succeeded without 2FA
+    logger.info('[vrchat-connect] login complete (no 2FA)', {
+      authUserId,
+      vrchatUserId: result.user.id,
+    });
+    await finishConnect(authUserId, result.session.authToken, result.session.twoFactorAuthToken, ctx);
+    await store.delete(`${CONNECT_TOKEN_PREFIX}${token}`);
+    return Response.json({ success: true }, { headers: responseHeaders });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn('[vrchat-connect] login failed', { authUserId, error: message });
+
+    if (message.includes('missing auth cookie') || message.includes('Verification failed')) {
+      appendClearedConnectPendingCookie(responseHeaders, request);
+      return Response.json({ error: 'Invalid VRChat credentials' }, { status: 401, headers: responseHeaders });
+    }
+
+    return Response.json({ error: 'VRChat login failed' }, { status: 500 });
+  }
+}
+
+/**
+ * Encrypt the VRChat session and store it in Convex.
+ * Token values are NEVER logged per security policy.
+ */
+async function finishConnect(
+  authUserId: string,
+  authToken: string,
+  twoFactorAuthToken: string | undefined,
+  ctx: ConnectContext
+): Promise<void> {
+  const sessionJson = JSON.stringify({ authToken, twoFactorAuthToken });
+  const encrypted = await encrypt(sessionJson, ctx.config.encryptionSecret, SESSION_PURPOSE);
+
+  const convex = getConvexClientFromUrl(ctx.config.convexUrl);
+  await convex.mutation(api.providerConnections.upsertVrchatConnection, {
+    apiSecret: ctx.config.convexApiSecret,
+    authUserId,
+    vrchatSessionEncrypted: encrypted,
+  });
+
+  logger.info('[vrchat-connect] session stored (token values redacted)', { authUserId });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Plugin declaration
+// ──────────────────────────────────────────────────────────────────────────────
+
+const routes: ReadonlyArray<ConnectRoute> = [
+  { method: 'GET', path: '/api/connect/vrchat/begin', handler: handleVrchatConnectBegin },
+  { method: 'POST', path: '/api/connect/vrchat/session', handler: handleVrchatConnectSession },
+];
+
+export const vrchatConnect: ConnectPlugin = {
+  providerId: 'vrchat',
+  routes,
+};

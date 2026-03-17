@@ -43,7 +43,7 @@ import {
   createDiscordRoleSetupSessionToken,
   getDiscordRoleSetupResult,
   listProducts,
-  resolveVrchatAvatarName,
+  resolveVrchatProductName,
   upsertProductCredential,
 } from '../lib/internalRpc';
 import { track } from '../lib/posthog';
@@ -421,8 +421,12 @@ export async function handleProductTypeSelect(
       const data = await listProducts(selectedType, authUserId);
 
       if (data.error && (!data.products || data.products.length === 0)) {
+        const msg =
+          data.error === 'session_expired'
+            ? `Your ${label} session has expired. Please reconnect at the creator dashboard, then try again.`
+            : sanitizeUserFacingErrorMessage(data.error, `Couldn't load ${label} products right now.`);
         await interaction.editReply({
-          content: `${E.X_} ${sanitizeUserFacingErrorMessage(data.error, `Couldn't load ${label} products right now.`)}\n\nRun \`/creator-admin product add\` again in a moment.`,
+          content: `${E.X_} ${msg}\n\nRun \`/creator-admin product add\` again after reconnecting.`,
           components: [],
         });
         return;
@@ -1220,35 +1224,53 @@ export async function handleProductConfirmAdd(
       productId = result.productId;
       catalogProductId = result.catalogProductId;
     } else if (type === 'vrchat') {
+      // Catalog branch: product ID is prod_xxx from VRChat store listing
+      const productIdFromApi = urlOrId?.trim();
+      if (!productIdFromApi) throw new Error('No VRChat product selected');
+      const displayName = session.productNames?.['vrchat']?.[productIdFromApi];
+      const result = await convex.mutation(api.role_rules.addProductFromVrchatCatalog, {
+        apiSecret,
+        authUserId,
+        productId: productIdFromApi,
+        providerProductRef: productIdFromApi,
+        displayName,
+      });
+      productId = result.productId;
+      catalogProductId = result.catalogProductId;
+    } else if (type === 'vrchat_url') {
+      // Manual branch: user typed avtr_xxx or a vrchat.com/home/avatar URL
       const parsed = parseProductId('vrchat', urlOrId ?? '');
       if (!parsed.ok) throw new Error(parsed.error);
       const avatarId = parsed.productId;
 
-      // Best-effort: fetch avatar name via Convex using the tenant owner's stored VRChat session
       let vrchatDisplayName: string | undefined;
       try {
-        const nameData = await resolveVrchatAvatarName({ authUserId, avatarId });
+        const nameData = await resolveVrchatProductName({ authUserId, urlOrId: avatarId });
+        if (nameData.error === 'session_expired') {
+          throw new Error(
+            'Your VRChat session has expired. Please reconnect at the creator dashboard, then try adding the avatar again.'
+          );
+        }
+        if (nameData.error === 'not_connected') {
+          throw new Error(
+            'VRChat is not connected. Please connect your VRChat account in the creator dashboard first.'
+          );
+        }
         vrchatDisplayName = nameData.name || undefined;
         if (vrchatDisplayName) {
           logger.info('VRChat avatar name resolved', { avatarId, name: vrchatDisplayName });
         } else {
-          logger.warn(
-            'VRChat avatar name came back null — check Convex logs for [vrchat/avatar-name]',
-            {
-              authUserId,
-              avatarId,
-            }
-          );
+          logger.warn('VRChat avatar name lookup returned empty', { authUserId, avatarId });
         }
       } catch (err) {
-        logger.warn(
-          'VRChat avatar name lookup threw — check API logs for [resolveVrchatAvatarName]',
-          {
-            authUserId,
-            avatarId,
-            error: err instanceof Error ? err.message : String(err),
-          }
-        );
+        if (err instanceof Error && (err.message.includes('session_expired') || err.message.includes('not_connected'))) {
+          throw err;
+        }
+        logger.warn('VRChat avatar name lookup threw — continuing without display name', {
+          authUserId,
+          avatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
 
       const result = await convex.mutation(api.role_rules.addProductFromVrchat, {

@@ -51,6 +51,7 @@ import type * as subjects from "../subjects.js";
 import type * as tenantHelpers from "../tenantHelpers.js";
 import type * as testHelpers from "../testHelpers.js";
 import type * as verificationSessions from "../verificationSessions.js";
+import type * as vrchatAvatarActions from "../vrchatAvatarActions.js";
 import type * as webhookCron from "../webhookCron.js";
 import type * as webhookIngestion from "../webhookIngestion.js";
 import type * as webhookProcessing from "../webhookProcessing.js";
@@ -107,6 +108,7 @@ declare const fullApi: ApiFromModules<{
   tenantHelpers: typeof tenantHelpers;
   testHelpers: typeof testHelpers;
   verificationSessions: typeof verificationSessions;
+  vrchatAvatarActions: typeof vrchatAvatarActions;
   webhookCron: typeof webhookCron;
   webhookIngestion: typeof webhookIngestion;
   webhookProcessing: typeof webhookProcessing;

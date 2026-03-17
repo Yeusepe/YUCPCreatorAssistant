@@ -6,7 +6,8 @@ import {
   CollaboratorClient,
   type CreateCollaboratorInviteResponse,
   type DiscordRoleSetupResultResponse,
-  type ResolveVrchatAvatarNameResponse,
+  type ResolveProductNameRequest,
+  type ResolveProductNameResponse,
   SetupClient,
   type SuccessResponse,
   VerificationClient,
@@ -136,67 +137,53 @@ function normalizeProducts(
   }));
 }
 
-export async function listGumroadProducts(authUserId: string): Promise<{
-  error?: string;
-  products: Array<{ collaboratorName?: string; id: string; name: string }>;
-}> {
-  const response = await (await getClients()).catalog.listGumroadProducts({ authUserId });
-  return {
-    products: normalizeProducts(response.products),
-    error: response.error,
-  };
-}
-
-export async function listJinxxyProducts(authUserId: string): Promise<{
-  error?: string;
-  products: Array<{ collaboratorName?: string; id: string; name: string }>;
-}> {
-  const response = await (await getClients()).catalog.listJinxxyProducts({ authUserId });
-  return {
-    products: normalizeProducts(response.products),
-    error: response.error,
-  };
-}
-
-export async function listLemonSqueezyProducts(authUserId: string): Promise<{
-  error?: string;
-  products: Array<{ collaboratorName?: string; id: string; name: string }>;
-}> {
-  const response = await (await getClients()).catalog.listLemonSqueezyProducts({ authUserId });
-  return {
-    products: normalizeProducts(response.products),
-    error: response.error,
-  };
-}
-
-/** Generic product listing — dispatches to the provider-specific RPC. */
-export async function listProducts(
+/** Generic product listing — calls the provider-specific RPC via the catalog service. */
+export async function listProviderProducts(
   provider: string,
   authUserId: string
 ): Promise<{
   error?: string;
   products: Array<{ collaboratorName?: string; id: string; name: string }>;
 }> {
-  switch (provider) {
-    case 'gumroad':
-      return listGumroadProducts(authUserId);
-    case 'jinxxy':
-      return listJinxxyProducts(authUserId);
-    case 'lemonsqueezy':
-      return listLemonSqueezyProducts(authUserId);
-    default:
-      return { products: [], error: `No product listing available for provider: ${provider}` };
-  }
+  const response = await (await getClients()).catalog.listProviderProducts({ provider, authUserId });
+  return {
+    products: normalizeProducts(response.products),
+    error: response.error,
+  };
 }
 
-export async function resolveVrchatAvatarName(params: {
-  avatarId: string;
+/** Resolve a human-readable display name for a product URL or ID. */
+export async function resolveProductName(params: {
+  provider: string;
   authUserId: string;
-}): Promise<ResolveVrchatAvatarNameResponse> {
-  const response = await (await getClients()).catalog.resolveVrchatAvatarName(params);
+  urlOrId: string;
+}): Promise<ResolveProductNameResponse> {
+  const response = await (await getClients()).catalog.resolveProductName(params);
   return {
     name: response.name,
+    error: response.error,
   };
+}
+
+/** @deprecated Use listProviderProducts instead */
+export const listGumroadProducts = (authUserId: string) =>
+  listProviderProducts('gumroad', authUserId);
+/** @deprecated Use listProviderProducts instead */
+export const listJinxxyProducts = (authUserId: string) =>
+  listProviderProducts('jinxxy', authUserId);
+/** @deprecated Use listProviderProducts instead */
+export const listLemonSqueezyProducts = (authUserId: string) =>
+  listProviderProducts('lemonsqueezy', authUserId);
+/** @deprecated Use listProviderProducts instead */
+export const listVrchatProducts = (authUserId: string) =>
+  listProviderProducts('vrchat', authUserId);
+
+/** @deprecated Use resolveProductName instead */
+export async function resolveVrchatProductName(params: {
+  urlOrId: string;
+  authUserId: string;
+}): Promise<ResolveProductNameResponse> {
+  return resolveProductName({ provider: 'vrchat', ...params });
 }
 
 export async function bindVerifyPanel(params: {

@@ -334,15 +334,15 @@ export function createManualAdapter(
 
 // Discord OAuth provider for buyer verification
 export * from './discord';
-export type { LicenseFormat } from './licenseFormat';
+export type { LicenseFormat } from './core/licenseFormat';
 
 // License format detection
-export { detectLicenseFormat } from './licenseFormat';
+export { detectLicenseFormat } from './core/licenseFormat';
 // Manual license management module
 export * from './manual';
-export type { ProviderMeta } from './meta';
+export type { ProviderMeta } from './core/meta';
 // Provider metadata
-export { LICENSE_PROVIDERS, PROVIDER_META, providerLabel } from './meta';
-export * from './orchestrator';
+export { LICENSE_PROVIDERS, PROVIDER_META, providerLabel } from './core/meta';
+export * from './core/orchestrator';
 // Provider registry and orchestration layer
-export * from './registry';
+export * from './core/registry';

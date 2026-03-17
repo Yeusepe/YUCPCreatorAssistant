@@ -28,7 +28,6 @@
  * DELETE /api/collab/connections/:id                 – Remove connection (setup session auth)
  */
 
-import { JinxxyApiClient, LemonSqueezyApiClient } from '@yucp/providers';
 import { createLogger, getProviderDescriptor, PROVIDER_REGISTRY } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
@@ -38,8 +37,7 @@ import { sendCollabKeyAddedEmail } from '../lib/email';
 import { encrypt } from '../lib/encrypt';
 import { resolveSetupSession } from '../lib/setupSession';
 import { getStateStore } from '../lib/stateStore';
-import { PURPOSES as JINXXY } from '../providers/jinxxy';
-import { PURPOSES as LS } from '../providers/lemonsqueezy';
+import { PROVIDERS } from '../providers/index';
 
 // Collab webhook secrets are scoped to collab connections, not shared with per-provider webhooks
 const COLLAB_WEBHOOK_SECRET_PURPOSE = 'collab-webhook-signing-secret' as const;
@@ -690,49 +688,23 @@ export function createCollabRoutes(config: CollabConfig) {
 
     // Validate the API key against the correct provider
     let credentialEncrypted: string;
-    if (inviteProviderKey === 'jinxxy') {
-      try {
-        const client = new JinxxyApiClient({
-          apiKey: rawApiKey,
-          apiBaseUrl: process.env.JINXXY_API_BASE_URL,
-        });
-        await client.getProducts({ per_page: 1 });
-      } catch (validationErr) {
-        logger.warn('Collab submit: Jinxxy API key validation failed', {
-          error: validationErr instanceof Error ? validationErr.message : String(validationErr),
-        });
-        return Response.json(
-          { error: 'Invalid Jinxxy API key - could not authenticate' },
-          { status: 422 }
-        );
-      }
-      credentialEncrypted = await encrypt(rawApiKey, config.encryptionSecret, JINXXY.credential);
-    } else if (inviteProviderKey === 'lemonsqueezy') {
-      try {
-        const client = new LemonSqueezyApiClient({ apiToken: rawApiKey });
-        const storesResult = await client.getStores(1, 1);
-        if (!storesResult.stores[0]) {
-          return Response.json(
-            { error: 'No Lemon Squeezy stores found for this API key' },
-            { status: 422 }
-          );
-        }
-      } catch (validationErr) {
-        logger.warn('Collab submit: Lemon Squeezy API key validation failed', {
-          error: validationErr instanceof Error ? validationErr.message : String(validationErr),
-        });
-        return Response.json(
-          { error: 'Invalid Lemon Squeezy API key - could not authenticate' },
-          { status: 422 }
-        );
-      }
-      credentialEncrypted = await encrypt(rawApiKey, config.encryptionSecret, LS.credential);
-    } else {
-      return Response.json(
-        { error: `Provider '${inviteProviderKey}' does not support credential submission` },
-        { status: 400 }
-      );
+    const providerPlugin = PROVIDERS.get(inviteProviderKey);
+    if (!providerPlugin) {
+      return Response.json({ error: 'unsupported_provider' }, { status: 400 });
     }
+    if (providerPlugin.collabValidate) {
+      try {
+        await providerPlugin.collabValidate(rawApiKey);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Invalid API key';
+        logger.warn('Collab credential validation failed', { inviteProviderKey, error: msg });
+        return Response.json({ error: 'invalid_api_key', details: msg }, { status: 422 });
+      }
+    }
+    if (!providerPlugin.collabCredentialPurpose) {
+      return Response.json({ error: 'provider_not_configurable' }, { status: 400 });
+    }
+    credentialEncrypted = await encrypt(rawApiKey, config.encryptionSecret, providerPlugin.collabCredentialPurpose);
 
     let webhookSecretRef: string | undefined;
     let webhookEndpoint: string | undefined;
@@ -864,75 +836,25 @@ export function createCollabRoutes(config: CollabConfig) {
     let collaboratorIdentity: string;
     let credentialEncrypted: string;
 
-    if (providerKey === 'jinxxy') {
-      let user: { username: string; id: string; email?: string };
-      try {
-        const client = new JinxxyApiClient({
-          apiKey: rawCredential,
-          apiBaseUrl: process.env.JINXXY_API_BASE_URL,
-        });
-        user = await client.getCurrentUser();
-      } catch (validationErr) {
-        logger.warn('Collab manual add: Jinxxy API key validation failed', {
-          error: validationErr instanceof Error ? validationErr.message : String(validationErr),
-        });
-        return Response.json(
-          { error: 'Invalid Jinxxy API key - could not authenticate' },
-          { status: 422 }
-        );
-      }
-      credentialEncrypted = await encrypt(
-        rawCredential,
-        config.encryptionSecret,
-        JINXXY.credential
-      );
-      collaboratorDisplayName = user.username;
-      collaboratorIdentity = `manual:${user.id}`;
-
-      if (user.email) {
-        sendCollabKeyAddedEmail({
-          to: user.email,
-          collaboratorDisplayName: user.username,
-          serverName: body.serverName ?? 'a Discord server',
-          addedAt: new Date().toISOString(),
-          connectionId: '',
-        }).catch((err) => {
-          logger.warn('Failed to send collab key added email (Jinxxy)', { err });
-        });
-      }
-    } else if (providerKey === 'lemonsqueezy') {
-      let storeId: string;
-      let storeName: string;
-      try {
-        const client = new LemonSqueezyApiClient({ apiToken: rawCredential });
-        const storesResult = await client.getStores(1, 1);
-        const store = storesResult.stores[0];
-        if (!store) {
-          return Response.json(
-            { error: 'No Lemon Squeezy stores found for this API key' },
-            { status: 422 }
-          );
-        }
-        storeId = store.id;
-        storeName = store.name;
-      } catch (validationErr) {
-        logger.warn('Collab manual add: Lemon Squeezy API key validation failed', {
-          error: validationErr instanceof Error ? validationErr.message : String(validationErr),
-        });
-        return Response.json(
-          { error: 'Invalid Lemon Squeezy API key - could not authenticate' },
-          { status: 422 }
-        );
-      }
-      credentialEncrypted = await encrypt(rawCredential, config.encryptionSecret, LS.credential);
-      collaboratorDisplayName = storeName;
-      collaboratorIdentity = `manual:store:${storeId}`;
-    } else {
-      return Response.json(
-        { error: `Provider '${providerKey}' is not yet supported for manual connections` },
-        { status: 400 }
-      );
+    const providerPlugin = PROVIDERS.get(providerKey);
+    if (!providerPlugin) {
+      return Response.json({ error: 'unsupported_provider' }, { status: 400 });
     }
+    if (providerPlugin.collabValidate) {
+      try {
+        await providerPlugin.collabValidate(rawCredential);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Invalid credential';
+        logger.warn('Manual collab credential validation failed', { providerKey, error: msg });
+        return Response.json({ error: 'invalid_credential', details: msg }, { status: 422 });
+      }
+    }
+    if (!providerPlugin.collabCredentialPurpose) {
+      return Response.json({ error: 'provider_not_configurable' }, { status: 400 });
+    }
+    credentialEncrypted = await encrypt(rawCredential, config.encryptionSecret, providerPlugin.collabCredentialPurpose);
+    collaboratorDisplayName = providerKey;
+    collaboratorIdentity = `manual:${providerKey}:${Date.now()}`;
 
     let connectionId: string;
     try {

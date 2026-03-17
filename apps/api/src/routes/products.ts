@@ -8,11 +8,13 @@
  * Adding a new provider: zero changes here. See apps/api/src/providers/index.ts.
  */
 
+import { api } from '../../../../convex/_generated/api';
 import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { loadEnv } from '../lib/env';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 import { getProvider } from '../providers/index';
+import { CredentialExpiredError } from '../providers/types';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
@@ -40,9 +42,13 @@ export async function handleProviderProducts(
     });
   }
 
+  let convex: ReturnType<typeof getConvexClientFromUrl> | undefined;
+  let authUserId: string | undefined;
+  let apiSecret: string | undefined;
+
   try {
     const body = (await request.json()) as ProductsRequest;
-    const { apiSecret, authUserId } = body;
+    ({ apiSecret, authUserId } = body);
 
     if (!apiSecret || !authUserId) {
       return new Response(
@@ -76,7 +82,7 @@ export async function handleProviderProducts(
       );
     }
 
-    const convex = getConvexClientFromUrl(convexUrl);
+    convex = getConvexClientFromUrl(convexUrl);
     const ctx = { convex, apiSecret, authUserId, encryptionSecret };
 
     const credential = await plugin.getCredential(ctx);
@@ -98,6 +104,31 @@ export async function handleProviderProducts(
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
+    if (err instanceof CredentialExpiredError) {
+      logger.warn('Provider credential expired — marking connection degraded', {
+        provider,
+        authUserId,
+      });
+      if (convex && apiSecret && authUserId) {
+        try {
+          await convex.mutation(api.providerConnections.markConnectionDegraded, {
+            apiSecret,
+            authUserId,
+            provider: provider as Parameters<typeof api.providerConnections.markConnectionDegraded._args>[0]['provider'],
+          });
+        } catch (mutErr) {
+          logger.warn('Failed to mark connection degraded', {
+            provider,
+            error: mutErr instanceof Error ? mutErr.message : String(mutErr),
+          });
+        }
+      }
+      return new Response(
+        JSON.stringify({ products: [], error: 'session_expired' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     const msg = err instanceof Error ? err.message : String(err);
     logger.error('Provider products fetch failed', {
       provider,

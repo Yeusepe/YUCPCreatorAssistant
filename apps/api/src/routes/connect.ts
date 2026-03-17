@@ -26,12 +26,12 @@ import { encrypt } from '../lib/encrypt';
 import { PUBLIC_API_KEY_PREFIX } from '../lib/publicApiKeys';
 import { createSetupSession, resolveSetupSession } from '../lib/setupSession';
 import { getStateStore } from '../lib/stateStore';
-import { CONNECT_PLUGINS } from '../providers/connect/index';
-import type { ConnectConfig, ConnectContext } from '../providers/connect/types';
-import { PURPOSES as PAYHIP } from '../providers/payhip';
+import { PROVIDERS } from '../providers/index';
+import type { ConnectConfig, ConnectContext } from '../providers/types';
+import { PURPOSES as PAYHIP } from '../providers/payhip/index';
 
-// Re-exported for backwards compatibility — ConnectConfig is defined in providers/connect/types.ts
-export type { ConnectConfig } from '../providers/connect/types';
+// Re-exported for backwards compatibility — ConnectConfig is defined in providers/types.ts
+export type { ConnectConfig } from '../providers/types';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
@@ -692,8 +692,9 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     pathname: string,
     request: Request
   ): Promise<Response> | null {
-    for (const plugin of CONNECT_PLUGINS) {
-      for (const route of plugin.routes) {
+    for (const plugin of PROVIDERS.values()) {
+      if (!plugin.connect) continue;
+      for (const route of plugin.connect.routes) {
         if (route.method === method && route.path === pathname) {
           return route.handler(request, connectContext);
         }

@@ -623,6 +623,19 @@ describe('Dashboard collab.js — live-update polling', () => {
     // closeInvitePanel must stop polling (directly or via a stop helper)
     expect(js).toMatch(/closeInvitePanel[\s\S]{0,600}(clearInterval|stopCollab)/);
   });
+
+  it('collab.js calls fetchPendingInvites immediately after a successful invite is generated', async () => {
+    // Regression guard: after submitGenerateInvite succeeds, the pending invites
+    // list must update immediately — without requiring a page reload.
+    // The generated invite token must appear in the "Pending Invites" section
+    // the moment the URL is shown, not only after the next full page load.
+    const js = await Bun.file(`${import.meta.dir}/../public/assets/dashboard/collab.js`).text();
+    // submitGenerateInvite must call fetchPendingInvites (directly or via a
+    // wrapper) before or immediately after showing the invite URL.
+    // The call must appear within the success branch — after the fetch resolves
+    // OK and before/after showInviteResult — not only at page initialisation.
+    expect(js).toMatch(/submitGenerateInvite[\s\S]{0,2000}fetchPendingInvites\s*\(/);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -22,11 +22,11 @@ import {
   type GetDiscordRoleSetupResultRequest,
   type ListCollaboratorConnectionsRequest,
   type ListCollaboratorConnectionsResponse,
-  type ListProductsRequest,
+  type ListProviderProductsRequest,
   type ProductsResponse,
   type RemoveCollaboratorConnectionRequest,
-  type ResolveVrchatAvatarNameRequest,
-  type ResolveVrchatAvatarNameResponse,
+  type ResolveProductNameRequest,
+  type ResolveProductNameResponse,
   type SuccessResponse,
   TempoServiceRegistry,
   type TokenResponse,
@@ -35,7 +35,11 @@ import {
 } from '@yucp/private-rpc';
 import { VrchatApiClient } from '@yucp/providers';
 import { timingSafeStringEqual } from '@yucp/shared';
+import { api } from '../../../../convex/_generated/api';
+import { getConvexClientFromUrl } from '../lib/convex';
 import { createSetupSession } from '../lib/setupSession';
+import { getProvider } from '../providers/index';
+import type { ProviderContext } from '../providers/types';
 import type { VerificationRouteHandlers } from '../routes';
 import type { CollabConfig } from '../routes/collab';
 import { createCollabRoutes } from '../routes/collab';
@@ -70,6 +74,8 @@ export type InternalRpcConfig = {
   apiBaseUrl: string;
   convexApiSecret: string;
   convexSiteUrl: string;
+  convexUrl: string;
+  encryptionSecret: string;
   internalRpcSharedSecret: string;
   logLevel?: string;
 };
@@ -281,17 +287,18 @@ class InternalRpcAuthInterceptor extends AuthInterceptor {
 function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
   TempoServiceRegistry.register(BaseCatalogService.serviceName)(
     class CatalogTempoService extends BaseCatalogService {
-      async listGumroadProducts(
-        request: ListProductsRequest,
+      async listProviderProducts(
+        request: ListProviderProductsRequest,
         _context: ServerContext
       ): Promise<ProductsResponse> {
-        return withTelemetry('CatalogService.listGumroadProducts', request, async () => {
+        return withTelemetry('CatalogService.listProviderProducts', request, async () => {
+          const provider = request.provider ?? '';
           const response = await handleProviderProducts(
-            createJsonRequest(`${deps.config.apiBaseUrl}/api/gumroad/products`, {
+            createJsonRequest(`${deps.config.apiBaseUrl}/api/${provider}/products`, {
               apiSecret: deps.config.convexApiSecret,
               authUserId: request.authUserId ?? '',
             }),
-            'gumroad'
+            provider
           );
           return normalizeProductsResponse(
             await readJsonResponse<Partial<ProductsResponse>>(response)
@@ -299,71 +306,29 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         });
       }
 
-      async listJinxxyProducts(
-        request: ListProductsRequest,
+      async resolveProductName(
+        request: ResolveProductNameRequest,
         _context: ServerContext
-      ): Promise<ProductsResponse> {
-        return withTelemetry('CatalogService.listJinxxyProducts', request, async () => {
-          const response = await handleProviderProducts(
-            createJsonRequest(`${deps.config.apiBaseUrl}/api/jinxxy/products`, {
-              apiSecret: deps.config.convexApiSecret,
-              authUserId: request.authUserId ?? '',
-            }),
-            'jinxxy'
-          );
-          return normalizeProductsResponse(
-            await readJsonResponse<Partial<ProductsResponse>>(response)
-          );
-        });
-      }
-
-      async listLemonSqueezyProducts(
-        request: ListProductsRequest,
-        _context: ServerContext
-      ): Promise<ProductsResponse> {
-        return withTelemetry('CatalogService.listLemonSqueezyProducts', request, async () => {
-          const response = await handleProviderProducts(
-            createJsonRequest(`${deps.config.apiBaseUrl}/api/lemonsqueezy/products`, {
-              apiSecret: deps.config.convexApiSecret,
-              authUserId: request.authUserId ?? '',
-            }),
-            'lemonsqueezy'
-          );
-          return normalizeProductsResponse(
-            await readJsonResponse<Partial<ProductsResponse>>(response)
-          );
-        });
-      }
-
-      async resolveVrchatAvatarName(
-        request: ResolveVrchatAvatarNameRequest,
-        _context: ServerContext
-      ): Promise<ResolveVrchatAvatarNameResponse> {
-        return withTelemetry('CatalogService.resolveVrchatAvatarName', request, async () => {
-          const response = await fetch(`${deps.config.convexSiteUrl}/v1/vrchat/avatar-name`, {
-            method: 'POST',
-            signal: AbortSignal.timeout(INTERNAL_RPC_TIMEOUT_MS),
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${deps.config.convexApiSecret}`,
-            },
-            body: JSON.stringify({
-              authUserId: request.authUserId ?? '',
-              avatarId: request.avatarId ?? '',
-            }),
-          });
-
-          if (!response.ok) {
-            const body = await response.text().catch(() => '(unreadable)');
-            console.warn('[resolveVrchatAvatarName] Convex endpoint returned non-OK', {
-              status: response.status,
-              avatarId: request.avatarId,
-              body: body.slice(0, 300),
-            });
-            return { name: undefined };
+      ): Promise<ResolveProductNameResponse> {
+        return withTelemetry('CatalogService.resolveProductName', request, async () => {
+          const provider = request.provider ?? '';
+          const plugin = getProvider(provider);
+          if (!plugin?.resolveProductName) {
+            return { name: '', error: 'not_supported' };
           }
 
-          return await readJsonResponse<ResolveVrchatAvatarNameResponse>(response);
+          const authUserId = request.authUserId ?? '';
+          const convex = getConvexClientFromUrl(deps.config.convexUrl);
+          const ctx: ProviderContext = {
+            convex,
+            apiSecret: deps.config.convexApiSecret,
+            authUserId,
+            encryptionSecret: deps.config.encryptionSecret,
+          };
+
+          const credential = await plugin.getCredential(ctx);
+          const result = await plugin.resolveProductName(credential, request.urlOrId ?? '', ctx);
+          return { name: result.name ?? '', error: result.error };
         });
       }
 
@@ -641,7 +606,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
             createJsonRequest(
               `${deps.config.apiBaseUrl}/api/collab/connections/manual`,
               {
-                providerKey: request.providerKey ?? 'jinxxy',
+                providerKey: request.providerKey ?? '',
                 credential: request.credential ?? '',
                 serverName: request.serverName,
               },
