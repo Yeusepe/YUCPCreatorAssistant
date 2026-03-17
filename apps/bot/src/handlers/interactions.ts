@@ -5,7 +5,7 @@
  * Domain-specific handlers live in the ./interactions/ subdirectory.
  */
 
-import { createLogger, getProviderDescriptor } from '@yucp/shared';
+import { createLogger, getProviderDescriptor, providerLabel } from '@yucp/shared';
 import {
   type AutocompleteInteraction,
   type ButtonInteraction,
@@ -247,18 +247,8 @@ async function handleAutocomplete(
         .slice(0, 25);
 
       const providerPrefix = (p: { provider?: string }) => {
-        switch (p.provider) {
-          case 'gumroad':
-            return '[Gumroad] ';
-          case 'jinxxy':
-            return '[Jinxxy] ';
-          case 'discord':
-            return '[Discord Role] ';
-          case 'manual':
-            return '[License] ';
-          default:
-            return '';
-        }
+        if (!p.provider) return '';
+        return `[${providerLabel(p.provider)}] `;
       };
 
       // Resolve Discord role names for display (optional; OAuth checks roles, not the bot)
@@ -335,6 +325,7 @@ async function handleAutocomplete(
     }
 
     const products = (await ctx.convex.query(api.productResolution.getProductsForTenant, {
+      apiSecret: ctx.apiSecret,
       authUserId: guildLink.authUserId,
     })) as Array<{
       productId: string;
@@ -626,20 +617,19 @@ async function handleUserCommand(
       }
       const provider = productValue.slice(0, sepIdx);
       const providerProductRef = productValue.slice(sepIdx + 2);
-      const isGumroad = provider === 'gumroad';
+      const descriptor = getProviderDescriptor(provider);
+      const licenseConfig = descriptor?.licenseKey;
       const { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = await import(
         'discord.js'
       );
       const modal = new ModalBuilder()
         .setCustomId(`creator_verify:lp_modal:${authUserId}:${providerProductRef}:${provider}`)
-        .setTitle(isGumroad ? 'Enter Gumroad License Key' : 'Enter Jinxxy License Key');
+        .setTitle(`Enter ${providerLabel(provider)} License Key`);
       const keyInput = new TextInputBuilder()
         .setCustomId('license_key')
-        .setLabel(isGumroad ? 'License Key (XXXX-XXXX-XXXX-XXXX)' : 'License Key')
+        .setLabel(licenseConfig?.inputLabel ?? 'License Key')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder(
-          isGumroad ? 'XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX' : 'Enter your license key'
-        )
+        .setPlaceholder(licenseConfig?.placeholder ?? 'Enter your license key')
         .setRequired(true)
         .setMinLength(8)
         .setMaxLength(200);

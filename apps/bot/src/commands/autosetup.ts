@@ -5,7 +5,7 @@
  * then the bot walks them through each step using Discord.js v14 UI components.
  */
 
-import { CATALOG_SYNC_PROVIDER_KEYS, createLogger } from '@yucp/shared';
+import { CATALOG_SYNC_PROVIDER_KEYS, buildCatalogProductUrl, getProviderDescriptor, createLogger } from '@yucp/shared';
 import type { ConvexHttpClient } from 'convex/browser';
 import type {
   ButtonInteraction,
@@ -804,41 +804,26 @@ export async function handleAutosetupProductsSelect(
       for (const pk of productKeys) createdRoleIds[pk] = role.id;
 
       for (const product of products) {
-        if (product.provider === 'gumroad') {
-          const result = await convex.mutation(api.role_rules.addProductFromGumroad, {
-            apiSecret,
-            authUserId,
-            productId: product.id,
-            providerProductRef: product.id,
-          });
-          await convex.mutation(api.role_rules.createRoleRule, {
-            apiSecret,
-            authUserId,
-            guildId: session.guildId,
-            guildLinkId: session.guildLinkId,
-            productId: result.productId,
-            catalogProductId: result.catalogProductId,
-            verifiedRoleId: role.id,
-          });
-        } else {
-          const result = await convex.mutation(api.role_rules.addProductForProvider, {
-            apiSecret,
-            authUserId,
-            productId: product.id,
-            providerProductRef: product.id,
-            provider: product.provider,
-            displayName: product.name,
-          });
-          await convex.mutation(api.role_rules.createRoleRule, {
-            apiSecret,
-            authUserId,
-            guildId: session.guildId,
-            guildLinkId: session.guildLinkId,
-            productId: result.productId,
-            catalogProductId: result.catalogProductId,
-            verifiedRoleId: role.id,
-          });
-        }
+        const descriptor = getProviderDescriptor(product.provider);
+        const result = await convex.mutation(api.role_rules.addProductForProvider, {
+          apiSecret,
+          authUserId,
+          productId: product.id,
+          providerProductRef: product.id,
+          provider: product.provider,
+          displayName: product.name,
+          productUrl: buildCatalogProductUrl(product.provider, product.id) ?? undefined,
+          supportsAutoDiscovery: descriptor?.supportsAutoDiscovery ?? false,
+        });
+        await convex.mutation(api.role_rules.createRoleRule, {
+          apiSecret,
+          authUserId,
+          guildId: session.guildId,
+          guildLinkId: session.guildLinkId,
+          productId: result.productId,
+          catalogProductId: result.catalogProductId,
+          verifiedRoleId: role.id,
+        });
       }
       created++;
 

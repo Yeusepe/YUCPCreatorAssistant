@@ -280,6 +280,7 @@ export async function showProductPicker(
   let products: Product[] = [];
   try {
     products = (await convex.query(api.productResolution.getProductsForTenant, {
+      apiSecret,
       authUserId,
     })) as Product[];
     products = await enrichDisplayNames(products, authUserId, apiSecret);
@@ -322,6 +323,7 @@ export async function handlePickerNavigation(
   let products: Product[] = [];
   try {
     products = (await convex.query(api.productResolution.getProductsForTenant, {
+      apiSecret,
       authUserId,
     })) as Product[];
     products = await enrichDisplayNames(products, authUserId, apiSecret);

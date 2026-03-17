@@ -6,7 +6,8 @@
  */
 
 import { v } from 'convex/values';
-import { query } from './_generated/server';
+import { internalQuery, query } from './_generated/server';
+import { requireApiSecret } from './lib/apiAuth';
 import { ProviderV } from './lib/providers';
 
 /**
@@ -40,8 +41,9 @@ async function sha256Hex(input: string): Promise<string> {
 /**
  * Resolve a catalog product by URL.
  * Returns the catalog product and link if found; null otherwise.
+ * Internal only — exposes authUserId to unauthenticated callers if public.
  */
-export const resolveProductByUrl = query({
+export const resolveProductByUrl = internalQuery({
   args: {
     url: v.string(),
   },
@@ -88,6 +90,7 @@ export const resolveProductByUrl = query({
  */
 export const getProductsForTenant = query({
   args: {
+    apiSecret: v.string(),
     authUserId: v.string(),
   },
   returns: v.array(
@@ -101,6 +104,7 @@ export const getProductsForTenant = query({
     })
   ),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const products = await ctx.db
       .query('product_catalog')
       .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))

@@ -1186,23 +1186,28 @@ export async function handleProductConfirmAdd(
         );
       }
 
-      const result = await convex.mutation(api.role_rules.addProductFromGumroad, {
+      const result = await convex.mutation(api.role_rules.addProductForProvider, {
         apiSecret,
         authUserId,
         productId: resolvedProductId,
         providerProductRef: resolvedProductId,
-        canonicalSlug: slug,
+        provider: 'gumroad',
         displayName: resolvedDisplayName,
+        productUrl: buildCatalogProductUrl('gumroad', resolvedProductId) ?? undefined,
+        supportsAutoDiscovery: true,
       });
       productId = result.productId;
       catalogProductId = result.catalogProductId;
     } else if (type === 'license') {
       const parsed = urlOrId?.trim() ?? 'license';
-      const result = await convex.mutation(api.role_rules.addProductFromGumroad, {
+      const result = await convex.mutation(api.role_rules.addProductForProvider, {
         apiSecret,
         authUserId,
         productId: parsed,
         providerProductRef: parsed,
+        provider: 'gumroad',
+        productUrl: buildCatalogProductUrl('gumroad', parsed) ?? undefined,
+        supportsAutoDiscovery: true,
       });
       productId = result.productId;
       catalogProductId = result.catalogProductId;
@@ -1245,12 +1250,14 @@ export async function handleProductConfirmAdd(
         });
       }
 
-      const result = await convex.mutation(api.role_rules.addProductFromVrchat, {
+      const result = await convex.mutation(api.role_rules.addProductForProvider, {
         apiSecret,
         authUserId,
         productId: avatarId,
         providerProductRef: avatarId,
+        provider: 'vrchat',
         displayName: vrchatDisplayName,
+        productUrl: buildCatalogProductUrl('vrchat', avatarId) ?? undefined,
       });
       productId = result.productId;
       catalogProductId = result.catalogProductId;
@@ -1271,10 +1278,13 @@ export async function handleProductConfirmAdd(
         throw new Error(credResult.error ?? 'Failed to save Payhip product secret key');
       }
 
-      const result = await convex.mutation(api.role_rules.addProductFromPayhip, {
+      const result = await convex.mutation(api.role_rules.addProductForProvider, {
         apiSecret,
         authUserId,
-        permalink,
+        productId: permalink,
+        providerProductRef: permalink,
+        provider: 'payhip',
+        productUrl: buildCatalogProductUrl('payhip', permalink) ?? undefined,
       });
       productId = result.productId;
       catalogProductId = result.catalogProductId;

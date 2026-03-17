@@ -7,7 +7,7 @@
 
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { mutation, query } from './_generated/server';
+import { internalQuery, mutation, query } from './_generated/server';
 import {
   type ExternalAccountIdentityCandidate,
   selectCanonicalExternalAccountCandidates,
@@ -405,8 +405,9 @@ export const getSubjectWithAccounts = query({
 /**
  * Check if a subject exists with the given Discord ID.
  * Lightweight check for validation purposes.
+ * Internal only — exposes a global enumeration oracle if public.
  */
-export const subjectExistsByDiscordId = query({
+export const subjectExistsByDiscordId = internalQuery({
   args: {
     discordUserId: v.string(),
   },
@@ -513,8 +514,9 @@ export const listByAuthUser = query({
 /**
  * Get subject ID by Discord user ID.
  * Returns just the ID for efficient lookups.
+ * Internal only — exposes a global enumeration oracle if public.
  */
-export const getSubjectIdByDiscordId = query({
+export const getSubjectIdByDiscordId = internalQuery({
   args: {
     discordUserId: v.string(),
   },

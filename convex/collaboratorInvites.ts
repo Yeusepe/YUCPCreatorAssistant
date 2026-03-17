@@ -62,7 +62,6 @@ export const getCollaboratorInviteByTokenHash = query({
     v.object({
       _id: v.id('collaborator_invites'),
       ownerAuthUserId: v.string(),
-      tokenHash: v.string(),
       status: v.union(v.literal('pending'), v.literal('accepted'), v.literal('revoked')),
       ownerDisplayName: v.string(),
       ownerGuildId: v.optional(v.string()),
@@ -82,7 +81,6 @@ export const getCollaboratorInviteByTokenHash = query({
     return {
       _id: invite._id,
       ownerAuthUserId: invite.ownerAuthUserId,
-      tokenHash: invite.tokenHash,
       status: invite.status,
       ownerDisplayName: invite.ownerDisplayName,
       ownerGuildId: invite.ownerGuildId,

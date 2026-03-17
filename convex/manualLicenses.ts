@@ -90,12 +90,22 @@ export const BulkCreateManualLicensesInput = v.object({
 
 /**
  * Get a manual license by ID.
+ * Requires apiSecret and scoped to the requesting tenant.
  */
 export const getById = query({
-  args: { licenseId: v.id('manual_licenses') },
-  handler: async (ctx, { licenseId }) => {
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    licenseId: v.id('manual_licenses'),
+  },
+  handler: async (ctx, { apiSecret, authUserId, licenseId }) => {
+    requireApiSecret(apiSecret);
     const license = await ctx.db.get(licenseId);
     if (!license) {
+      return null;
+    }
+    // Scope to requesting tenant to prevent cross-tenant data access
+    if (license.authUserId !== authUserId) {
       return null;
     }
     // Never return the hash
@@ -106,10 +116,16 @@ export const getById = query({
 
 /**
  * Find a manual license by key hash.
+ * Requires apiSecret. Scoped by the hash itself — no cross-tenant enumeration possible
+ * since only the holder of the raw key can compute the correct hash.
  */
 export const findByKeyHash = query({
-  args: { licenseKeyHash: v.string() },
-  handler: async (ctx, { licenseKeyHash }) => {
+  args: {
+    apiSecret: v.string(),
+    licenseKeyHash: v.string(),
+  },
+  handler: async (ctx, { apiSecret, licenseKeyHash }) => {
+    requireApiSecret(apiSecret);
     const license = await ctx.db
       .query('manual_licenses')
       .withIndex('by_license_key_hash', (q) => q.eq('licenseKeyHash', licenseKeyHash))
@@ -130,11 +146,15 @@ export const findByKeyHash = query({
  */
 export const listByTenant = query({
   args: {
+    apiSecret: v.string(),
     authUserId: v.string(),
     productId: v.optional(v.string()),
     status: v.optional(ManualLicenseStatus),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
   },
-  handler: async (ctx, { authUserId, productId, status }) => {
+  handler: async (ctx, { apiSecret, authUserId, productId, status }) => {
+    requireApiSecret(apiSecret);
     const query = ctx.db
       .query('manual_licenses')
       .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId));
@@ -160,8 +180,12 @@ export const listByTenant = query({
  * Get statistics for manual licenses.
  */
 export const getStats = query({
-  args: { authUserId: v.string() },
-  handler: async (ctx, { authUserId }) => {
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+  },
+  handler: async (ctx, { apiSecret, authUserId }) => {
+    requireApiSecret(apiSecret);
     const licenses = await ctx.db
       .query('manual_licenses')
       .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
@@ -384,21 +408,36 @@ export const hardDelete = mutation({
 
 /**
  * Validate a license by hash.
+ * Requires apiSecret. The licenseKeyHash field was previously named `hashedKey`
+ * in the API server call — both names are accepted for backward compatibility,
+ * but the canonical field name in Convex is `licenseKeyHash`.
  */
 export const validateByHash = query({
-  args: ValidateManualLicenseInput,
-  handler: async (ctx, { licenseKeyHash, productId, authUserId }) => {
+  args: {
+    apiSecret: v.string(),
+    licenseKeyHash: v.optional(v.string()),
+    /** @deprecated Use licenseKeyHash. Accepted for backward compat with API server callers. */
+    hashedKey: v.optional(v.string()),
+    productId: v.optional(v.string()),
+    authUserId: v.string(),
+  },
+  handler: async (ctx, { apiSecret, licenseKeyHash, hashedKey, productId, authUserId }) => {
+    requireApiSecret(apiSecret);
+    const resolvedHash = licenseKeyHash ?? hashedKey;
+    if (!resolvedHash) {
+      return { valid: false as const, reason: 'not_found' };
+    }
     const license = await ctx.db
       .query('manual_licenses')
-      .withIndex('by_license_key_hash', (q) => q.eq('licenseKeyHash', licenseKeyHash))
+      .withIndex('by_license_key_hash', (q) => q.eq('licenseKeyHash', resolvedHash))
       .first();
 
     if (!license) {
       return { valid: false, reason: 'not_found' };
     }
 
-    // Check product match
-    if (license.productId !== productId) {
+    // Check product match (only if productId was supplied)
+    if (productId !== undefined && license.productId !== productId) {
       return { valid: false, reason: 'wrong_product' };
     }
 
