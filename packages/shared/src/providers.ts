@@ -111,10 +111,6 @@ export interface ProviderDescriptor {
   supportsTestMode: boolean;
   /** When set, this provider requires a per-product credential for license verification. */
   perProductCredential?: PerProductCredentialDescriptor;
-  compatibility?: {
-    legacyConnectRoutes?: string[];
-    legacyWebhookRoutes?: string[];
-  };
   /** When true, this provider can be added as a collab store source */
   supportsCollab?: boolean;
   /** Config for the manual collab add credential modal (only when supportsCollab is true) */
@@ -215,9 +211,6 @@ export const PROVIDER_REGISTRY = [
     supportsTestMode: false,
     supportsAutoDiscovery: true,
     catalogProductUrlTemplate: 'https://gumroad.com/l/{ref}',
-    compatibility: {
-      legacyWebhookRoutes: ['/webhooks/gumroad/:authUserId'],
-    },
   },
   {
     providerKey: 'jinxxy',
@@ -247,9 +240,6 @@ export const PROVIDER_REGISTRY = [
     supportsLicenseVerify: true,
     supportsTestMode: false,
     catalogProductUrlTemplate: 'https://jinxxy.app/products/{ref}',
-    compatibility: {
-      legacyWebhookRoutes: ['/webhooks/jinxxy/:authUserId'],
-    },
     supportsCollab: true,
     collabCredential: {
       label: 'Jinxxy API Key',
@@ -415,9 +405,6 @@ export const PROVIDER_REGISTRY = [
       productIdLabel: 'Product Permalink',
       productIdPlaceholder: 'e.g. RGsF',
       helpText: 'Found on the product edit page in Payhip under License Keys → Developer section.',
-    },
-    compatibility: {
-      legacyWebhookRoutes: ['/webhooks/payhip/:authUserId'],
     },
   },
   {
