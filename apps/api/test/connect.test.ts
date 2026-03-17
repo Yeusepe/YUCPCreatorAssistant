@@ -12,7 +12,7 @@ import { createAuth } from '../src/auth';
 import { DISCORD_ROLE_SETUP_COOKIE } from '../src/lib/browserSessions';
 import { createSetupSession, resolveSetupSession } from '../src/lib/setupSession';
 import { getStateStore } from '../src/lib/stateStore';
-import type { ConnectConfig } from '../src/providers/connect/types';
+import type { ConnectConfig } from '../src/providers/types';
 import { createConnectRoutes } from '../src/routes/connect';
 import { startTestServer, type TestServerHandle } from './helpers/testServer';
 

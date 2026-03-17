@@ -51,7 +51,7 @@ import { E, Emoji } from '../lib/emojis';
 import {
   completeLicenseVerification,
   completeVrchatVerification,
-  listProducts,
+  listProviderProducts,
 } from '../lib/internalRpc';
 import { sanitizeUserFacingErrorMessage } from '../lib/userFacingErrors';
 import { buildBotVerificationErrorMessage } from '../lib/verificationSupport';
@@ -244,7 +244,7 @@ async function enrichDisplayNames(
       try {
         let providerProducts: Array<{ id: string; name: string }> = [];
 
-        providerProducts = (await listProducts(provider, authUserId)).products ?? [];
+        providerProducts = (await listProviderProducts(provider, authUserId)).products ?? [];
 
         const nameById = Object.fromEntries(
           providerProducts.map((product) => [String(product.id), product.name])

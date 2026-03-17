@@ -114,7 +114,7 @@ export async function handleProviderProducts(
           await convex.mutation(api.providerConnections.markConnectionDegraded, {
             apiSecret,
             authUserId,
-            provider: provider as Parameters<typeof api.providerConnections.markConnectionDegraded._args>[0]['provider'],
+            provider: provider as string,
           });
         } catch (mutErr) {
           logger.warn('Failed to mark connection degraded', {
