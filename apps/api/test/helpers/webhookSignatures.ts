@@ -84,12 +84,15 @@ export interface JinxxyOrderOptions {
 /**
  * Returns a JSON string for a Jinxxy webhook payload.
  * Sign the returned string with {@link signJinxxy} to get the header value.
+ *
+ * Note: Real Jinxxy webhooks do not include a top-level `created_at` field.
+ * Only pass `createdAt` when explicitly testing timestamp-based replay protection.
  */
 export function jinxxyOrderPayload(opts: JinxxyOrderOptions): string {
   return JSON.stringify({
     event_id: opts.eventId,
     event_type: opts.eventType ?? 'order.completed',
-    created_at: opts.createdAt ?? new Date().toISOString(),
+    ...(opts.createdAt !== undefined ? { created_at: opts.createdAt } : {}),
     ...(opts.data ?? {}),
   });
 }

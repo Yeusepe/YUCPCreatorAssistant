@@ -132,7 +132,9 @@ export const webhook: WebhookPlugin = {
               eventType,
               rawPayload: payload,
               signatureValid,
-              verificationMethod: 'hmac',
+              // Payhip's "signature" is SHA256(apiKey) — a static value per connection,
+              // not a body-bound HMAC. Use 'static-key' to correctly model this trust level.
+              verificationMethod: 'static-key',
             });
             if (result.duplicate) {
               logger.debug('Payhip webhook: duplicate event', { eventId, authUserId });
@@ -160,7 +162,9 @@ export const webhook: WebhookPlugin = {
             eventType,
             rawPayload: payload,
             signatureValid,
-            verificationMethod: 'hmac',
+            // Payhip's "signature" is SHA256(apiKey) — a static value per connection,
+            // not a body-bound HMAC. Use 'static-key' to correctly model this trust level.
+            verificationMethod: 'static-key',
           });
           if (result.duplicate) {
             logger.debug('Payhip webhook: duplicate event (user-scoped)', { eventId, routeId });

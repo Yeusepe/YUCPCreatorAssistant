@@ -1251,10 +1251,13 @@ const webhook_events = defineTable({
   // webhookRouteToken. Use `verificationMethod` to distinguish security models.
   signatureValid: v.boolean(),
   // How the event was authenticated:
-  //   'hmac'        – body-bound HMAC verified (Jinxxy, Payhip, LemonSqueezy)
+  //   'hmac'        – body-bound HMAC verified (Jinxxy, LemonSqueezy)
+  //   'static-key'  – static key hash checked (Payhip: SHA256(apiKey), not body-bound)
   //   'route-token' – authenticated by a private random URL token (Gumroad Ping)
   // When absent, falls back to the legacy `signatureValid` boolean alone.
-  verificationMethod: v.optional(v.union(v.literal('hmac'), v.literal('route-token'))),
+  verificationMethod: v.optional(
+    v.union(v.literal('hmac'), v.literal('static-key'), v.literal('route-token'))
+  ),
   // Processing status
   status: WebhookEventStatus,
   // Error message if processing failed
