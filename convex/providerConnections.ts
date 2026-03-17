@@ -1,8 +1,8 @@
 /**
  * Provider Connections - Creator credentials and webhook config
  *
- * Gumroad: OAuth tokens, resource subscriptions.
- * Jinxxy: API key, webhook secret.
+ * All credentials are stored generically in the provider_credentials table.
+ * No per-provider field names are needed here.
  */
 
 import { v } from 'convex/values';
@@ -14,6 +14,7 @@ import {
   type ExternalAccountIdentityCandidate,
   findDuplicateExternalAccountIdentityGroups,
 } from './lib/externalAccountIdentity';
+import { AUTH_MODE_CREDENTIAL_KEY } from './lib/credentialKeys';
 import { ProviderV } from './lib/providers';
 
 function requireApiSecret(apiSecret: string | undefined): void {
@@ -273,7 +274,7 @@ export const getGumroadWebhookSecret = query({
       .first();
     if (!conn) return null;
     const credentialSecret = await getCredentialValue(ctx, conn._id, 'webhook_secret');
-    return credentialSecret ?? conn.gumroadWebhookSecretRef ?? null;
+    return credentialSecret ?? conn.webhookSecretRef ?? null;
   },
 });
 
@@ -297,20 +298,9 @@ export const getGumroadWebhookSecretByRouteId = query({
       .first();
     if (!conn || conn.status === 'disconnected') return null;
     const credentialSecret = await getCredentialValue(ctx, conn._id, 'webhook_secret');
-    return credentialSecret ?? conn.gumroadWebhookSecretRef ?? null;
+    return credentialSecret ?? conn.webhookSecretRef ?? null;
   },
 });
-
-/**
- * Maps authMode (stored on each connection) to the corresponding credential key
- * in the provider_credentials table. Adding support for a new auth mode only
- * requires adding an entry here, no per-provider hardcoding needed.
- */
-const AUTH_MODE_CREDENTIAL_KEY: Record<string, string> = {
-  oauth: 'oauth_access_token',
-  api_key: 'api_key',
-  api_token: 'api_token',
-};
 
 /**
  * Get connection status for a tenant. Returns a dynamic record keyed by
@@ -339,9 +329,7 @@ export const getConnectionStatus = query({
         }
         const credKey = conn.authMode ? AUTH_MODE_CREDENTIAL_KEY[conn.authMode] : undefined;
         const credValue = credKey ? await getCredentialValue(ctx, conn._id, credKey) : null;
-        // Preserve backward compatibility for connections that predate the credentials table.
-        const hasLegacyToken = !!(conn.gumroadAccessTokenEncrypted || conn.jinxxyApiKeyEncrypted);
-        result[providerKey] = !!(credValue || hasLegacyToken);
+        result[providerKey] = !!credValue;
       })
     );
     return result;
@@ -390,20 +378,16 @@ export const listConnections = query({
             connectionType: c.connectionType ?? 'setup',
             status:
               c.status ??
-              (c.gumroadAccessTokenEncrypted ||
-              c.jinxxyApiKeyEncrypted ||
-              apiKey ||
-              apiToken ||
-              accessToken
+              (apiKey || apiToken || accessToken
                 ? 'active'
                 : 'disconnected'),
             authMode: c.authMode,
             externalShopId: c.externalShopId,
             externalShopName: c.externalShopName,
             webhookConfigured: c.webhookConfigured,
-            hasApiKey: !!(apiKey || c.jinxxyApiKeyEncrypted),
+            hasApiKey: !!apiKey,
             hasApiToken: !!apiToken,
-            hasAccessToken: !!(accessToken || c.gumroadAccessTokenEncrypted),
+            hasAccessToken: !!accessToken,
             capabilities: capabilityRows.map((row) => ({
               capabilityKey: row.capabilityKey,
               status: row.status,
@@ -474,8 +458,8 @@ export const getProviderConnection = query({
 });
 
 /**
- * Get connection with encrypted tokens for backfill (internal use by API).
- * Returns encrypted token for decryption by API which has BETTER_AUTH_SECRET.
+ * Get all credentials for a provider connection. Used by provider plugins' getCredential().
+ * Returns a map of credentialKey -> encryptedValue.
  */
 export const getConnectionForBackfill = query({
   args: {
@@ -484,14 +468,12 @@ export const getConnectionForBackfill = query({
     provider: ProviderV,
   },
   returns: v.union(
+    v.null(),
     v.object({
-      gumroadAccessTokenEncrypted: v.optional(v.string()),
-      jinxxyApiKeyEncrypted: v.optional(v.string()),
-      lemonApiTokenEncrypted: v.optional(v.string()),
-      webhookSecretEncrypted: v.optional(v.string()),
-      vrchatSessionEncrypted: v.optional(v.string()),
-    }),
-    v.null()
+      credentials: v.record(v.string(), v.string()),
+      webhookSecretRef: v.optional(v.string()),
+      webhookRouteToken: v.optional(v.string()),
+    })
   ),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
@@ -500,25 +482,26 @@ export const getConnectionForBackfill = query({
       .withIndex('by_auth_user_provider', (q) =>
         q.eq('authUserId', args.authUserId).eq('provider', args.provider)
       )
+      .filter((q) => q.neq(q.field('status'), 'disconnected'))
       .first();
-
     if (!conn) return null;
-    const apiKey = await getCredentialValue(ctx, conn._id, 'api_key');
-    const apiToken = await getCredentialValue(ctx, conn._id, 'api_token');
-    const accessToken = await getCredentialValue(ctx, conn._id, 'oauth_access_token');
-    const webhookSecret = await getCredentialValue(ctx, conn._id, 'webhook_secret');
-    const vrchatSession = await getCredentialValue(ctx, conn._id, 'vrchat_session');
+
+    const credRows = await ctx.db
+      .query('provider_credentials')
+      .withIndex('by_connection', (q) => q.eq('providerConnectionId', conn._id))
+      .collect();
+
+    const credentials: Record<string, string> = {};
+    for (const row of credRows) {
+      if (row.encryptedValue) {
+        credentials[row.credentialKey] = row.encryptedValue;
+      }
+    }
 
     return {
-      gumroadAccessTokenEncrypted: accessToken ?? conn.gumroadAccessTokenEncrypted,
-      jinxxyApiKeyEncrypted: apiKey ?? conn.jinxxyApiKeyEncrypted,
-      lemonApiTokenEncrypted: apiToken ?? undefined,
-      webhookSecretEncrypted:
-        webhookSecret ??
-        conn.remoteWebhookSecretRef ??
-        conn.webhookSecretRef ??
-        conn.gumroadWebhookSecretRef,
-      vrchatSessionEncrypted: vrchatSession ?? undefined,
+      credentials,
+      webhookSecretRef: conn.webhookSecretRef ?? undefined,
+      webhookRouteToken: conn.webhookRouteToken ?? undefined,
     };
   },
 });
@@ -804,8 +787,131 @@ export const updateTenantSetting = mutation({
 });
 
 /**
+ * Generic: upsert a provider connection with credentials.
+ * Each connect plugin calls this with its own credential keys.
+ * No per-provider field names needed — all credentials go through provider_credentials table.
+ */
+export const upsertProviderConnection = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    providerKey: ProviderV,
+    authMode: v.string(),
+    label: v.optional(v.string()),
+    externalShopId: v.optional(v.string()),
+    externalShopName: v.optional(v.string()),
+    webhookRouteToken: v.optional(v.string()),
+    webhookConfigured: v.optional(v.boolean()),
+    webhookEndpoint: v.optional(v.string()),
+    webhookSecretRef: v.optional(v.string()),
+    credentials: v.array(
+      v.object({
+        credentialKey: v.string(),
+        kind: v.union(
+          v.literal('api_key'),
+          v.literal('api_token'),
+          v.literal('oauth_access_token'),
+          v.literal('oauth_refresh_token'),
+          v.literal('webhook_secret'),
+          v.literal('remote_webhook'),
+          v.literal('store_selector')
+        ),
+        encryptedValue: v.string(),
+      })
+    ),
+    capabilities: v.optional(
+      v.array(
+        v.object({
+          capabilityKey: v.string(),
+          status: v.union(
+            v.literal('pending'),
+            v.literal('available'),
+            v.literal('configured'),
+            v.literal('active'),
+            v.literal('degraded'),
+            v.literal('unsupported')
+          ),
+          requiredCredentialKeys: v.array(v.string()),
+        })
+      )
+    ),
+  },
+  returns: v.id('provider_connections'),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query('provider_connections')
+      .withIndex('by_auth_user_provider', (q) =>
+        q.eq('authUserId', args.authUserId).eq('provider', args.providerKey)
+      )
+      .first();
+
+    let connectionId: Id<'provider_connections'>;
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        status: 'active',
+        authMode: args.authMode,
+        ...(args.externalShopId !== undefined ? { externalShopId: args.externalShopId } : {}),
+        ...(args.externalShopName !== undefined ? { externalShopName: args.externalShopName } : {}),
+        ...(args.webhookRouteToken !== undefined ? { webhookRouteToken: args.webhookRouteToken } : {}),
+        ...(args.webhookEndpoint !== undefined ? { webhookEndpoint: args.webhookEndpoint } : {}),
+        ...(args.webhookSecretRef !== undefined ? { webhookSecretRef: args.webhookSecretRef } : {}),
+        ...(args.webhookConfigured !== undefined ? { webhookConfigured: args.webhookConfigured } : {}),
+        updatedAt: now,
+      });
+      connectionId = existing._id;
+    } else {
+      connectionId = await ctx.db.insert('provider_connections', {
+        authUserId: args.authUserId,
+        provider: args.providerKey,
+        providerKey: args.providerKey,
+        label: args.label ?? `${providerLabel(args.providerKey)} Connection`,
+        connectionType: 'setup',
+        status: 'active',
+        authMode: args.authMode,
+        externalShopId: args.externalShopId,
+        externalShopName: args.externalShopName,
+        webhookConfigured: args.webhookConfigured ?? false,
+        webhookEndpoint: args.webhookEndpoint,
+        webhookSecretRef: args.webhookSecretRef,
+        webhookRouteToken: args.webhookRouteToken,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    for (const cred of args.credentials) {
+      await upsertCredential(ctx, {
+        providerConnectionId: connectionId,
+        providerKey: args.providerKey,
+        credentialKey: cred.credentialKey,
+        kind: cred.kind,
+        encryptedValue: cred.encryptedValue,
+      });
+    }
+
+    if (args.capabilities) {
+      for (const cap of args.capabilities) {
+        await upsertCapability(ctx, {
+          providerConnectionId: connectionId,
+          providerKey: args.providerKey,
+          capabilityKey: cap.capabilityKey,
+          status: cap.status,
+          requiredCredentialKeys: cap.requiredCredentialKeys,
+        });
+      }
+    }
+
+    return connectionId;
+  },
+});
+
+/**
  * Upsert Gumroad provider connection (OAuth tokens).
- * authUserId is optional, omit only for system-level setup without user scope.
+ * @deprecated Use upsertProviderConnection instead.
  */
 export const upsertGumroadConnection = mutation({
   args: {
@@ -813,7 +919,6 @@ export const upsertGumroadConnection = mutation({
     authUserId: v.optional(v.string()),
     gumroadAccessTokenEncrypted: v.string(),
     gumroadRefreshTokenEncrypted: v.optional(v.string()),
-    gumroadUserId: v.optional(v.string()),
     resourceSubscriptionIds: v.optional(v.array(v.string())),
     webhookRouteToken: v.optional(v.string()),
   },
@@ -841,13 +946,9 @@ export const upsertGumroadConnection = mutation({
         providerKey: 'gumroad',
         status: 'active',
         authMode: 'oauth',
-        gumroadAccessTokenEncrypted: args.gumroadAccessTokenEncrypted,
-        gumroadRefreshTokenEncrypted:
-          args.gumroadRefreshTokenEncrypted ?? existing.gumroadRefreshTokenEncrypted,
-        gumroadUserId: args.gumroadUserId ?? existing.gumroadUserId,
         authUserId: args.authUserId ?? existing.authUserId,
         ...(args.resourceSubscriptionIds !== undefined
-          ? { resourceSubscriptionIds: args.resourceSubscriptionIds, webhookConfigured: true }
+          ? { webhookConfigured: true }
           : {}),
         ...(args.webhookRouteToken !== undefined
           ? { webhookRouteToken: args.webhookRouteToken }
@@ -887,10 +988,6 @@ export const upsertGumroadConnection = mutation({
       connectionType: 'setup',
       status: 'active',
       authMode: 'oauth',
-      gumroadAccessTokenEncrypted: args.gumroadAccessTokenEncrypted,
-      gumroadRefreshTokenEncrypted: args.gumroadRefreshTokenEncrypted,
-      gumroadUserId: args.gumroadUserId,
-      resourceSubscriptionIds: args.resourceSubscriptionIds,
       webhookConfigured: (args.resourceSubscriptionIds?.length ?? 0) > 0,
       webhookRouteToken: args.webhookRouteToken,
       createdAt: now,

@@ -2,17 +2,14 @@
  * Discord interaction handler for slash commands, buttons, modals, select menus.
  *
  * Routes interactions to command handlers. Admin subcommands require Administrator permission.
+ * Domain-specific handlers live in the ./interactions/ subdirectory.
  */
 
-import { PROVIDER_REGISTRY, createLogger, getProviderDescriptor } from '@yucp/shared';
-import type { ProviderDescriptor } from '@yucp/shared';
+import { createLogger, getProviderDescriptor } from '@yucp/shared';
 import { ConvexHttpClient } from 'convex/browser';
 import {
-  ActionRowBuilder,
   type AutocompleteInteraction,
-  ButtonBuilder,
   type ButtonInteraction,
-  ChannelSelectMenuBuilder,
   type ChannelSelectMenuInteraction,
   type ChatInputCommandInteraction,
   EmbedBuilder,
@@ -24,54 +21,20 @@ import {
   type UserSelectMenuInteraction,
 } from 'discord.js';
 import { api } from '../../../../convex/_generated/api';
-import type { Id } from '../../../../convex/_generated/dataModel';
-import {
-  buildJinxxyModal,
-  buildSetupStep2Components,
-  handleSetupJinxxyModal,
-  handleSetupSelect,
-  runSetupStart,
-  runSetupStartUnconfigured,
-} from '../commands/setup';
+import { runSetupStart, runSetupStartUnconfigured } from '../commands/setup';
 import { getApiUrls } from '../lib/apiUrls';
 import { E } from '../lib/emojis';
-import { createConnectToken } from '../lib/internalRpc';
 import { track } from '../lib/posthog';
+import { handleCollabButton, handleCollabModal, handleCollabStringSelect } from './interactions/collab';
+import { handleProductButton, handleProductModal, handleProductRoleSelect, handleProductStringSelect } from './interactions/product';
+import { handleSetupButton, handleSetupModal, handleSetupStringSelect } from './interactions/setup';
+import type { InteractionHandlerContext } from './interactions/types';
+import { getNotConfiguredMessage } from './interactions/shared';
+import { handleVerifyButton, handleVerifyModal, handleVerifyStringSelect } from './interactions/verify';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
-/** Message when server has no guild link. forAdmin: securely fetch token to sign-in; otherwise tell user to ask admin. */
-async function getNotConfiguredMessage(
-  guildId: string,
-  discordUserId: string,
-  _apiSecret: string,
-  forAdmin = false
-): Promise<string> {
-  if (forAdmin) {
-    const { apiInternal, apiPublic, webPublic } = getApiUrls();
-    const linkBase = webPublic ?? apiPublic;
-    if (linkBase) {
-      try {
-        if (apiInternal ?? apiPublic) {
-          const token = await createConnectToken({ discordUserId, guildId });
-          if (token) {
-            return `This server is not configured. [Sign in to configure](${linkBase}/dashboard?guild_id=${guildId}#token=${token})`;
-          }
-        }
-      } catch (e) {
-        logger.error('Failed to generate secure connect token', { error: e });
-      }
-      return `This server is not configured. [Sign in to configure](${linkBase}/dashboard?guild_id=${guildId})`;
-    }
-    return 'This server is not configured. Please sign in to configure (API_BASE_URL not set).';
-  }
-  return "This server isn't set up for verification yet. Ask a server admin to configure it in the Creator Portal.";
-}
-
-export interface InteractionHandlerContext {
-  convex: ConvexHttpClient;
-  apiSecret: string;
-}
+export type { InteractionHandlerContext };
 
 function requireAdmin(interaction: ChatInputCommandInteraction): boolean {
   const member = interaction.member;
@@ -719,97 +682,10 @@ async function handleButton(
 ): Promise<void> {
   const customId = interaction.customId;
 
-  // ─── Verify flow (backwards-compatible) ───────────────────────────────────
-  if (customId === 'verify_start') {
-    const guildId = interaction.guildId;
-    if (!guildId) {
-      await interaction.reply({ content: 'Use this in a server.', flags: MessageFlags.Ephemeral });
-      return;
-    }
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const guildLink = await ctx.convex.query(api.guildLinks.getByDiscordGuildForBot, {
-      apiSecret: ctx.apiSecret,
-      discordGuildId: guildId,
-    });
-    if (!guildLink) {
-      await interaction.editReply({
-        content: await getNotConfiguredMessage(guildId, interaction.user.id, ctx.apiSecret),
-      });
-      return;
-    }
-    const { handleVerifyStartButton } = await import('../commands/verify');
-    await handleVerifyStartButton(
-      interaction,
-      ctx.convex,
-      ctx.apiSecret,
-      process.env.API_BASE_URL,
-      {
-        authUserId: guildLink.authUserId as string,
-        guildId,
-      }
-    );
-    return;
-  }
-
-  if (customId.startsWith('creator_verify:disconnect:')) {
-    const provider = customId.slice('creator_verify:disconnect:'.length);
-    const VALID_PROVIDERS = new Set<string>(
-      (PROVIDER_REGISTRY as readonly ProviderDescriptor[]).map((p) => p.providerKey)
-    );
-    if (!VALID_PROVIDERS.has(provider)) {
-      await interaction.reply({ content: 'Invalid provider.', flags: MessageFlags.Ephemeral });
-      return;
-    }
-    const { handleVerifyDisconnectButton } = await import('../commands/verify');
-    await handleVerifyDisconnectButton(
-      interaction,
-      ctx.convex,
-      ctx.apiSecret,
-      process.env.API_BASE_URL,
-      provider
-    );
-    return;
-  }
-
-  if (customId.startsWith('creator_verify:license:')) {
-    const authUserId = customId.slice('creator_verify:license:'.length) as string;
-    const { showProductPicker } = await import('../commands/licenseVerify');
-    await showProductPicker(interaction, ctx.convex, ctx.apiSecret, authUserId);
-    return;
-  }
-
-  if (customId.startsWith('creator_verify:add_more:')) {
-    const authUserId = customId.slice('creator_verify:add_more:'.length) as string;
-    const guildId = interaction.guildId ?? '';
-    const { handleVerifyAddMore } = await import('../commands/verify');
-    await handleVerifyAddMore(interaction, ctx.convex, ctx.apiSecret, process.env.API_BASE_URL, {
-      authUserId,
-      guildId,
-    });
-    return;
-  }
-
-  // ─── License picker - filter/page navigation ───────────────────────────────
-  if (
-    customId.startsWith('creator_verify:lp_filter:') ||
-    customId.startsWith('creator_verify:lp_page:')
-  ) {
-    // Format: creator_verify:lp_filter:{authUserId}:{filter}:{page}
-    //      OR creator_verify:lp_page:{authUserId}:{filter}:{page}
-    const prefix = customId.startsWith('creator_verify:lp_filter:')
-      ? 'creator_verify:lp_filter:'
-      : 'creator_verify:lp_page:';
-    const rest = customId.slice(prefix.length);
-    const firstColon = rest.indexOf(':');
-    const authUserId = firstColon >= 0 ? rest.slice(0, firstColon) : rest;
-    const remainder = firstColon >= 0 ? rest.slice(firstColon + 1) : '';
-    const secondColon = remainder.indexOf(':');
-    const filter = (secondColon >= 0 ? remainder.slice(0, secondColon) : remainder) || 'all';
-    const page = Number.parseInt(secondColon >= 0 ? remainder.slice(secondColon + 1) : '0', 10);
-    const { handlePickerNavigation } = await import('../commands/licenseVerify');
-    await handlePickerNavigation(interaction, ctx.convex, ctx.apiSecret, authUserId, filter, page);
-    return;
-  }
+  if (await handleVerifyButton(interaction, ctx)) return;
+  if (await handleProductButton(interaction, ctx)) return;
+  if (await handleSetupButton(interaction, ctx)) return;
+  if (await handleCollabButton(interaction, ctx)) return;
 
   // ─── Stats navigation ──────────────────────────────────────────────────────
   // Format: creator_stats:view_users:{authUserId}:{guildId}
@@ -1064,36 +940,7 @@ async function handleButton(
     return;
   }
 
-  // ─── Product add flow ──────────────────────────────────────────────────────
-  if (customId.startsWith('creator_product:confirm_add:')) {
-    // Format: creator_product:confirm_add:{userId}:{authUserId}
-    const rest = customId.slice('creator_product:confirm_add:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const authUserId = rest.slice(colonIdx + 1) as string;
-    const { handleProductConfirmAdd } = await import('../commands/product');
-    await handleProductConfirmAdd(interaction, ctx.convex, ctx.apiSecret, userId, authUserId);
-    return;
-  }
-
-  if (customId.startsWith('creator_product:cancel_add:')) {
-    const authUserId = customId.slice('creator_product:cancel_add:'.length) as string;
-    const { handleProductCancelAdd } = await import('../commands/product');
-    await handleProductCancelAdd(interaction, interaction.user.id, authUserId);
-    return;
-  }
-
-  if (customId.startsWith('creator_product:discord_role_done:')) {
-    // Format: creator_product:discord_role_done:{userId}:{authUserId}
-    const rest = customId.slice('creator_product:discord_role_done:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const authUserId = rest.slice(colonIdx + 1) as string;
-    const { handleProductDiscordRoleDone } = await import('../commands/product');
-    await handleProductDiscordRoleDone(interaction, userId, authUserId);
-    return;
-  }
-
+  // ─── Downloads buttons ────────────────────────────────────────────────────
   if (customId.startsWith('creator_downloads:to_access:')) {
     const rest = customId.slice('creator_downloads:to_access:'.length);
     const colonIdx = rest.indexOf(':');
@@ -1309,46 +1156,6 @@ async function handleButton(
     return;
   }
 
-  // Product remove confirm: creator_product:confirm_remove:{userId}:{authUserId}
-  if (customId.startsWith('creator_product:confirm_remove:')) {
-    const rest = customId.slice('creator_product:confirm_remove:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const authUserId = rest.slice(colonIdx + 1) as string;
-    const { handleProductConfirmRemove } = await import('../commands/product');
-    await handleProductConfirmRemove(
-      interaction as ButtonInteraction,
-      ctx.convex,
-      ctx.apiSecret,
-      userId,
-      authUserId
-    );
-    return;
-  }
-
-  // Product remove cancel: creator_product:cancel_remove:{userId}:{authUserId}
-  if (customId.startsWith('creator_product:cancel_remove:')) {
-    const rest = customId.slice('creator_product:cancel_remove:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const authUserId = rest.slice(colonIdx + 1) as string;
-    const { handleProductCancelRemove } = await import('../commands/product');
-    await handleProductCancelRemove(interaction as ButtonInteraction, userId, authUserId);
-    return;
-  }
-
-  // ─── Collab invite ─────────────────────────────────────────────────────────
-  // creator_collab:remove:{authUserId}:{connectionId}
-  if (customId.startsWith('creator_collab:remove:')) {
-    const rest = customId.slice('creator_collab:remove:'.length);
-    const colonIdx = rest.indexOf(':');
-    const authUserId = rest.slice(0, colonIdx) as string;
-    const connectionId = rest.slice(colonIdx + 1);
-    const { handleCollabRemove } = await import('../commands/collab');
-    await handleCollabRemove(interaction, ctx.apiSecret, authUserId, connectionId);
-    return;
-  }
-
   // ─── Settings disconnect flow ──────────────────────────────────────────────
   if (customId.startsWith('creator_settings:disconnect')) {
     if (!(await validateAdminComponentContext(interaction, ctx))) {
@@ -1390,37 +1197,6 @@ async function handleButton(
     }
   }
 
-  // ─── Legacy setup buttons ──────────────────────────────────────────────────
-  if (customId.startsWith('creator_setup:')) {
-    const parts = customId.slice('creator_setup:'.length).split(':');
-    const action = parts[0];
-    const authUserId = parts[1];
-    if (action === 'next' && authUserId) {
-      const { logChannelSelect, jinxxyButton } = buildSetupStep2Components(authUserId as string);
-      const embed = {
-        title: 'Creator Setup - Step 2 of 3',
-        description: 'Log channel and Jinxxy API key.',
-        color: 0x5865f2,
-      };
-      const row1 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
-        logChannelSelect ?? new ChannelSelectMenuBuilder().setCustomId('dummy_select')
-      );
-      const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        jinxxyButton ?? new ButtonBuilder().setCustomId('dummy_btn').setLabel('Dummy').setStyle(1)
-      );
-      await interaction.update({ embeds: [embed], components: [row1, row2] });
-      return;
-    }
-    if (action === 'jinxxy_btn' && authUserId) {
-      const modal = buildJinxxyModal(authUserId as string);
-      if (modal) {
-        // biome-ignore lint/suspicious/noExplicitAny: setup modal helper currently returns a looser builder shape.
-        await interaction.showModal(modal as any);
-      }
-      return;
-    }
-  }
-
   await interaction
     .reply({ content: 'Unknown button.', flags: MessageFlags.Ephemeral })
     .catch(() => {});
@@ -1432,28 +1208,10 @@ async function handleModalSubmit(
 ): Promise<void> {
   const customId = interaction.customId;
 
-  if (customId.startsWith('creator_setup:jinxxy:')) {
-    await handleSetupJinxxyModal(interaction, ctx.convex, ctx.apiSecret);
-    return;
-  }
-
-  if (customId.startsWith('creator_collab:add_modal:')) {
-    const rest = customId.slice('creator_collab:add_modal:'.length);
-    const colonIdx = rest.indexOf(':');
-    // New format: providerKey:authUserId. Old format (backward compat): authUserId only.
-    let providerKey: string;
-    let authUserId: string;
-    if (colonIdx !== -1) {
-      providerKey = rest.slice(0, colonIdx);
-      authUserId = rest.slice(colonIdx + 1) as string;
-    } else {
-      providerKey = 'jinxxy';
-      authUserId = rest as string;
-    }
-    const { handleCollabAddModalSubmit } = await import('../commands/collab');
-    await handleCollabAddModalSubmit(interaction, ctx.apiSecret, authUserId, providerKey);
-    return;
-  }
+  if (await handleSetupModal(interaction, ctx)) return;
+  if (await handleCollabModal(interaction, ctx)) return;
+  if (await handleVerifyModal(interaction, ctx)) return;
+  if (await handleProductModal(interaction, ctx)) return;
 
   if (customId.startsWith('creator_autosetup:role_modal:')) {
     const rest = customId.slice('creator_autosetup:role_modal:'.length);
@@ -1462,59 +1220,6 @@ async function handleModalSubmit(
     const authUserId = rest.slice(colonIdx + 1) as string;
     const { handleAutosetupRoleModalSubmit } = await import('../commands/autosetup');
     await handleAutosetupRoleModalSubmit(interaction, userId, authUserId);
-    return;
-  }
-
-  if (customId.startsWith('creator_verify:lp_modal:')) {
-    const { handleLicenseKeyModal } = await import('../commands/licenseVerify');
-    await handleLicenseKeyModal(interaction, ctx.convex, ctx.apiSecret, process.env.API_BASE_URL);
-    return;
-  }
-
-  // Product add - URL modal: creator_product:url_modal:{userId}:{authUserId}
-  if (customId.startsWith('creator_product:url_modal:')) {
-    const rest = customId.slice('creator_product:url_modal:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const authUserId = rest.slice(colonIdx + 1) as string;
-    const { handleProductUrlModal } = await import('../commands/product');
-    await handleProductUrlModal(interaction, userId, authUserId);
-    return;
-  }
-
-  // Product add - Discord role modal: creator_product:discord_modal:{userId}:{authUserId}
-  if (customId.startsWith('creator_product:discord_modal:')) {
-    const rest = customId.slice('creator_product:discord_modal:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const authUserId = rest.slice(colonIdx + 1) as string;
-    const { handleProductDiscordModal } = await import('../commands/product');
-    await handleProductDiscordModal(interaction, userId, authUserId);
-    return;
-  }
-
-  // Product add - Payhip modal: creator_product:payhip_modal:{userId}:{authUserId}
-  if (customId.startsWith('creator_product:payhip_modal:')) {
-    const rest = customId.slice('creator_product:payhip_modal:'.length);
-    const colonIdx = rest.indexOf(':');
-    const userId = rest.slice(0, colonIdx);
-    const authUserId = rest.slice(colonIdx + 1) as string;
-    const { handleProductPayhipModal } = await import('../commands/product');
-    await handleProductPayhipModal(interaction, userId, authUserId);
-    return;
-  }
-
-  // Generic per-product credential modal: creator_product:per_product_cred_modal:{provider}:{userId}:{authUserId}
-  if (customId.startsWith('creator_product:per_product_cred_modal:')) {
-    const rest = customId.slice('creator_product:per_product_cred_modal:'.length);
-    const firstColon = rest.indexOf(':');
-    const provider = rest.slice(0, firstColon);
-    const rest2 = rest.slice(firstColon + 1);
-    const colonIdx = rest2.indexOf(':');
-    const userId = rest2.slice(0, colonIdx);
-    const authUserId = rest2.slice(colonIdx + 1) as string;
-    const { handleProductPerCredentialModal } = await import('../commands/product');
-    await handleProductPerCredentialModal(interaction, provider, userId, authUserId);
     return;
   }
 

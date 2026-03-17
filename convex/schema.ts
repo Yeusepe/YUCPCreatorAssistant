@@ -843,8 +843,8 @@ const purchase_facts = defineTable({
   .index('by_subject', ['subjectId']);
 
 /**
- * Provider Connections - Per-creator credentials and webhook config
- * Gumroad: OAuth tokens, resource subscriptions; Jinxxy: API key, webhook secret.
+ * Provider Connections - Per-creator credentials and webhook config.
+ * All credentials are stored in the generic provider_credentials table.
  */
 const provider_connections = defineTable({
   // Owner identity — Better Auth user ID of the creator.
@@ -865,14 +865,8 @@ const provider_connections = defineTable({
   installedBySubjectId: v.optional(v.id('subjects')),
   lastHealthcheckAt: v.optional(v.number()),
   lastSyncAt: v.optional(v.number()),
-  gumroadAccessTokenEncrypted: v.optional(v.string()),
-  gumroadRefreshTokenEncrypted: v.optional(v.string()),
-  gumroadUserId: v.optional(v.string()),
   webhookConfigured: v.boolean(),
-  resourceSubscriptionIds: v.optional(v.array(v.string())),
-  jinxxyApiKeyEncrypted: v.optional(v.string()),
   webhookSecretRef: v.optional(v.string()),
-  gumroadWebhookSecretRef: v.optional(v.string()),
   webhookEndpoint: v.optional(v.string()),
   remoteWebhookId: v.optional(v.string()),
   remoteWebhookSecretRef: v.optional(v.string()),
@@ -1324,21 +1318,6 @@ const manual_licenses = defineTable({
   .index('by_expires', ['expiresAt']);
 
 /**
- * Creator Provider Config - Per-creator provider credentials
- * Jinxxy API keys are per-creator; Gumroad uses global env.
- */
-const creator_provider_config = defineTable({
-  // Creator scope (Better Auth user ID)
-  authUserId: v.string(),
-  // @deprecated Legacy field from tenant-first architecture
-  tenantId: v.optional(v.any()),
-  jinxxyApiKeyEncrypted: v.optional(v.string()),
-  // Timestamps
-  createdAt: v.number(),
-  updatedAt: v.number(),
-}).index('by_auth_user', ['authUserId']);
-
-/**
  * Collaborator Invites - Single-use invite tokens for cross-creator API key sharing
  * Allows a server owner to invite another creator to share Jinxxy credentials.
  */
@@ -1377,9 +1356,7 @@ const collaborator_connections = defineTable({
   inviteId: v.optional(v.id('collaborator_invites')),
   /** Commerce provider for this connection (e.g. 'jinxxy', 'lemonsqueezy') */
   provider: v.string(),
-  // @deprecated Use credentialEncrypted for new records
-  jinxxyApiKeyEncrypted: v.optional(v.string()),
-  /** Generic encrypted credential (API key) for non-Jinxxy providers, or new Jinxxy records */
+  /** Generic encrypted credential (API key) for all providers */
   credentialEncrypted: v.optional(v.string()),
   /** Encrypted webhook signing secret; null for api-type connections */
   webhookSecretRef: v.optional(v.string()),
@@ -1554,7 +1531,6 @@ export default defineSchema({
   audit_events,
   product_catalog,
   manual_licenses,
-  creator_provider_config,
   purchase_facts,
   provider_connections,
   provider_credentials,
