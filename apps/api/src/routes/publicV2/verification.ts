@@ -1,14 +1,8 @@
-import { api } from '../../../../../convex/_generated/api';
 import { createLogger } from '@yucp/shared';
+import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { resolveAuth } from './auth';
-import {
-  errorResponse,
-  extractListData,
-  generateRequestId,
-  jsonResponse,
-  listResponse,
-} from './helpers';
+import { errorResponse, extractListData, generateRequestId, jsonResponse } from './helpers';
 import type { PublicV2Config } from './types';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
@@ -16,7 +10,7 @@ const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 export async function handleVerificationRoutes(
   request: Request,
   subPath: string,
-  config: PublicV2Config,
+  config: PublicV2Config
 ): Promise<Response> {
   const reqId = generateRequestId();
   const convex = getConvexClientFromUrl(config.convexUrl);
@@ -45,7 +39,7 @@ export async function handleVerificationRoutes(
             entitlements: [],
           },
           200,
-          reqId,
+          reqId
         );
       }
 
@@ -65,7 +59,7 @@ export async function handleVerificationRoutes(
           entitlements: data,
         },
         200,
-        reqId,
+        reqId
       );
     } catch (err) {
       logger.error('verification.status failed', { error: String(err) });
@@ -114,7 +108,7 @@ export async function handleVerificationRoutes(
             })),
           },
           200,
-          reqId,
+          reqId
         );
       }
 
@@ -128,10 +122,7 @@ export async function handleVerificationRoutes(
 
       const { data: entitlements } = extractListData(entResult);
       const entitlementMap = new Map(
-        (entitlements as Record<string, unknown>[]).map((e) => [
-          e.productId as string,
-          e,
-        ]),
+        (entitlements as Record<string, unknown>[]).map((e) => [e.productId as string, e])
       );
 
       const results = (body.productIds as string[]).map((productId: string) => {
@@ -146,7 +137,7 @@ export async function handleVerificationRoutes(
           results,
         },
         200,
-        reqId,
+        reqId
       );
     } catch (err) {
       logger.error('verification.check failed', { error: String(err) });

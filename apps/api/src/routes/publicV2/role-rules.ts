@@ -1,5 +1,5 @@
-import { api } from '../../../../../convex/_generated/api';
 import { createLogger } from '@yucp/shared';
+import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { resolveAuth } from './auth';
 import {
@@ -16,7 +16,7 @@ const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 export async function handleRoleRulesRoutes(
   request: Request,
   subPath: string,
-  config: PublicV2Config,
+  config: PublicV2Config
 ): Promise<Response> {
   const reqId = generateRequestId();
   const url = new URL(request.url);
@@ -32,8 +32,7 @@ export async function handleRoleRulesRoutes(
     const guildId = url.searchParams.get('guild_id') ?? undefined;
     const productId = url.searchParams.get('product_id') ?? undefined;
     const enabledParam = url.searchParams.get('enabled');
-    const enabled =
-      enabledParam === 'true' ? true : enabledParam === 'false' ? false : undefined;
+    const enabled = enabledParam === 'true' ? true : enabledParam === 'false' ? false : undefined;
 
     try {
       const result = await convex.query(api.role_rules.listByAuthUser, {

@@ -469,9 +469,7 @@ const OPENAPI_SPEC = {
         operationId: 'getSubject',
         summary: 'Get a subject',
         tags: ['Subjects'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Subject object.',
@@ -694,9 +692,7 @@ const OPENAPI_SPEC = {
         operationId: 'getEntitlement',
         summary: 'Get an entitlement',
         tags: ['Entitlements'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Entitlement object.',
@@ -758,9 +754,7 @@ const OPENAPI_SPEC = {
         operationId: 'getTransaction',
         summary: 'Get a transaction',
         tags: ['Transactions'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Transaction object.',
@@ -822,9 +816,7 @@ const OPENAPI_SPEC = {
         operationId: 'getMembership',
         summary: 'Get a membership',
         tags: ['Transactions'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Membership object.',
@@ -886,9 +878,7 @@ const OPENAPI_SPEC = {
         operationId: 'getProviderLicense',
         summary: 'Get a provider license',
         tags: ['Transactions'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Provider license object.',
@@ -960,10 +950,17 @@ const OPENAPI_SPEC = {
                 type: 'object',
                 required: ['key', 'product_id'],
                 properties: {
-                  key: { type: 'string', description: 'Plaintext license key (hashed before storage).' },
+                  key: {
+                    type: 'string',
+                    description: 'Plaintext license key (hashed before storage).',
+                  },
                   product_id: { type: 'string' },
                   max_uses: { type: 'integer', nullable: true },
-                  expires_at: { type: 'integer', nullable: true, description: 'Unix ms timestamp.' },
+                  expires_at: {
+                    type: 'integer',
+                    nullable: true,
+                    description: 'Unix ms timestamp.',
+                  },
                   notes: { type: 'string', nullable: true },
                   buyer_email: { type: 'string', format: 'email', nullable: true },
                 },
@@ -991,7 +988,8 @@ const OPENAPI_SPEC = {
       post: {
         operationId: 'bulkCreateManualLicenses',
         summary: 'Bulk create manual licenses',
-        description: 'Create up to 100 manual licenses in a single request. Keys are hashed before storage.',
+        description:
+          'Create up to 100 manual licenses in a single request. Keys are hashed before storage.',
         tags: ['Manual Licenses'],
         requestBody: {
           required: true,
@@ -1055,7 +1053,8 @@ const OPENAPI_SPEC = {
       post: {
         operationId: 'validateManualLicense',
         summary: 'Validate a license key',
-        description: 'Validates a license key without consuming a use. The key is hashed before lookup.',
+        description:
+          'Validates a license key without consuming a use. The key is hashed before lookup.',
         tags: ['Manual Licenses'],
         requestBody: {
           required: true,
@@ -1086,9 +1085,7 @@ const OPENAPI_SPEC = {
         operationId: 'getManualLicense',
         summary: 'Get a manual license',
         tags: ['Manual Licenses'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Manual license object.',
@@ -1110,9 +1107,7 @@ const OPENAPI_SPEC = {
         operationId: 'revokeManualLicense',
         summary: 'Revoke a manual license',
         tags: ['Manual Licenses'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
           content: {
             'application/json': {
@@ -1175,9 +1170,7 @@ const OPENAPI_SPEC = {
         operationId: 'getProduct',
         summary: 'Get a product',
         tags: ['Products'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Product object.',
@@ -1216,9 +1209,7 @@ const OPENAPI_SPEC = {
         operationId: 'listProductRoleRules',
         summary: 'List role rules for a product',
         tags: ['Products', 'Role Rules'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'Role rules for the product.' },
           '401': { $ref: '#/components/responses/Unauthorized' },
@@ -1268,9 +1259,7 @@ const OPENAPI_SPEC = {
         operationId: 'getConnection',
         summary: 'Get a connection',
         tags: ['Connections'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Connection object.',
@@ -1329,9 +1318,7 @@ const OPENAPI_SPEC = {
         operationId: 'getGuild',
         summary: 'Get a guild',
         tags: ['Guilds'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Guild object.',
@@ -1351,9 +1338,7 @@ const OPENAPI_SPEC = {
         operationId: 'listGuildRoleRules',
         summary: 'List role rules for a guild',
         tags: ['Guilds', 'Role Rules'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'Role rules for the guild.' },
           '401': { $ref: '#/components/responses/Unauthorized' },
@@ -1422,9 +1407,7 @@ const OPENAPI_SPEC = {
         operationId: 'getRoleRule',
         summary: 'Get a role rule',
         tags: ['Role Rules'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Role rule object.',
@@ -1495,9 +1478,7 @@ const OPENAPI_SPEC = {
         operationId: 'getBinding',
         summary: 'Get a binding',
         tags: ['Bindings'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Binding object.',
@@ -1557,9 +1538,7 @@ const OPENAPI_SPEC = {
         operationId: 'getVerificationSession',
         summary: 'Get a verification session',
         tags: ['Verification Sessions'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Verification session.',
@@ -1600,9 +1579,7 @@ const OPENAPI_SPEC = {
         operationId: 'getCollaborator',
         summary: 'Get a collaborator',
         tags: ['Collaborators'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'Collaborator object.' },
           '401': { $ref: '#/components/responses/Unauthorized' },
@@ -1636,9 +1613,7 @@ const OPENAPI_SPEC = {
         operationId: 'getDownloadRoute',
         summary: 'Get a download route',
         tags: ['Downloads'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'Download route object.' },
           '401': { $ref: '#/components/responses/Unauthorized' },
@@ -1677,9 +1652,7 @@ const OPENAPI_SPEC = {
         operationId: 'getDownloadArtifact',
         summary: 'Get a download artifact',
         tags: ['Downloads'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'Download artifact object.' },
           '401': { $ref: '#/components/responses/Unauthorized' },
@@ -1754,9 +1727,7 @@ const OPENAPI_SPEC = {
         operationId: 'getEvent',
         summary: 'Get an event',
         tags: ['Events'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'Event object.' },
           '401': { $ref: '#/components/responses/Unauthorized' },
@@ -1790,9 +1761,7 @@ const OPENAPI_SPEC = {
         operationId: 'listWebhooks',
         summary: 'List webhook subscriptions',
         tags: ['Webhooks'],
-        parameters: [
-          { name: 'enabled', in: 'query', schema: { type: 'boolean' } },
-        ],
+        parameters: [{ name: 'enabled', in: 'query', schema: { type: 'boolean' } }],
         responses: {
           '200': { description: 'Paginated webhook subscriptions.' },
           '401': { $ref: '#/components/responses/Unauthorized' },
@@ -1847,9 +1816,7 @@ const OPENAPI_SPEC = {
         operationId: 'getWebhook',
         summary: 'Get a webhook subscription',
         tags: ['Webhooks'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Webhook subscription (signingSecret never returned here).',
@@ -1868,9 +1835,7 @@ const OPENAPI_SPEC = {
         operationId: 'updateWebhook',
         summary: 'Update a webhook subscription',
         tags: ['Webhooks'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
           required: true,
           content: {
@@ -1898,9 +1863,7 @@ const OPENAPI_SPEC = {
         operationId: 'deleteWebhook',
         summary: 'Delete a webhook subscription',
         tags: ['Webhooks'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'Deletion confirmation.' },
           '401': { $ref: '#/components/responses/Unauthorized' },
@@ -1917,9 +1880,7 @@ const OPENAPI_SPEC = {
         description:
           'Generates a new signing secret. The new `signingSecret` is returned in this response only.',
         tags: ['Webhooks'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Updated subscription with new signingSecret.',
@@ -1966,9 +1927,7 @@ const OPENAPI_SPEC = {
         description:
           'Emits a `ping` event that will be delivered to the endpoint within the next delivery cycle.',
         tags: ['Webhooks'],
-        parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'Test event queued.',
@@ -2111,7 +2070,7 @@ const OPENAPI_SPEC = {
 export async function handleOpenApiRoutes(
   request: Request,
   subPath: string,
-  _config: PublicV2Config,
+  _config: PublicV2Config
 ): Promise<Response> {
   const reqId = generateRequestId();
 

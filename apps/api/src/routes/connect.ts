@@ -453,7 +453,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     }
   }
 
-  async function resolveConnectDiscordUserId(request: Request): Promise<string | null> {
+  async function _resolveConnectDiscordUserId(request: Request): Promise<string | null> {
     const session = await resolveConnectSession(request);
     return session?.discordUserId ?? null;
   }

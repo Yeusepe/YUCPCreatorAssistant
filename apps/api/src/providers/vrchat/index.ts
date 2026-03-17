@@ -47,7 +47,7 @@ const vrchatProvider: ProviderPlugin = {
       provider: 'vrchat',
     });
 
-    const encryptedSession = data?.credentials?.['vrchat_session'];
+    const encryptedSession = data?.credentials?.vrchat_session;
     if (!encryptedSession) return null;
     return decrypt(encryptedSession, ctx.encryptionSecret, PURPOSES.credential);
   },

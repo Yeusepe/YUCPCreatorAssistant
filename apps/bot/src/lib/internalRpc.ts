@@ -6,7 +6,6 @@ import {
   CollaboratorClient,
   type CreateCollaboratorInviteResponse,
   type DiscordRoleSetupResultResponse,
-  type ResolveProductNameRequest,
   type ResolveProductNameResponse,
   SetupClient,
   type SuccessResponse,

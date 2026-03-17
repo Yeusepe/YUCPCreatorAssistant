@@ -141,7 +141,7 @@ export async function handleBackfillProduct(request: Request): Promise<Response>
 
       if (!nextCursor) break;
       cursor = nextCursor;
-      await new Promise((r) => setTimeout(r, plugin.backfill!.pageDelayMs));
+      await new Promise((r) => setTimeout(r, plugin.backfill?.pageDelayMs));
     }
 
     logger.info('Backfill complete', {

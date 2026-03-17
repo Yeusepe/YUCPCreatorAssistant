@@ -1,5 +1,5 @@
-import { api } from '../../../../../convex/_generated/api';
 import { createLogger } from '@yucp/shared';
+import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { encrypt } from '../../lib/encrypt';
 import { resolveAuth } from './auth';
@@ -109,11 +109,7 @@ const WEBHOOK_EVENT_TYPES = [
 ] as const;
 
 function generateSigningSecret(): string {
-  return (
-    'whsec_' +
-    crypto.randomUUID().replace(/-/g, '') +
-    crypto.randomUUID().replace(/-/g, '')
-  );
+  return 'whsec_' + crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
 }
 
 /** Strips encrypted secret from a subscription object before returning to API caller. */
@@ -125,7 +121,7 @@ function sanitizeSubscription(sub: Record<string, unknown>): Record<string, unkn
 export async function handleWebhooksRoutes(
   request: Request,
   subPath: string,
-  config: PublicV2Config,
+  config: PublicV2Config
 ): Promise<Response> {
   const reqId = generateRequestId();
   const url = new URL(request.url);
@@ -147,7 +143,7 @@ export async function handleWebhooksRoutes(
         nextCursor: null,
       },
       200,
-      reqId,
+      reqId
     );
   }
 
@@ -165,8 +161,7 @@ export async function handleWebhooksRoutes(
       if (auth instanceof Response) return auth;
 
       const enabledParam = url.searchParams.get('enabled');
-      const enabled =
-        enabledParam === 'true' ? true : enabledParam === 'false' ? false : undefined;
+      const enabled = enabledParam === 'true' ? true : enabledParam === 'false' ? false : undefined;
 
       try {
         const result = await convex.query(api.webhookSubscriptions.list, {
@@ -209,7 +204,7 @@ export async function handleWebhooksRoutes(
         const signingSecretEnc = await encrypt(
           signingSecret,
           config.encryptionSecret,
-          WEBHOOK_SIGNING_SECRET_PURPOSE,
+          WEBHOOK_SIGNING_SECRET_PURPOSE
         );
 
         const result = await convex.mutation(api.webhookSubscriptions.create, {
@@ -217,8 +212,7 @@ export async function handleWebhooksRoutes(
           authUserId: auth.authUserId,
           url: body.url as string,
           events: Array.isArray(body.events) ? (body.events as string[]) : [],
-          description:
-            typeof body.description === 'string' ? body.description : undefined,
+          description: typeof body.description === 'string' ? body.description : undefined,
           enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
           signingSecretEnc,
           signingSecretPrefix,
@@ -231,7 +225,7 @@ export async function handleWebhooksRoutes(
             signingSecret,
           },
           201,
-          reqId,
+          reqId
         );
       } catch (err) {
         logger.error('webhookSubscriptions.create failed', { error: String(err) });
@@ -259,7 +253,7 @@ export async function handleWebhooksRoutes(
       const newSigningSecretEnc = await encrypt(
         newSigningSecret,
         config.encryptionSecret,
-        WEBHOOK_SIGNING_SECRET_PURPOSE,
+        WEBHOOK_SIGNING_SECRET_PURPOSE
       );
 
       const result = await convex.mutation(api.webhookSubscriptions.rotateSecret, {
@@ -277,7 +271,7 @@ export async function handleWebhooksRoutes(
           signingSecret: newSigningSecret,
         },
         200,
-        reqId,
+        reqId
       );
     } catch (err) {
       logger.error('webhookSubscriptions.rotateSecret failed', { error: String(err) });
@@ -356,7 +350,7 @@ export async function handleWebhooksRoutes(
             'not_found',
             `Webhook subscription with ID ${subscriptionId} was not found`,
             404,
-            reqId,
+            reqId
           );
         }
         return jsonResponse(sanitizeSubscription(result as Record<string, unknown>), 200, reqId);
@@ -384,8 +378,7 @@ export async function handleWebhooksRoutes(
           subscriptionId,
           url: typeof body.url === 'string' ? body.url : undefined,
           events: Array.isArray(body.events) ? (body.events as string[]) : undefined,
-          description:
-            typeof body.description === 'string' ? body.description : undefined,
+          description: typeof body.description === 'string' ? body.description : undefined,
           enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
         });
         return jsonResponse(sanitizeSubscription(result as Record<string, unknown>), 200, reqId);
@@ -405,7 +398,11 @@ export async function handleWebhooksRoutes(
           authUserId: auth.authUserId,
           subscriptionId,
         });
-        return jsonResponse({ object: 'webhook_subscription', deleted: true, id: subscriptionId }, 200, reqId);
+        return jsonResponse(
+          { object: 'webhook_subscription', deleted: true, id: subscriptionId },
+          200,
+          reqId
+        );
       } catch (err) {
         logger.error('webhookSubscriptions.deleteSubscription failed', { error: String(err) });
         return errorResponse('internal_error', 'An internal error occurred', 500, reqId);

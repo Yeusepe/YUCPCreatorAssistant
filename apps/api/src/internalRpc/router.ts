@@ -35,7 +35,6 @@ import {
 } from '@yucp/private-rpc';
 import { VrchatApiClient } from '@yucp/providers';
 import { timingSafeStringEqual } from '@yucp/shared';
-import { api } from '../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { createSetupSession } from '../lib/setupSession';
 import { getProvider } from '../providers/index';
@@ -57,7 +56,7 @@ export const INTERNAL_RPC_PATH = '/__internal/tempo';
 
 const INTERNAL_RPC_IDENTITY = 'internal-rpc';
 const telemetry = new InternalRpcTelemetry();
-const INTERNAL_RPC_TIMEOUT_MS = 10_000;
+const _INTERNAL_RPC_TIMEOUT_MS = 10_000;
 const TELEMETRY_REDACTED_KEYS = new Set([
   'apiSecret',
   'authorization',

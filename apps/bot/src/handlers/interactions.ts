@@ -6,7 +6,6 @@
  */
 
 import { createLogger, getProviderDescriptor } from '@yucp/shared';
-import { ConvexHttpClient } from 'convex/browser';
 import {
   type AutocompleteInteraction,
   type ButtonInteraction,

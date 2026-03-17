@@ -50,7 +50,7 @@ const gumroadProvider: ProviderPlugin = {
       authUserId: ctx.authUserId,
       provider: 'gumroad',
     });
-    const encryptedToken = data?.credentials['oauth_access_token'];
+    const encryptedToken = data?.credentials.oauth_access_token;
     if (!encryptedToken) return null;
     return decrypt(encryptedToken, ctx.encryptionSecret, PURPOSES.credential);
   },

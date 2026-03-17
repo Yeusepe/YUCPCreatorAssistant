@@ -1,5 +1,5 @@
-import { api } from '../../../../../convex/_generated/api';
 import { createLogger } from '@yucp/shared';
+import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { resolveAuth } from './auth';
 import { errorResponse, generateRequestId, jsonResponse } from './helpers';
@@ -10,7 +10,7 @@ const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 export async function handleSettingsRoutes(
   request: Request,
   subPath: string,
-  config: PublicV2Config,
+  config: PublicV2Config
 ): Promise<Response> {
   const reqId = generateRequestId();
   const convex = getConvexClientFromUrl(config.convexUrl);

@@ -1,5 +1,5 @@
-import { api } from '../../../../../convex/_generated/api';
 import { createLogger } from '@yucp/shared';
+import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { resolveAuth } from './auth';
 import {
@@ -17,7 +17,7 @@ const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 export async function handleCollaboratorsRoutes(
   request: Request,
   subPath: string,
-  config: PublicV2Config,
+  config: PublicV2Config
 ): Promise<Response> {
   const reqId = generateRequestId();
   const url = new URL(request.url);
@@ -71,7 +71,7 @@ export async function handleCollaboratorsRoutes(
           'not_found',
           `Collaborator with ID ${connectionId} was not found`,
           404,
-          reqId,
+          reqId
         );
       }
       return jsonResponse(result, 200, reqId);

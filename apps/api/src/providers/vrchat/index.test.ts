@@ -10,7 +10,6 @@
  */
 
 import { describe, expect, it, mock } from 'bun:test';
-import { VrchatSessionExpiredError } from '../../../../../packages/providers/src/vrchat/types';
 import { CredentialExpiredError } from '../types';
 import vrchatProvider from './index';
 

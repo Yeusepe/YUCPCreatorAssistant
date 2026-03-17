@@ -36,7 +36,7 @@ describe('handleMeRoutes', () => {
 
     it('body has the expected api_key_info shape', async () => {
       const res = await handleMeRoutes(makeRequest(), '/me', config);
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body.object).toBe('api_key_info');
       expect(body.authUserId).toBe('user_abc');
       expect(body.scopes).toEqual(['subjects:read', 'entitlements:read']);
@@ -65,7 +65,7 @@ describe('handleMeRoutes', () => {
       it(`returns 405 for ${method} /me`, async () => {
         const res = await handleMeRoutes(makeRequest(method), '/me', config);
         expect(res.status).toBe(405);
-        const body = await res.json() as Record<string, unknown>;
+        const body = (await res.json()) as Record<string, unknown>;
         expect(body.error).toBe('method_not_allowed');
       });
     }
@@ -75,7 +75,7 @@ describe('handleMeRoutes', () => {
     it('returns 404 for /me/extra', async () => {
       const res = await handleMeRoutes(makeRequest(), '/me/extra', config);
       expect(res.status).toBe(404);
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body.error).toBe('not_found');
     });
 
