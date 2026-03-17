@@ -328,10 +328,28 @@ async function gumroadCallback(request: Request, ctx: ConnectContext): Promise<R
       webhookRouteToken,
       webhookConfigured: resourceSubscriptionIds.length > 0,
       credentials: [
-        { credentialKey: 'oauth_access_token', kind: 'oauth_access_token', encryptedValue: accessEncrypted },
-        ...(refreshEncrypted ? [{ credentialKey: 'oauth_refresh_token', kind: 'oauth_refresh_token' as const, encryptedValue: refreshEncrypted }] : []),
+        {
+          credentialKey: 'oauth_access_token',
+          kind: 'oauth_access_token',
+          encryptedValue: accessEncrypted,
+        },
+        ...(refreshEncrypted
+          ? [
+              {
+                credentialKey: 'oauth_refresh_token',
+                kind: 'oauth_refresh_token' as const,
+                encryptedValue: refreshEncrypted,
+              },
+            ]
+          : []),
       ],
-      capabilities: [{ capabilityKey: 'account_link', status: 'active', requiredCredentialKeys: ['oauth_access_token'] }],
+      capabilities: [
+        {
+          capabilityKey: 'account_link',
+          status: 'active',
+          requiredCredentialKeys: ['oauth_access_token'],
+        },
+      ],
     });
 
     const redirectParams: Record<string, string> = { gumroad: 'connected' };

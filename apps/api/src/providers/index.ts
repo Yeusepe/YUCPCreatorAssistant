@@ -11,8 +11,8 @@ import gumroad from './gumroad/index';
 import jinxxy from './jinxxy/index';
 import lemonsqueezy from './lemonsqueezy/index';
 import payhip from './payhip/index';
-import vrchat from './vrchat/index';
 import type { ProviderPlugin } from './types';
+import vrchat from './vrchat/index';
 
 const ALL_PROVIDERS: ProviderPlugin[] = [gumroad, jinxxy, lemonsqueezy, payhip, vrchat];
 

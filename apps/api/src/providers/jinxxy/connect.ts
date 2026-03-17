@@ -239,11 +239,27 @@ async function jinxxyStore(request: Request, ctx: ConnectContext): Promise<Respo
       webhookConfigured: !!(webhookSecretRef && webhookEndpoint),
       credentials: [
         { credentialKey: 'api_key', kind: 'api_key', encryptedValue: apiKeyEncrypted },
-        ...(webhookSecretRef ? [{ credentialKey: 'webhook_secret', kind: 'webhook_secret' as const, encryptedValue: webhookSecretRef }] : []),
+        ...(webhookSecretRef
+          ? [
+              {
+                credentialKey: 'webhook_secret',
+                kind: 'webhook_secret' as const,
+                encryptedValue: webhookSecretRef,
+              },
+            ]
+          : []),
       ],
       capabilities: [
-        { capabilityKey: 'catalog_sync', status: 'configured', requiredCredentialKeys: ['api_key'] },
-        { capabilityKey: 'webhooks', status: webhookSecretRef ? 'configured' : 'pending', requiredCredentialKeys: ['webhook_secret'] },
+        {
+          capabilityKey: 'catalog_sync',
+          status: 'configured',
+          requiredCredentialKeys: ['api_key'],
+        },
+        {
+          capabilityKey: 'webhooks',
+          status: webhookSecretRef ? 'configured' : 'pending',
+          requiredCredentialKeys: ['webhook_secret'],
+        },
       ],
     });
     if (pendingWebhookRaw) {

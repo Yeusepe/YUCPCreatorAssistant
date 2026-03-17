@@ -10,9 +10,9 @@
  */
 
 import { describe, expect, it, mock } from 'bun:test';
+import { VrchatSessionExpiredError } from '../../../../../packages/providers/src/vrchat/types';
 import { CredentialExpiredError } from '../types';
 import vrchatProvider from './index';
-import { VrchatSessionExpiredError } from '../../../../../packages/providers/src/vrchat/types';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -61,7 +61,7 @@ describe('vrchatProvider.getCredential', () => {
     const encrypted = await encrypt(sessionPayload, encryptionSecret, 'vrchat-creator-session');
 
     const ctx = makeCtx({
-      convexResult: { credentials: { 'vrchat_session': encrypted } },
+      convexResult: { credentials: { vrchat_session: encrypted } },
       encryptionSecret,
     });
     const credential = await vrchatProvider.getCredential(ctx);
@@ -91,13 +91,27 @@ describe('vrchatProvider.fetchProducts', () => {
     const originalFetch = globalThis.fetch;
     const fetchMock = mock(async (url: string) => {
       if (url.endsWith('/auth/user')) {
-        return new Response(JSON.stringify({ id: 'usr_creator', displayName: 'Creator' }), { status: 200 });
+        return new Response(JSON.stringify({ id: 'usr_creator', displayName: 'Creator' }), {
+          status: 200,
+        });
       }
       if (url.includes('/user/usr_creator/listings')) {
         return new Response(
           JSON.stringify([
-            { id: 'prod_aaa', displayName: 'Avatar Pack', listingType: 'permanent', hasAvatar: true, sellerId: 'usr_creator' },
-            { id: 'prod_bbb', displayName: 'Subscription', listingType: 'subscription', hasAvatar: true, sellerId: 'usr_creator' },
+            {
+              id: 'prod_aaa',
+              displayName: 'Avatar Pack',
+              listingType: 'permanent',
+              hasAvatar: true,
+              sellerId: 'usr_creator',
+            },
+            {
+              id: 'prod_bbb',
+              displayName: 'Subscription',
+              listingType: 'subscription',
+              hasAvatar: true,
+              sellerId: 'usr_creator',
+            },
           ]),
           { status: 200 }
         );
@@ -124,8 +138,8 @@ describe('vrchatProvider.fetchProducts', () => {
 
     // Mock fetch to return 401 (session expired)
     const originalFetch = globalThis.fetch;
-    const fetchMock = mock(async () =>
-      new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
+    const fetchMock = mock(
+      async () => new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 

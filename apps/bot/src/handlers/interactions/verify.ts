@@ -1,10 +1,14 @@
-import { PROVIDER_REGISTRY } from '@yucp/shared';
 import type { ProviderDescriptor } from '@yucp/shared';
-import type { ButtonInteraction, ModalSubmitInteraction, StringSelectMenuInteraction } from 'discord.js';
+import { PROVIDER_REGISTRY } from '@yucp/shared';
+import type {
+  ButtonInteraction,
+  ModalSubmitInteraction,
+  StringSelectMenuInteraction,
+} from 'discord.js';
 import { MessageFlags } from 'discord.js';
 import { api } from '../../../../../convex/_generated/api';
-import type { InteractionHandlerContext } from './types';
 import { getNotConfiguredMessage } from './shared';
+import type { InteractionHandlerContext } from './types';
 
 export async function handleVerifyButton(
   interaction: ButtonInteraction,

@@ -43,8 +43,20 @@ describe('VrchatApiClient.getProductListings', () => {
       if (url.includes('/user/usr_abc/listings')) {
         return new Response(
           JSON.stringify([
-            { id: 'prod_aaa', displayName: 'Avatar Pack', listingType: 'permanent', hasAvatar: true, sellerId: 'usr_abc' },
-            { id: 'prod_bbb', displayName: 'Subscription Bundle', listingType: 'subscription', hasAvatar: true, sellerId: 'usr_abc' },
+            {
+              id: 'prod_aaa',
+              displayName: 'Avatar Pack',
+              listingType: 'permanent',
+              hasAvatar: true,
+              sellerId: 'usr_abc',
+            },
+            {
+              id: 'prod_bbb',
+              displayName: 'Subscription Bundle',
+              listingType: 'subscription',
+              hasAvatar: true,
+              sellerId: 'usr_abc',
+            },
           ]),
           { status: 200 }
         );
@@ -73,7 +85,9 @@ describe('VrchatApiClient.getProductListings', () => {
       expect(headers.get('cookie')).toContain('auth=tok; twoFactorAuth=two');
 
       if (url.endsWith('/auth/user')) {
-        return new Response(JSON.stringify({ id: 'usr_xyz', displayName: 'User' }), { status: 200 });
+        return new Response(JSON.stringify({ id: 'usr_xyz', displayName: 'User' }), {
+          status: 200,
+        });
       }
       return new Response(JSON.stringify([]), { status: 200 });
     });
@@ -81,7 +95,10 @@ describe('VrchatApiClient.getProductListings', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const client = new VrchatApiClient();
-    const listings = await client.getProductListings({ authToken: 'tok', twoFactorAuthToken: 'two' });
+    const listings = await client.getProductListings({
+      authToken: 'tok',
+      twoFactorAuthToken: 'two',
+    });
     expect(listings).toHaveLength(0);
   });
 
@@ -89,7 +106,9 @@ describe('VrchatApiClient.getProductListings', () => {
     const fetchMock = mock(async (url: string) => {
       if (url.endsWith('/auth/user')) {
         // 401 means session expired; the existing getCurrentUser returns null on non-OK
-        return new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401 });
+        return new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), {
+          status: 401,
+        });
       }
       throw new Error(`Unexpected URL: ${url}`);
     });
@@ -105,10 +124,14 @@ describe('VrchatApiClient.getProductListings', () => {
   it('throws VrchatSessionExpiredError when listings endpoint returns 401', async () => {
     const fetchMock = mock(async (url: string) => {
       if (url.endsWith('/auth/user')) {
-        return new Response(JSON.stringify({ id: 'usr_abc', displayName: 'Creator' }), { status: 200 });
+        return new Response(JSON.stringify({ id: 'usr_abc', displayName: 'Creator' }), {
+          status: 200,
+        });
       }
       if (url.includes('/user/usr_abc/listings')) {
-        return new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401 });
+        return new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), {
+          status: 401,
+        });
       }
       throw new Error(`Unexpected URL: ${url}`);
     });
@@ -124,7 +147,9 @@ describe('VrchatApiClient.getProductListings', () => {
   it('returns empty array when user has no store listings', async () => {
     const fetchMock = mock(async (url: string) => {
       if (url.endsWith('/auth/user')) {
-        return new Response(JSON.stringify({ id: 'usr_empty', displayName: 'Creator' }), { status: 200 });
+        return new Response(JSON.stringify({ id: 'usr_empty', displayName: 'Creator' }), {
+          status: 200,
+        });
       }
       return new Response(JSON.stringify([]), { status: 200 });
     });
@@ -145,7 +170,9 @@ describe('VrchatApiClient.getOwnershipFromSession — productId in ownedAvatarId
   it('includes avatar.productId in ownedAvatarIds when the licensed avatar has one', async () => {
     const fetchMock = mock(async (url: string) => {
       if (url.endsWith('/auth/user')) {
-        return new Response(JSON.stringify({ id: 'usr_123', displayName: 'Buyer' }), { status: 200 });
+        return new Response(JSON.stringify({ id: 'usr_123', displayName: 'Buyer' }), {
+          status: 200,
+        });
       }
       if (url.includes('/avatars/licensed')) {
         return new Response(
@@ -177,13 +204,14 @@ describe('VrchatApiClient.getOwnershipFromSession — productId in ownedAvatarId
   it('does not add undefined/null productId to ownedAvatarIds', async () => {
     const fetchMock = mock(async (url: string) => {
       if (url.endsWith('/auth/user')) {
-        return new Response(JSON.stringify({ id: 'usr_123', displayName: 'Buyer' }), { status: 200 });
+        return new Response(JSON.stringify({ id: 'usr_123', displayName: 'Buyer' }), {
+          status: 200,
+        });
       }
       if (url.includes('/avatars/licensed')) {
-        return new Response(
-          JSON.stringify([{ id: 'avtr_ccc', name: 'Plain Avatar' }]),
-          { status: 200 }
-        );
+        return new Response(JSON.stringify([{ id: 'avtr_ccc', name: 'Plain Avatar' }]), {
+          status: 200,
+        });
       }
       throw new Error(`Unexpected URL: ${url}`);
     });

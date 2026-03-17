@@ -64,7 +64,8 @@ const payhipProvider: ProviderPlugin = {
     dashboardIconBg: '#3b82f6',
     dashboardQuickStartBg: 'rgba(59,130,246,0.12)',
     dashboardQuickStartBorder: 'rgba(59,130,246,0.32)',
-    dashboardServerTileHint: 'Allow users to verify Payhip purchases and license keys in this Discord server.',
+    dashboardServerTileHint:
+      'Allow users to verify Payhip purchases and license keys in this Discord server.',
   },
   backfill: undefined,
   webhook,

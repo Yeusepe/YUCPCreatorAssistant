@@ -139,7 +139,8 @@ const lemonSqueezyProvider: ProviderPlugin = {
     dashboardIconBg: '#f7b84b',
     dashboardQuickStartBg: 'rgba(247,184,75,0.12)',
     dashboardQuickStartBorder: 'rgba(247,184,75,0.32)',
-    dashboardServerTileHint: 'Allow users to verify Lemon Squeezy purchases and licenses in this Discord server.',
+    dashboardServerTileHint:
+      'Allow users to verify Lemon Squeezy purchases and licenses in this Discord server.',
   },
   async collabValidate(credential: string): Promise<void> {
     const client = new LemonSqueezyApiClient({ apiToken: credential });

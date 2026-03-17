@@ -67,7 +67,9 @@ describe('provider plugin registry', () => {
       if (!provider.displayMeta) continue;
       const iconPath = join(ICONS_DIR, provider.displayMeta.icon);
       if (!existsSync(iconPath)) {
-        missing.push(`${provider.id}: icon file "${provider.displayMeta.icon}" not found in public/Icons/`);
+        missing.push(
+          `${provider.id}: icon file "${provider.displayMeta.icon}" not found in public/Icons/`
+        );
       }
     }
 

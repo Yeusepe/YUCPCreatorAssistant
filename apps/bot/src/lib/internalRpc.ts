@@ -145,7 +145,10 @@ export async function listProviderProducts(
   error?: string;
   products: Array<{ collaboratorName?: string; id: string; name: string }>;
 }> {
-  const response = await (await getClients()).catalog.listProviderProducts({ provider, authUserId });
+  const response = await (await getClients()).catalog.listProviderProducts({
+    provider,
+    authUserId,
+  });
   return {
     products: normalizeProducts(response.products),
     error: response.error,

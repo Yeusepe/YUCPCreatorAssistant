@@ -426,7 +426,10 @@ export async function handleProductTypeSelect(
         const msg =
           data.error === 'session_expired'
             ? `Your ${label} session has expired. Please reconnect at the creator dashboard, then try again.`
-            : sanitizeUserFacingErrorMessage(data.error, `Couldn't load ${label} products right now.`);
+            : sanitizeUserFacingErrorMessage(
+                data.error,
+                `Couldn't load ${label} products right now.`
+              );
         await interaction.editReply({
           content: `${E.X_} ${msg}\n\nRun \`/creator-admin product add\` again after reconnecting.`,
           components: [],
@@ -1229,7 +1232,10 @@ export async function handleProductConfirmAdd(
           logger.warn('VRChat avatar name lookup returned empty', { authUserId, avatarId });
         }
       } catch (err) {
-        if (err instanceof Error && (err.message.includes('session_expired') || err.message.includes('not_connected'))) {
+        if (
+          err instanceof Error &&
+          (err.message.includes('session_expired') || err.message.includes('not_connected'))
+        ) {
           throw err;
         }
         logger.warn('VRChat avatar name lookup threw — continuing without display name', {

@@ -707,7 +707,11 @@ export function createCollabRoutes(config: CollabConfig) {
     if (!providerPlugin.collabCredentialPurpose) {
       return Response.json({ error: 'provider_not_configurable' }, { status: 400 });
     }
-    credentialEncrypted = await encrypt(rawApiKey, config.encryptionSecret, providerPlugin.collabCredentialPurpose);
+    credentialEncrypted = await encrypt(
+      rawApiKey,
+      config.encryptionSecret,
+      providerPlugin.collabCredentialPurpose
+    );
 
     let webhookSecretRef: string | undefined;
     let webhookEndpoint: string | undefined;
@@ -855,7 +859,11 @@ export function createCollabRoutes(config: CollabConfig) {
     if (!providerPlugin.collabCredentialPurpose) {
       return Response.json({ error: 'provider_not_configurable' }, { status: 400 });
     }
-    credentialEncrypted = await encrypt(rawCredential, config.encryptionSecret, providerPlugin.collabCredentialPurpose);
+    credentialEncrypted = await encrypt(
+      rawCredential,
+      config.encryptionSecret,
+      providerPlugin.collabCredentialPurpose
+    );
     collaboratorDisplayName = providerKey;
     collaboratorIdentity = `manual:${providerKey}:${Date.now()}`;
 

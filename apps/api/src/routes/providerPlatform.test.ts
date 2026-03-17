@@ -171,7 +171,7 @@ describe('provider platform routes', () => {
       }
       if (ref === apiMock.providerConnections.getConnectionForBackfill) {
         return {
-          credentials: { 'api_token': 'enc:api-token' },
+          credentials: { api_token: 'enc:api-token' },
           webhookSecretRef: 'enc:webhook-secret',
         };
       }
@@ -440,7 +440,7 @@ describe('provider platform routes', () => {
         };
       }
       if (ref === apiMock.providerConnections.getConnectionForBackfill)
-        return { credentials: { 'api_token': 'enc:api-token' } };
+        return { credentials: { api_token: 'enc:api-token' } };
       if (ref === apiMock.providerPlatform.listCatalogMappingsForConnection) {
         return [
           {
