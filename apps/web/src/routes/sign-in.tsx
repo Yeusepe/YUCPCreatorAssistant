@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { normalizeAuthRedirectTarget } from '@yucp/shared/authRedirects';
 import { useCallback, useEffect, useState } from 'react';
 import { PageLoadingOverlay } from '@/components/page/PageLoadingOverlay';
@@ -15,6 +15,12 @@ export const Route = createFileRoute('/sign-in')({
     meta: [{ title: 'Sign in | Creator Assistant' }],
     links: routeStylesheetLinks(routeStyleHrefs.signIn),
   }),
+  beforeLoad: ({ context, search }) => {
+    if (context.isAuthenticated) {
+      const target = normalizeAuthRedirectTarget(search.redirectTo);
+      throw redirect({ to: target });
+    }
+  },
   component: SignInRouteComponent,
 });
 
@@ -30,7 +36,6 @@ export function SignInPage({ redirectTo }: Readonly<{ redirectTo?: string | null
   const [isVisible, setIsVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState('Something went wrong. Please try again.');
   const redirectTarget = normalizeAuthRedirectTarget(redirectTo);
-  const navigate = useNavigate();
 
   const showPage = usePageLoadingTransition({
     onReveal: () => setIsVisible(true),
@@ -62,37 +67,11 @@ export function SignInPage({ redirectTo }: Readonly<{ redirectTo?: string | null
   }, [redirectTarget, showError]);
 
   useEffect(() => {
-    let isCancelled = false;
-
-    const checkSession = async () => {
-      try {
-        const session = await authClient.getSession();
-        if (!isCancelled && session.data?.user) {
-          setCurrentState('state-authenticated');
-          showPage();
-          window.setTimeout(() => {
-            if (!isCancelled) {
-              navigate({ to: redirectTarget, replace: true });
-            }
-          }, 150);
-          return;
-        }
-      } catch {
-        // Session check failed -- show sign-in button
-      }
-
-      if (!isCancelled) {
-        setCurrentState('state-signin');
-        showPage();
-      }
-    };
-
-    checkSession();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [redirectTarget, showPage, navigate]);
+    // Authenticated users are redirected server-side in beforeLoad.
+    // If we reach here, user is not authenticated. Show sign-in form.
+    setCurrentState('state-signin');
+    showPage();
+  }, [showPage]);
 
   return (
     <div className="sign-in-page">

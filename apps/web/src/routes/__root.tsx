@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ConvexQueryClient } from '@convex-dev/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import {
   createRootRouteWithContext,
   HeadContent,
@@ -10,7 +11,6 @@ import {
   useRouteContext,
 } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import type { ConvexReactClient } from 'convex/react';
 import type { ReactNode } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { getToken } from '@/lib/auth-server';
@@ -29,7 +29,7 @@ const getAuth = createServerFn({ method: 'GET' }).handler(async () => {
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
-  convexClient: ConvexReactClient;
+  convexQueryClient: ConvexQueryClient;
 }>()({
   head: () => ({
     meta: [
@@ -56,8 +56,15 @@ export const Route = createRootRouteWithContext<{
       },
     ],
   }),
-  beforeLoad: async () => {
+  beforeLoad: async (ctx) => {
     const token = await getAuth();
+
+    // During SSR only (the only time serverHttpClient exists),
+    // set the auth token so all TanStack Query Convex calls are authenticated.
+    if (token) {
+      ctx.context.convexQueryClient.serverHttpClient?.setAuth(token);
+    }
+
     return {
       isAuthenticated: !!token,
       token,
@@ -70,15 +77,13 @@ function RootComponent() {
   const context = useRouteContext({ from: Route.id });
   return (
     <ConvexBetterAuthProvider
-      client={context.convexClient}
+      client={context.convexQueryClient.convexClient}
       authClient={authClient}
       initialToken={context.token}
     >
-      <QueryClientProvider client={context.queryClient}>
-        <RootDocument>
-          <Outlet />
-        </RootDocument>
-      </QueryClientProvider>
+      <RootDocument>
+        <Outlet />
+      </RootDocument>
     </ConvexBetterAuthProvider>
   );
 }
