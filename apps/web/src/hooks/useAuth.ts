@@ -1,9 +1,7 @@
-import { useNavigate } from '@tanstack/react-router';
 import { useCallback } from 'react';
 import { authClient } from '@/lib/auth-client';
 
 export function useAuth() {
-  const navigate = useNavigate();
   const session = authClient.useSession();
 
   const signIn = useCallback(async (redirectTo?: string) => {
@@ -14,9 +12,16 @@ export function useAuth() {
   }, []);
 
   const signOut = useCallback(async () => {
-    await authClient.signOut();
-    navigate({ to: '/sign-in', search: { redirectTo: undefined }, replace: true });
-  }, [navigate]);
+    await authClient.signOut({
+      fetchOptions: {
+        onSuccess: () => {
+          // Required when using ConvexQueryClient with expectAuth: true.
+          // Without reload, authenticated queries fire before auth is ready on re-login.
+          location.reload();
+        },
+      },
+    });
+  }, []);
 
   return {
     session: session.data,
