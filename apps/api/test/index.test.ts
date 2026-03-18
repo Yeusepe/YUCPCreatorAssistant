@@ -100,6 +100,8 @@ describe('API server — route mounting', () => {
     // Callback URL must preserve the guild_id query param
     expect(html).toContain('guild_id=test-guild-123');
   });
+
+  it('GET /sign-in rejects open redirect targets from browser-rendered OAuth links', async () => {
     const res = await server.fetch('/sign-in?redirectTo=//evil.example/%2Fsteal');
     expect(res.status).toBe(200);
     const html = await res.text();

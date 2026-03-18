@@ -1627,14 +1627,23 @@ async function routeRequest(request: Request): Promise<Response> {
 
     // Guard: regular web sessions require a valid BetterAuth session.
     // Bot-initiated setup flows use the setup cookie and are exempt.
+    // Serve sign-in-redirect.html (not a 302) so client-side JS can exchange
+    // hash-fragment tokens (#s=... / #token=...) for cookies before OAuth.
+    // Hash fragments are lost during HTTP redirects.
     if (!resolvedSetupSession && auth) {
       const webSession = await auth.getSession(request);
       if (!webSession) {
         const browserBase = resolvedFrontendOrigin ?? resolvedApiBaseUrl;
-        return Response.redirect(
-          buildSignInRouteUrl(browserBase, getRelativeRequestTarget(url)),
-          302
-        );
+        const callbackUrl = `${browserBase}${getRelativeRequestTarget(url)}`;
+        const signInUrl = `${resolvedApiBaseUrl.replace(/\/$/, '')}/api/auth/sign-in/discord?callbackURL=${encodeURIComponent(callbackUrl)}`;
+        const redirectFilePath = `${import.meta.dir}/../public/sign-in-redirect.html`;
+        let redirectHtml = await Bun.file(redirectFilePath).text();
+        redirectHtml = redirectHtml.replace('__SIGN_IN_URL__', JSON.stringify(signInUrl));
+        redirectHtml = redirectHtml.replace('__CALLBACK_URL__', JSON.stringify(callbackUrl));
+        return new Response(redirectHtml, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html', ...HTML_SECURITY_HEADERS },
+        });
       }
     }
 

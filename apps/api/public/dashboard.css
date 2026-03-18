@@ -1488,6 +1488,52 @@ img.collab-avatar {
   opacity: 1;
 }
 
+/* ── Skeleton loading placeholders ──────────────────────────────── */
+
+@keyframes skeleton-pulse {
+  0%   { opacity: 0.06; }
+  50%  { opacity: 0.12; }
+  100% { opacity: 0.06; }
+}
+
+.skeleton-block {
+  background: white;
+  border-radius: 12px;
+  animation: skeleton-pulse 1.8s ease-in-out infinite;
+}
+
+.skeleton-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .skeleton-group {
+    grid-template-columns: 1fr;
+  }
+}
+
+.skeleton-card {
+  height: 100px;
+}
+
+.skeleton-row {
+  height: 14px;
+  max-width: 200px;
+  border-radius: 7px;
+  margin-bottom: 12px;
+}
+
+.skeleton-row.w-40 { max-width: 160px; }
+.skeleton-row.w-60 { max-width: 240px; }
+
+/* Remove skeletons when data is loaded */
+.skeleton-loaded .skeleton-group,
+.skeleton-loaded .skeleton-row {
+  display: none;
+}
+
 /* When hidden during load, override to none so layout doesn't flash */
 
 #page-content[style*="display: none"] {

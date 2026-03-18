@@ -132,7 +132,7 @@ export async function fetchPublicApiKeys() {
     return;
   }
   try {
-    const res = await apiFetch(`${getApiBase()}/api/connect/public-api/keys?tenantId=${encodeURIComponent(tid)}`);
+    const res = await apiFetch(`${getApiBase()}/api/connect/public-api/keys?authUserId=${encodeURIComponent(tid)}`);
     if (res.status === 401 || res.status === 403) {
       document.getElementById('api-keys-loading')?.classList.add('hidden');
       document.getElementById('api-keys-list')?.classList.add('hidden');
@@ -193,7 +193,7 @@ async function submitCreateApiKey() {
     const res = await apiFetch(`${getApiBase()}/api/connect/public-api/keys`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantId: tid, name, scopes }),
+      body: JSON.stringify({ authUserId: tid, name, scopes }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -297,7 +297,7 @@ async function revokePublicApiKey(keyId, btn) {
     const res = await apiFetch(`${getApiBase()}/api/connect/public-api/keys/${encodeURIComponent(keyId)}/revoke`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantId: tid }),
+      body: JSON.stringify({ authUserId: tid }),
     });
     if (res.ok) {
       document.getElementById('api-keys-loading')?.classList.remove('hidden');
@@ -324,7 +324,7 @@ async function rotatePublicApiKey(keyId, btn) {
     const res = await apiFetch(`${getApiBase()}/api/connect/public-api/keys/${encodeURIComponent(keyId)}/rotate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantId: tid }),
+      body: JSON.stringify({ authUserId: tid }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

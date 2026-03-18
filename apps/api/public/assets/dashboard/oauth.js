@@ -214,7 +214,7 @@ async function submitCreateOAuthApp() {
     const res = await apiFetch(`${getApiBase()}/api/connect/oauth-apps`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantId: tid, name, redirectUris, scopes }),
+      body: JSON.stringify({ authUserId: tid, name, redirectUris, scopes }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -273,7 +273,7 @@ async function submitEditOAuthApp(appId) {
     const res = await apiFetch(`${getApiBase()}/api/connect/oauth-apps/${encodeURIComponent(appId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantId: tid, name, redirectUris, scopes }),
+      body: JSON.stringify({ authUserId: tid, name, redirectUris, scopes }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -303,7 +303,7 @@ async function confirmRegenOAuthSecret(appId) {
     const res = await apiFetch(`${getApiBase()}/api/connect/oauth-apps/${encodeURIComponent(appId)}/regenerate-secret`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantId: tid }),
+      body: JSON.stringify({ authUserId: tid }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -335,7 +335,7 @@ async function confirmDeleteOAuthApp(appId) {
     const res = await apiFetch(`${getApiBase()}/api/connect/oauth-apps/${encodeURIComponent(appId)}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantId: tid }),
+      body: JSON.stringify({ authUserId: tid }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -435,7 +435,7 @@ export async function fetchOAuthApps() {
     return;
   }
   try {
-    const res = await apiFetch(`${getApiBase()}/api/connect/oauth-apps?tenantId=${encodeURIComponent(tid)}`);
+    const res = await apiFetch(`${getApiBase()}/api/connect/oauth-apps?authUserId=${encodeURIComponent(tid)}`);
     if (res.status === 401 || res.status === 403) {
       document.getElementById('oauth-apps-loading')?.classList.add('hidden');
       document.getElementById('oauth-apps-list')?.classList.add('hidden');
