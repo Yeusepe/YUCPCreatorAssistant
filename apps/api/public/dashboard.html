@@ -68,6 +68,9 @@
         });
     </script>
 
+    <script>
+        window.__deferLoadingDismiss = true;
+    </script>
     <link rel="stylesheet" href="/assets/site/site.css">
     <script type="module" src="/assets/site/site.js"></script>
     <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js"></script>
@@ -349,6 +352,11 @@
                             specific server settings.
                         </p>
                         <!-- To be populated dynamically or via existing logic -->
+                        <!-- Skeleton placeholder -->
+                        <div class="skeleton-group" aria-hidden="true" style="grid-template-columns: repeat(2, 1fr);">
+                            <div class="skeleton-block skeleton-card"></div>
+                            <div class="skeleton-block skeleton-card"></div>
+                        </div>
                     </section>
 
                     <!-- Connected Platforms -->
@@ -364,6 +372,13 @@
 
                         <!-- Dynamic user accounts list (rendered by platform.js) -->
                         <div id="user-accounts-list" class="grid grid-cols-1 md:grid-cols-3 gap-4" style="margin-bottom: 16px;">
+                        </div>
+
+                        <!-- Skeleton placeholder (visible until data loads) -->
+                        <div class="skeleton-group" aria-hidden="true">
+                            <div class="skeleton-block skeleton-card"></div>
+                            <div class="skeleton-block skeleton-card"></div>
+                            <div class="skeleton-block skeleton-card"></div>
                         </div>
 
                         <!-- Add account buttons (rendered dynamically by platform.js from PROVIDER_META) -->
@@ -405,6 +420,11 @@
                             <div class="settings-subsection-title">Store Integrations</div>
                             <div class="settings-subsection-body">
                                 <div id="dynamic-server-provider-tiles"></div>
+                                <!-- Skeleton placeholder (visible until data loads) -->
+                                <div class="skeleton-group" aria-hidden="true">
+                                    <div class="skeleton-block skeleton-card"></div>
+                                    <div class="skeleton-block skeleton-card"></div>
+                                </div>
                                 <div id="server-integrations-empty"
                                     class="p-4 bg-white/5 border border-white/10 rounded-xl text-center text-sm text-[rgba(255,255,255,0.6)]">
                                     No store accounts linked. Add a store account in the <strong>Connected Platforms</strong> section above.

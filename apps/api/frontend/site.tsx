@@ -424,6 +424,15 @@ function bootLoadingOverlay() {
     '<div class="plo-bar-wrap"><div class="plo-bar"></div></div>';
 }
 
+function dismissOverlay() {
+  const overlay = document.getElementById('page-loading-overlay');
+  if (!overlay || overlay.classList.contains('is-hiding')) return;
+  overlay.classList.add('is-hiding');
+  setTimeout(() => {
+    overlay.style.display = 'none';
+  }, 600);
+}
+
 function hideLoading() {
   const overlay = document.getElementById('page-loading-overlay');
   const content = document.getElementById('page-content');
@@ -435,15 +444,18 @@ function hideLoading() {
     requestAnimationFrame(() => requestAnimationFrame(() => content.classList.add('is-visible')));
   }
 
+  // If the page defers overlay dismiss (e.g. dashboard waits for data),
+  // expose a global callback and skip the automatic hide.
+  if ((window as any).__deferLoadingDismiss) {
+    (window as any).__dismissLoading = () => {
+      setTimeout(dismissOverlay, 400);
+    };
+    return;
+  }
+
   // Step 2: after content finishes its own 0.3s opacity transition + paint
   // buffer, fade the overlay out over the already-visible page.
-  setTimeout(() => {
-    if (!overlay) return;
-    overlay.classList.add('is-hiding');
-    setTimeout(() => {
-      overlay.style.display = 'none';
-    }, 600);
-  }, 400);
+  setTimeout(dismissOverlay, 400);
 }
 
 // Populate the loading overlay as early as possible (module scripts run after DOM parse).
