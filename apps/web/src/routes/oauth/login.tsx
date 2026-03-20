@@ -3,6 +3,7 @@ import { getSafeRelativeRedirectTarget } from '@yucp/shared/authRedirects';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { routeStyleHrefs, routeStylesheetLinks } from '@/lib/routeStyles';
+import { logWebError } from '@/lib/webDiagnostics';
 
 export const Route = createFileRoute('/oauth/login')({
   beforeLoad: ({ context, location }) => {
@@ -51,7 +52,10 @@ function OAuthLoginPage() {
 
   useEffect(() => {
     runOAuthLoginFlow().catch((err) => {
-      console.error('[oauth-login] Exception:', err);
+      logWebError('OAuth login failed', err, {
+        phase: 'oauth-login',
+        route: '/oauth/login',
+      });
       showError();
     });
   }, [runOAuthLoginFlow, showError]);

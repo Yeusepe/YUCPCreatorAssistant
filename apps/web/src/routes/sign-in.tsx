@@ -7,6 +7,7 @@ import { usePageLoadingTransition } from '@/hooks/usePageLoadingTransition';
 import { usePageRevealGate } from '@/hooks/usePageRevealGate';
 import { authClient } from '@/lib/auth-client';
 import { routeStyleHrefs, routeStylesheetLinks } from '@/lib/routeStyles';
+import { logWebError } from '@/lib/webDiagnostics';
 
 export const Route = createFileRoute('/sign-in')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -63,7 +64,11 @@ export function SignInPage({ redirectTo }: Readonly<{ redirectTo?: string | null
         provider: 'discord',
         callbackURL: redirectTarget,
       });
-    } catch {
+    } catch (error) {
+      logWebError('Sign-in start failed', error, {
+        phase: 'sign-in-click',
+        route: '/sign-in',
+      });
       showError('Failed to start sign-in. Please try again.');
     }
   }, [redirectTarget, showError]);

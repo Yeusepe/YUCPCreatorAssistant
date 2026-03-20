@@ -17,6 +17,7 @@ import { authClient } from '@/lib/auth-client';
 import { getToken } from '@/lib/auth-server';
 import { installChunkErrorRecovery } from '@/lib/chunkErrorRecovery';
 import { useVersionPoller } from '@/lib/versionPoller';
+import { loadRootAuthState, logRootRenderError } from '@/lib/webDiagnostics';
 
 import '@/styles/tokens.css';
 import '@/styles/loading.css';
@@ -61,18 +62,11 @@ export const Route = createRootRouteWithContext<{
     ],
   }),
   beforeLoad: async (ctx) => {
-    const token = await getAuth();
-
-    // During SSR only (the only time serverHttpClient exists),
-    // set the auth token so all TanStack Query Convex calls are authenticated.
-    if (token) {
-      ctx.context.convexQueryClient.serverHttpClient?.setAuth(token);
-    }
-
-    return {
-      isAuthenticated: !!token,
-      token,
-    };
+    return await loadRootAuthState({
+      convexQueryClient: ctx.context.convexQueryClient,
+      location: ctx.location,
+      getAuthToken: () => getAuth(),
+    });
   },
   component: RootComponent,
   errorComponent: RootErrorComponent,
@@ -131,6 +125,10 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 }
 
 function RootErrorComponent({ error }: { error: Error }) {
+  logRootRenderError(error, {
+    route: typeof window !== 'undefined' ? window.location.pathname : undefined,
+  });
+
   return (
     <RootDocument>
       <div
@@ -158,7 +156,7 @@ function RootErrorComponent({ error }: { error: Error }) {
           </p>
           <pre
             style={{
-              margin: 0,
+              margin: '0 0 24px',
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
               color: 'rgba(255,255,255,0.76)',
@@ -166,6 +164,14 @@ function RootErrorComponent({ error }: { error: Error }) {
           >
             {error.message}
           </pre>
+          <iframe
+            src="https://status.yucp.club/embed/events/live?theme=dark&incidents=1&maintenance=1&tags=creator-assistant-api%2Ccreator-assistant-dashboard%2Ccreator-assistant-backend%2Ccreator-assistant-state%2Ccreator-assistant-discord-bot"
+            width="100%"
+            height="300"
+            frameBorder="0"
+            allowFullScreen
+            style={{ borderRadius: '10px', display: 'block' }}
+          />
         </div>
       </div>
     </RootDocument>

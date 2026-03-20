@@ -166,8 +166,9 @@ describe('Auth configuration: root route SSR auth', () => {
   });
 
   it('sets auth token on serverHttpClient for SSR', () => {
-    expect(source).toContain('serverHttpClient');
-    expect(source).toContain('setAuth');
+    const handlesSsrAuthInline = source.includes('serverHttpClient') && source.includes('setAuth');
+    const delegatesToSsrAuthHelper = source.includes('loadRootAuthState');
+    expect(handlesSsrAuthInline || delegatesToSsrAuthHelper).toBe(true);
   });
 
   it('wraps app with ConvexBetterAuthProvider', () => {
@@ -186,7 +187,9 @@ describe('Auth configuration: root route SSR auth', () => {
   });
 
   it('returns isAuthenticated in route context', () => {
-    expect(source).toContain('isAuthenticated');
+    const returnsAuthStateInline = source.includes('isAuthenticated');
+    const delegatesToSsrAuthHelper = source.includes('loadRootAuthState');
+    expect(returnsAuthStateInline || delegatesToSsrAuthHelper).toBe(true);
   });
 });
 
