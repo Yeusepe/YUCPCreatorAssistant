@@ -176,4 +176,3 @@ describe('vrchatProvider.fetchProducts', () => {
     }
   });
 });
-

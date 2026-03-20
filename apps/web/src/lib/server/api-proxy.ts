@@ -51,8 +51,8 @@ export async function proxyApiRequest(request: Request): Promise<Response> {
   const targetUrl = new URL(url.pathname + url.search, getApiBaseUrl());
   const headers = new Headers();
   headers.set('Accept', request.headers.get('accept') ?? 'application/json');
-  headers.set('Authorization', `Bearer ${getInternalSecret()}`);
   headers.set('X-Internal-Service', 'web');
+  headers.set('X-Internal-Service-Secret', getInternalSecret());
 
   copyHeaderIfPresent(request.headers, headers, 'content-type');
   copyHeaderIfPresent(request.headers, headers, 'idempotency-key');

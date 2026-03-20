@@ -46,6 +46,8 @@ describe('proxyApiRequest', () => {
     expect(headers.get('Cookie')).toBe(
       'yucp.session_token=session-cookie; yucp.session_data=cached-session; yucp_setup_session=setup-cookie'
     );
+    expect(headers.get('Authorization')).toBeNull();
+    expect(headers.get('X-Internal-Service-Secret')).toBe('test-secret-value');
   });
 
   it('forwards the VRChat connect pending cookie on 2FA submissions', async () => {

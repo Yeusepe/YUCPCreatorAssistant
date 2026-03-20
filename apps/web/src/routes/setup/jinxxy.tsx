@@ -241,12 +241,13 @@ function JinxxySetupPage() {
   }, [currentStep]);
 
   const handleCopy = useCallback(async (text: string, id: string, e?: React.MouseEvent) => {
+    const target = (e?.currentTarget ?? null) as HTMLElement | null;
     await navigator.clipboard.writeText(text);
     setCopied((prev) => ({ ...prev, [id]: true }));
     setTimeout(() => setCopied((prev) => ({ ...prev, [id]: false })), 2000);
 
-    if (e) {
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (target) {
+      const rect = target.getBoundingClientRect();
       const x = (rect.left + rect.width / 2) / window.innerWidth;
       const y = (rect.top + rect.height / 2) / window.innerHeight;
       confetti({
