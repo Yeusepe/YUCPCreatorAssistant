@@ -38,3 +38,4 @@ apps/bot/test/e2e/.artifacts/
 convex/tsconfig.tsbuildinfo
 /apps/api/test-results
 /apps/api/test-results
+/apps/web/.tanstack
