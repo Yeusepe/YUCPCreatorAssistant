@@ -10,12 +10,14 @@
  * - JSON parsing failures on empty responses
  */
 
+import { LOCAL_DEV_INTERNAL_RPC_SHARED_SECRET } from '@yucp/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // We test serverApiFetch by mocking global fetch and env vars,
 // then importing the module fresh for each test.
 const mockFetch = vi.fn<typeof fetch>();
 vi.stubGlobal('fetch', mockFetch);
+const mockGetRequestHeader = vi.fn<(name: string) => string | undefined>();
 
 // Must mock the auth-server module since serverApiFetch imports getToken
 vi.mock('@/lib/auth-server', () => ({
@@ -24,6 +26,10 @@ vi.mock('@/lib/auth-server', () => ({
   fetchAuthQuery: vi.fn(),
   fetchAuthMutation: vi.fn(),
   fetchAuthAction: vi.fn(),
+}));
+
+vi.mock('@tanstack/react-start/server', () => ({
+  getRequestHeader: mockGetRequestHeader,
 }));
 
 function jsonResponse(data: unknown, status = 200) {
@@ -36,6 +42,8 @@ function jsonResponse(data: unknown, status = 200) {
 describe('serverApiFetch', () => {
   beforeEach(() => {
     mockFetch.mockReset();
+    mockGetRequestHeader.mockReset();
+    mockGetRequestHeader.mockReturnValue(undefined);
     vi.stubEnv('INTERNAL_RPC_SHARED_SECRET', 'test-secret-value');
     vi.stubEnv('API_BASE_URL', 'http://localhost:3001');
   });
@@ -53,7 +61,9 @@ describe('serverApiFetch', () => {
     await serverApiFetch('/api/test');
 
     const [, opts] = mockFetch.mock.calls[0];
-    expect((opts as RequestInit).headers).toHaveProperty('Authorization');
+    expect((opts as RequestInit).headers).toMatchObject({
+      'X-Internal-Service-Secret': LOCAL_DEV_INTERNAL_RPC_SHARED_SECRET,
+    });
   });
 
   it('throws in production if INTERNAL_RPC_SHARED_SECRET is not set', async () => {
@@ -64,7 +74,7 @@ describe('serverApiFetch', () => {
     await expect(serverApiFetch('/api/test')).rejects.toThrow('INTERNAL_RPC_SHARED_SECRET');
   });
 
-  it('sends Authorization header with Bearer secret', async () => {
+  it('sends X-Internal-Service-Secret header with shared secret', async () => {
     mockFetch.mockResolvedValueOnce(jsonResponse({ ok: true }));
     const { serverApiFetch } = await import('@/lib/server/api-client');
 
@@ -72,7 +82,7 @@ describe('serverApiFetch', () => {
 
     const [, opts] = mockFetch.mock.calls[0];
     expect((opts as RequestInit).headers).toMatchObject({
-      Authorization: 'Bearer test-secret-value',
+      'X-Internal-Service-Secret': 'test-secret-value',
     });
   });
 
@@ -111,6 +121,27 @@ describe('serverApiFetch', () => {
     const [, opts] = mockFetch.mock.calls[0];
     const headers = (opts as RequestInit).headers as Record<string, string>;
     expect(headers['X-Auth-Token']).toBeUndefined();
+  });
+
+  it('forwards Better Auth session cookies for API routes that authenticate via auth.getSession', async () => {
+    mockGetRequestHeader.mockImplementation((name: string) =>
+      name === 'cookie'
+        ? 'yucp.session_token=session-cookie; yucp.session_data=cached-session; yucp_setup_session=setup-cookie; analytics_cookie=ignore-me'
+        : undefined
+    );
+    mockFetch.mockResolvedValueOnce(jsonResponse({ guilds: [] }));
+    const { serverApiFetch } = await import('@/lib/server/api-client');
+
+    await serverApiFetch('/api/connect/user/guilds', {
+      authToken: 'user-jwt-token-123',
+    });
+
+    const [, opts] = mockFetch.mock.calls[0];
+    expect((opts as RequestInit).headers).toMatchObject({
+      Cookie:
+        'yucp.session_token=session-cookie; yucp.session_data=cached-session; yucp_setup_session=setup-cookie',
+      'X-Auth-Token': 'user-jwt-token-123',
+    });
   });
 
   it('throws with status code and body on non-ok response', async () => {

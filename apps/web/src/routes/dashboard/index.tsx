@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation as useConvexMutation, useQuery as useConvexQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -24,10 +24,12 @@ import type {
 import {
   buildProviderConnectUrl,
   disconnectUserAccount,
+  getConnectionStatus,
   getDashboardSettings,
   getProviderIconPath,
   listDashboardProviders,
   listGuildChannels,
+  listUserAccounts,
   uninstallGuild,
   updateDashboardSetting,
 } from '@/lib/dashboard';
@@ -366,23 +368,33 @@ function ConnectedPlatformsPanel() {
   );
   const providers = providersQuery.data ?? [];
   const providersLoading = providersQuery.isLoading;
-  const accountsRaw = useConvexQuery(api.dashboardViews.listMyConnections);
-  const accounts: UserAccountConnection[] = (accountsRaw ?? []) as UserAccountConnection[];
-  const accountsLoading = accountsRaw === undefined;
+  const queryClient = useQueryClient();
+  const accountsQuery = useQuery(
+    dashboardPanelQueryOptions<UserAccountConnection[]>({
+      queryKey: ['dashboard-user-accounts'],
+      queryFn: listUserAccounts,
+      enabled: canRunPanelQueries,
+    })
+  );
+  const accounts = accountsQuery.data ?? [];
+  const accountsLoading = accountsQuery.isLoading;
 
   const disconnectMutation = useMutation({
     mutationFn: disconnectUserAccount,
     onSuccess: async () => {
       setPendingProviderDisconnect(null);
-      // Convex auto-refreshes accountsRaw reactively
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['dashboard-user-accounts'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard-connection-status'] }),
+      ]);
     },
   });
 
   useEffect(() => {
-    if (isDashboardAuthError(providersQuery.error)) {
+    if (isDashboardAuthError(providersQuery.error) || isDashboardAuthError(accountsQuery.error)) {
       markSessionExpired();
     }
-  }, [markSessionExpired, providersQuery.error]);
+  }, [accountsQuery.error, markSessionExpired, providersQuery.error]);
 
   const accountsByProvider = useMemo(() => {
     const next = new Map<string, UserAccountConnection>();
@@ -412,7 +424,7 @@ function ConnectedPlatformsPanel() {
     [authUserId, guildId]
   );
 
-  if (isDashboardAuthError(providersQuery.error)) {
+  if (isDashboardAuthError(providersQuery.error) || isDashboardAuthError(accountsQuery.error)) {
     return (
       <DashboardAuthRequiredState
         id="dashboard-platforms-auth-required"
@@ -699,12 +711,23 @@ function ServerConfigPanel() {
   );
   const providers = providersQuery.data ?? [];
   const providersLoading = providersQuery.isLoading;
-  // Convex reactive queries — update in real-time when provider_connections changes
-  const statusByProviderRaw = useConvexQuery(api.dashboardViews.getMyConnectionStatus);
-  const statusByProvider: Record<string, boolean> = statusByProviderRaw ?? {};
-  const connectionStatusLoading = statusByProviderRaw === undefined;
-  const accountsRaw2 = useConvexQuery(api.dashboardViews.listMyConnections);
-  const accounts = (accountsRaw2 ?? []) as UserAccountConnection[];
+  const connectionStatusQuery = useQuery(
+    dashboardPanelQueryOptions<Record<string, boolean>>({
+      queryKey: ['dashboard-connection-status', authUserId],
+      queryFn: () => getConnectionStatus(requireAuthUserId(authUserId)),
+      enabled: canRunPanelQueries && Boolean(authUserId),
+    })
+  );
+  const statusByProvider = connectionStatusQuery.data ?? {};
+  const connectionStatusLoading = connectionStatusQuery.isLoading;
+  const accountsQuery = useQuery(
+    dashboardPanelQueryOptions<UserAccountConnection[]>({
+      queryKey: ['dashboard-user-accounts'],
+      queryFn: listUserAccounts,
+      enabled: canRunPanelQueries,
+    })
+  );
+  const accounts = accountsQuery.data ?? [];
   const accountsByProvider = useMemo(() => {
     const map = new Map<string, UserAccountConnection>();
     for (const account of accounts) {
@@ -732,12 +755,21 @@ function ServerConfigPanel() {
   useEffect(() => {
     if (
       isDashboardAuthError(providersQuery.error) ||
+      isDashboardAuthError(connectionStatusQuery.error) ||
+      isDashboardAuthError(accountsQuery.error) ||
       isDashboardAuthError(settingsQuery.error) ||
       isDashboardAuthError(channelsQuery.error)
     ) {
       markSessionExpired();
     }
-  }, [channelsQuery.error, markSessionExpired, providersQuery.error, settingsQuery.error]);
+  }, [
+    accountsQuery.error,
+    channelsQuery.error,
+    connectionStatusQuery.error,
+    markSessionExpired,
+    providersQuery.error,
+    settingsQuery.error,
+  ]);
 
   useEffect(() => {
     if (!settingsQuery.data) {
@@ -860,6 +892,8 @@ function ServerConfigPanel() {
 
   if (
     isDashboardAuthError(providersQuery.error) ||
+    isDashboardAuthError(connectionStatusQuery.error) ||
+    isDashboardAuthError(accountsQuery.error) ||
     isDashboardAuthError(settingsQuery.error) ||
     isDashboardAuthError(channelsQuery.error) ||
     status === 'signed_out' ||
