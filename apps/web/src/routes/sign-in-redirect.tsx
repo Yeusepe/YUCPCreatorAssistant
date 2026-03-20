@@ -7,6 +7,7 @@ import { usePageLoadingTransition } from '@/hooks/usePageLoadingTransition';
 import { usePageRevealGate } from '@/hooks/usePageRevealGate';
 import { authClient } from '@/lib/auth-client';
 import { routeStyleHrefs, routeStylesheetLinks } from '@/lib/routeStyles';
+import { logWebError } from '@/lib/webDiagnostics';
 
 export const Route = createFileRoute('/sign-in-redirect')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -87,14 +88,21 @@ function SignInRedirectPage() {
         provider: 'discord',
         callbackURL: postAuthTarget,
       });
-    } catch {
+    } catch (error) {
+      logWebError('Sign-in retry failed', error, {
+        phase: 'sign-in-retry',
+        route: '/sign-in-redirect',
+      });
       showError();
     }
   }, [postAuthTarget, showError]);
 
   useEffect(() => {
     startSignIn().catch((err) => {
-      console.error('[sign-in] Exception:', err);
+      logWebError('Sign-in redirect failed', err, {
+        phase: 'sign-in-redirect',
+        route: '/sign-in-redirect',
+      });
       showError();
     });
   }, [startSignIn, showError]);

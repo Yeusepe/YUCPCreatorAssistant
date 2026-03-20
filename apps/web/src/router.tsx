@@ -2,6 +2,7 @@ import { ConvexQueryClient } from '@convex-dev/react-query';
 import { notifyManager, QueryClient } from '@tanstack/react-query';
 import { createRouter } from '@tanstack/react-router';
 import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query';
+import { resolveRequiredConvexUrl } from '@/lib/webDiagnostics';
 import { routeTree } from './routeTree.gen';
 
 export function getRouter() {
@@ -9,10 +10,7 @@ export function getRouter() {
     notifyManager.setScheduler(window.requestAnimationFrame);
   }
 
-  const convexUrl = import.meta.env.CONVEX_URL as string | undefined;
-  if (!convexUrl) {
-    throw new Error('CONVEX_URL is not available. Ensure it is set in your Infisical environment.');
-  }
+  const convexUrl = resolveRequiredConvexUrl(import.meta.env.CONVEX_URL as string | undefined);
 
   const convexQueryClient = new ConvexQueryClient(convexUrl, {
     expectAuth: true,
