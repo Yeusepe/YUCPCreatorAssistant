@@ -539,4 +539,3 @@ describe('VRChat connect — POST /session', () => {
     expect(await activeStore.get('vrchat_connect:valid-token')).toBeNull();
   });
 });
-

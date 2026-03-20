@@ -240,10 +240,13 @@ describe('Collab routes — security: setup session user isolation', () => {
           return originalFetch(input, init);
         }
         if (url.includes('/api/query')) {
-          return new Response(JSON.stringify({ status: 'success', value: { authUserId: 'user-A' } }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          });
+          return new Response(
+            JSON.stringify({ status: 'success', value: { authUserId: 'user-A' } }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }
+          );
         }
         return originalFetch(input, init);
       }) as typeof fetch;
