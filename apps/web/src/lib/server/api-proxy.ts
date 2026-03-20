@@ -1,17 +1,6 @@
 import { getInternalRpcSharedSecret } from '@yucp/shared';
 import { getToken } from '../auth-server';
-
-const FORWARDED_COOKIE_NAMES = new Set([
-  'yucp.session_token',
-  'yucp.session_data',
-  'yucp_setup_session',
-  'yucp_connect_token',
-  'yucp_collab_session',
-  'yucp_discord_role_setup',
-  'yucp_vrchat_connect_pending',
-  '__Secure-yucp.session_token',
-  '__Secure-yucp.session_data',
-]);
+import { filterForwardedAuthCookieHeader } from './forwardedAuthCookies';
 
 function getApiBaseUrl(): string {
   return process.env.API_BASE_URL || 'http://localhost:3001';
@@ -26,20 +15,6 @@ function copyHeaderIfPresent(source: Headers, target: Headers, headerName: strin
   if (value) {
     target.set(headerName, value);
   }
-}
-
-function filterForwardedCookieHeader(cookieHeader: string | null): string | null {
-  if (!cookieHeader) {
-    return null;
-  }
-
-  const cookies = cookieHeader
-    .split(';')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .filter((part) => FORWARDED_COOKIE_NAMES.has(part.split('=')[0] ?? ''));
-
-  return cookies.length > 0 ? cookies.join('; ') : null;
 }
 
 export async function proxyApiRequest(request: Request): Promise<Response> {
@@ -57,7 +32,7 @@ export async function proxyApiRequest(request: Request): Promise<Response> {
   copyHeaderIfPresent(request.headers, headers, 'content-type');
   copyHeaderIfPresent(request.headers, headers, 'idempotency-key');
 
-  const forwardedCookies = filterForwardedCookieHeader(request.headers.get('cookie'));
+  const forwardedCookies = filterForwardedAuthCookieHeader(request.headers.get('cookie'));
   if (forwardedCookies) {
     headers.set('Cookie', forwardedCookies);
   }

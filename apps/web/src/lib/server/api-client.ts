@@ -1,5 +1,7 @@
+import { getRequestHeader } from '@tanstack/react-start/server';
 import { getInternalRpcSharedSecret } from '@yucp/shared';
 import { getToken } from '../auth-server';
+import { filterForwardedAuthCookieHeader } from './forwardedAuthCookies';
 
 /**
  * Server-side HTTP client for calling the Bun API.
@@ -28,6 +30,14 @@ interface ServerFetchOptions {
   authToken?: string | null;
 }
 
+function getForwardedAuthCookieHeader(): string | null {
+  try {
+    return filterForwardedAuthCookieHeader(getRequestHeader('cookie'));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Makes an authenticated server-to-server HTTP request to the Bun API.
  */
@@ -52,6 +62,11 @@ export async function serverApiFetch<T = unknown>(
 
   if (authToken) {
     headers['X-Auth-Token'] = authToken;
+  }
+
+  const forwardedCookieHeader = getForwardedAuthCookieHeader();
+  if (forwardedCookieHeader) {
+    headers.Cookie = forwardedCookieHeader;
   }
 
   if (body !== undefined) {

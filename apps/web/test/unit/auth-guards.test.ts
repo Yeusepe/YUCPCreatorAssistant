@@ -133,6 +133,10 @@ describe('Auth configuration: auth client', () => {
     expect(source).toContain('convexClient');
   });
 
+  it('does not use crossDomainClient because the app stays on same-origin Better Auth transport', () => {
+    expect(source).not.toContain('crossDomainClient');
+  });
+
   it('does not hardcode a baseURL (should use current origin)', () => {
     // A hardcoded baseURL would break when deployed to a different domain
     const hasHardcodedBaseUrl = /baseURL\s*:\s*['"]https?:\/\//.test(source);
@@ -188,6 +192,7 @@ describe('Auth configuration: root route SSR auth', () => {
 
 describe('Auth configuration: router uses expectAuth', () => {
   const source = readFileSync(join(__dirname, '../../src/router.tsx'), 'utf8');
+  const rootSource = readFileSync(join(__dirname, '../../src/routes/__root.tsx'), 'utf8');
 
   it('creates ConvexQueryClient with expectAuth: true', () => {
     expect(source).toContain('ConvexQueryClient');
@@ -202,5 +207,10 @@ describe('Auth configuration: router uses expectAuth', () => {
     // Should use ConvexQueryClient, not the raw client
     const hasRawClient = /new\s+ConvexReactClient/.test(source);
     expect(hasRawClient).toBe(false);
+  });
+
+  it('does not wrap the tree in a plain ConvexProvider when the root uses ConvexBetterAuthProvider', () => {
+    expect(rootSource).toContain('ConvexBetterAuthProvider');
+    expect(source).not.toContain('<ConvexProvider');
   });
 });
