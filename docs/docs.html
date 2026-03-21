@@ -441,6 +441,7 @@
         .badge-discord { background: rgba(88,101,242,0.12);  border: 1px solid rgba(88,101,242,0.35);  color: #818cf8; }
 .badge-manual  { background: rgba(0,230,118,0.10);   border: 1px solid rgba(0,230,118,0.3);    color: #34d399; }
 .badge-vrchat  { background: rgba(0,230,118,0.12);   border: 1px solid rgba(0,230,118,0.35);   color: #00e676; }
+.badge-payhip  { background: rgba(0,209,178,0.12);   border: 1px solid rgba(0,209,178,0.35);   color: #00d1b2; }
 .badge-admin   { background: rgba(239,68,68,0.10);   border: 1px solid rgba(239,68,68,0.25);   color: #f87171; }
 .badge-new     { background: rgba(255,235,59,0.12);  border: 1px solid rgba(255,235,59,0.3);   color: #fde047; }
 
@@ -596,12 +597,12 @@
                 <div class="glow-ring" style="width:280px;height:280px;background:var(--accent-sky);top:-40px;right:-60px;opacity:0.2;"></div>
                 <p class="section-label">Section 1</p>
                 <h2 class="section-title">Introduction</h2>
-                <p class="section-lead">Creator Assistant bridges your <strong style="color:#fff;">Gumroad®, Jinxxy™, Lemon Squeezy®, or VRChat® marketplace</strong> with your Discord® server, automatically granting roles when buyers verify a purchase. No DMs, no spreadsheets, no manual grants.</p>
+                <p class="section-lead">Creator Assistant bridges your <strong style="color:#fff;">Gumroad®, Jinxxy™, Lemon Squeezy®, Payhip®, or VRChat® marketplace</strong> with your Discord® server, automatically granting roles when buyers verify a purchase. No DMs, no spreadsheets, no manual grants.</p>
 
                 <div class="bento-card" style="margin-bottom:1.25rem;">
                     <div class="overview-steps">
                         <div class="overview-step"><div class="overview-num">1</div><h4>Install</h4><p>Add the bot to your server</p></div>
-                        <div class="overview-step"><div class="overview-num">2</div><h4>Connect</h4><p>Link Gumroad®, Jinxxy™, Lemon Squeezy®, or VRChat®</p></div>
+                        <div class="overview-step"><div class="overview-num">2</div><h4>Connect</h4><p>Link Gumroad®, Jinxxy™, Lemon Squeezy®, Payhip®, or VRChat®</p></div>
                         <div class="overview-step"><div class="overview-num">3</div><h4>Verify</h4><p>Buyers get roles instantly</p></div>
                     </div>
                 </div>
@@ -611,7 +612,7 @@
                         <h4 style="color:#38bdf8;">For Creators</h4>
                         <ul>
                             <li>Automatic role assignment on purchase</li>
-                            <li>Connect Gumroad®, Jinxxy™, Lemon Squeezy®, or VRChat® marketplaces</li>
+                            <li>Connect Gumroad®, Jinxxy™, Lemon Squeezy®, Payhip®, or VRChat® marketplaces</li>
                             <li>Map any product to any Discord® role</li>
                             <li>Invite collaborating creators</li>
                             <li>Gate download channels to buyers</li>
@@ -646,7 +647,7 @@
                 <h3 class="sub-heading"><span class="sub-dot"></span>Prerequisites</h3>
                 <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:1.75rem;">
                     <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(255,255,255,0.6);"><span style="color:#34d399;font-weight:700;">&#10003;</span> Administrator permissions in your Discord® server</div>
-                    <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(255,255,255,0.6);"><span style="color:#34d399;font-weight:700;">&#10003;</span> A Gumroad® or Lemon Squeezy® account with products, a Jinxxy™ creator account, or VRChat® avatars to verify</div>
+                    <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(255,255,255,0.6);"><span style="color:#34d399;font-weight:700;">&#10003;</span> A Gumroad®, Lemon Squeezy®, or Payhip® account with products, a Jinxxy™ creator account, or VRChat® avatars to verify</div>
                     <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(255,255,255,0.6);"><span style="color:#34d399;font-weight:700;">&#10003;</span> At least one Discord® role to assign to verified buyers</div>
                 </div>
 
@@ -677,7 +678,7 @@
                         <div class="step-content">
                             <h4>Follow the dashboard Quick Start</h4>
                             <p>The dashboard now drives setup end-to-end. Its Quick Start panel updates based on what you have already completed, shows the next recommended action, and can be dismissed until your progress changes.</p>
-                            <p style="margin-top:10px;font-size:13px;color:rgba(255,255,255,0.6);">Connect <span class="badge badge-gumroad">Gumroad® (OAuth)</span>, <span class="badge badge-lemons">Lemon Squeezy® (API Token)</span>, or <span class="badge badge-jinxxy">Jinxxy™</span> from the dashboard, save your server settings, then click <strong>Done Setup</strong>. The setup UI includes progress states, animations, and celebration effects as you complete milestones.</p>
+                            <p style="margin-top:10px;font-size:13px;color:rgba(255,255,255,0.6);">Connect <span class="badge badge-gumroad">Gumroad® (OAuth)</span>, <span class="badge badge-lemons">Lemon Squeezy® (API Token)</span>, <span class="badge badge-payhip">Payhip® (API Key)</span>, or <span class="badge badge-jinxxy">Jinxxy™</span> from the dashboard, save your server settings, then click <strong>Done Setup</strong>. The setup UI includes progress states, animations, and celebration effects as you complete milestones.</p>
                         </div>
                     </div>
                     <div class="step-item">
@@ -730,6 +731,10 @@
                     <div class="bento-card" style="padding:1.25rem;">
                         <div style="margin-bottom:8px;"><span class="badge badge-lemons">Lemon Squeezy®</span></div>
                         <p style="font-size:13.5px;color:rgba(255,255,255,0.55);line-height:1.65;margin:0;">Connect your Lemon Squeezy® store with an API token. Buyers verify using a license key from their receipt or via account lookup; the Assistant validates licenses in real time and grants roles automatically.</p>
+                    </div>
+                    <div class="bento-card" style="padding:1.25rem;">
+                        <div style="margin-bottom:8px;"><span class="badge badge-payhip">Payhip®</span></div>
+                        <p style="font-size:13.5px;color:rgba(255,255,255,0.55);line-height:1.65;margin:0;">Connect your Payhip® store with an API key. Buyers verify using a license key from their receipt; the Assistant validates licenses in real time via the Payhip® API and grants roles automatically.</p>
                     </div>
                     <div class="bento-card" style="padding:1.25rem;">
                         <div style="margin-bottom:8px;"><span class="badge badge-jinxxy">License Key</span></div>
@@ -812,7 +817,7 @@
                     </div>
                     <div class="cmd-row">
                         <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator-admin setup start')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator-admin</span> <span class="cmd-sub">setup start</span></span></div>
-                        <span class="cmd-row-desc">Send a private secure dashboard link for store connections, onboarding progress, and server setup.</span>
+                        <span class="cmd-row-desc">Send a private secure dashboard link for store connections, onboarding progress, and server setup. Once your server is fully configured this becomes <code>/creator-admin dashboard</code>.</span>
                     </div>
                 </div>
 
@@ -828,8 +833,8 @@
                         <span class="cmd-row-desc">List all active product-to-role mappings for this server.</span>
                     </div>
                     <div class="cmd-row">
-                        <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator-admin product remove')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator-admin</span> <span class="cmd-sub">product remove</span> <span class="cmd-req">&lt;product_id&gt;</span></span></div>
-                        <span class="cmd-row-desc">Remove a product mapping. Supports autocomplete; start typing to find the product.</span>
+                        <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator-admin product remove')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator-admin</span> <span class="cmd-sub">product remove</span></span></div>
+                        <span class="cmd-row-desc">Remove a product mapping. The bot presents an interactive product selector to choose which mapping to delete.</span>
                     </div>
                 </div>
 
@@ -865,9 +870,11 @@
                         <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator-admin settings cross-server')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator-admin</span> <span class="cmd-sub">settings cross-server</span></span></div>
                         <span class="cmd-row-desc">Toggle cross-server role verification on or off for this server.</span>
                     </div>
+                    <div class="cmd-row">
+                        <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator-admin settings disconnect')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator-admin</span> <span class="cmd-sub">settings disconnect</span></span></div>
+                        <span class="cmd-row-desc">Disconnect this server from your Creator Assistant account. Runs a multi-step confirmation before removing all server configuration.</span>
+                    </div>
                 </div>
-
-                <p class="cmd-group-label">Downloads</p>
                 <div class="cmd-table" style="margin-bottom:1.5rem;">
                     <div class="cmd-table-head"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> downloads</div>
                     <div class="cmd-row">
@@ -938,10 +945,11 @@
                     <div class="product-card" style="border-color:rgba(255,211,110,0.2);">
                         <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
                             <div class="product-icon" style="background:rgba(145,70,255,0.12);margin-right:6px;"><img src="Icons/Jinxxy.png" alt="Jinxxy™"></div>
-                            <div class="product-icon" style="background:rgba(255,211,110,0.12);"><img src="Icons/LemonSqueezy.png" alt="Lemon Squeezy®"></div>
+                            <div class="product-icon" style="background:rgba(255,211,110,0.12);margin-right:6px;"><img src="Icons/LemonSqueezy.png" alt="Lemon Squeezy®"></div>
+                            <div class="product-icon" style="background:rgba(0,209,178,0.12);"><img src="Icons/PayHip.png" alt="Payhip®"></div>
                         </div>
-                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><h4>License Key</h4><span class="badge badge-jinxxy">Jinxxy™</span> <span class="badge badge-lemons">Lemon Squeezy®</span></div>
-                        <p>Buyers validate license keys or the Assistant performs account/receipt lookup. Supported by Jinxxy™ and Lemon Squeezy®; validated in real time via provider APIs.</p>
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><h4>License Key</h4><span class="badge badge-jinxxy">Jinxxy™</span> <span class="badge badge-lemons">Lemon Squeezy®</span> <span class="badge badge-payhip">Payhip®</span></div>
+                        <p>Buyers validate license keys or the Assistant performs account/receipt lookup. Supported by Jinxxy™, Lemon Squeezy®, and Payhip®; validated in real time via provider APIs.</p>
                     </div>
 
                     <div class="product-card" style="border-color:rgba(0,230,118,0.2);">
@@ -1061,7 +1069,7 @@
                 <p class="section-lead">Built-in tools to identify and block fraudulent verification, automatically via OAuth validation, and manually when you need finer control.</p>
 
                 <h3 class="sub-heading"><span class="sub-dot"></span>Automatic protection</h3>
-                <p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.75;margin-bottom:1.5rem;">OAuth-based verification (Gumroad®, Discord®) means the buyer must actually own the account; fake keys or screenshots won't work. License key validation (Jinxxy™, Lemon Squeezy®) hits the provider's API in real time, so revoked or reused keys are rejected immediately.</p>
+                <p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.75;margin-bottom:1.5rem;">OAuth-based verification (Gumroad®, Discord®) means the buyer must actually own the account; fake keys or screenshots won't work. License key validation (Jinxxy™, Lemon Squeezy®, Payhip®) hits the provider's API in real time, so revoked or reused keys are rejected immediately.</p>
 
                 <div class="two-col">
                     <div class="two-col-card" style="border-color:rgba(245,158,11,0.2);">

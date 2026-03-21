@@ -83,6 +83,13 @@ function buildAuthTokenRequestHeaders(requestHeaders: Headers): Headers {
     headers.set('cookie', cookieHeader);
   }
 
+  // This is an internal server-to-server token fetch. In production behind a
+  // proxy, forwarding the full browser header set into /api/auth/convex/token
+  // can break the request path even though direct probes still work.
+  // Upstream refs:
+  // - https://github.com/get-convex/better-auth/issues/294
+  // - https://github.com/get-convex/better-auth/issues/295
+  // - https://github.com/get-convex/better-auth/pull/253
   headers.set('accept', 'application/json');
   headers.set('accept-encoding', 'identity');
 
