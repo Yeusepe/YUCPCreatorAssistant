@@ -661,6 +661,29 @@ async function routeRequest(request: Request): Promise<Response> {
     if (request.method === 'DELETE') return connectRoutes.deleteUserAccount(request);
     return Response.json({ error: 'Method not allowed' }, { status: 405 });
   }
+  if (pathname === '/api/connect/user/licenses' && connectRoutes) {
+    if (request.method === 'GET') return connectRoutes.getUserLicenses(request);
+    return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+  const entitlementRevokeMatch = pathname.match(/^\/api\/connect\/user\/entitlements\/([^/]+)$/);
+  if (entitlementRevokeMatch && connectRoutes) {
+    return connectRoutes.revokeUserEntitlement(request, entitlementRevokeMatch[1]);
+  }
+  if (pathname === '/api/connect/user/oauth/grants' && connectRoutes) {
+    if (request.method === 'GET') return connectRoutes.getUserOAuthGrants(request);
+    return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+  const oauthGrantRevokeMatch = pathname.match(/^\/api\/connect\/user\/oauth\/grants\/([^/]+)$/);
+  if (oauthGrantRevokeMatch && connectRoutes) {
+    return connectRoutes.revokeUserOAuthGrant(request, oauthGrantRevokeMatch[1]);
+  }
+  if (pathname === '/api/connect/user/data-export' && connectRoutes) {
+    if (request.method === 'GET') return connectRoutes.getUserDataExport(request);
+    return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+  if (pathname === '/api/connect/user/gdpr-delete' && connectRoutes) {
+    return connectRoutes.requestUserAccountDeletion(request);
+  }
   // Pre-intercept: Gumroad callback is dual-purpose — may be a verification flow, not a connect flow
   if (pathname === '/api/connect/gumroad/callback') {
     const url = new URL(request.url);
