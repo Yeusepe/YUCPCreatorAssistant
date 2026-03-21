@@ -57,6 +57,7 @@ import { api, components, internal } from './_generated/api';
 import { httpAction } from './_generated/server';
 import { authComponent, createAuth } from './auth';
 import { constantTimeEqual } from './lib/vrchat/crypto';
+import { handleOAuthAuthorizationServerMetadata } from './oauthDiscovery';
 import {
   base64ToBytes,
   type CertEnvelope,
@@ -511,6 +512,18 @@ http.route({
 
     return Response.redirect(target.toString(), 302);
   }),
+});
+
+// Better Auth exposes the OAuth server config at /api/auth/.well-known/* as a
+// server-only endpoint. We mirror the required RFC 8414 path at the issuer root
+// so discovery works for the /api/auth issuer and the oauth-provider warning can
+// be silenced once this route exists.
+http.route({
+  method: 'GET',
+  path: '/.well-known/oauth-authorization-server/api/auth',
+  handler: httpAction(async (ctx, request) =>
+    handleOAuthAuthorizationServerMetadata(ctx, request)
+  ),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

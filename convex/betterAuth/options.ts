@@ -43,6 +43,9 @@ export const createSchemaAuthOptions = (): BetterAuthOptions =>
         allowDynamicClientRegistration: false,
         allowUnauthenticatedClientRegistration: false,
         grantTypes: ['authorization_code', 'refresh_token'],
+        silenceWarnings: {
+          oauthAuthServerConfig: true,
+        },
       }),
     ],
   }) as BetterAuthOptions;

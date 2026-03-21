@@ -15,6 +15,7 @@
 
 import { components } from './_generated/api';
 import { internalMutation } from './_generated/server';
+import { getBetterAuthPage, type BetterAuthPageResult } from './lib/betterAuthAdapter';
 
 export const seedUnityOAuthClient = internalMutation({
   args: {},
@@ -44,12 +45,13 @@ export const seedUnityOAuthClient = internalMutation({
     };
 
     // Check whether the client already exists
-    const existing = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    const existingResult = (await ctx.runQuery(components.betterAuth.adapter.findMany, {
       model: 'oauthClient',
       where: [{ field: 'clientId', value: 'yucp-unity-editor', operator: 'eq' }],
       limit: 1,
       paginationOpts: { cursor: null, numItems: 1 },
-    });
+    })) as BetterAuthPageResult<{ clientId: string }>;
+    const existing = getBetterAuthPage(existingResult);
 
     if (existing.length > 0) {
       const result = await ctx.runMutation(components.betterAuth.adapter.updateOne as any, {
