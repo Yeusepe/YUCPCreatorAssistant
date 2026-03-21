@@ -10,6 +10,11 @@
 import { ConvexError, v } from 'convex/values';
 import { components } from './_generated/api';
 import { mutation, query } from './_generated/server';
+import {
+  buildOAuthConsentLookupWhere,
+  getBetterAuthPage,
+  type BetterAuthPageResult,
+} from './lib/betterAuthAdapter';
 import { requireApiSecret } from './lib/apiAuth';
 
 // ============================================================================
@@ -28,12 +33,12 @@ export const listOAuthGrantsForUser = query({
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
 
-    const consents = (await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    const consentResult = (await ctx.runQuery(components.betterAuth.adapter.findMany, {
       model: 'oauthConsent',
       where: [{ field: 'userId', value: args.authUserId }],
       limit: 100,
       paginationOpts: { cursor: null, numItems: 100 },
-    })) as Array<{
+    })) as BetterAuthPageResult<{
       _id: string;
       clientId: string;
       userId?: string | null;
@@ -42,7 +47,9 @@ export const listOAuthGrantsForUser = query({
       updatedAt?: number | null;
     }>;
 
-    if (!consents || consents.length === 0) {
+    const consents = getBetterAuthPage(consentResult);
+
+    if (consents.length === 0) {
       return [];
     }
 
@@ -93,17 +100,10 @@ export const revokeOAuthGrant = mutation({
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
 
-    const consents = (await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    const consent = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: 'oauthConsent',
-      where: [
-        { field: 'userId', value: args.authUserId },
-        { field: 'clientId', value: args.consentId },
-      ],
-      limit: 1,
-      paginationOpts: { cursor: null, numItems: 1 },
-    })) as Array<{ _id: string; clientId: string; userId?: string | null }>;
-
-    const consent = consents?.[0] ?? null;
+      where: buildOAuthConsentLookupWhere(args.authUserId, args.consentId),
+    })) as { _id: string; clientId: string; userId?: string | null } | null;
 
     if (!consent) {
       throw new ConvexError('OAuth consent not found');

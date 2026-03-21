@@ -158,6 +158,9 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>): BetterAuthOptions
         allowDynamicClientRegistration: false,
         allowUnauthenticatedClientRegistration: false,
         grantTypes: ['authorization_code', 'refresh_token'],
+        silenceWarnings: {
+          oauthAuthServerConfig: true,
+        },
         customAccessTokenClaims: async ({ user, scopes }) => ({
           scope: scopes.join(' '),
           auth_user_id: user?.id,

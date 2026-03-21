@@ -465,8 +465,9 @@ async function routeRequest(request: Request): Promise<Response> {
     }
   }
 
-  // Proxy /api/auth/*, /api/yucp/*, and /v1/* requests to Convex.
-  // Auth, YUCP OAuth, and the versioned public API (/v1/) all live on Convex .site.
+  // Proxy the root OAuth discovery document, /api/auth/*, /api/yucp/*, and /v1/*
+  // requests to Convex. Auth, YUCP OAuth, and the versioned public API (/v1/)
+  // all live on Convex .site.
   // When the API runs on localhost, proxy so everything works from a single origin.
   if (pathname.startsWith('/v1/') && providerPlatformRoutes) {
     const localV1Response = await providerPlatformRoutes.handleRequest(request);
@@ -481,6 +482,7 @@ async function routeRequest(request: Request): Promise<Response> {
   }
 
   if (
+    pathname === '/.well-known/oauth-authorization-server/api/auth' ||
     pathname.startsWith('/api/auth/') ||
     pathname.startsWith('/api/yucp/') ||
     pathname.startsWith('/v1/')
