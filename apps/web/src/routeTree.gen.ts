@@ -14,9 +14,11 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as CollabInviteRouteImport } from './routes/collab-invite'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
+import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as VerifySuccessRouteImport } from './routes/verify/success'
 import { Route as VerifyErrorRouteImport } from './routes/verify/error'
 import { Route as SetupVrchatRouteImport } from './routes/setup/vrchat'
@@ -29,11 +31,16 @@ import { Route as OauthErrorRouteImport } from './routes/oauth/error'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as LegalTermsOfServiceRouteImport } from './routes/legal/terms-of-service'
 import { Route as LegalPrivacyPolicyRouteImport } from './routes/legal/privacy-policy'
+import { Route as InstallSuccessRouteImport } from './routes/install/success'
+import { Route as InstallErrorRouteImport } from './routes/install/error'
 import { Route as DashboardServerRulesRouteImport } from './routes/dashboard/server-rules'
 import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard/integrations'
 import { Route as DashboardCollaborationRouteImport } from './routes/dashboard/collaboration'
 import { Route as DashboardAuditLogsRouteImport } from './routes/dashboard/audit-logs'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
+import { Route as AccountPrivacyRouteImport } from './routes/account/privacy'
+import { Route as AccountLicensesRouteImport } from './routes/account/licenses'
+import { Route as AccountAuthorizedAppsRouteImport } from './routes/account/authorized-apps'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const SignInRedirectRoute = SignInRedirectRouteImport.update({
@@ -61,6 +68,11 @@ const CollabInviteRoute = CollabInviteRouteImport.update({
   path: '/collab-invite',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SplatRoute = SplatRouteImport.update({
   id: '/$',
   path: '/$',
@@ -75,6 +87,11 @@ const DashboardIndexRoute = DashboardIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => DashboardRoute,
+} as any)
+const AccountIndexRoute = AccountIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AccountRoute,
 } as any)
 const VerifySuccessRoute = VerifySuccessRouteImport.update({
   id: '/verify/success',
@@ -136,6 +153,16 @@ const LegalPrivacyPolicyRoute = LegalPrivacyPolicyRouteImport.update({
   path: '/legal/privacy-policy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InstallSuccessRoute = InstallSuccessRouteImport.update({
+  id: '/install/success',
+  path: '/install/success',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InstallErrorRoute = InstallErrorRouteImport.update({
+  id: '/install/error',
+  path: '/install/error',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardServerRulesRoute = DashboardServerRulesRouteImport.update({
   id: '/server-rules',
   path: '/server-rules',
@@ -161,6 +188,21 @@ const ApiSplatRoute = ApiSplatRouteImport.update({
   path: '/api/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountPrivacyRoute = AccountPrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => AccountRoute,
+} as any)
+const AccountLicensesRoute = AccountLicensesRouteImport.update({
+  id: '/licenses',
+  path: '/licenses',
+  getParentRoute: () => AccountRoute,
+} as any)
+const AccountAuthorizedAppsRoute = AccountAuthorizedAppsRouteImport.update({
+  id: '/authorized-apps',
+  path: '/authorized-apps',
+  getParentRoute: () => AccountRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -170,16 +212,22 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/account': typeof AccountRouteWithChildren
   '/collab-invite': typeof CollabInviteRoute
   '/connect': typeof ConnectRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/sign-in-redirect': typeof SignInRedirectRoute
+  '/account/authorized-apps': typeof AccountAuthorizedAppsRoute
+  '/account/licenses': typeof AccountLicensesRoute
+  '/account/privacy': typeof AccountPrivacyRoute
   '/api/$': typeof ApiSplatRoute
   '/dashboard/audit-logs': typeof DashboardAuditLogsRoute
   '/dashboard/collaboration': typeof DashboardCollaborationRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/server-rules': typeof DashboardServerRulesRoute
+  '/install/error': typeof InstallErrorRoute
+  '/install/success': typeof InstallSuccessRoute
   '/legal/privacy-policy': typeof LegalPrivacyPolicyRoute
   '/legal/terms-of-service': typeof LegalTermsOfServiceRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -192,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/setup/vrchat': typeof SetupVrchatRoute
   '/verify/error': typeof VerifyErrorRoute
   '/verify/success': typeof VerifySuccessRoute
+  '/account/': typeof AccountIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -202,11 +251,16 @@ export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
   '/sign-in': typeof SignInRoute
   '/sign-in-redirect': typeof SignInRedirectRoute
+  '/account/authorized-apps': typeof AccountAuthorizedAppsRoute
+  '/account/licenses': typeof AccountLicensesRoute
+  '/account/privacy': typeof AccountPrivacyRoute
   '/api/$': typeof ApiSplatRoute
   '/dashboard/audit-logs': typeof DashboardAuditLogsRoute
   '/dashboard/collaboration': typeof DashboardCollaborationRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/server-rules': typeof DashboardServerRulesRoute
+  '/install/error': typeof InstallErrorRoute
+  '/install/success': typeof InstallSuccessRoute
   '/legal/privacy-policy': typeof LegalPrivacyPolicyRoute
   '/legal/terms-of-service': typeof LegalTermsOfServiceRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -219,6 +273,7 @@ export interface FileRoutesByTo {
   '/setup/vrchat': typeof SetupVrchatRoute
   '/verify/error': typeof VerifyErrorRoute
   '/verify/success': typeof VerifySuccessRoute
+  '/account': typeof AccountIndexRoute
   '/dashboard': typeof DashboardIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -226,16 +281,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/account': typeof AccountRouteWithChildren
   '/collab-invite': typeof CollabInviteRoute
   '/connect': typeof ConnectRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/sign-in-redirect': typeof SignInRedirectRoute
+  '/account/authorized-apps': typeof AccountAuthorizedAppsRoute
+  '/account/licenses': typeof AccountLicensesRoute
+  '/account/privacy': typeof AccountPrivacyRoute
   '/api/$': typeof ApiSplatRoute
   '/dashboard/audit-logs': typeof DashboardAuditLogsRoute
   '/dashboard/collaboration': typeof DashboardCollaborationRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/server-rules': typeof DashboardServerRulesRoute
+  '/install/error': typeof InstallErrorRoute
+  '/install/success': typeof InstallSuccessRoute
   '/legal/privacy-policy': typeof LegalPrivacyPolicyRoute
   '/legal/terms-of-service': typeof LegalTermsOfServiceRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -248,6 +309,7 @@ export interface FileRoutesById {
   '/setup/vrchat': typeof SetupVrchatRoute
   '/verify/error': typeof VerifyErrorRoute
   '/verify/success': typeof VerifySuccessRoute
+  '/account/': typeof AccountIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -256,16 +318,22 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/$'
+    | '/account'
     | '/collab-invite'
     | '/connect'
     | '/dashboard'
     | '/sign-in'
     | '/sign-in-redirect'
+    | '/account/authorized-apps'
+    | '/account/licenses'
+    | '/account/privacy'
     | '/api/$'
     | '/dashboard/audit-logs'
     | '/dashboard/collaboration'
     | '/dashboard/integrations'
     | '/dashboard/server-rules'
+    | '/install/error'
+    | '/install/success'
     | '/legal/privacy-policy'
     | '/legal/terms-of-service'
     | '/oauth/consent'
@@ -278,6 +346,7 @@ export interface FileRouteTypes {
     | '/setup/vrchat'
     | '/verify/error'
     | '/verify/success'
+    | '/account/'
     | '/dashboard/'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
@@ -288,11 +357,16 @@ export interface FileRouteTypes {
     | '/connect'
     | '/sign-in'
     | '/sign-in-redirect'
+    | '/account/authorized-apps'
+    | '/account/licenses'
+    | '/account/privacy'
     | '/api/$'
     | '/dashboard/audit-logs'
     | '/dashboard/collaboration'
     | '/dashboard/integrations'
     | '/dashboard/server-rules'
+    | '/install/error'
+    | '/install/success'
     | '/legal/privacy-policy'
     | '/legal/terms-of-service'
     | '/oauth/consent'
@@ -305,22 +379,29 @@ export interface FileRouteTypes {
     | '/setup/vrchat'
     | '/verify/error'
     | '/verify/success'
+    | '/account'
     | '/dashboard'
     | '/api/auth/$'
   id:
     | '__root__'
     | '/'
     | '/$'
+    | '/account'
     | '/collab-invite'
     | '/connect'
     | '/dashboard'
     | '/sign-in'
     | '/sign-in-redirect'
+    | '/account/authorized-apps'
+    | '/account/licenses'
+    | '/account/privacy'
     | '/api/$'
     | '/dashboard/audit-logs'
     | '/dashboard/collaboration'
     | '/dashboard/integrations'
     | '/dashboard/server-rules'
+    | '/install/error'
+    | '/install/success'
     | '/legal/privacy-policy'
     | '/legal/terms-of-service'
     | '/oauth/consent'
@@ -333,6 +414,7 @@ export interface FileRouteTypes {
     | '/setup/vrchat'
     | '/verify/error'
     | '/verify/success'
+    | '/account/'
     | '/dashboard/'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
@@ -340,12 +422,15 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SplatRoute: typeof SplatRoute
+  AccountRoute: typeof AccountRouteWithChildren
   CollabInviteRoute: typeof CollabInviteRoute
   ConnectRoute: typeof ConnectRoute
   DashboardRoute: typeof DashboardRouteWithChildren
   SignInRoute: typeof SignInRoute
   SignInRedirectRoute: typeof SignInRedirectRoute
   ApiSplatRoute: typeof ApiSplatRoute
+  InstallErrorRoute: typeof InstallErrorRoute
+  InstallSuccessRoute: typeof InstallSuccessRoute
   LegalPrivacyPolicyRoute: typeof LegalPrivacyPolicyRoute
   LegalTermsOfServiceRoute: typeof LegalTermsOfServiceRoute
   OauthConsentRoute: typeof OauthConsentRoute
@@ -398,6 +483,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CollabInviteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/$': {
       id: '/$'
       path: '/$'
@@ -418,6 +510,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/dashboard/'
       preLoaderRoute: typeof DashboardIndexRouteImport
       parentRoute: typeof DashboardRoute
+    }
+    '/account/': {
+      id: '/account/'
+      path: '/'
+      fullPath: '/account/'
+      preLoaderRoute: typeof AccountIndexRouteImport
+      parentRoute: typeof AccountRoute
     }
     '/verify/success': {
       id: '/verify/success'
@@ -503,6 +602,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LegalPrivacyPolicyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/install/success': {
+      id: '/install/success'
+      path: '/install/success'
+      fullPath: '/install/success'
+      preLoaderRoute: typeof InstallSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/install/error': {
+      id: '/install/error'
+      path: '/install/error'
+      fullPath: '/install/error'
+      preLoaderRoute: typeof InstallErrorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/server-rules': {
       id: '/dashboard/server-rules'
       path: '/server-rules'
@@ -538,6 +651,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account/privacy': {
+      id: '/account/privacy'
+      path: '/privacy'
+      fullPath: '/account/privacy'
+      preLoaderRoute: typeof AccountPrivacyRouteImport
+      parentRoute: typeof AccountRoute
+    }
+    '/account/licenses': {
+      id: '/account/licenses'
+      path: '/licenses'
+      fullPath: '/account/licenses'
+      preLoaderRoute: typeof AccountLicensesRouteImport
+      parentRoute: typeof AccountRoute
+    }
+    '/account/authorized-apps': {
+      id: '/account/authorized-apps'
+      path: '/authorized-apps'
+      fullPath: '/account/authorized-apps'
+      preLoaderRoute: typeof AccountAuthorizedAppsRouteImport
+      parentRoute: typeof AccountRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -547,6 +681,23 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface AccountRouteChildren {
+  AccountAuthorizedAppsRoute: typeof AccountAuthorizedAppsRoute
+  AccountLicensesRoute: typeof AccountLicensesRoute
+  AccountPrivacyRoute: typeof AccountPrivacyRoute
+  AccountIndexRoute: typeof AccountIndexRoute
+}
+
+const AccountRouteChildren: AccountRouteChildren = {
+  AccountAuthorizedAppsRoute: AccountAuthorizedAppsRoute,
+  AccountLicensesRoute: AccountLicensesRoute,
+  AccountPrivacyRoute: AccountPrivacyRoute,
+  AccountIndexRoute: AccountIndexRoute,
+}
+
+const AccountRouteWithChildren =
+  AccountRoute._addFileChildren(AccountRouteChildren)
 
 interface DashboardRouteChildren {
   DashboardAuditLogsRoute: typeof DashboardAuditLogsRoute
@@ -571,12 +722,15 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SplatRoute: SplatRoute,
+  AccountRoute: AccountRouteWithChildren,
   CollabInviteRoute: CollabInviteRoute,
   ConnectRoute: ConnectRoute,
   DashboardRoute: DashboardRouteWithChildren,
   SignInRoute: SignInRoute,
   SignInRedirectRoute: SignInRedirectRoute,
   ApiSplatRoute: ApiSplatRoute,
+  InstallErrorRoute: InstallErrorRoute,
+  InstallSuccessRoute: InstallSuccessRoute,
   LegalPrivacyPolicyRoute: LegalPrivacyPolicyRoute,
   LegalTermsOfServiceRoute: LegalTermsOfServiceRoute,
   OauthConsentRoute: OauthConsentRoute,

@@ -8,7 +8,6 @@ import { DashboardBodyPortal } from '@/components/dashboard/DashboardBodyPortal'
 import { DashboardSkeletonSwap } from '@/components/dashboard/DashboardSkeletonSwap';
 import {
   DashboardActionRowSkeleton,
-  DashboardGridSkeleton,
   DashboardIntegrationsSkeleton,
   DashboardListSkeleton,
   DashboardSettingsSkeleton,
@@ -18,7 +17,6 @@ import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
 import { isDashboardAuthError, useDashboardSession } from '@/hooks/useDashboardSession';
-import { useDashboardShell } from '@/hooks/useDashboardShell';
 import type {
   DashboardGuildChannel,
   DashboardPolicy,
@@ -42,7 +40,6 @@ import {
   dashboardPanelQueryOptions,
 } from '@/lib/dashboardQueryOptions';
 import { type DashboardProvider } from '@/lib/server/dashboard';
-import { getServerIconUrl } from '@/lib/utils';
 import { api } from '../../../../../convex/_generated/api';
 import type { Id } from '../../../../../convex/_generated/dataModel';
 
@@ -185,170 +182,10 @@ function DashboardIndex() {
       aria-labelledby="tab-btn-setup"
     >
       <div className="bento-grid">
-        <PersonalSetupPanel />
         <ConnectedPlatformsPanel />
         <ServerConfigPanel />
       </div>
     </div>
-  );
-}
-
-function PersonalSetupPanel() {
-  const navigate = useNavigate();
-  const { guilds, viewer } = useDashboardShell();
-  const isLoading = false;
-
-  const openInstallFlow = useCallback(() => {
-    if (!viewer?.authUserId || typeof window === 'undefined') {
-      return;
-    }
-
-    window.location.assign(`/api/install/bot?authUserId=${encodeURIComponent(viewer.authUserId)}`);
-  }, [viewer?.authUserId]);
-
-  return (
-    <section
-      id="collab-servers-section"
-      className="section-card bento-col-12 p-4 sm:p-5 md:p-7 animate-in animate-in-delay-1 personal-only"
-      style={{ marginBottom: '24px' }}
-    >
-      <div className="flex items-center gap-3" style={{ gap: '12px', marginBottom: '24px' }}>
-        <div
-          className="w-8 h-8 rounded-xl flex items-center justify-center"
-          style={{ background: 'rgba(14, 165, 233, 0.15)' }}
-        >
-          <svg
-            aria-hidden="true"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="var(--accent-sky)"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
-        </div>
-        <h2 className="text-lg font-black" style={{ margin: 0 }}>
-          Participating Servers
-        </h2>
-      </div>
-      <p
-        className="text-sm text-white/70"
-        style={{ fontFamily: "'DM Sans', sans-serif", margin: '0 0 16px' }}
-      >
-        These are the servers you collaborate on. Use the dropdown in the sidebar to configure
-        specific server settings.
-      </p>
-
-      <DashboardSkeletonSwap
-        isLoading={isLoading}
-        skeleton={<DashboardGridSkeleton cards={2} />}
-        contentId="participating-servers-list"
-        contentClassName="skeleton-content grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"
-      >
-        {guilds.length === 0 ? (
-          <div
-            className="bento-col-12 empty-state platform-card flex items-center justify-center text-center"
-            style={{ margin: 0 }}
-          >
-            <div>
-              <div
-                className="intg-icon"
-                style={{
-                  margin: '0 auto 16px',
-                  width: '40px',
-                  height: '40px',
-                  background: 'rgba(14,165,233,0.1)',
-                  color: '#0ea5e9',
-                }}
-              >
-                <svg
-                  aria-hidden="true"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </div>
-              <p
-                className="participating-server-name font-bold mb-2"
-                style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: '16px' }}
-              >
-                No participating servers
-              </p>
-              <p
-                className="participating-server-hint max-w-sm mx-auto mb-6"
-                style={{
-                  fontFamily: "'DM Sans',sans-serif",
-                  fontSize: '13px',
-                  lineHeight: 1.5,
-                }}
-              >
-                You aren&apos;t managing any servers yet. Install the Assistant to your server to
-                connect your storefront data.
-              </p>
-              <button className="btn-primary" type="button" onClick={openInstallFlow}>
-                Add Assistant to Server
-              </button>
-            </div>
-          </div>
-        ) : (
-          guilds.map((guild) => (
-            <button
-              key={guild.id}
-              type="button"
-              className="platform-card connected flex items-center gap-3 cursor-pointer hover:bg-white/5 transition-colors"
-              style={{ padding: '12px 16px', textAlign: 'left' }}
-              onClick={() =>
-                navigate({
-                  to: '/dashboard',
-                  search: {
-                    guild_id: guild.id,
-                    ...(guild.tenantId ? { tenant_id: guild.tenantId } : {}),
-                  },
-                })
-              }
-            >
-              {guild.icon ? (
-                <img
-                  src={getServerIconUrl(guild.id, guild.icon) ?? ''}
-                  className="w-10 h-10 rounded-full object-cover"
-                  alt=""
-                  loading="lazy"
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center font-bold text-white/70">
-                  {guild.name
-                    .split(' ')
-                    .map((part) => part.charAt(0))
-                    .join('')
-                    .slice(0, 2)
-                    .toUpperCase() || '?'}
-                </div>
-              )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="participating-server-name font-bold text-base truncate">
-                  {guild.name || 'Unnamed'}
-                </div>
-                <div className="participating-server-hint text-xs">Manage Settings →</div>
-              </div>
-            </button>
-          ))
-        )}
-      </DashboardSkeletonSwap>
-    </section>
   );
 }
 
@@ -440,7 +277,7 @@ function ConnectedPlatformsPanel() {
   return (
     <section
       id="connected-platforms-section"
-      className="section-card bento-col-12 p-4 sm:p-5 md:p-7 animate-in animate-in-delay-2 personal-only"
+      className="section-card bento-col-12 p-4 sm:p-5 md:p-7 animate-in animate-in-delay-1 personal-only"
     >
       <div className="flex items-center gap-3" style={{ gap: '12px', marginBottom: '24px' }}>
         <div
@@ -955,7 +792,7 @@ function ServerConfigPanel() {
     return (
       <div
         id="server-settings-card"
-        className="svr-cfg bento-col-12 animate-in animate-in-delay-3 server-only"
+        className="svr-cfg bento-col-12 animate-in animate-in-delay-2 server-only"
       >
         <div className="svr-cfg-bar">
           <h2 className="svr-cfg-title">Server Config</h2>
@@ -993,7 +830,7 @@ function ServerConfigPanel() {
   return (
     <div
       id="server-settings-card"
-      className="svr-cfg bento-col-12 animate-in animate-in-delay-3 server-only"
+      className="svr-cfg bento-col-12 animate-in animate-in-delay-2 server-only"
     >
       {saveSettingMutation.isPending && <div className="dashboard-sync-bar" aria-hidden="true" />}
       <div className="svr-cfg-bar">

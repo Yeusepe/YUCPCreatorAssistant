@@ -32,13 +32,18 @@ export const Route = createFileRoute('/dashboard')({
       });
     }
   },
-  loader: ({ context: { queryClient } }) =>
-    queryClient.ensureQueryData(
+  loader: async ({ context: { queryClient } }) => {
+    const shell = await queryClient.ensureQueryData(
       dashboardShellQueryOptions({
         queryKey: ['dashboard-shell'],
         queryFn: () => fetchDashboardShell(),
       })
-    ),
+    );
+    if (shell.guilds.length === 0) {
+      throw redirect({ to: '/account' });
+    }
+    return shell;
+  },
   component: DashboardLayout,
   errorComponent: DashboardRouteErrorComponent,
 });
@@ -327,7 +332,7 @@ function SidebarLogoArea() {
   const navigate = useNavigate();
   const { guild_id } = Route.useSearch();
   const { signOut } = useAuth();
-  const { guilds, selectedGuild } = useDashboardShell();
+  const { guilds, selectedGuild, viewer } = useDashboardShell();
   const [selectorRect, setSelectorRect] = useState<{
     top: number;
     left: number;
@@ -380,11 +385,11 @@ function SidebarLogoArea() {
     [navigate]
   );
 
-  const goPersonal = useCallback(() => {
-    navigate({ to: '/dashboard', search: {} });
+  const addServer = useCallback(() => {
+    if (!viewer?.authUserId || typeof window === 'undefined') return;
     setDropdownOpen(false);
-    setSearchQuery('');
-  }, [navigate]);
+    window.location.assign(`/api/install/bot?authUserId=${encodeURIComponent(viewer.authUserId)}`);
+  }, [viewer?.authUserId]);
 
   // Close dropdown when clicking the backdrop
   useEffect(() => {
@@ -426,7 +431,7 @@ function SidebarLogoArea() {
     };
   }, [dropdownOpen, syncSelectorRect]);
 
-  const selectedName = selectedGuild?.name ?? 'Personal Dashboard';
+  const selectedName = selectedGuild?.name ?? 'Select a Server';
   const selectorPortalStyle = selectorRect
     ? ({
         '--selector-top': `${selectorRect.top}px`,
@@ -490,7 +495,7 @@ function SidebarLogoArea() {
               aria-hidden="true"
             >
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-              <polyline points="9 22 9 12 15 12 15 22" />
+              <path d="M9 22v-8h6v8" />
             </svg>
           )}
         </div>
@@ -577,8 +582,8 @@ function SidebarLogoArea() {
         <button
           type="button"
           className="server-dropdown-action-btn"
-          id="btn-personal-dashboard"
-          onClick={goPersonal}
+          id="btn-add-server"
+          onClick={addServer}
         >
           <svg
             width="14"
@@ -591,11 +596,33 @@ function SidebarLogoArea() {
             strokeLinejoin="round"
             aria-hidden="true"
           >
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            <polyline points="9 22 9 12 15 12 15 22" />
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          Personal Dashboard
+          Add a Server
         </button>
+        <Link
+          to="/account"
+          className="server-dropdown-action-btn"
+          id="btn-my-account"
+          onClick={() => setDropdownOpen(false)}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+          My Account
+        </Link>
         <div
           style={{
             height: '1px',
@@ -693,91 +720,92 @@ function MainContent() {
 
   return (
     <main className="content-area">
-      {/* Header */}
-      <header className="content-area-header animate-in relative z-10">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="flex items-start gap-3 w-full md:w-auto">
-            <button
-              id="sidebar-toggle"
-              type="button"
-              className="sidebar-toggle-btn"
-              aria-label="Open menu"
-              onClick={toggleSidebarGlobal}
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
+      <div className="content-area-inner">
+        <header className="content-area-header animate-in relative z-10">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-start gap-3 w-full md:w-auto">
+              <button
+                id="sidebar-toggle"
+                type="button"
+                className="sidebar-toggle-btn"
+                aria-label="Open menu"
+                onClick={toggleSidebarGlobal}
               >
-                <path d="M3 12h18M3 6h18M3 18h18" />
-              </svg>
-            </button>
-            <div className="relative flex-1 min-w-0">
-              <div className="content-header-eyebrow">Server Dashboard</div>
-              <h1 className="content-header-title">Dashboard</h1>
-              <p className="content-header-desc" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                Connect your storefronts, verify webhooks, and tune server behavior without bouncing
-                between separate setup pages.
-              </p>
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 12h18M3 6h18M3 18h18" />
+                </svg>
+              </button>
+              <div className="relative flex-1 min-w-0">
+                <div className="content-header-eyebrow">Server Dashboard</div>
+                <h1 className="content-header-title">Dashboard</h1>
+                <p className="content-header-desc" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                  Connect your storefronts, verify webhooks, and tune server behavior without
+                  bouncing between separate setup pages.
+                </p>
+              </div>
+            </div>
+            <div className="content-header-actions flex items-center justify-end gap-3 w-full md:w-auto mt-4 md:mt-0">
+              <button
+                id="theme-toggle"
+                type="button"
+                className="btn-ghost !px-3 !py-2 !rounded-xl"
+                aria-label="Toggle Dark Mode"
+                onClick={toggleTheme}
+                title="Toggle Dark Mode"
+              >
+                <svg
+                  className={`sun-icon${isDark ? '' : ' hidden'}`}
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="5" />
+                  <line x1="12" y1="1" x2="12" y2="3" />
+                  <line x1="12" y1="21" x2="12" y2="23" />
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                  <line x1="1" y1="12" x2="3" y2="12" />
+                  <line x1="21" y1="12" x2="23" y2="12" />
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                </svg>
+                <svg
+                  className={`moon-icon${isDark ? ' hidden' : ''}`}
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+              </button>
             </div>
           </div>
-          <div className="content-header-actions flex items-center justify-end gap-3 w-full md:w-auto mt-4 md:mt-0">
-            <button
-              id="theme-toggle"
-              type="button"
-              className="btn-ghost !px-3 !py-2 !rounded-xl"
-              aria-label="Toggle Dark Mode"
-              onClick={toggleTheme}
-              title="Toggle Dark Mode"
-            >
-              <svg
-                className={`sun-icon${isDark ? '' : ' hidden'}`}
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="5" />
-                <line x1="12" y1="1" x2="12" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="23" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                <line x1="1" y1="12" x2="3" y2="12" />
-                <line x1="21" y1="12" x2="23" y2="12" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-              </svg>
-              <svg
-                className={`moon-icon${isDark ? ' hidden' : ''}`}
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </header>
+        </header>
 
-      <Outlet />
+        <Outlet />
+      </div>
     </main>
   );
 }

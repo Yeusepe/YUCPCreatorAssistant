@@ -23,6 +23,11 @@ const cloudBackgroundSource = readFileSync(
 );
 
 describe('dashboard UI contracts', () => {
+  it('removes the redundant select-server prompt card from the dashboard body', () => {
+    expect(dashboardIndexRouteSource).not.toContain('<SelectServerPrompt />');
+    expect(dashboardIndexRouteSource).not.toContain('function SelectServerPrompt()');
+  });
+
   it('uses shared dashboard query options for the guild picker and resolves empty server state text', () => {
     expect(dashboardRouteSource).toContain('dashboardShellQueryOptions');
     expect(dashboardRouteSource).toContain('useDashboardShell');
@@ -66,6 +71,13 @@ describe('dashboard UI contracts', () => {
     expect(dashboardCss).toContain('justify-content: space-between;');
     expect(dashboardRouteSource).toContain('<DashboardBodyPortal>');
     expect(dashboardRouteSource).toContain('server-selector-portal');
+  });
+
+  it('uses an aligned content shell instead of overlap offsets in the main dashboard layout', () => {
+    expect(dashboardRouteSource).toContain('content-area-inner');
+    expect(dashboardCss).toContain('.content-area-inner {');
+    expect(dashboardCss).not.toContain('margin-left: -12px;');
+    expect(dashboardCss).not.toContain('margin-right: 16px;');
   });
 
   it('uses the home icon for the personal dashboard selector trigger and no longer renders blob backgrounds', () => {

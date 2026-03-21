@@ -2351,6 +2351,361 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
   }
 
   /**
+   * GET /api/connect/user/licenses
+   * Returns the authenticated user's verified subjects and entitlements.
+   */
+  async function getUserLicenses(request: Request): Promise<Response> {
+    const session = await auth.getSession(request);
+    if (!session) {
+      return Response.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    try {
+      const convex = getConvexClientFromUrl(config.convexUrl);
+      const subjectsResult = await convex.query(api.subjects.listByAuthUser, {
+        apiSecret: config.convexApiSecret,
+        authUserId: session.user.id,
+        limit: 50,
+      });
+      const subjects = subjectsResult.data ?? [];
+
+      const subjectsWithEntitlements = await Promise.all(
+        subjects.map(async (subject: { _id: string; displayName?: string; status: string }) => {
+          const entitlementsResult = await convex.query(api.entitlements.listByAuthUser, {
+            apiSecret: config.convexApiSecret,
+            authUserId: session.user.id,
+            subjectId: subject._id,
+            limit: 50,
+          });
+          return {
+            id: subject._id,
+            displayName: subject.displayName ?? null,
+            status: subject.status,
+            entitlements: (entitlementsResult.data ?? []).map(
+              (e: {
+                id: string;
+                sourceProvider: string;
+                productId: string;
+                sourceReference?: string;
+                status: string;
+                grantedAt: number;
+                revokedAt?: number | null;
+              }) => ({
+                id: e.id,
+                sourceProvider: e.sourceProvider,
+                productId: e.productId,
+                sourceReference: e.sourceReference ?? null,
+                status: e.status,
+                grantedAt: e.grantedAt,
+                revokedAt: e.revokedAt ?? null,
+              })
+            ),
+          };
+        })
+      );
+
+      return Response.json({ subjects: subjectsWithEntitlements });
+    } catch (err) {
+      logger.error('Failed to get user licenses', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return Response.json({ error: 'Failed to fetch licenses' }, { status: 500 });
+    }
+  }
+
+  /**
+   * DELETE /api/connect/user/entitlements/:entitlementId
+   * Revokes a specific entitlement owned by the authenticated user.
+   */
+  async function revokeUserEntitlement(
+    request: Request,
+    entitlementId: string
+  ): Promise<Response> {
+    if (request.method !== 'DELETE') {
+      return Response.json({ error: 'Method not allowed' }, { status: 405 });
+    }
+    const session = await auth.getSession(request);
+    if (!session) {
+      return Response.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    if (!entitlementId) {
+      return Response.json({ error: 'entitlementId is required' }, { status: 400 });
+    }
+    try {
+      const convex = getConvexClientFromUrl(config.convexUrl);
+      await convex.mutation(api.entitlements.revokeEntitlement, {
+        apiSecret: config.convexApiSecret,
+        authUserId: session.user.id,
+        entitlementId: entitlementId as Id<'entitlements'>,
+        reason: 'manual',
+        details: 'User-initiated deactivation from account portal',
+      });
+      return Response.json({ success: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('Unauthorized') || msg.includes('not the owner')) {
+        return Response.json({ error: 'Not authorized to revoke this entitlement' }, { status: 403 });
+      }
+      logger.error('Failed to revoke entitlement', {
+        entitlementId,
+        error: msg,
+      });
+      return Response.json({ error: 'Failed to revoke entitlement' }, { status: 500 });
+    }
+  }
+
+  /**
+   * GET /api/connect/user/oauth/grants
+   * Lists OAuth consents (authorized apps) for the authenticated user.
+   */
+  async function getUserOAuthGrants(request: Request): Promise<Response> {
+    const session = await auth.getSession(request);
+    if (!session) {
+      return Response.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    try {
+      const convex = getConvexClientFromUrl(config.convexUrl);
+      const grants = await convex.query(api.userPortal.listOAuthGrantsForUser, {
+        apiSecret: config.convexApiSecret,
+        authUserId: session.user.id,
+      });
+      return Response.json({ grants });
+    } catch (err) {
+      logger.error('Failed to get user OAuth grants', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return Response.json({ error: 'Failed to fetch authorized apps' }, { status: 500 });
+    }
+  }
+
+  /**
+   * DELETE /api/connect/user/oauth/grants/:consentId
+   * Revokes an OAuth grant (authorized app) for the authenticated user.
+   */
+  async function revokeUserOAuthGrant(
+    request: Request,
+    consentId: string
+  ): Promise<Response> {
+    if (request.method !== 'DELETE') {
+      return Response.json({ error: 'Method not allowed' }, { status: 405 });
+    }
+    const session = await auth.getSession(request);
+    if (!session) {
+      return Response.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    if (!consentId) {
+      return Response.json({ error: 'consentId is required' }, { status: 400 });
+    }
+    try {
+      const convex = getConvexClientFromUrl(config.convexUrl);
+      await convex.mutation(api.userPortal.revokeOAuthGrant, {
+        apiSecret: config.convexApiSecret,
+        authUserId: session.user.id,
+        consentId,
+      });
+      return Response.json({ success: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('Unauthorized') || msg.includes('not belong')) {
+        return Response.json({ error: 'Not authorized to revoke this grant' }, { status: 403 });
+      }
+      if (msg.includes('not found')) {
+        return Response.json({ error: 'OAuth grant not found' }, { status: 404 });
+      }
+      logger.error('Failed to revoke OAuth grant', {
+        consentId,
+        error: msg,
+      });
+      return Response.json({ error: 'Failed to revoke authorized app' }, { status: 500 });
+    }
+  }
+
+  /**
+   * GET /api/connect/user/data-export
+   * GDPR right to data portability. Returns a JSON file attachment containing
+   * the user's profile, subjects, entitlements, and provider connections.
+   * Credential values are never included.
+   */
+  async function getUserDataExport(request: Request): Promise<Response> {
+    const session = await auth.getSession(request);
+    if (!session) {
+      return Response.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    try {
+      const convex = getConvexClientFromUrl(config.convexUrl);
+
+      const [subjectsResult, connectionsResult, grantsResult] = await Promise.all([
+        convex.query(api.subjects.listByAuthUser, {
+          apiSecret: config.convexApiSecret,
+          authUserId: session.user.id,
+          limit: 100,
+        }),
+        convex.query(api.providerConnections.listConnectionsForUser, {
+          apiSecret: config.convexApiSecret,
+          authUserId: session.user.id,
+        }),
+        convex.query(api.userPortal.listOAuthGrantsForUser, {
+          apiSecret: config.convexApiSecret,
+          authUserId: session.user.id,
+        }),
+      ]);
+
+      const subjects = subjectsResult.data ?? [];
+      const subjectsWithEntitlements = await Promise.all(
+        subjects.map(async (subject: { _id: string; displayName?: string; status: string; primaryDiscordUserId?: string }) => {
+          const entitlementsResult = await convex.query(api.entitlements.listByAuthUser, {
+            apiSecret: config.convexApiSecret,
+            authUserId: session.user.id,
+            subjectId: subject._id,
+            limit: 100,
+          });
+          return {
+            id: subject._id,
+            displayName: subject.displayName ?? null,
+            primaryDiscordUserId: subject.primaryDiscordUserId ?? null,
+            status: subject.status,
+            entitlements: (entitlementsResult.data ?? []).map(
+              (e: {
+                id: string;
+                sourceProvider: string;
+                productId: string;
+                sourceReference?: string;
+                status: string;
+                grantedAt: number;
+                revokedAt?: number | null;
+              }) => ({
+                id: e.id,
+                sourceProvider: e.sourceProvider,
+                productId: e.productId,
+                sourceReference: e.sourceReference ?? null,
+                status: e.status,
+                grantedAt: e.grantedAt,
+                revokedAt: e.revokedAt ?? null,
+              })
+            ),
+          };
+        })
+      );
+
+      const sanitizedConnections = (connectionsResult as Array<{
+        id?: string;
+        provider?: string;
+        connectionType?: string;
+        status?: string;
+        createdAt?: number;
+        updatedAt?: number;
+      }>).map((c) => ({
+        id: c.id,
+        provider: c.provider,
+        connectionType: c.connectionType,
+        status: c.status,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+      }));
+
+      const exportPayload = {
+        exportedAt: new Date().toISOString(),
+        profile: {
+          authUserId: session.user.id,
+          name: session.user.name,
+          email: session.user.email,
+        },
+        subjects: subjectsWithEntitlements,
+        providerConnections: sanitizedConnections,
+        authorizedApps: grantsResult,
+      };
+
+      const json = JSON.stringify(exportPayload, null, 2);
+      return new Response(json, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Disposition': 'attachment; filename="yucp-data-export.json"',
+        },
+      });
+    } catch (err) {
+      logger.error('Failed to generate data export', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return Response.json({ error: 'Failed to generate data export' }, { status: 500 });
+    }
+  }
+
+  /**
+   * DELETE /api/connect/user/gdpr-delete
+   * GDPR right to erasure (Article 17). Revokes all entitlements and OAuth
+   * tokens, disconnects all provider connections, and records a 30-day
+   * deletion request. The user's Better Auth session expires naturally.
+   */
+  async function requestUserAccountDeletion(request: Request): Promise<Response> {
+    if (request.method !== 'DELETE') {
+      return Response.json({ error: 'Method not allowed' }, { status: 405 });
+    }
+    const session = await auth.getSession(request);
+    if (!session) {
+      return Response.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    try {
+      const convex = getConvexClientFromUrl(config.convexUrl);
+      const authUserId = session.user.id;
+
+      const subjectsResult = await convex.query(api.subjects.listByAuthUser, {
+        apiSecret: config.convexApiSecret,
+        authUserId,
+        limit: 100,
+      });
+      const subjects = subjectsResult.data ?? [];
+
+      for (const subject of subjects as Array<{ _id: string }>) {
+        await convex.mutation(api.entitlements.revokeAllEntitlementsForSubject, {
+          apiSecret: config.convexApiSecret,
+          authUserId,
+          subjectId: subject._id as Id<'subjects'>,
+        });
+      }
+
+      await convex.mutation(api.userPortal.revokeAllOAuthGrantsForUser, {
+        apiSecret: config.convexApiSecret,
+        authUserId,
+      });
+
+      const connections = await convex.query(api.providerConnections.listConnectionsForUser, {
+        apiSecret: config.convexApiSecret,
+        authUserId,
+      });
+      for (const connection of (connections as Array<{ id?: string }>) ?? []) {
+        if (!connection.id) continue;
+        try {
+          await runProviderDisconnectHook(convex, connection.id, authUserId);
+          await convex.mutation(api.providerConnections.disconnectConnection, {
+            apiSecret: config.convexApiSecret,
+            connectionId: connection.id as Id<'provider_connections'>,
+            authUserId,
+          });
+        } catch (disconnectErr) {
+          logger.warn('Failed to disconnect provider connection during account deletion', {
+            connectionId: connection.id,
+            error: disconnectErr instanceof Error ? disconnectErr.message : String(disconnectErr),
+          });
+        }
+      }
+
+      await convex.mutation(api.userPortal.requestAccountDeletion, {
+        apiSecret: config.convexApiSecret,
+        authUserId,
+      });
+
+      return Response.json({
+        message:
+          'Deletion request received. Your account and associated data will be removed within 30 days.',
+      });
+    } catch (err) {
+      logger.error('Failed to process account deletion request', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return Response.json({ error: 'Failed to process account deletion request' }, { status: 500 });
+    }
+  }
+
+  /**
    * GET /api/setup/discord-role-result
    * Called by the bot's "Done" button handler. Returns the saved selection if complete.
    */
@@ -2576,6 +2931,12 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     getUserGuilds,
     getUserAccounts,
     deleteUserAccount,
+    getUserLicenses,
+    revokeUserEntitlement,
+    getUserOAuthGrants,
+    revokeUserOAuthGrant,
+    getUserDataExport,
+    requestUserAccountDeletion,
     serverUpsertProductCredential,
   };
 
