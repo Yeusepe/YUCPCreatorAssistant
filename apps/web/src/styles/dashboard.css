@@ -226,6 +226,10 @@ body:not(.state-server-selected) .server-only {
 /* Light-mode overrides: intg cards are always in content-area which is light */
 /* Dark mode adjustments for intg provider grid */
 /* Skeleton-content wrapper inside settings rows must flex so gap applies */
+.skeleton-content {
+  animation: skeleton-fade-in 250ms ease forwards;
+}
+
 .settings-subsection-body .skeleton-content {
   display: flex;
   flex-direction: column;
@@ -1421,22 +1425,6 @@ img.collab-avatar {
     margin 0.3s ease;
 }
 
-/* Content section mounts when loading finishes — fade in slightly delayed for smooth hand-off */
-.skeleton-content {
-  animation: skeleton-content-fadein 0.25s ease 0.1s both;
-}
-
-@keyframes skeleton-content-fadein {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .dark .skeleton-block {
   background: rgba(71, 85, 105, 0.92);
 }
@@ -2046,11 +2034,6 @@ img.collab-avatar {
   }
 }
 
-.content-area-header + .dashboard-tabs {
-  margin-top: -8px;
-  margin-bottom: 28px;
-}
-
 /*  Tab Navigation (segmented control) */
 
 .dashboard-tabs {
@@ -2133,6 +2116,11 @@ img.collab-avatar {
   .dashboard-tab-panel {
     padding-top: 0;
   }
+}
+
+.content-area-header + .dashboard-tabs {
+  margin-top: -8px;
+  margin-bottom: 28px;
 }
 
 /* 
@@ -2856,10 +2844,6 @@ img.collab-avatar {
 /* Disabled state for select controls during mutation */
 
 /* Skeleton cross-fade transition */
-
-.skeleton-content {
-  animation: skeleton-fade-in 250ms ease forwards;
-}
 
 @keyframes skeleton-fade-in {
   from {

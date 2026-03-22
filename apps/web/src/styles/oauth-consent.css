@@ -59,6 +59,15 @@
   flex-shrink: 0;
 }
 
+.app-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .app-icon.client {
   background: rgba(14, 165, 233, 0.14);
   border: 1px solid rgba(14, 165, 233, 0.28);
@@ -75,15 +84,6 @@
   width: 30px;
   height: 30px;
   object-fit: contain;
-}
-
-.app-icon svg {
-  width: 24px;
-  height: 24px;
-  fill: none;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .connector-arrow {
