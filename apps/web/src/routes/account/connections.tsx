@@ -23,12 +23,12 @@ export const Route = createFileRoute('/account/connections')({
 
 function ProviderCard({
   provider,
-  connection,
+  connections,
 }: Readonly<{
   provider: UserProvider;
-  connection: UserAccountConnection | undefined;
+  connections: UserAccountConnection[];
 }>) {
-  const [confirming, setConfirming] = useState(false);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -37,7 +37,7 @@ function ProviderCard({
     mutationFn: (id: string) => disconnectUserAccount(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user-accounts'] });
-      setConfirming(false);
+      setConfirmingId(null);
       toast.success('Account disconnected', {
         description: `${provider.label} will no longer be used for account verification.`,
       });
@@ -66,6 +66,7 @@ function ProviderCard({
   const iconStyle: CSSProperties = {
     backgroundColor: `${provider.color}20`,
   };
+  const isConnected = connections.length > 0;
 
   return (
     <div className="acct-provider-card">
@@ -76,63 +77,86 @@ function ProviderCard({
       <div className="acct-provider-info">
         <div className="acct-provider-title-row">
           <p className="acct-provider-name">{provider.label}</p>
-          {connection ? (
+          {isConnected ? (
             <span className="account-badge account-badge--connected">Connected</span>
           ) : null}
-        </div>
-        <p className="acct-provider-meta">{connection?.label ?? provider.description}</p>
-        {connection ? (
-          <div className="account-pill-row account-pill-row--compact">
+          {connections.length > 1 ? (
             <span className="account-badge account-badge--provider">
-              {connection.connectionType}
+              {connections.length} links
             </span>
-            <span className="account-badge account-badge--provider">{connection.status}</span>
-            {connection.webhookConfigured ? (
-              <span className="account-badge account-badge--connected">Webhook ready</span>
-            ) : null}
+          ) : null}
+        </div>
+        {isConnected ? (
+          <div className="acct-provider-connection-list">
+            {connections.map((connection) => {
+              const isConfirming = confirmingId === connection.id;
+              return (
+                <div key={connection.id} className="acct-provider-connection-row">
+                  <div className="acct-provider-connection-copy">
+                    <p className="acct-provider-meta">{connection.label || provider.description}</p>
+                    <div className="account-pill-row account-pill-row--compact">
+                      <span className="account-badge account-badge--provider">
+                        {connection.connectionType}
+                      </span>
+                      <span className="account-badge account-badge--provider">
+                        {connection.status}
+                      </span>
+                      {connection.webhookConfigured ? (
+                        <span className="account-badge account-badge--connected">
+                          Webhook ready
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="acct-provider-actions">
+                    {isConfirming ? (
+                      <div className="account-inline-actions">
+                        <span className="account-field-note">Disconnect?</span>
+                        <button
+                          type="button"
+                          className={`account-btn account-btn--danger${disconnectMut.isPending ? ' btn-loading' : ''}`}
+                          onClick={() => disconnectMut.mutate(connection.id)}
+                          disabled={disconnectMut.isPending}
+                        >
+                          {disconnectMut.isPending ? (
+                            <>
+                              <span className="btn-loading-spinner" aria-hidden="true" />
+                              Disconnecting...
+                            </>
+                          ) : (
+                            'Yes'
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          className="account-btn account-btn--secondary"
+                          onClick={() => setConfirmingId(null)}
+                          disabled={disconnectMut.isPending}
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="account-btn account-btn--danger"
+                        onClick={() => setConfirmingId(connection.id)}
+                      >
+                        Disconnect
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ) : null}
+        ) : (
+          <p className="acct-provider-meta">{provider.description}</p>
+        )}
       </div>
 
-      <div className="acct-provider-actions">
-        {connection ? (
-          confirming ? (
-            <div className="account-inline-actions">
-              <span className="account-field-note">Disconnect?</span>
-              <button
-                type="button"
-                className={`account-btn account-btn--danger${disconnectMut.isPending ? ' btn-loading' : ''}`}
-                onClick={() => disconnectMut.mutate(connection.id)}
-                disabled={disconnectMut.isPending}
-              >
-                {disconnectMut.isPending ? (
-                  <>
-                    <span className="btn-loading-spinner" aria-hidden="true" />
-                    Disconnecting...
-                  </>
-                ) : (
-                  'Yes'
-                )}
-              </button>
-              <button
-                type="button"
-                className="account-btn account-btn--secondary"
-                onClick={() => setConfirming(false)}
-                disabled={disconnectMut.isPending}
-              >
-                No
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="account-btn account-btn--danger"
-              onClick={() => setConfirming(true)}
-            >
-              Disconnect
-            </button>
-          )
-        ) : (
+      {!isConnected ? (
+        <div className="acct-provider-actions">
           <button
             type="button"
             className={`account-btn account-btn--connect${connecting ? ' btn-loading' : ''}`}
@@ -148,8 +172,8 @@ function ProviderCard({
               'Connect'
             )}
           </button>
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -168,9 +192,12 @@ function AccountConnections() {
   const isLoading = providersQuery.isLoading || accountsQuery.isLoading;
   const providers = providersQuery.data ?? [];
   const connections = accountsQuery.data ?? [];
-  const connectionsByProvider = new Map<string, UserAccountConnection>(
-    connections.map((connection) => [connection.provider, connection])
-  );
+  const connectionsByProvider = new Map<string, UserAccountConnection[]>();
+  for (const connection of connections) {
+    const providerConnections = connectionsByProvider.get(connection.provider) ?? [];
+    providerConnections.push(connection);
+    connectionsByProvider.set(connection.provider, providerConnections);
+  }
   const connectedCount = connections.length;
   const webhookReadyCount = connections.filter((connection) => connection.webhookConfigured).length;
 
@@ -216,7 +243,7 @@ function AccountConnections() {
               <ProviderCard
                 key={provider.id}
                 provider={provider}
-                connection={connectionsByProvider.get(provider.id)}
+                connections={connectionsByProvider.get(provider.id) ?? []}
               />
             ))}
           </div>

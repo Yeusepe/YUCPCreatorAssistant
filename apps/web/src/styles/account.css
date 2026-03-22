@@ -460,6 +460,27 @@
   flex-shrink: 0;
 }
 
+.acct-provider-connection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.acct-provider-connection-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.acct-provider-connection-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .account-list-row {
   display: flex;
   align-items: center;
@@ -1016,9 +1037,14 @@
   }
 
   .account-list-row-actions,
-  .acct-provider-actions {
+  .acct-provider-actions,
+  .acct-provider-connection-row {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .acct-provider-connection-row {
+    flex-direction: column;
   }
 
   .acct-provider-card {
