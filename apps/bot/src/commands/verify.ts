@@ -6,12 +6,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { PROVIDER_META, providerLabel } from '@yucp/providers';
-import {
-  createLogger,
-  formatVerificationSupportMessage,
-  PROVIDER_REGISTRY,
-  PROVIDER_REGISTRY_BY_KEY,
-} from '@yucp/shared';
+import { createLogger, formatVerificationSupportMessage } from '@yucp/shared';
 import type { ConvexHttpClient } from 'convex/browser';
 import type {
   ButtonInteraction,
@@ -23,7 +18,6 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ContainerBuilder,
-  EmbedBuilder,
   MessageFlags,
   ModalBuilder,
   SeparatorBuilder,
@@ -41,14 +35,17 @@ import { sendDashboardNotification } from '../lib/notifications';
 import { track } from '../lib/posthog';
 import { sanitizeUserFacingErrorMessage } from '../lib/userFacingErrors';
 import { buildBotVerificationErrorMessage } from '../lib/verificationSupport';
+import {
+  buildVerificationCoverage,
+  buildVerifyPromptMessage,
+  getEnabledProviders,
+  type VerifyPromptOverrides,
+} from '../lib/verifyPrompt';
+import { buildVerifyPromptAccessPreview } from '../lib/verifyPromptAccess';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const VERIFY_PREFIX = 'creator_verify:';
-
-const DEFAULT_SPAWN_TITLE = `${E.Assistant} Verify your creator access`;
-const DEFAULT_SPAWN_BUTTON_TEXT = 'Start verification';
-const DEFAULT_SPAWN_COLOR = 0x5865f2; // Discord Blurple
 
 // Semantic colors
 const COLOR_GRAY = 0x4f545c; // Nothing connected
@@ -90,176 +87,6 @@ interface VerifyData {
   guildProductCount: number;
   /** Set of provider keys the user has at least one active account for */
   connectedProviders: Set<string>;
-}
-
-type EnabledProviderDescriptor = (typeof PROVIDER_REGISTRY)[number];
-
-function formatNaturalList(items: string[], conjunction: 'and' | 'or' = 'and'): string {
-  const filtered = items.map((item) => item.trim()).filter(Boolean);
-  if (filtered.length === 0) return '';
-  if (filtered.length === 1) return filtered[0];
-  if (filtered.length === 2) return `${filtered[0]} ${conjunction} ${filtered[1]}`;
-  return `${filtered.slice(0, -1).join(', ')}, ${conjunction} ${filtered.at(-1)}`;
-}
-
-function getEnabledProviderDescriptors(enabledSet: Set<string>): EnabledProviderDescriptor[] {
-  return [...enabledSet]
-    .map((provider) => PROVIDER_REGISTRY_BY_KEY[provider as keyof typeof PROVIDER_REGISTRY_BY_KEY])
-    .filter(
-      (provider): provider is EnabledProviderDescriptor =>
-        provider !== undefined && provider.status === 'active'
-    );
-}
-
-function getProviderChip(provider: EnabledProviderDescriptor): string {
-  const emoji = E[provider.emojiKey as keyof typeof E] ?? '';
-  return emoji ? `${emoji} ${provider.label}` : provider.label;
-}
-
-function buildVerificationCoverage(enabledSet: Set<string>): string {
-  const enabledProviders = getEnabledProviderDescriptors(enabledSet);
-  const commerceProviders = enabledProviders.filter((provider) => provider.category === 'commerce');
-  const coverage: string[] = [];
-
-  if (commerceProviders.length > 0) {
-    coverage.push(
-      `store purchases from ${formatNaturalList(
-        commerceProviders.map((provider) => provider.label),
-        'or'
-      )}`
-    );
-  }
-  if (enabledSet.has('vrchat')) {
-    coverage.push('VRChat product ownership');
-  }
-  if (enabledSet.has('discord')) {
-    coverage.push('access from another Discord server');
-  }
-
-  return formatNaturalList(coverage, 'and');
-}
-
-function buildSpawnTitle(enabledSet: Set<string>): string {
-  const enabledProviders = getEnabledProviderDescriptors(enabledSet);
-  if (enabledProviders.length === 1) {
-    const [provider] = enabledProviders;
-    if (provider) {
-      if (provider.providerKey === 'discord') return `${E.Assistant} Verify your server access`;
-      if (provider.providerKey === 'vrchat') return `${E.Assistant} Verify your VRChat access`;
-      return `${E.Assistant} Verify your ${provider.label} purchase`;
-    }
-  }
-
-  return DEFAULT_SPAWN_TITLE;
-}
-
-function buildSpawnButtonText(enabledSet: Set<string>): string {
-  const enabledProviders = getEnabledProviderDescriptors(enabledSet);
-  if (enabledProviders.length === 1) {
-    const [provider] = enabledProviders;
-    if (provider) {
-      if (provider.providerKey === 'discord') return 'Check server access';
-      if (provider.providerKey === 'vrchat') return 'Verify with VRChat';
-      if (provider.supportsLicenseVerify && !provider.supportsOAuth) return 'Enter license key';
-      if (provider.supportsOAuth && !provider.supportsLicenseVerify)
-        return `Connect ${provider.label}`;
-      return `Verify ${provider.label}`;
-    }
-  }
-
-  return DEFAULT_SPAWN_BUTTON_TEXT;
-}
-
-function buildSpawnDescription(enabledSet: Set<string>, buttonText: string): string {
-  if (enabledSet.size === 0) {
-    return [
-      `${E.Wrench} **This server is still being set up**`,
-      '',
-      `${E.Point} A creator or server admin still needs to add products before buyers can verify here.`,
-      `${E.Point} Once setup is finished, this message will show the right verification options automatically.`,
-    ].join('\n');
-  }
-
-  const enabledProviders = getEnabledProviderDescriptors(enabledSet);
-  const oauthProviders = enabledProviders.filter(
-    (provider) => provider.supportsOAuth && provider.category === 'commerce'
-  );
-  const licenseProviders = enabledProviders.filter((provider) => provider.supportsLicenseVerify);
-  const coverage = buildVerificationCoverage(enabledSet);
-  const details: string[] = [];
-
-  if (oauthProviders.length > 0) {
-    details.push(
-      `${E.Link} **Sign in with ${formatNaturalList(
-        oauthProviders.map((provider) => getProviderChip(provider)),
-        'or'
-      )}** so we can find your purchase automatically.`
-    );
-  }
-  if (licenseProviders.length > 0) {
-    details.push(
-      `${E.KeyCloud} **Use a ${formatNaturalList(
-        licenseProviders.map((provider) => getProviderChip(provider)),
-        'or'
-      )} license key** if you bought access with a key.`
-    );
-  }
-  if (enabledSet.has('discord')) {
-    details.push(
-      `${E.Discord} **Use your role from another Discord server** if this creator shares access across communities.`
-    );
-  }
-  if (enabledSet.has('vrchat')) {
-    details.push(
-      `${E.VRC} **Sign in with VRChat** to confirm ownership for connected VRChat products.`
-    );
-  }
-
-  return [
-    `${E.Assistant} **Verify once and unlock your roles**`,
-    '',
-    coverage
-      ? `${E.Point} This server currently checks ${coverage}.`
-      : `${E.Point} This server will show the right verification options below.`,
-    '',
-    `${E.Num1} Click **${buttonText}**`,
-    `${E.Num2} Choose the option that matches where you bought access`,
-    `${E.Num3} We’ll confirm it and update your roles automatically`,
-    '',
-    ...details,
-    '',
-    `${E.Point} **Need help?** Ask a server admin if your purchase is missing.`,
-  ].join('\n');
-}
-
-function buildGenericSpawnDescription(buttonText: string): string {
-  return [
-    `${E.Assistant} **Verify once and unlock your roles**`,
-    '',
-    `${E.Point} This server supports creator purchase verification for connected products.`,
-    '',
-    `${E.Num1} Click **${buttonText}**`,
-    `${E.Num2} Choose the option that matches your purchase`,
-    `${E.Num3} We’ll confirm it and update your roles automatically`,
-    '',
-    `${E.Link} **Sign in with your purchase account** when the creator supports account-based verification.`,
-    `${E.KeyCloud} **Use your license key** if the creator gave you one at checkout.`,
-    '',
-    `${E.Point} **Need help?** Ask a server admin if your purchase is missing.`,
-  ].join('\n');
-}
-
-function getEnabledProviders(result: unknown): string[] {
-  if (
-    typeof result === 'object' &&
-    result !== null &&
-    'providers' in result &&
-    Array.isArray(result.providers)
-  ) {
-    return result.providers.filter((provider): provider is string => typeof provider === 'string');
-  }
-
-  return [];
 }
 
 function getVerifyPanelKey(userId: string, guildId: string): string {
@@ -552,8 +379,8 @@ function getVerifyPrompt(enabledSet: Set<string>): string {
   }
 
   return coverage
-    ? `${E.Touch} Pick the option that matches where you bought access.\n${E.PointDown} Available here: ${coverage}.`
-    : `${E.Touch} Pick the option below to verify your access.`;
+    ? `${E.Touch} Pick the option that matches how you got access.\n${E.PointDown} Available here: ${coverage}.`
+    : `${E.Touch} Pick an option below to verify your access.`;
 }
 
 /** Build context-aware message for connected_no_products state. */
@@ -562,8 +389,8 @@ function getConnectedNoProductsPrompt(enabledSet: Set<string>): string {
 
   const coverage = buildVerificationCoverage(enabledSet);
   return coverage
-    ? `${E.Timer} We found a linked account, but not a matching purchase for this server yet.\n\n${E.Point} Double-check the account or key you used for ${coverage}, or try another option below.`
-    : `${E.Timer} We found a linked account, but not a matching purchase for this server yet.\n\n${E.Point} Double-check your account details, or try another option below.`;
+    ? `${E.Timer} We found a linked account, but nothing on it matches this server yet.\n\n${E.Point} Double-check the account or key you used for ${coverage}, or try another option below.`
+    : `${E.Timer} We found a linked account, but nothing on it matches this server yet.\n\n${E.Point} Double-check your account details, or try another option below.`;
 }
 
 function getUniqueActiveEnabledProviders(
@@ -1118,6 +945,11 @@ export async function handleVerifySpawn(
   _apiBaseUrl: string | undefined,
   ctx: { authUserId: string; guildLinkId: Id<'guild_links'>; guildId: string }
 ): Promise<void> {
+  const existingPrompt = await convex.query(api.guildLinks.getVerifyPromptMessageForOwner, {
+    apiSecret,
+    authUserId: ctx.authUserId,
+    guildLinkId: ctx.guildLinkId,
+  });
   let enabledSet = new Set<string>();
   let useGenericFallbackCopy = false;
   try {
@@ -1141,42 +973,44 @@ export async function handleVerifySpawn(
     });
   }
 
-  const buttonText =
-    interaction.options.getString('button_text') ??
-    (useGenericFallbackCopy ? DEFAULT_SPAWN_BUTTON_TEXT : buildSpawnButtonText(enabledSet));
-  const title =
-    interaction.options.getString('title') ??
-    (useGenericFallbackCopy ? DEFAULT_SPAWN_TITLE : buildSpawnTitle(enabledSet));
-  const description =
-    interaction.options.getString('description') ??
-    (useGenericFallbackCopy
-      ? buildGenericSpawnDescription(buttonText)
-      : buildSpawnDescription(enabledSet, buttonText));
+  const storedOverrides = existingPrompt?.verifyPromptMessage
+    ? {
+        titleOverride: existingPrompt.verifyPromptMessage.titleOverride,
+        descriptionOverride: existingPrompt.verifyPromptMessage.descriptionOverride,
+        buttonTextOverride: existingPrompt.verifyPromptMessage.buttonTextOverride,
+        color: existingPrompt.verifyPromptMessage.color,
+        imageUrl: existingPrompt.verifyPromptMessage.imageUrl,
+      }
+    : undefined;
+  const titleOption = interaction.options.getString('title')?.trim() || undefined;
+  const descriptionOption = interaction.options.getString('description')?.trim() || undefined;
+  const buttonTextOption = interaction.options.getString('button_text')?.trim() || undefined;
   const colorStr = interaction.options.getString('color');
-  const imageUrl = interaction.options.getString('image_url');
+  const imageUrlOption = interaction.options.getString('image_url')?.trim() || undefined;
 
-  let color = DEFAULT_SPAWN_COLOR;
+  let color = storedOverrides?.color;
   if (colorStr && /^#[0-9A-Fa-f]{6}$/.test(colorStr)) {
     color = Number.parseInt(colorStr.substring(1), 16);
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(description)
-    .setColor(color)
-    .setFooter({ text: 'Creator Assistant · Secure verification' });
-
-  if (imageUrl) {
-    embed.setImage(imageUrl);
-  }
-
-  const button = new ButtonBuilder()
-    .setCustomId('verify_start')
-    .setLabel(buttonText)
-    .setEmoji(Emoji.PersonKey)
-    .setStyle(ButtonStyle.Success);
-
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+  const overrides: VerifyPromptOverrides = {
+    titleOverride: titleOption ?? storedOverrides?.titleOverride,
+    descriptionOverride: descriptionOption ?? storedOverrides?.descriptionOverride,
+    buttonTextOverride: buttonTextOption ?? storedOverrides?.buttonTextOverride,
+    color,
+    imageUrl: imageUrlOption ?? storedOverrides?.imageUrl,
+  };
+  const accessPreview = await buildVerifyPromptAccessPreview({
+    convex,
+    discordClient: interaction.client,
+    apiSecret,
+    authUserId: ctx.authUserId,
+    guildId: ctx.guildId,
+  });
+  const { embed, row } = buildVerifyPromptMessage(enabledSet, overrides, {
+    accessPreview,
+    useGenericFallbackCopy,
+  });
 
   await interaction.reply({
     content: `${E.Assistant} Verify message posted. Use the command options (title, description, button_text, color, image_url) to customize it anytime.`,
@@ -1184,12 +1018,35 @@ export async function handleVerifySpawn(
   });
 
   const channel = interaction.channel;
-  if (channel && 'send' in channel) {
-    await channel.send({
-      embeds: [embed],
-      components: [row],
-    });
+  if (!channel || !('send' in channel)) {
+    throw new Error('Verify message can only be spawned in a text channel.');
   }
+
+  const message = await channel.send({
+    embeds: [embed],
+    components: [row],
+  });
+
+  const channelId =
+    ('channelId' in interaction && typeof interaction.channelId === 'string'
+      ? interaction.channelId
+      : (channel as { id?: string }).id) ?? null;
+  if (!channelId) {
+    throw new Error('Unable to determine the channel id for the verify message.');
+  }
+
+  await convex.mutation(api.guildLinks.saveVerifyPromptMessage, {
+    apiSecret,
+    authUserId: ctx.authUserId,
+    guildLinkId: ctx.guildLinkId,
+    channelId,
+    messageId: message.id,
+    titleOverride: overrides.titleOverride,
+    descriptionOverride: overrides.descriptionOverride,
+    buttonTextOverride: overrides.buttonTextOverride,
+    color: overrides.color,
+    imageUrl: overrides.imageUrl,
+  });
 }
 
 export function buildLicenseModal(authUserId: string): ModalBuilder {

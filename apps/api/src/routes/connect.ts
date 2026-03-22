@@ -2902,6 +2902,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     return Response.json({
       completed: true,
       sourceGuildId: session.sourceGuildId,
+      sourceGuildName: session.sourceGuildName,
       sourceRoleId: session.sourceRoleId,
       sourceRoleIds: roleIds,
       requiredRoleMatchMode: session.requiredRoleMatchMode ?? 'any',
