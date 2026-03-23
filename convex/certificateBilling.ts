@@ -1,5 +1,5 @@
 import { ConvexError, v } from 'convex/values';
-import { internalMutation, internalQuery, mutation, query } from './_generated/server';
+import { type QueryCtx, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { requireApiSecret } from './lib/apiAuth';
 import {
   buildAuthUserWorkspaceKey,
@@ -12,6 +12,50 @@ import { summarizeActiveCertificatesByDevice } from './yucpCertificates';
 
 type BillingStatus = 'active' | 'grace' | 'inactive' | 'suspended';
 
+const accountOverviewReturnValidator = v.object({
+  workspaceKey: v.string(),
+  creatorProfileId: v.optional(v.string()),
+  billing: v.object({
+    billingEnabled: v.boolean(),
+    status: v.string(),
+    allowEnrollment: v.boolean(),
+    allowSigning: v.boolean(),
+    planKey: v.optional(v.string()),
+    deviceCap: v.optional(v.number()),
+    activeDeviceCount: v.number(),
+    signQuotaPerPeriod: v.optional(v.number()),
+    auditRetentionDays: v.optional(v.number()),
+    supportTier: v.optional(v.string()),
+    currentPeriodEnd: v.optional(v.number()),
+    graceUntil: v.optional(v.number()),
+    reason: v.optional(v.string()),
+  }),
+  devices: v.array(
+    v.object({
+      certNonce: v.string(),
+      devPublicKey: v.string(),
+      publisherId: v.string(),
+      publisherName: v.string(),
+      issuedAt: v.number(),
+      expiresAt: v.number(),
+      status: v.string(),
+    })
+  ),
+  availablePlans: v.array(
+    v.object({
+      planKey: v.string(),
+      slug: v.string(),
+      productId: v.string(),
+      priority: v.number(),
+      deviceCap: v.number(),
+      signQuotaPerPeriod: v.optional(v.number()),
+      auditRetentionDays: v.number(),
+      supportTier: v.string(),
+      billingGraceDays: v.number(),
+    })
+  ),
+});
+
 function compareBillingStatus(left: BillingStatus, right: BillingStatus): number {
   const order: Record<BillingStatus, number> = {
     active: 4,
@@ -22,133 +66,121 @@ function compareBillingStatus(left: BillingStatus, right: BillingStatus): number
   return order[left] - order[right];
 }
 
+function selectWinningCertificateEntitlement<
+  T extends {
+    status: BillingStatus;
+    deviceCap?: number;
+    workspaceKey: string;
+    allowEnrollment: boolean;
+    allowSigning: boolean;
+    planKey?: string;
+    signQuotaPerPeriod?: number;
+    auditRetentionDays?: number;
+    supportTier?: string;
+    currentPeriodEnd?: number;
+    graceUntil?: number;
+  },
+>(entitlements: T[]): T | null {
+  return (
+    entitlements.sort((left, right) => {
+      const statusDiff = compareBillingStatus(right.status, left.status);
+      if (statusDiff !== 0) return statusDiff;
+      return (right.deviceCap ?? 0) - (left.deviceCap ?? 0);
+    })[0] ?? null
+  );
+}
+
+function buildAvailablePlans(config: ReturnType<typeof getCertificateBillingConfig>) {
+  return [...config.products]
+    .sort((left, right) => right.priority - left.priority)
+    .map((plan) => ({
+      planKey: plan.planKey,
+      slug: plan.slug,
+      productId: plan.productId,
+      priority: plan.priority,
+      deviceCap: plan.deviceCap,
+      signQuotaPerPeriod: plan.signQuotaPerPeriod ?? undefined,
+      auditRetentionDays: plan.auditRetentionDays,
+      supportTier: plan.supportTier,
+      billingGraceDays: plan.billingGraceDays,
+    }));
+}
+
+async function buildAccountOverview(ctx: QueryCtx, authUserId: string) {
+  const config = getCertificateBillingConfig();
+  const creatorProfile = await ctx.db
+    .query('creator_profiles')
+    .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
+    .first();
+  const workspaceKeys = resolveWorkspaceKeys(authUserId, creatorProfile?._id ?? null);
+  const entitlements = await ctx.db
+    .query('creator_billing_entitlements')
+    .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
+    .collect();
+  const certificateEntitlements = selectWinningCertificateEntitlement(
+    entitlements.filter((entry) => workspaceKeys.includes(entry.workspaceKey))
+  );
+  const certificates = await ctx.db
+    .query('yucp_certificates')
+    .withIndex('by_yucp_user_id', (q) => q.eq('yucpUserId', authUserId))
+    .collect();
+  const devices = summarizeActiveCertificatesByDevice(certificates);
+  const workspaceKey = certificateEntitlements?.workspaceKey ?? workspaceKeys[0];
+
+  return {
+    workspaceKey,
+    creatorProfileId: creatorProfile?._id,
+    billing: {
+      billingEnabled: config.enabled,
+      status:
+        certificateEntitlements?.status ??
+        (config.enabled ? ('inactive' as const) : ('unmanaged' as const)),
+      allowEnrollment: certificateEntitlements?.allowEnrollment ?? !config.enabled,
+      allowSigning: certificateEntitlements?.allowSigning ?? !config.enabled,
+      planKey: certificateEntitlements?.planKey,
+      deviceCap: certificateEntitlements?.deviceCap,
+      activeDeviceCount: devices.length,
+      signQuotaPerPeriod: certificateEntitlements?.signQuotaPerPeriod,
+      auditRetentionDays: certificateEntitlements?.auditRetentionDays,
+      supportTier: certificateEntitlements?.supportTier,
+      currentPeriodEnd: certificateEntitlements?.currentPeriodEnd,
+      graceUntil: certificateEntitlements?.graceUntil,
+      reason:
+        certificateEntitlements?.status === 'grace'
+          ? 'Billing grace period active. Existing devices can continue signing, but new enrollment is blocked.'
+          : certificateEntitlements
+            ? undefined
+            : config.enabled
+              ? 'Certificate subscription required'
+              : undefined,
+    },
+    devices: devices.map((device) => ({
+      certNonce: device.certNonce,
+      devPublicKey: device.devPublicKey,
+      publisherId: device.publisherId,
+      publisherName: device.publisherName,
+      issuedAt: device.issuedAt,
+      expiresAt: device.expiresAt,
+      status: device.status,
+    })),
+    availablePlans: buildAvailablePlans(config),
+  };
+}
+
 export const getAccountOverview = query({
   args: { apiSecret: v.string(), authUserId: v.string() },
-  returns: v.object({
-    workspaceKey: v.string(),
-    creatorProfileId: v.optional(v.string()),
-    billing: v.object({
-      billingEnabled: v.boolean(),
-      status: v.string(),
-      allowEnrollment: v.boolean(),
-      allowSigning: v.boolean(),
-      planKey: v.optional(v.string()),
-      deviceCap: v.optional(v.number()),
-      activeDeviceCount: v.number(),
-      signQuotaPerPeriod: v.optional(v.number()),
-      auditRetentionDays: v.optional(v.number()),
-      supportTier: v.optional(v.string()),
-      currentPeriodEnd: v.optional(v.number()),
-      graceUntil: v.optional(v.number()),
-      reason: v.optional(v.string()),
-    }),
-    devices: v.array(
-      v.object({
-        certNonce: v.string(),
-        devPublicKey: v.string(),
-        publisherId: v.string(),
-        publisherName: v.string(),
-        issuedAt: v.number(),
-        expiresAt: v.number(),
-        status: v.string(),
-      })
-    ),
-    availablePlans: v.array(
-      v.object({
-        planKey: v.string(),
-        slug: v.string(),
-        productId: v.string(),
-        priority: v.number(),
-        deviceCap: v.number(),
-        signQuotaPerPeriod: v.optional(v.number()),
-        auditRetentionDays: v.number(),
-        supportTier: v.string(),
-        billingGraceDays: v.number(),
-      })
-    ),
-  }),
+  returns: accountOverviewReturnValidator,
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
+    return await buildAccountOverview(ctx, args.authUserId);
+  },
+});
 
-    const config = getCertificateBillingConfig();
-    const creatorProfile = await ctx.db
-      .query('creator_profiles')
-      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
-      .first();
-    const workspaceKeys = resolveWorkspaceKeys(args.authUserId, creatorProfile?._id ?? null);
-    const entitlements = await ctx.db
-      .query('creator_billing_entitlements')
-      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
-      .collect();
-    const matchingEntitlements = entitlements.filter((entry) =>
-      workspaceKeys.includes(entry.workspaceKey)
-    );
-    const certificateEntitlements =
-      matchingEntitlements.length > 0
-        ? matchingEntitlements.sort((left, right) => {
-            const statusDiff = compareBillingStatus(right.status, left.status);
-            if (statusDiff !== 0) return statusDiff;
-            return (right.deviceCap ?? 0) - (left.deviceCap ?? 0);
-          })[0]
-        : null;
-    const certificates = await ctx.db
-      .query('yucp_certificates')
-      .withIndex('by_yucp_user_id', (q) => q.eq('yucpUserId', args.authUserId))
-      .collect();
-    const devices = summarizeActiveCertificatesByDevice(certificates);
-    const workspaceKey = certificateEntitlements?.workspaceKey ?? workspaceKeys[0];
-    const availablePlans = [...config.products]
-      .sort((left, right) => right.priority - left.priority)
-      .map((plan) => ({
-        planKey: plan.planKey,
-        slug: plan.slug,
-        productId: plan.productId,
-        priority: plan.priority,
-        deviceCap: plan.deviceCap,
-        signQuotaPerPeriod: plan.signQuotaPerPeriod ?? undefined,
-        auditRetentionDays: plan.auditRetentionDays,
-        supportTier: plan.supportTier,
-        billingGraceDays: plan.billingGraceDays,
-      }));
-
-    return {
-      workspaceKey,
-      creatorProfileId: creatorProfile?._id,
-      billing: {
-        billingEnabled: config.enabled,
-        status:
-          certificateEntitlements?.status ??
-          (config.enabled ? ('inactive' as const) : ('unmanaged' as const)),
-        allowEnrollment: certificateEntitlements?.allowEnrollment ?? !config.enabled,
-        allowSigning: certificateEntitlements?.allowSigning ?? !config.enabled,
-        planKey: certificateEntitlements?.planKey,
-        deviceCap: certificateEntitlements?.deviceCap,
-        activeDeviceCount: devices.length,
-        signQuotaPerPeriod: certificateEntitlements?.signQuotaPerPeriod,
-        auditRetentionDays: certificateEntitlements?.auditRetentionDays,
-        supportTier: certificateEntitlements?.supportTier,
-        currentPeriodEnd: certificateEntitlements?.currentPeriodEnd,
-        graceUntil: certificateEntitlements?.graceUntil,
-        reason:
-          certificateEntitlements?.status === 'grace'
-            ? 'Billing grace period active. Existing devices can continue signing, but new enrollment is blocked.'
-            : certificateEntitlements
-              ? undefined
-              : config.enabled
-                ? 'Certificate subscription required'
-                : undefined,
-      },
-      devices: devices.map((device) => ({
-        certNonce: device.certNonce,
-        devPublicKey: device.devPublicKey,
-        publisherId: device.publisherId,
-        publisherName: device.publisherName,
-        issuedAt: device.issuedAt,
-        expiresAt: device.expiresAt,
-        status: device.status,
-      })),
-      availablePlans,
-    };
+export const getOverviewForAuthUser = internalQuery({
+  args: { authUserId: v.string() },
+  returns: accountOverviewReturnValidator,
+  handler: async (ctx, args) => {
+    return await buildAccountOverview(ctx, args.authUserId);
   },
 });
 

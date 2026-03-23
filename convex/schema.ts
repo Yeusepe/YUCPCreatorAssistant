@@ -157,7 +157,9 @@ const OutboxJobType = v.union(
   v.literal('revocation'),
   v.literal('notification'),
   v.literal('creator_alert'),
-  v.literal('retroactive_rule_sync')
+  v.literal('retroactive_rule_sync'),
+  // Temporary compatibility until migrations:purgeLegacyOutboxVerifyPromptRefreshJobs reaches 0.
+  v.literal('verify_prompt_refresh')
 );
 
 /** Webhook event status */
@@ -494,6 +496,14 @@ const guild_links = defineTable({
       registeredAt: v.optional(v.number()),
     })
   ),
+  // Temporary compatibility for deployed documents until migrations:purgeGuildLinkVerifyPromptMessages reaches 0.
+  verifyPromptMessage: v.optional(
+    v.object({
+      channelId: v.string(),
+      messageId: v.string(),
+      updatedAt: v.number(),
+    })
+  ),
   // Current status
   status: GuildLinkStatus,
   // Timestamps
@@ -533,6 +543,8 @@ const role_rules = defineTable({
   enabled: v.boolean(),
   // Discord cross-server: upstream guild to check membership
   sourceGuildId: v.optional(v.string()),
+  // Temporary compatibility until migrations:purgeRoleRuleSourceGuildNames reaches 0.
+  sourceGuildName: v.optional(v.string()),
   // Discord cross-server: role ID user must have in source guild (backward compat)
   requiredRoleId: v.optional(v.string()),
   // Discord cross-server: multiple role IDs user must have in source guild
@@ -1406,12 +1418,7 @@ const admin_notifications = defineTable({
   /** Discord guild where the event happened */
   guildId: v.string(),
   /** Toast type — maps directly to useToast() variants */
-  type: v.union(
-    v.literal('success'),
-    v.literal('error'),
-    v.literal('warning'),
-    v.literal('info')
-  ),
+  type: v.union(v.literal('success'), v.literal('error'), v.literal('warning'), v.literal('info')),
   /** Short headline */
   title: v.string(),
   /** Optional body text */
