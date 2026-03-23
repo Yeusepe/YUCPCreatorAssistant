@@ -81,7 +81,13 @@ test.describe('Dashboard page', () => {
     );
 
     expect(response?.status()).toBe(200);
-    await expect.poll(() => page.evaluate(() => (window as any).__phase8DashboardXss)).toBeFalsy();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as Window & { __phase8DashboardXss?: unknown }).__phase8DashboardXss
+        )
+      )
+      .toBeFalsy();
     const bodyHtml = await page.evaluate(() => document.body.innerHTML);
     expect(bodyHtml).not.toContain(payload);
     expect(jsErrors).toHaveLength(0);
