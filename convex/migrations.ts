@@ -1,7 +1,11 @@
 /**
  * One-time data migrations.
- * Run with: npx convex run migrations:purgeLegacyTenantDocuments
- * Re-run until it returns { deleted: 0 }.
+ * Run with:
+ * - npx convex run migrations:purgeLegacyTenantDocuments
+ * - npx convex run migrations:purgeGuildLinkVerifyPromptMessages
+ * - npx convex run migrations:purgeLegacyOutboxVerifyPromptRefreshJobs
+ * - npx convex run migrations:purgeRoleRuleSourceGuildNames
+ * Re-run until the relevant migration returns 0 remaining records.
  */
 
 import { v } from 'convex/values';
@@ -87,6 +91,76 @@ export const purgeLegacyTenantDocuments = internalMutation({
     }
 
     return { deleted };
+  },
+});
+
+/**
+ * Remove legacy guild_links.verifyPromptMessage fields in batches.
+ * Re-run until it returns { updated: 0 }.
+ */
+export const purgeGuildLinkVerifyPromptMessages = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const docs = await ctx.db
+      .query('guild_links')
+      .filter((q) => q.neq(q.field('verifyPromptMessage'), null))
+      .take(200);
+
+    let updated = 0;
+    for (const doc of docs) {
+      await ctx.db.patch(doc._id, {
+        verifyPromptMessage: undefined,
+      });
+      updated++;
+    }
+
+    return { updated };
+  },
+});
+
+/**
+ * Remove legacy outbox_jobs rows for the retired verify_prompt_refresh workflow.
+ * Re-run until it returns { deleted: 0 }.
+ */
+export const purgeLegacyOutboxVerifyPromptRefreshJobs = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const docs = await ctx.db
+      .query('outbox_jobs')
+      .filter((q) => q.eq(q.field('jobType'), 'verify_prompt_refresh'))
+      .take(200);
+
+    let deleted = 0;
+    for (const doc of docs) {
+      await ctx.db.delete(doc._id);
+      deleted++;
+    }
+
+    return { deleted };
+  },
+});
+
+/**
+ * Remove legacy role_rules.sourceGuildName fields in batches.
+ * Re-run until it returns { updated: 0 }.
+ */
+export const purgeRoleRuleSourceGuildNames = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const docs = await ctx.db
+      .query('role_rules')
+      .filter((q) => q.neq(q.field('sourceGuildName'), null))
+      .take(200);
+
+    let updated = 0;
+    for (const doc of docs) {
+      await ctx.db.patch(doc._id, {
+        sourceGuildName: undefined,
+      });
+      updated++;
+    }
+
+    return { updated };
   },
 });
 

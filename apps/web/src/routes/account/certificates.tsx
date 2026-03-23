@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccountEmptyState,
   AccountInlineError,
@@ -20,7 +20,20 @@ import {
   type UserCertificatePlan,
 } from '@/lib/account';
 
+interface AccountCertificatesSearch {
+  plan?: string;
+  checkout?: string;
+  portal?: string;
+  source?: string;
+}
+
 export const Route = createFileRoute('/account/certificates')({
+  validateSearch: (search: Record<string, unknown>): AccountCertificatesSearch => ({
+    plan: typeof search.plan === 'string' ? search.plan : undefined,
+    checkout: typeof search.checkout === 'string' ? search.checkout : undefined,
+    portal: typeof search.portal === 'string' ? search.portal : undefined,
+    source: typeof search.source === 'string' ? search.source : undefined,
+  }),
   component: AccountCertificates,
 });
 
@@ -166,8 +179,10 @@ function CertificateDeviceRow({
 }
 
 function AccountCertificates() {
+  const search = Route.useSearch();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const autoLaunchRef = useRef<string | null>(null);
   const [pendingPlanKey, setPendingPlanKey] = useState<string | null>(null);
   const [pendingCertNonce, setPendingCertNonce] = useState<string | null>(null);
 
@@ -228,6 +243,56 @@ function AccountCertificates() {
       overview?.availablePlans.find((plan) => plan.planKey === overview.billing.planKey) ?? null,
     [overview]
   );
+
+  useEffect(() => {
+    if (!overview || certificatesQuery.isLoading) {
+      return;
+    }
+
+    const requestedPlanKey = search.checkout === '1' ? search.plan?.trim() : '';
+    if (requestedPlanKey) {
+      const targetPlan = overview.availablePlans.find((plan) => plan.planKey === requestedPlanKey);
+      if (!targetPlan) {
+        const launchKey = `missing:${requestedPlanKey}`;
+        if (autoLaunchRef.current !== launchKey) {
+          autoLaunchRef.current = launchKey;
+          toast.error('That certificate plan is no longer available', {
+            description: 'Refresh the certificates page and choose another plan.',
+          });
+        }
+        return;
+      }
+
+      const launchKey = `checkout:${targetPlan.planKey}`;
+      if (autoLaunchRef.current === launchKey || checkoutMut.isPending || portalMut.isPending) {
+        return;
+      }
+
+      autoLaunchRef.current = launchKey;
+      setPendingPlanKey(targetPlan.planKey);
+      checkoutMut.mutate(targetPlan.planKey);
+      return;
+    }
+
+    if (search.portal === '1') {
+      const launchKey = 'portal';
+      if (autoLaunchRef.current === launchKey || checkoutMut.isPending || portalMut.isPending) {
+        return;
+      }
+
+      autoLaunchRef.current = launchKey;
+      portalMut.mutate();
+    }
+  }, [
+    certificatesQuery.isLoading,
+    checkoutMut,
+    overview,
+    portalMut,
+    search.checkout,
+    search.plan,
+    search.portal,
+    toast,
+  ]);
 
   const handleCheckout = (plan: UserCertificatePlan) => {
     setPendingPlanKey(plan.planKey);

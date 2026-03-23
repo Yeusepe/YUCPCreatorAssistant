@@ -158,6 +158,7 @@ const OutboxJobType = v.union(
   v.literal('notification'),
   v.literal('creator_alert'),
   v.literal('retroactive_rule_sync'),
+  // Temporary compatibility until migrations:purgeLegacyOutboxVerifyPromptRefreshJobs reaches 0.
   v.literal('verify_prompt_refresh')
 );
 
@@ -495,6 +496,7 @@ const guild_links = defineTable({
       registeredAt: v.optional(v.number()),
     })
   ),
+  // Temporary compatibility for deployed documents until migrations:purgeGuildLinkVerifyPromptMessages reaches 0.
   verifyPromptMessage: v.optional(
     v.object({
       channelId: v.string(),

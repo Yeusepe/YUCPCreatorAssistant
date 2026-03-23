@@ -15,8 +15,8 @@
  *        Like Spotify GET /v1/me, token identifies "me".
  *
  *   GET  /v1/certificates/devices
- *        List the authenticated creator's active signing devices and current
- *        certificate-plan summary.
+ *        Return the authenticated creator's certificate workspace overview,
+ *        including active signing devices, billing summary, and available plans.
  *
  *   GET  /v1/products
  *        List the authenticated creator's registered products (all providers).
@@ -71,6 +71,10 @@ import {
   getBetterAuthPage,
 } from './lib/betterAuthAdapter';
 import { isSigningRequestTimestampFresh, verifySigningProof } from './lib/certificateSigning';
+import {
+  fetchLiveProviderProductsForSources,
+  type PublicProductRecord,
+} from './lib/publicProducts';
 import { constantTimeEqual } from './lib/vrchat/crypto';
 import {
   base64ToBytes,
@@ -122,28 +126,6 @@ function jsonResponse(body: unknown, status = 200): Response {
 function errorResponse(message: string, status: number): Response {
   return jsonResponse({ error: message }, status);
 }
-
-type PublicProductProviderRef = {
-  provider: string;
-  providerProductRef: string;
-};
-
-type PublicProductRecord = {
-  productId: string;
-  displayName?: string;
-  providers: PublicProductProviderRef[];
-  owner: string | null;
-  configured: boolean;
-  live: boolean;
-};
-
-type ProviderProductsApiResponse = {
-  products?: Array<{
-    id?: string;
-    name?: string;
-    collaboratorName?: string;
-  }>;
-};
 
 function normalizeProductToken(value: string | null | undefined): string {
   if (!value) return '';
@@ -250,62 +232,6 @@ function mergePublicProducts(products: PublicProductRecord[]): PublicProductReco
   }
 
   return merged;
-}
-
-async function fetchLiveProviderProductsForSources(
-  sources: Array<{ authUserId: string; owner: string | null }>
-): Promise<PublicProductRecord[]> {
-  const apiBaseUrl = (process.env.API_BASE_URL ?? process.env.SITE_URL ?? '').replace(/\/$/, '');
-  const apiSecret = process.env.CONVEX_API_SECRET;
-  if (!apiBaseUrl || !apiSecret || sources.length === 0) {
-    return [];
-  }
-
-  const liveProviders = PROVIDER_REGISTRY.filter(
-    (provider) =>
-      provider.status === 'active' &&
-      (provider.capabilities as ReadonlyArray<string>).includes('catalog_sync')
-  ).map((provider) => provider.providerKey);
-
-  const liveProducts: PublicProductRecord[] = [];
-
-  await Promise.all(
-    sources.flatMap((source) =>
-      liveProviders.map(async (providerKey) => {
-        try {
-          const response = await fetch(`${apiBaseUrl}/api/${providerKey}/products`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              apiSecret,
-              authUserId: source.authUserId,
-            }),
-          });
-
-          if (!response.ok) {
-            return;
-          }
-
-          const payload = (await response.json()) as ProviderProductsApiResponse;
-          for (const product of payload.products ?? []) {
-            if (!product?.id) continue;
-            liveProducts.push({
-              productId: '',
-              displayName: product.name ?? product.id,
-              providers: [{ provider: providerKey, providerProductRef: product.id }],
-              owner: (product.collaboratorName as string | undefined) ?? source.owner,
-              configured: false,
-              live: true,
-            });
-          }
-        } catch (error) {
-          console.warn(`[products] live provider fetch failed for ${providerKey}`, error);
-        }
-      })
-    )
-  );
-
-  return liveProducts;
 }
 
 http.route({
@@ -702,9 +628,20 @@ http.route({
       console.warn('[products] collaborator lookup failed:', err);
     }
 
-    const liveProducts = await fetchLiveProviderProductsForSources(
-      Array.from(productSources.entries()).map(([authUserId, owner]) => ({ authUserId, owner }))
-    );
+    const liveProviderKeys = PROVIDER_REGISTRY.filter(
+      (provider) =>
+        provider.status === 'active' &&
+        (provider.capabilities as ReadonlyArray<string>).includes('catalog_sync')
+    ).map((provider) => provider.providerKey);
+    const liveProducts = await fetchLiveProviderProductsForSources({
+      env: process.env,
+      sources: Array.from(productSources.entries()).map(([authUserId, owner]) => ({
+        authUserId,
+        owner,
+      })),
+      providerKeys: liveProviderKeys,
+      warn: console.warn,
+    });
     const mergedProducts = mergePublicProducts([...allProducts, ...liveProducts]).sort((a, b) => {
       if (a.configured !== b.configured) return a.configured ? -1 : 1;
       return (a.displayName ?? a.productId).localeCompare(b.displayName ?? b.productId);
@@ -810,37 +747,11 @@ http.route({
     const tokenResult = await verifyOAuthToken(token, siteUrl, 'cert:issue');
     if (!tokenResult.ok) return errorResponse(tokenResult.error, 401);
 
-    const [devices, certificateEntitlements] = await Promise.all([
-      ctx.runQuery(internal.yucpCertificates.listActiveCertsForUser, {
-        yucpUserId: tokenResult.yucpUserId,
-      }),
-      ctx.runQuery(internal.certificateBilling.resolveForAuthUser, {
-        authUserId: tokenResult.yucpUserId,
-      }),
-    ]);
-
-    return jsonResponse({
-      devices: devices.map((device) => ({
-        certNonce: device.certNonce,
-        devPublicKey: device.devPublicKey,
-        publisherId: device.publisherId,
-        publisherName: device.publisherName,
-        issuedAt: device.issuedAt,
-        expiresAt: device.expiresAt,
-        status: device.status,
-      })),
-      billing: {
-        billingEnabled: certificateEntitlements.billingEnabled,
-        status: certificateEntitlements.status,
-        planKey: certificateEntitlements.planKey,
-        deviceCap: certificateEntitlements.deviceCap,
-        activeDeviceCount: devices.length,
-        allowEnrollment: certificateEntitlements.allowEnrollment,
-        allowSigning: certificateEntitlements.allowSigning,
-        currentPeriodEnd: certificateEntitlements.currentPeriodEnd,
-        graceUntil: certificateEntitlements.graceUntil,
-      },
+    const overview = await ctx.runQuery(internal.certificateBilling.getOverviewForAuthUser, {
+      authUserId: tokenResult.yucpUserId,
     });
+
+    return jsonResponse(overview);
   }),
 });
 

@@ -56,4 +56,12 @@ describe('account UI contracts', () => {
     expect(accountCertificatesRouteSource).toContain("createFileRoute('/account/certificates')");
     expect(accountCertificatesRouteSource).toContain('Manage billing');
   });
+
+  it('supports plan and portal deep links for Unity billing handoff', () => {
+    expect(accountCertificatesRouteSource).toContain('validateSearch:');
+    expect(accountCertificatesRouteSource).toContain("search.checkout === '1'");
+    expect(accountCertificatesRouteSource).toContain("search.portal === '1'");
+    expect(accountCertificatesRouteSource).toContain('checkoutMut.mutate(targetPlan.planKey)');
+    expect(accountCertificatesRouteSource).toContain('portalMut.mutate()');
+  });
 });
