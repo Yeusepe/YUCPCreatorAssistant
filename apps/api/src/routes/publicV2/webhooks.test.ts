@@ -50,6 +50,7 @@ const config = {
   convexApiSecret: 'test-secret',
   convexSiteUrl: 'https://test.convex.site',
   encryptionSecret: 'test-enc',
+  frontendBaseUrl: 'https://creators.test',
 };
 
 /** Thin wrapper that injects the mock auth resolver so tests don't need mock.module('./auth'). */

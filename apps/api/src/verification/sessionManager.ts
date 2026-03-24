@@ -878,6 +878,32 @@ export function createVerificationSessionManager(
         });
       }
 
+      if (session.verificationMethod === 'account_link' && syncResult.externalAccountId) {
+        try {
+          await convex.mutation(api.subjects.upsertBuyerProviderLink, {
+            apiSecret,
+            subjectId: syncResult.subjectId,
+            provider,
+            externalAccountId: syncResult.externalAccountId,
+            verificationMethod: session.verificationMethod,
+            verificationSessionId: session._id,
+          });
+          logger.info('[verification] Buyer provider link stored', {
+            provider,
+            subjectId: syncResult.subjectId,
+            externalAccountId: syncResult.externalAccountId,
+            sessionId: String(session._id),
+          });
+        } catch (buyerLinkErr) {
+          logger.error('[verification] Failed to store buyer provider link', {
+            provider,
+            error: buyerLinkErr instanceof Error ? buyerLinkErr.message : String(buyerLinkErr),
+            subjectId: syncResult.subjectId,
+            externalAccountId: syncResult.externalAccountId,
+          });
+        }
+      }
+
       // For Gumroad: ensure purchase_facts is populated, then sync past purchases.
       // syncPastPurchasesForSubject (from syncUserFromProvider) may find 0 if backfill
       // hasn't run. Trigger backfill for tenant's products, then sync again.

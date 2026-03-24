@@ -17,6 +17,7 @@ import type {
   ProviderPurposes,
 } from '../types';
 import { backfill } from './backfill';
+import { buyerVerification } from './buyerVerification';
 import { connect } from './connect';
 import { verification } from './verification';
 
@@ -132,6 +133,7 @@ const lemonSqueezyProvider: ProviderPlugin = {
   backfill,
   connect,
   verification,
+  buyerVerification,
   displayMeta: {
     label: 'Lemon Squeezy',
     icon: 'LemonSqueezy.png',

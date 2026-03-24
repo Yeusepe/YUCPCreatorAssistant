@@ -64,6 +64,49 @@ export interface UserCertificatePlan {
   billingGraceDays: number;
 }
 
+export interface UserVerificationIntentRequirement {
+  methodKey: string;
+  providerKey: string;
+  providerLabel: string;
+  kind: 'existing_entitlement' | 'manual_license' | 'buyer_provider_link';
+  title: string;
+  description: string | null;
+  creatorAuthUserId: string | null;
+  productId: string | null;
+  providerProductRef: string | null;
+  capability: {
+    methodKind: 'existing_entitlement' | 'manual_license' | 'buyer_provider_link';
+    completion: 'immediate' | 'deferred';
+    actionLabel: string;
+    input?: {
+      kind: 'license_key';
+      label: string;
+      placeholder: string | null;
+      masked: boolean;
+      submitLabel: string;
+    };
+  };
+}
+
+export interface UserVerificationIntent {
+  object: 'verification_intent';
+  id: string;
+  packageId: string;
+  packageName: string | null;
+  status: string;
+  verificationUrl: string;
+  returnUrl: string;
+  requirements: UserVerificationIntentRequirement[];
+  verifiedMethodKey: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  grantToken: string | null;
+  grantAvailable: boolean;
+  expiresAt: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface UserCertificateWorkspace {
   workspaceKey: string;
   creatorProfileId: string | null;
@@ -184,4 +227,35 @@ export async function downloadUserDataExport() {
   }
 
   return response.blob();
+}
+
+export async function getUserVerificationIntent(intentId: string) {
+  return apiClient.get<UserVerificationIntent>(
+    `/api/connect/user/verification-intents/${encodeURIComponent(intentId)}`
+  );
+}
+
+export async function verifyUserVerificationEntitlement(intentId: string, methodKey: string) {
+  return apiClient.post<{ success: boolean }>(
+    `/api/connect/user/verification-intents/${encodeURIComponent(intentId)}/verify-entitlement`,
+    { methodKey }
+  );
+}
+
+export async function verifyUserVerificationProviderLink(intentId: string, methodKey: string) {
+  return apiClient.post<{ success: boolean }>(
+    `/api/connect/user/verification-intents/${encodeURIComponent(intentId)}/verify-provider-link`,
+    { methodKey }
+  );
+}
+
+export async function verifyUserVerificationManualLicense(
+  intentId: string,
+  methodKey: string,
+  licenseKey: string
+) {
+  return apiClient.post<{ success: boolean }>(
+    `/api/connect/user/verification-intents/${encodeURIComponent(intentId)}/manual-license`,
+    { methodKey, licenseKey }
+  );
 }

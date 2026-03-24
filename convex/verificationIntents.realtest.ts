@@ -1,0 +1,187 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { api } from './_generated/api';
+import type { Id } from './_generated/dataModel';
+import { makeTestConvex, seedSubject } from './testHelpers';
+
+const API_SECRET = 'test-secret';
+
+async function seedExternalAccount(
+  t: ReturnType<typeof makeTestConvex>,
+  overrides: {
+    provider?: string;
+    providerUserId?: string;
+    providerUsername?: string;
+    status?: 'active' | 'disconnected' | 'revoked';
+  } = {}
+): Promise<Id<'external_accounts'>> {
+  return t.run(async (ctx) => {
+    const now = Date.now();
+    return await ctx.db.insert('external_accounts', {
+      provider: overrides.provider ?? 'vrchat',
+      providerUserId: overrides.providerUserId ?? `provider-user-${now}`,
+      providerUsername: overrides.providerUsername,
+      status: overrides.status ?? 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+}
+
+describe('verification intents buyer provider links', () => {
+  beforeEach(() => {
+    process.env.CONVEX_API_SECRET = API_SECRET;
+  });
+
+  it('verifies a buyer_provider_link requirement when the buyer has an active link', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-buyer-link-success';
+    const subjectId = await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-buyer-link-success',
+    });
+    const externalAccountId = await seedExternalAccount(t, {
+      provider: 'vrchat',
+      providerUserId: 'vrchat-user-123',
+      providerUsername: 'BuyerVR',
+    });
+
+    await t.mutation(api.subjects.upsertBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      subjectId,
+      provider: 'vrchat',
+      externalAccountId,
+      verificationMethod: 'account_link',
+    });
+
+    const { intentId } = await t.mutation(api.verificationIntents.createVerificationIntent, {
+      apiSecret: API_SECRET,
+      authUserId,
+      packageId: 'pkg-buyer-link',
+      machineFingerprint: 'machine-success',
+      codeChallenge: 'challenge-success',
+      returnUrl: 'https://example.com/return',
+      requirements: [
+        {
+          methodKey: 'vrchat-link',
+          providerKey: 'vrchat',
+          kind: 'buyer_provider_link',
+          title: 'Linked VRChat account',
+        },
+      ],
+    });
+
+    const result = await t.action(api.verificationIntents.verifyIntentWithBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      authUserId,
+      intentId,
+      methodKey: 'vrchat-link',
+    });
+
+    expect(result).toEqual({ success: true });
+
+    const intent = await t.query(api.verificationIntents.getIntentRecord, {
+      apiSecret: API_SECRET,
+      authUserId,
+      intentId,
+    });
+
+    expect(intent?.status).toBe('verified');
+    expect(intent?.verifiedMethodKey).toBe('vrchat-link');
+  });
+
+  it('keeps the intent pending and reports provider_link_missing when no buyer link exists', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-buyer-link-missing';
+    await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-buyer-link-missing',
+    });
+
+    const { intentId } = await t.mutation(api.verificationIntents.createVerificationIntent, {
+      apiSecret: API_SECRET,
+      authUserId,
+      packageId: 'pkg-buyer-link-missing',
+      machineFingerprint: 'machine-missing',
+      codeChallenge: 'challenge-missing',
+      returnUrl: 'https://example.com/return',
+      requirements: [
+        {
+          methodKey: 'vrchat-link',
+          providerKey: 'vrchat',
+          kind: 'buyer_provider_link',
+          title: 'Linked VRChat account',
+        },
+      ],
+    });
+
+    const result = await t.action(api.verificationIntents.verifyIntentWithBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      authUserId,
+      intentId,
+      methodKey: 'vrchat-link',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('provider_link_missing');
+
+    const intent = await t.query(api.verificationIntents.getIntentRecord, {
+      apiSecret: API_SECRET,
+      authUserId,
+      intentId,
+    });
+
+    expect(intent?.status).toBe('pending');
+    expect(intent?.errorCode).toBe('provider_link_missing');
+  });
+
+  it('lists and revokes buyer provider links for account surfaces', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-buyer-link-list';
+    const subjectId = await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-buyer-link-list',
+    });
+    const externalAccountId = await seedExternalAccount(t, {
+      provider: 'vrchat',
+      providerUserId: 'vrchat-user-456',
+      providerUsername: 'BuyerLink',
+    });
+
+    const linkId = await t.mutation(api.subjects.upsertBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      subjectId,
+      provider: 'vrchat',
+      externalAccountId,
+      verificationMethod: 'account_link',
+    });
+
+    const linksBeforeRevoke = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId,
+    });
+
+    expect(linksBeforeRevoke).toHaveLength(1);
+    expect(linksBeforeRevoke[0]).toMatchObject({
+      id: linkId,
+      provider: 'vrchat',
+      providerUserId: 'vrchat-user-456',
+      providerUsername: 'BuyerLink',
+      verificationMethod: 'account_link',
+      status: 'active',
+    });
+
+    const revokeResult = await t.mutation(api.subjects.revokeBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      authUserId,
+      linkId,
+    });
+
+    expect(revokeResult.success).toBe(true);
+
+    const linksAfterRevoke = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId,
+    });
+    expect(linksAfterRevoke).toHaveLength(0);
+  });
+});

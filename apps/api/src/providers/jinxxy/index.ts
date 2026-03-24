@@ -11,6 +11,7 @@ import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
 import type { ProductRecord, ProviderContext, ProviderPlugin, ProviderPurposes } from '../types';
 import { backfill } from './backfill';
+import { buyerVerification } from './buyerVerification';
 import { connect } from './connect';
 import { verification } from './verification';
 import { webhook } from './webhook';
@@ -133,6 +134,7 @@ const jinxxyProvider: ProviderPlugin = {
   webhook,
   connect,
   verification,
+  buyerVerification,
   displayMeta: {
     label: 'Jinxxy™',
     icon: 'Jinxxy.png',

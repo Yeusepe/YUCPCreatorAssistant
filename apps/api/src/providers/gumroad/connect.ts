@@ -97,8 +97,7 @@ async function gumroadBegin(request: Request, ctx: ConnectContext): Promise<Resp
  */
 async function gumroadCallback(request: Request, ctx: ConnectContext): Promise<Response> {
   const { config } = ctx;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cfg = config as any;
+  const cfg = config;
 
   const buildDashboardRedirect = (
     params: Record<string, string | undefined>,

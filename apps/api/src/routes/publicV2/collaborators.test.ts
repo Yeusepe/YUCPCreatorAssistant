@@ -32,6 +32,7 @@ const config = {
   convexApiSecret: 'test-secret',
   convexSiteUrl: 'https://test.convex.site',
   encryptionSecret: 'test-encryption-secret',
+  frontendBaseUrl: 'https://creators.test',
 };
 
 beforeEach(() => {

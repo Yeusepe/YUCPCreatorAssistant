@@ -17,6 +17,12 @@ export interface UserAccountConnection {
   hasApiKey: boolean;
   hasAccessToken: boolean;
   authUserId?: string;
+  providerUserId?: string | null;
+  providerUsername?: string | null;
+  verificationMethod?: string | null;
+  linkedAt?: number | null;
+  lastValidatedAt?: number | null;
+  expiresAt?: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -194,7 +200,7 @@ export interface UserProvider {
   icon: string;
   color: string;
   description: string;
-  userSetupPath: string;
+  userSetupPath: string | null;
 }
 
 export function getProviderIconPath(provider: { icon?: string | null }) {
@@ -210,8 +216,14 @@ export async function listUserProviders() {
   return data.providers ?? [];
 }
 
-export async function startUserVerify(providerKey: string): Promise<{ redirectUrl: string }> {
-  return apiClient.post<{ redirectUrl: string }>('/api/connect/user/verify/start', { providerKey });
+export async function startUserVerify(
+  providerKey: string,
+  returnUrl?: string
+): Promise<{ redirectUrl: string }> {
+  return apiClient.post<{ redirectUrl: string }>('/api/connect/user/verify/start', {
+    providerKey,
+    returnUrl,
+  });
 }
 
 export async function listUserAccounts() {

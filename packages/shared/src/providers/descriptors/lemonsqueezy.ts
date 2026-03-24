@@ -26,6 +26,10 @@ export const lemonsqueezy = {
   verificationMethods: ['license_key'],
   supportsCredentialLogin: true,
   catalogProductUrlTemplate: 'https://app.lemonsqueezy.com/products/{ref}',
+  licenseKey: {
+    inputLabel: 'License Key',
+    placeholder: 'Enter your license key',
+  },
   supportsCollab: true,
   collabCredential: {
     label: 'Lemon Squeezy API Key',

@@ -18,6 +18,7 @@ import { handleSubjectsRoutes } from './subjects';
 import { handleTransactionRoutes } from './transactions';
 import type { PublicV2Config } from './types';
 import { handleVerificationRoutes } from './verification';
+import { handleVerificationIntentsRoutes } from './verification-intents';
 import { handleVerificationSessionsRoutes } from './verification-sessions';
 import { handleWebhooksRoutes } from './webhooks';
 
@@ -104,6 +105,11 @@ export function createPublicV2Routes(config: PublicV2Config): PublicV2Routes {
         // Verification sessions
         if (subPath.startsWith('/verification-sessions')) {
           return handleVerificationSessionsRoutes(request, subPath, config);
+        }
+
+        // Verification intents
+        if (subPath.startsWith('/verification-intents')) {
+          return handleVerificationIntentsRoutes(request, subPath, config);
         }
 
         // Collaborators

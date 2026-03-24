@@ -280,6 +280,7 @@ function initializeAuth(webhookBaseUrl?: string) {
     convexApiSecret: env.CONVEX_API_SECRET ?? '',
     convexSiteUrl,
     encryptionSecret,
+    frontendBaseUrl: frontendUrl,
   });
 
   internalRpcRouter = createInternalRpcRouter({
@@ -666,6 +667,44 @@ async function routeRequest(request: Request): Promise<Response> {
   }
   if (pathname === '/api/connect/user/verify/start' && connectRoutes) {
     return connectRoutes.postUserVerifyStart(request);
+  }
+  const userVerificationIntentMatch = pathname.match(
+    /^\/api\/connect\/user\/verification-intents\/([^/]+)$/
+  );
+  if (userVerificationIntentMatch && connectRoutes) {
+    if (request.method === 'GET') {
+      return connectRoutes.getUserVerificationIntent(
+        request,
+        decodeURIComponent(userVerificationIntentMatch[1])
+      );
+    }
+  }
+  const userVerificationEntitlementMatch = pathname.match(
+    /^\/api\/connect\/user\/verification-intents\/([^/]+)\/verify-entitlement$/
+  );
+  if (userVerificationEntitlementMatch && connectRoutes) {
+    return connectRoutes.postUserVerificationEntitlement(
+      request,
+      decodeURIComponent(userVerificationEntitlementMatch[1])
+    );
+  }
+  const userVerificationProviderLinkMatch = pathname.match(
+    /^\/api\/connect\/user\/verification-intents\/([^/]+)\/verify-provider-link$/
+  );
+  if (userVerificationProviderLinkMatch && connectRoutes) {
+    return connectRoutes.postUserVerificationProviderLink(
+      request,
+      decodeURIComponent(userVerificationProviderLinkMatch[1])
+    );
+  }
+  const userVerificationManualMatch = pathname.match(
+    /^\/api\/connect\/user\/verification-intents\/([^/]+)\/manual-license$/
+  );
+  if (userVerificationManualMatch && connectRoutes) {
+    return connectRoutes.postUserVerificationManualLicense(
+      request,
+      decodeURIComponent(userVerificationManualMatch[1])
+    );
   }
   if (pathname === '/api/connect/user/guilds' && connectRoutes) {
     return connectRoutes.getUserGuilds(request);

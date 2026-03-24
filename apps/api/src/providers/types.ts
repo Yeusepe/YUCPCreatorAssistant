@@ -112,6 +112,7 @@ interface BaseProviderPlugin {
   readonly webhook?: WebhookPlugin;
   readonly connect?: ConnectPlugin;
   readonly verification?: LicenseVerificationPlugin;
+  readonly buyerVerification?: BuyerVerificationAdapter;
   readonly supportsCollab?: boolean;
   readonly productCredentialPurpose?: string;
   /** Display metadata for dynamic UI rendering */
@@ -222,6 +223,59 @@ export interface LicenseVerificationPlugin {
     authUserId: string,
     ctx: ProviderContext
   ): Promise<LicenseVerificationResult | null>;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Buyer Verification Plugin
+// ──────────────────────────────────────────────────────────────────────────────
+
+export type BuyerVerificationMethodKind = 'manual_license';
+
+export interface BuyerVerificationCapabilityInput {
+  kind: 'license_key';
+  label: string;
+  placeholder?: string;
+  masked: boolean;
+  submitLabel: string;
+}
+
+export interface BuyerVerificationCapabilityDescriptor {
+  methodKind: BuyerVerificationMethodKind;
+  completion: 'immediate' | 'deferred';
+  actionLabel: string;
+  defaultTitle: string;
+  defaultDescription?: string;
+  input: BuyerVerificationCapabilityInput;
+}
+
+export interface BuyerVerificationResult {
+  success: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface BuyerVerificationContext {
+  convex: ReturnType<typeof getConvexClientFromUrl>;
+  apiSecret: string;
+  encryptionSecret: string;
+}
+
+export interface BuyerVerificationSubmission {
+  methodKind: BuyerVerificationMethodKind;
+  packageId: string;
+  providerProductRef: string;
+  licenseKey: string;
+}
+
+export interface BuyerVerificationAdapter {
+  readonly providerId: string;
+  describeCapability(
+    methodKind: BuyerVerificationMethodKind
+  ): BuyerVerificationCapabilityDescriptor | null;
+  verify(
+    input: BuyerVerificationSubmission,
+    ctx: BuyerVerificationContext
+  ): Promise<BuyerVerificationResult>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
