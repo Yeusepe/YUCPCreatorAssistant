@@ -21,6 +21,7 @@ export interface CertificateBillingPlanConfig {
   auditRetentionDays: number;
   supportTier: string;
   billingGraceDays: number;
+  capabilities: string[];
 }
 
 export interface CertificateBillingConfig {
@@ -44,6 +45,7 @@ interface RawPlanConfig {
   auditRetentionDays?: unknown;
   supportTier?: unknown;
   billingGraceDays?: unknown;
+  capabilities?: unknown;
 }
 
 function readNonNegativeInteger(value: unknown, fallback: number): number {
@@ -64,6 +66,14 @@ export function buildAuthUserWorkspaceKey(authUserId: string): string {
 
 export function buildCreatorProfileWorkspaceKey(creatorProfileId: string): string {
   return `creator-profile:${creatorProfileId}`;
+}
+
+function parsePlanCapabilities(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean))].sort();
 }
 
 export function resolveWorkspaceKeys(
@@ -149,6 +159,7 @@ export function parseCertificateBillingProductsJson(
           ? value.supportTier.trim()
           : 'standard',
       billingGraceDays: readNonNegativeInteger(value.billingGraceDays, 3),
+      capabilities: parsePlanCapabilities(value.capabilities),
     };
   });
 }
@@ -174,4 +185,14 @@ export function getPlanForProductId(
   productId: string
 ): CertificateBillingPlanConfig | null {
   return config.products.find((plan) => plan.productId === productId) ?? null;
+}
+
+export function getPlanForPlanKey(
+  config: CertificateBillingConfig,
+  planKey: string | null | undefined
+): CertificateBillingPlanConfig | null {
+  if (!planKey) {
+    return null;
+  }
+  return config.products.find((plan) => plan.planKey === planKey) ?? null;
 }

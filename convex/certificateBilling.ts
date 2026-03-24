@@ -1,4 +1,5 @@
 import { ConvexError, v } from 'convex/values';
+import type { Id } from './_generated/dataModel';
 import {
   internalMutation,
   internalQuery,
@@ -12,6 +13,7 @@ import {
   buildAuthUserWorkspaceKey,
   extractWorkspaceKeyFromMetadata,
   getCertificateBillingConfig,
+  getPlanForPlanKey,
   getPlanForProductId,
   resolveWorkspaceKeys,
 } from './lib/certificateBillingConfig';
@@ -40,6 +42,11 @@ const shellBrandingReturnValidator = v.object({
   billingStatus: v.optional(v.string()),
 });
 
+const billingCapabilityStateValidator = v.object({
+  capabilityKey: v.string(),
+  status: v.string(),
+});
+
 const accountOverviewReturnValidator = v.object({
   workspaceKey: v.string(),
   creatorProfileId: v.optional(v.string()),
@@ -57,6 +64,7 @@ const accountOverviewReturnValidator = v.object({
     currentPeriodEnd: v.optional(v.number()),
     graceUntil: v.optional(v.number()),
     reason: v.optional(v.string()),
+    capabilities: v.array(billingCapabilityStateValidator),
   }),
   devices: v.array(
     v.object({
@@ -83,6 +91,7 @@ const accountOverviewReturnValidator = v.object({
       auditRetentionDays: v.number(),
       supportTier: v.string(),
       billingGraceDays: v.number(),
+      capabilities: v.array(v.string()),
     })
   ),
 });
@@ -160,7 +169,85 @@ function buildAvailablePlans(config: ReturnType<typeof getCertificateBillingConf
       auditRetentionDays: plan.auditRetentionDays,
       supportTier: plan.supportTier,
       billingGraceDays: plan.billingGraceDays,
+      capabilities: [...plan.capabilities],
     }));
+}
+
+async function listWorkspaceCapabilities(
+  ctx: QueryCtx | MutationCtx,
+  workspaceKey: string
+): Promise<Array<{ capabilityKey: string; status: string }>> {
+  const rows = await ctx.db
+    .query('creator_billing_capabilities')
+    .withIndex('by_workspace_key', (q) => q.eq('workspaceKey', workspaceKey))
+    .collect();
+  return rows
+    .map((row) => ({
+      capabilityKey: row.capabilityKey,
+      status: row.status,
+    }))
+    .sort((left, right) => left.capabilityKey.localeCompare(right.capabilityKey));
+}
+
+async function syncWorkspaceCapabilities(
+  ctx: MutationCtx,
+  args: {
+    workspaceKey: string;
+    authUserId: string;
+    creatorProfileId?: Id<'creator_profiles'>;
+    planKey: string;
+    capabilityKeys: string[];
+    status: BillingStatus;
+    currentPeriodEnd?: number;
+    graceUntil?: number;
+  }
+) {
+  const now = Date.now();
+  const desired = new Set(args.capabilityKeys);
+  const existing = await ctx.db
+    .query('creator_billing_capabilities')
+    .withIndex('by_workspace_key', (q) => q.eq('workspaceKey', args.workspaceKey))
+    .collect();
+
+  for (const row of existing) {
+    if (!desired.has(row.capabilityKey)) {
+      if (row.status !== 'inactive') {
+        await ctx.db.patch(row._id, {
+          status: 'inactive',
+          currentPeriodEnd: args.currentPeriodEnd,
+          graceUntil: args.graceUntil,
+          updatedAt: now,
+        });
+      }
+      continue;
+    }
+
+    await ctx.db.patch(row._id, {
+      authUserId: args.authUserId,
+      creatorProfileId: args.creatorProfileId,
+      planKey: args.planKey,
+      status: args.status,
+      currentPeriodEnd: args.currentPeriodEnd,
+      graceUntil: args.graceUntil,
+      updatedAt: now,
+    });
+    desired.delete(row.capabilityKey);
+  }
+
+  for (const capabilityKey of desired) {
+    await ctx.db.insert('creator_billing_capabilities', {
+      workspaceKey: args.workspaceKey,
+      authUserId: args.authUserId,
+      creatorProfileId: args.creatorProfileId,
+      planKey: args.planKey,
+      capabilityKey,
+      status: args.status,
+      currentPeriodEnd: args.currentPeriodEnd,
+      graceUntil: args.graceUntil,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
 }
 
 async function buildAccountOverview(ctx: QueryCtx, authUserId: string) {
@@ -183,6 +270,7 @@ async function buildAccountOverview(ctx: QueryCtx, authUserId: string) {
     .collect();
   const devices = summarizeActiveCertificatesByDevice(certificates);
   const workspaceKey = certificateEntitlements?.workspaceKey ?? workspaceKeys[0];
+  const capabilities = await listWorkspaceCapabilities(ctx, workspaceKey);
 
   return {
     workspaceKey,
@@ -210,6 +298,7 @@ async function buildAccountOverview(ctx: QueryCtx, authUserId: string) {
             : config.enabled
               ? 'Certificate subscription required'
               : undefined,
+      capabilities,
     },
     devices: devices.map((device) => ({
       certNonce: device.certNonce,
@@ -435,6 +524,17 @@ async function projectCustomerStateIntoBilling(
       });
     }
 
+    await syncWorkspaceCapabilities(ctx, {
+      workspaceKey,
+      authUserId: args.authUserId,
+      creatorProfileId: creatorProfile?._id,
+      planKey: winningPlan.planKey,
+      capabilityKeys: winningPlan.capabilities,
+      status: 'active',
+      currentPeriodEnd,
+      graceUntil,
+    });
+
     const existingSubscriptions = await ctx.db
       .query('creator_billing_subscriptions')
       .withIndex('by_workspace_key', (q) => q.eq('workspaceKey', workspaceKey))
@@ -491,6 +591,20 @@ async function projectCustomerStateIntoBilling(
         updatedAt: now,
       });
     }
+
+    const plan = getPlanForPlanKey(config, existing.planKey);
+    if (plan) {
+      await syncWorkspaceCapabilities(ctx, {
+        workspaceKey: existing.workspaceKey,
+        authUserId: existing.authUserId,
+        creatorProfileId: existing.creatorProfileId ?? undefined,
+        planKey: plan.planKey,
+        capabilityKeys: plan.capabilities,
+        status: nextStatus,
+        currentPeriodEnd: existing.currentPeriodEnd ?? undefined,
+        graceUntil,
+      });
+    }
   }
 
   return { updated: true, workspaceCount: activeByWorkspace.size };
@@ -510,6 +624,24 @@ export const getOverviewForAuthUser = internalQuery({
   returns: accountOverviewReturnValidator,
   handler: async (ctx, args) => {
     return await buildAccountOverview(ctx, args.authUserId);
+  },
+});
+
+export const hasCapabilityForAuthUser = internalQuery({
+  args: {
+    authUserId: v.string(),
+    capabilityKey: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query('creator_billing_capabilities')
+      .withIndex('by_auth_user_capability', (q) =>
+        q.eq('authUserId', args.authUserId).eq('capabilityKey', args.capabilityKey)
+      )
+      .collect();
+
+    return rows.some((row) => row.status === 'active' || row.status === 'grace');
   },
 });
 

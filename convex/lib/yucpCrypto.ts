@@ -231,8 +231,44 @@ export async function signProtectedUnlockJwt(
   return signJwt(claims, privateKeyBase64, keyId);
 }
 
+export interface CouplingRuntimeClaims {
+  iss: string;
+  aud: 'yucp-coupling-runtime';
+  sub: string;
+  jti: string;
+  package_id: string;
+  machine_fingerprint: string;
+  project_id: string;
+  artifact_key: string;
+  artifact_channel: string;
+  artifact_platform: string;
+  artifact_version: string;
+  metadata_version: number;
+  delivery_name: string;
+  content_type: string;
+  envelope_cipher: string;
+  envelope_iv_b64: string;
+  envelope_key_b64: string;
+  ciphertext_sha256: string;
+  ciphertext_size: number;
+  plaintext_sha256: string;
+  plaintext_size: number;
+  code_signing_subject?: string;
+  code_signing_thumbprint?: string;
+  iat: number;
+  exp: number;
+}
+
+export async function signCouplingRuntimeJwt(
+  claims: CouplingRuntimeClaims,
+  privateKeyBase64: string,
+  keyId: string
+): Promise<string> {
+  return signJwt(claims, privateKeyBase64, keyId);
+}
+
 async function signJwt(
-  claims: LicenseClaims | ProtectedUnlockClaims,
+  claims: LicenseClaims | ProtectedUnlockClaims | CouplingRuntimeClaims,
   privateKeyBase64: string,
   keyId: string
 ): Promise<string> {
@@ -285,4 +321,17 @@ export async function verifyLicenseJwt(
   expectedIssuer: string
 ): Promise<LicenseClaims | null> {
   return verifyJwt<LicenseClaims>(jwt, publicKeyBase64, expectedIssuer, 'yucp-license-gate');
+}
+
+export async function verifyCouplingRuntimeJwt(
+  jwt: string,
+  publicKeyBase64: string,
+  expectedIssuer: string
+): Promise<CouplingRuntimeClaims | null> {
+  return verifyJwt<CouplingRuntimeClaims>(
+    jwt,
+    publicKeyBase64,
+    expectedIssuer,
+    'yucp-coupling-runtime'
+  );
 }
