@@ -136,6 +136,25 @@ describe('buildVerifyStatusReply', () => {
     expect(text).toContain('creator_verify:license:auth_verify_3');
   });
 
+  it('uses account-link verification URLs for provider connect buttons', async () => {
+    const convex = makeConvex({ subjectFound: false, providers: ['gumroad'] });
+
+    const reply = await buildVerifyStatusReply(
+      'user_verify_5',
+      'auth_verify_5',
+      'guild_verify_5',
+      convex,
+      'api-secret',
+      'https://api.example.com'
+    );
+
+    const text = JSON.stringify(reply.components[0].toJSON());
+    expect(text).toContain(
+      'https://api.example.com/api/verification/begin?authUserId=auth_verify_5&mode=gumroad'
+    );
+    expect(text).toContain('verificationMethod=account_link');
+  });
+
   it('handles DM context (null guildId) gracefully without throwing', async () => {
     // ⚠️ BUG: buildVerifyStatusReply does not validate that guildId is non-null.
     // DM interactions should receive a clear "use this in a server" error, but the function

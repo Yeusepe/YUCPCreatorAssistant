@@ -281,6 +281,12 @@
   text-overflow: ellipsis;
 }
 
+.vp-oauth-account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .vp-oauth-row-right {
   flex-shrink: 0;
 }

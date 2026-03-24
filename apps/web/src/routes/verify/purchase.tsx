@@ -78,6 +78,10 @@ interface OAuthButtonProps {
   onSuccess: () => void;
 }
 
+function getLinkedAccountLabel(account: UserAccountConnection): string | null {
+  return account.providerUsername ?? account.providerUserId ?? account.label ?? null;
+}
+
 function OAuthMethodButton({
   intentId,
   requirement,
@@ -90,12 +94,41 @@ function OAuthMethodButton({
   const queryClient = useQueryClient();
 
   const isVerified = verifiedMethodKey === requirement.methodKey;
-  const activeLink = linkedAccounts.find((a) => a.status === 'active') ?? null;
-  const expiredLink = !activeLink
-    ? (linkedAccounts.find((a) => a.status === 'expired') ?? null)
-    : null;
-  const isConnected = activeLink !== null;
-  const linkedLabel = activeLink?.providerUsername ?? activeLink?.providerUserId ?? null;
+  const activeLinks = linkedAccounts.filter((account) => account.status === 'active');
+  const expiredLinks = linkedAccounts.filter((account) => account.status === 'expired');
+  const isConnected = activeLinks.length > 0;
+  const linkedAccountsForDisplay = activeLinks
+    .map((account) => {
+      const label = getLinkedAccountLabel(account);
+      if (!label) {
+        return null;
+      }
+
+      return {
+        id: account.id,
+        label,
+      };
+    })
+    .filter((entry): entry is { id: string; label: string } => entry !== null);
+  const expiredAccountsForDisplay = expiredLinks
+    .map((account) => {
+      const label = getLinkedAccountLabel(account);
+      if (!label) {
+        return null;
+      }
+
+      return {
+        id: account.id,
+        label,
+      };
+    })
+    .filter((entry): entry is { id: string; label: string } => entry !== null);
+  const accountCountLabel =
+    linkedAccountsForDisplay.length > 1
+      ? `${linkedAccountsForDisplay.length} accounts connected`
+      : linkedAccountsForDisplay.length === 1
+        ? 'Connected account'
+        : null;
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['vp-intent', intentId] });
@@ -130,7 +163,14 @@ function OAuthMethodButton({
           ) : null}
           <div className="vp-oauth-row-text">
             <span className="vp-oauth-label">{requirement.providerLabel}</span>
-            {linkedLabel ? <span className="vp-oauth-account">@{linkedLabel}</span> : null}
+            {accountCountLabel ? (
+              <span className="vp-oauth-account">{accountCountLabel}</span>
+            ) : null}
+            {linkedAccountsForDisplay.map((account) => (
+              <span key={account.id} className="vp-oauth-account">
+                @{account.label}
+              </span>
+            ))}
           </div>
         </div>
         <span className="vp-status-badge vp-status-badge--connected">
@@ -153,7 +193,14 @@ function OAuthMethodButton({
           ) : null}
           <div className="vp-oauth-row-text">
             <span className="vp-oauth-label">{requirement.providerLabel}</span>
-            {linkedLabel ? <span className="vp-oauth-account">@{linkedLabel}</span> : null}
+            {accountCountLabel ? (
+              <span className="vp-oauth-account">{accountCountLabel}</span>
+            ) : null}
+            {linkedAccountsForDisplay.map((account) => (
+              <span key={account.id} className="vp-oauth-account">
+                @{account.label}
+              </span>
+            ))}
           </div>
         </div>
         <div className="vp-oauth-row-right">
@@ -190,9 +237,10 @@ function OAuthMethodButton({
 
   // Not connected — show branded Sign in button
   const isPending = connectMut.isPending;
-  const buttonLabel = expiredLink
-    ? `Reconnect ${requirement.providerLabel}`
-    : `Sign in with ${requirement.providerLabel}`;
+  const buttonLabel =
+    expiredLinks.length > 0
+      ? `Reconnect ${requirement.providerLabel}`
+      : `Sign in with ${requirement.providerLabel}`;
 
   return (
     <div className="vp-oauth-signin-wrap">
@@ -213,7 +261,7 @@ function OAuthMethodButton({
         {isPending ? (
           <>
             <span className="btn-loading-spinner vp-oauth-signin-spinner" aria-hidden="true" />
-            <span>{expiredLink ? 'Reconnecting...' : 'Connecting...'}</span>
+            <span>{expiredLinks.length > 0 ? 'Reconnecting...' : 'Connecting...'}</span>
           </>
         ) : (
           <>
@@ -224,6 +272,18 @@ function OAuthMethodButton({
           </>
         )}
       </button>
+      {expiredAccountsForDisplay.length > 0 ? (
+        <div className="vp-oauth-account-list" style={{ textAlign: 'center', marginTop: '0.5rem' }}>
+          <span className="vp-oauth-account">
+            Previously linked {expiredAccountsForDisplay.length > 1 ? 'accounts' : 'account'}
+          </span>
+          {expiredAccountsForDisplay.map((account) => (
+            <span key={account.id} className="vp-oauth-account">
+              @{account.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
       {connectMut.isError ? (
         <p className="vp-method-error" style={{ textAlign: 'center', marginTop: '0.4rem' }}>
           Could not connect — please try again

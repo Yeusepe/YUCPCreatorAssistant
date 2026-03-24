@@ -22,7 +22,7 @@ describe('connect user-verify contracts', () => {
   });
 
   it('stores buyer provider links after a successful account-link callback', () => {
-    expect(sessionManagerSource).toContain("session.verificationMethod === 'account_link'");
+    expect(sessionManagerSource).not.toContain("session.verificationMethod === 'account_link'");
     expect(sessionManagerSource).toContain('api.subjects.upsertBuyerProviderLink');
     expect(sessionManagerSource).toContain('verificationSessionId: session._id');
     expect(sessionManagerSource).toContain('verificationMethod: input.verificationMethod');

@@ -11,64 +11,183 @@
   box-sizing: border-box;
 }
 
-@media (min-width: 640px) {
-  .verify-success-page-wrapper {
-    padding: 2rem 1.5rem;
-  }
-}
-
-@media (min-width: 1024px) {
-  .verify-success-page-wrapper {
-    padding: 3rem 2rem;
-  }
-}
-
-h1 {
-  font-family: "Plus Jakarta Sans", sans-serif;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-}
-
-.success-checkmark {
-  width: 120px;
-  height: 120px;
-  margin: 0 auto 2rem;
+.verify-success-page {
   position: relative;
   z-index: 10;
+  width: 100%;
+  max-width: 460px;
+  opacity: 0;
+  transform: translateY(18px) scale(0.97);
+  transition:
+    opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.check-path {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
-  animation: dash 0.8s ease-out 0.3s forwards;
+.verify-success-page.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
-@keyframes dash {
-  to {
-    stroke-dashoffset: 0;
-  }
+.verify-success-card {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  border-radius: 28px;
+  padding: 2.5rem 2.1rem 2rem;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow:
+    0 24px 72px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12);
 }
 
-.circle-path {
-  stroke-dasharray: 300;
-  stroke-dashoffset: 300;
-  animation: dash 0.6s ease-out forwards;
+.verify-success-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+  padding: 0.38rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(54, 191, 177, 0.14);
+  border: 1px solid rgba(54, 191, 177, 0.24);
+  color: rgba(183, 255, 246, 0.92);
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.action-btn {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  color: #ffffff;
+.verify-success-icon-ring {
+  width: 78px;
+  height: 78px;
+  margin: 0 auto 1.4rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.18), transparent 58%),
+    rgba(54, 191, 177, 0.13);
+  border: 1px solid rgba(54, 191, 177, 0.24);
+  box-shadow:
+    0 12px 30px rgba(54, 191, 177, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
-.action-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
-  border-color: rgba(255, 255, 255, 0.3);
+.verify-success-icon-ring svg {
+  width: 34px;
+  height: 34px;
+  fill: none;
+  stroke: #6ee7d8;
+  stroke-width: 2.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.verify-success-title {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: clamp(1.7rem, 5vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: #fff;
+  margin-bottom: 0.75rem;
+}
+
+.verify-success-subtitle {
+  margin: 0 auto;
+  max-width: 28rem;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.96rem;
+  line-height: 1.7;
+}
+
+.verify-success-note {
+  margin-top: 1.4rem;
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  text-align: left;
+}
+
+.verify-success-note-label {
+  margin-bottom: 0.35rem;
+  color: rgba(183, 255, 246, 0.9);
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.verify-success-note-copy {
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.verify-success-actions {
+  margin-top: 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.verify-success-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.9rem 1.3rem;
+  text-decoration: none;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.verify-success-btn:active {
+  transform: scale(0.985);
+}
+
+.verify-success-btn--primary {
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(76, 230, 212, 0.94), rgba(54, 191, 177, 0.94));
+  color: #072623;
+  box-shadow:
+    0 12px 28px rgba(54, 191, 177, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.verify-success-btn--primary:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 16px 32px rgba(54, 191, 177, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.verify-success-btn--ghost {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.verify-success-btn--ghost:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
 .fade-up {
@@ -84,11 +203,32 @@ h1 {
   }
 }
 
-.verify-success-page {
-  opacity: 0;
-  transition: opacity 0.3s ease 0.05s;
+.verify-success-status {
+  margin-top: 1.25rem;
+  color: rgba(255, 255, 255, 0.42);
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
-.verify-success-page.is-visible {
-  opacity: 1;
+@media (min-width: 640px) {
+  .verify-success-page-wrapper {
+    padding: 2rem 1.5rem;
+  }
+
+  .verify-success-card {
+    padding: 2.7rem 2.35rem 2.2rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .verify-success-actions {
+    flex-direction: row;
+  }
+
+  .verify-success-btn {
+    flex: 1 1 0;
+  }
 }
