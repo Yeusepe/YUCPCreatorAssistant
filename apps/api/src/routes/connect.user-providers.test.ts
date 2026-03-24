@@ -32,13 +32,26 @@ describe('GET /api/connect/user/providers', () => {
     const body = (await response.json()) as {
       providers: Array<{
         id: string;
+        icon: string | null;
+        color: string | null;
       }>;
     };
     const providerIds = body.providers.map((provider) => provider.id);
 
+    // OAuth marketplace providers
     expect(providerIds).toContain('gumroad');
+
+    // Verification-only OAuth providers (no marketplace plugin, but OAuth buyer identity)
+    expect(providerIds).toContain('discord');
+
+    // Non-OAuth or non-verification providers must not appear
     expect(providerIds).not.toContain('jinxxy');
     expect(providerIds).not.toContain('vrchat');
+
+    // Discord should carry icon and color so the purchase page can display it
+    const discord = body.providers.find((p) => p.id === 'discord');
+    expect(discord?.icon).toBe('Discord.png');
+    expect(discord?.color).toBe('#5865F2');
   });
 
   it('rejects direct buyer-link connect attempts for Jinxxy', async () => {
