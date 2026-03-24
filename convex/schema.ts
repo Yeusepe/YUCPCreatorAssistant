@@ -8,7 +8,8 @@
  *   role_rules, unity_installations, runtime_assertions, outbox_jobs, audit_events
  *
  * Platform-level tables (no authUserId):
- * - subjects, external_accounts, provider_customers, catalog_product_links, webhook_events
+ * - subjects, external_accounts, buyer_provider_links, provider_customers,
+ *   catalog_product_links, webhook_events
  *
  * Mixed-ownership:
  * - product_catalog (has authUserId for owner, but globally queryable for catalog resolution)
@@ -38,6 +39,13 @@ const ExternalAccountStatus = v.union(
   v.literal('active'),
   v.literal('disconnected'),
   v.literal('revoked')
+);
+
+/** Buyer provider link status values */
+const BuyerProviderLinkStatus = v.union(
+  v.literal('active'),
+  v.literal('revoked'),
+  v.literal('expired')
 );
 
 /** Provider customer status values */
@@ -111,7 +119,8 @@ const VerificationIntentStatus = v.union(
 /** Verification intent requirement kind */
 const VerificationIntentRequirementKind = v.union(
   v.literal('existing_entitlement'),
-  v.literal('manual_license')
+  v.literal('manual_license'),
+  v.literal('buyer_provider_link')
 );
 
 /** Entitlement status values */
@@ -1251,6 +1260,35 @@ const external_accounts = defineTable({
   .index('by_email_hash', ['emailHash']);
 
 /**
+ * Buyer Provider Links - Buyer-owned provider identity proofs
+ * Tracks provider accounts a buyer has linked in their own subject space.
+ */
+const buyer_provider_links = defineTable({
+  // Canonical buyer identity
+  subjectId: v.id('subjects'),
+  // Normalized provider for efficient generic lookups
+  provider: Provider,
+  // Linked provider identity
+  externalAccountId: v.id('external_accounts'),
+  // Generic verification method that created or refreshed this link
+  verificationMethod: v.optional(VerificationMode),
+  // Optional source session for hosted/account-link flows
+  verificationSessionId: v.optional(v.id('verification_sessions')),
+  // Lifecycle
+  status: BuyerProviderLinkStatus,
+  linkedAt: v.number(),
+  lastValidatedAt: v.optional(v.number()),
+  expiresAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_subject', ['subjectId'])
+  .index('by_subject_provider', ['subjectId', 'provider'])
+  .index('by_subject_external', ['subjectId', 'externalAccountId'])
+  .index('by_external_account', ['externalAccountId'])
+  .index('by_subject_status', ['subjectId', 'status']);
+
+/**
  * Provider Customers - Platform-level purchaser memory
  * Remembers verified purchaser identity for faster future verifications.
  * NO authUserId - this is platform-level data.
@@ -1878,6 +1916,7 @@ export default defineSchema({
   // Platform-level tables
   subjects,
   external_accounts,
+  buyer_provider_links,
   provider_customers,
   catalog_product_links,
   webhook_events,

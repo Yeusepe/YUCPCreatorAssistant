@@ -18,6 +18,7 @@ const config = {
   convexApiSecret: 'test-secret',
   convexSiteUrl: 'https://test.convex.site',
   encryptionSecret: 'test-enc',
+  frontendBaseUrl: 'https://creators.test',
 };
 
 function makeRequest(method = 'GET', headers: Record<string, string> = {}): Request {

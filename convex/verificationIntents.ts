@@ -1,10 +1,12 @@
 import * as ed from '@noble/ed25519';
 import { v } from 'convex/values';
 import { api, internal } from './_generated/api';
+import type { Doc, Id } from './_generated/dataModel';
+import type { ActionCtx } from './_generated/server';
 import { action, internalMutation, mutation, query } from './_generated/server';
-import { signLicenseJwt } from './lib/yucpCrypto';
 import { requireApiSecret } from './lib/apiAuth';
 import { ProviderV } from './lib/providers';
+import { signLicenseJwt } from './lib/yucpCrypto';
 
 ed.etc.sha512Async = async (...messages: Uint8Array[]) => {
   const data = ed.etc.concatBytes(...messages);
@@ -21,9 +23,32 @@ const GRANT_EXPIRY_MS = 5 * 60 * 1000;
 const GRANT_AUDIENCE = 'yucp-verification-intent';
 const LICENSE_AUDIENCE = 'yucp-license-gate';
 
+type VerificationIntentStatus =
+  | 'pending'
+  | 'verified'
+  | 'redeemed'
+  | 'failed'
+  | 'expired'
+  | 'cancelled';
+type VerificationIntentDoc = Doc<'verification_intents'>;
+type VerificationIntentRequirement = VerificationIntentDoc['requirements'][number];
+type VerificationIntentWithGrant = VerificationIntentDoc & { grantToken: string | null };
+type VerificationIntentCheckResult = {
+  success: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+};
+type VerificationIntentRedemptionResult = {
+  success: boolean;
+  token?: string;
+  expiresAt?: number;
+  error?: string;
+};
+
 const VerificationIntentRequirementKindV = v.union(
   v.literal('existing_entitlement'),
-  v.literal('manual_license')
+  v.literal('manual_license'),
+  v.literal('buyer_provider_link')
 );
 
 const VerificationIntentRequirementV = v.object({
@@ -69,7 +94,10 @@ function base64urlEncode(data: Uint8Array | string): string {
 }
 
 function base64urlDecodeToBytes(input: string): Uint8Array {
-  const padded = input.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(input.length / 4) * 4, '=');
+  const padded = input
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .padEnd(Math.ceil(input.length / 4) * 4, '=');
   return base64ToBytes(padded);
 }
 
@@ -105,8 +133,7 @@ function validateReturnUrl(value: string) {
   }
 
   const isLoopback =
-    parsed.protocol === 'http:' &&
-    ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname);
+    parsed.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname);
   if (!isLoopback) {
     throw new Error('returnUrl must use https or an HTTP loopback address');
   }
@@ -116,7 +143,7 @@ function validateRequirements(
   requirements: Array<{
     methodKey: string;
     providerKey: string;
-    kind: 'existing_entitlement' | 'manual_license';
+    kind: 'existing_entitlement' | 'manual_license' | 'buyer_provider_link';
     creatorAuthUserId?: string;
     productId?: string;
     providerProductRef?: string;
@@ -129,7 +156,9 @@ function validateRequirements(
   const seen = new Set<string>();
   for (const requirement of requirements) {
     if (!requirement.methodKey || !requirement.providerKey || !requirement.kind) {
-      throw new Error('Each verification requirement must include methodKey, providerKey, and kind');
+      throw new Error(
+        'Each verification requirement must include methodKey, providerKey, and kind'
+      );
     }
     if (seen.has(requirement.methodKey)) {
       throw new Error(`Duplicate verification methodKey: ${requirement.methodKey}`);
@@ -150,6 +179,21 @@ function validateRequirements(
       );
     }
   }
+}
+
+async function resolveIntentSubjectId(
+  ctx: ActionCtx,
+  intent: VerificationIntentDoc,
+  authUserId: string
+): Promise<Id<'subjects'> | null> {
+  if (intent.subjectId != null) {
+    return intent.subjectId;
+  }
+
+  const subject = await ctx.runQuery(internal.yucpLicenses.getSubjectByAuthUser, {
+    authUserId,
+  });
+  return subject?._id ?? null;
 }
 
 interface VerificationGrantClaims {
@@ -239,7 +283,14 @@ export const createVerificationIntent = mutation({
     status: VerificationIntentStatusV,
     expiresAt: v.number(),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    intentId: Id<'verification_intents'>;
+    status: VerificationIntentStatus;
+    expiresAt: number;
+  }> => {
     requireApiSecret(args.apiSecret);
     validateReturnUrl(args.returnUrl);
     validateRequirements(args.requirements);
@@ -269,7 +320,7 @@ export const createVerificationIntent = mutation({
       ) {
         return {
           intentId: existing._id,
-          status: existing.status,
+          status: existing.status as VerificationIntentStatus,
           expiresAt: existing.expiresAt,
         };
       }
@@ -417,22 +468,22 @@ export const getVerificationIntent = action({
     authUserId: v.string(),
     intentId: v.id('verification_intents'),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<VerificationIntentWithGrant | null> => {
     requireApiSecret(args.apiSecret);
-    const intent = await ctx.runQuery(api.verificationIntents.getIntentRecord, {
-      apiSecret: args.apiSecret,
-      authUserId: args.authUserId,
-      intentId: args.intentId,
-    });
+    const intent: VerificationIntentDoc | null = await ctx.runQuery(
+      api.verificationIntents.getIntentRecord,
+      {
+        apiSecret: args.apiSecret,
+        authUserId: args.authUserId,
+        intentId: args.intentId,
+      }
+    );
     if (!intent) {
       return null;
     }
 
     const now = Date.now();
-    if (
-      (intent.status === 'pending' || intent.status === 'verified') &&
-      intent.expiresAt <= now
-    ) {
+    if ((intent.status === 'pending' || intent.status === 'verified') && intent.expiresAt <= now) {
       await ctx.runMutation(internal.verificationIntents.expireVerificationIntent, {
         intentId: args.intentId,
       });
@@ -493,13 +544,16 @@ export const verifyIntentWithExistingEntitlement = action({
     errorCode: v.optional(v.string()),
     errorMessage: v.optional(v.string()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<VerificationIntentCheckResult> => {
     requireApiSecret(args.apiSecret);
-    const intent = await ctx.runQuery(api.verificationIntents.getIntentRecord, {
-      apiSecret: args.apiSecret,
-      authUserId: args.authUserId,
-      intentId: args.intentId,
-    });
+    const intent: VerificationIntentDoc | null = await ctx.runQuery(
+      api.verificationIntents.getIntentRecord,
+      {
+        apiSecret: args.apiSecret,
+        authUserId: args.authUserId,
+        intentId: args.intentId,
+      }
+    );
     if (!intent) {
       return {
         success: false,
@@ -522,7 +576,8 @@ export const verifyIntentWithExistingEntitlement = action({
       };
     }
     const requirement = intent.requirements.find(
-      (entry) => entry.methodKey === args.methodKey && entry.kind === 'existing_entitlement'
+      (entry: VerificationIntentRequirement) =>
+        entry.methodKey === args.methodKey && entry.kind === 'existing_entitlement'
     );
     if (!requirement?.creatorAuthUserId || !requirement.productId) {
       return {
@@ -531,13 +586,8 @@ export const verifyIntentWithExistingEntitlement = action({
         errorMessage: 'Verification method does not support entitlement lookup',
       };
     }
-    const subject =
-      intent.subjectId != null
-        ? { _id: intent.subjectId }
-        : await ctx.runQuery(internal.yucpLicenses.getSubjectByAuthUser, {
-            authUserId: args.authUserId,
-          });
-    if (!subject?._id) {
+    const subjectId = await resolveIntentSubjectId(ctx, intent, args.authUserId);
+    if (!subjectId) {
       await ctx.runMutation(internal.verificationIntents.markIntentFailed, {
         intentId: args.intentId,
         errorCode: 'subject_not_found',
@@ -551,7 +601,7 @@ export const verifyIntentWithExistingEntitlement = action({
     }
     const hasEntitlement = await ctx.runQuery(internal.yucpLicenses.checkSubjectEntitlement, {
       authUserId: requirement.creatorAuthUserId,
-      subjectId: subject._id,
+      subjectId,
       productId: requirement.productId,
     });
     if (!hasEntitlement) {
@@ -574,26 +624,28 @@ export const verifyIntentWithExistingEntitlement = action({
   },
 });
 
-export const verifyIntentWithManualLicense = action({
+export const verifyIntentWithBuyerProviderLink = action({
   args: {
     apiSecret: v.string(),
     authUserId: v.string(),
     intentId: v.id('verification_intents'),
     methodKey: v.string(),
-    licenseKey: v.string(),
   },
   returns: v.object({
     success: v.boolean(),
     errorCode: v.optional(v.string()),
     errorMessage: v.optional(v.string()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<VerificationIntentCheckResult> => {
     requireApiSecret(args.apiSecret);
-    const intent = await ctx.runQuery(api.verificationIntents.getIntentRecord, {
-      apiSecret: args.apiSecret,
-      authUserId: args.authUserId,
-      intentId: args.intentId,
-    });
+    const intent: VerificationIntentDoc | null = await ctx.runQuery(
+      api.verificationIntents.getIntentRecord,
+      {
+        apiSecret: args.apiSecret,
+        authUserId: args.authUserId,
+        intentId: args.intentId,
+      }
+    );
     if (!intent) {
       return {
         success: false,
@@ -616,7 +668,117 @@ export const verifyIntentWithManualLicense = action({
       };
     }
     const requirement = intent.requirements.find(
-      (entry) => entry.methodKey === args.methodKey && entry.kind === 'manual_license'
+      (entry: VerificationIntentRequirement) =>
+        entry.methodKey === args.methodKey && entry.kind === 'buyer_provider_link'
+    );
+    if (!requirement) {
+      return {
+        success: false,
+        errorCode: 'invalid_method',
+        errorMessage: 'Verification method does not support linked account proof',
+      };
+    }
+
+    const subjectId = await resolveIntentSubjectId(ctx, intent, args.authUserId);
+    if (!subjectId) {
+      await ctx.runMutation(internal.verificationIntents.markIntentFailed, {
+        intentId: args.intentId,
+        errorCode: 'subject_not_found',
+        errorMessage: 'No linked buyer subject was found for this YUCP account.',
+      });
+      return {
+        success: false,
+        errorCode: 'subject_not_found',
+        errorMessage: 'No linked buyer subject was found for this YUCP account.',
+      };
+    }
+
+    const buyerProviderLink = await ctx.runQuery(internal.subjects.getBuyerProviderLinkForSubject, {
+      subjectId,
+      provider: requirement.providerKey,
+    });
+
+    if (!buyerProviderLink) {
+      await ctx.runMutation(internal.verificationIntents.markIntentFailed, {
+        intentId: args.intentId,
+        errorCode: 'provider_link_missing',
+        errorMessage: 'No linked provider account was found for this verification method.',
+      });
+      return {
+        success: false,
+        errorCode: 'provider_link_missing',
+        errorMessage: 'No linked provider account was found for this verification method.',
+      };
+    }
+
+    if (buyerProviderLink.status !== 'active') {
+      await ctx.runMutation(internal.verificationIntents.markIntentFailed, {
+        intentId: args.intentId,
+        errorCode: 'provider_link_expired',
+        errorMessage: 'The linked provider account must be refreshed before it can be used.',
+      });
+      return {
+        success: false,
+        errorCode: 'provider_link_expired',
+        errorMessage: 'The linked provider account must be refreshed before it can be used.',
+      };
+    }
+
+    await ctx.runMutation(internal.verificationIntents.markIntentVerified, {
+      intentId: args.intentId,
+      methodKey: args.methodKey,
+    });
+    return { success: true };
+  },
+});
+
+export const verifyIntentWithManualLicense = action({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    intentId: v.id('verification_intents'),
+    methodKey: v.string(),
+    licenseKey: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    errorCode: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+  }),
+  handler: async (ctx, args): Promise<VerificationIntentCheckResult> => {
+    requireApiSecret(args.apiSecret);
+    const intent: VerificationIntentDoc | null = await ctx.runQuery(
+      api.verificationIntents.getIntentRecord,
+      {
+        apiSecret: args.apiSecret,
+        authUserId: args.authUserId,
+        intentId: args.intentId,
+      }
+    );
+    if (!intent) {
+      return {
+        success: false,
+        errorCode: 'not_found',
+        errorMessage: 'Verification intent not found',
+      };
+    }
+    if (intent.status !== 'pending') {
+      return {
+        success: false,
+        errorCode: 'invalid_state',
+        errorMessage: `Verification intent is ${intent.status}`,
+      };
+    }
+    if (intent.expiresAt <= Date.now()) {
+      return {
+        success: false,
+        errorCode: 'expired',
+        errorMessage: 'Verification intent has expired',
+      };
+    }
+    const requirement = intent.requirements.find(
+      (entry: VerificationIntentRequirement) =>
+        entry.methodKey === args.methodKey && entry.kind === 'manual_license'
     );
     if (!requirement?.providerProductRef) {
       return {
@@ -626,12 +788,15 @@ export const verifyIntentWithManualLicense = action({
       };
     }
 
-    const proof = await ctx.runAction(internal.yucpLicenses.verifyLicenseProof, {
-      packageId: intent.packageId,
-      licenseKey: args.licenseKey,
-      provider: requirement.providerKey,
-      productPermalink: requirement.providerProductRef,
-    });
+    const proof: { success: boolean; error?: string } = await ctx.runAction(
+      internal.yucpLicenses.verifyLicenseProof,
+      {
+        packageId: intent.packageId,
+        licenseKey: args.licenseKey,
+        provider: requirement.providerKey,
+        productPermalink: requirement.providerProductRef,
+      }
+    );
 
     if (!proof.success) {
       await ctx.runMutation(internal.verificationIntents.markIntentFailed, {
@@ -669,13 +834,16 @@ export const redeemVerificationIntent = action({
     expiresAt: v.optional(v.number()),
     error: v.optional(v.string()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<VerificationIntentRedemptionResult> => {
     requireApiSecret(args.apiSecret);
-    const intent = await ctx.runQuery(api.verificationIntents.getIntentRecord, {
-      apiSecret: args.apiSecret,
-      authUserId: args.authUserId,
-      intentId: args.intentId,
-    });
+    const intent: VerificationIntentDoc | null = await ctx.runQuery(
+      api.verificationIntents.getIntentRecord,
+      {
+        apiSecret: args.apiSecret,
+        authUserId: args.authUserId,
+        intentId: args.intentId,
+      }
+    );
     if (!intent) {
       return { success: false, error: 'Verification intent not found' };
     }
@@ -686,7 +854,10 @@ export const redeemVerificationIntent = action({
       return { success: false, error: 'Verification intent has expired' };
     }
     if (intent.machineFingerprint !== args.machineFingerprint) {
-      return { success: false, error: 'Machine fingerprint does not match this verification intent' };
+      return {
+        success: false,
+        error: 'Machine fingerprint does not match this verification intent',
+      };
     }
     if (intent.verificationGrantUsedAt) {
       return { success: false, error: 'Verification grant has already been redeemed' };
@@ -715,8 +886,9 @@ export const redeemVerificationIntent = action({
     }
 
     const method =
-      intent.requirements.find((entry) => entry.methodKey === intent.verifiedMethodKey) ??
-      intent.requirements[0];
+      intent.requirements.find(
+        (entry: VerificationIntentRequirement) => entry.methodKey === intent.verifiedMethodKey
+      ) ?? intent.requirements[0];
     if (!method) {
       return { success: false, error: 'Verification intent has no resolved verification method' };
     }

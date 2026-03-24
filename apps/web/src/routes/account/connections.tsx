@@ -103,7 +103,12 @@ function ProviderCard({
               return (
                 <div key={connection.id} className="acct-provider-connection-row">
                   <div className="acct-provider-connection-copy">
-                    <p className="acct-provider-meta">{connection.label || provider.description}</p>
+                    <p className="acct-provider-meta">
+                      {connection.providerUsername ||
+                        connection.providerUserId ||
+                        connection.label ||
+                        provider.description}
+                    </p>
                     <div className="account-pill-row account-pill-row--compact">
                       <span className="account-badge account-badge--provider">
                         {connection.connectionType}
@@ -111,9 +116,9 @@ function ProviderCard({
                       <span className="account-badge account-badge--provider">
                         {connection.status}
                       </span>
-                      {connection.webhookConfigured ? (
-                        <span className="account-badge account-badge--connected">
-                          Webhook ready
+                      {connection.verificationMethod ? (
+                        <span className="account-badge account-badge--provider">
+                          {connection.verificationMethod}
                         </span>
                       ) : null}
                     </div>
@@ -209,7 +214,10 @@ function AccountConnections() {
     connectionsByProvider.set(connection.provider, providerConnections);
   }
   const connectedCount = connections.length;
-  const webhookReadyCount = connections.filter((connection) => connection.webhookConfigured).length;
+  const activeLinkCount = connections.filter((connection) => connection.status === 'active').length;
+  const expiredLinkCount = connections.filter(
+    (connection) => connection.status === 'expired'
+  ).length;
 
   return (
     <AccountPage>
@@ -284,9 +292,15 @@ function AccountConnections() {
             </span>
           </div>
           <div className="account-kv-row">
-            <span className="account-kv-label">Webhook ready</span>
+            <span className="account-kv-label">Active links</span>
             <span className="account-kv-value">
-              {accountsQuery.isLoading ? '...' : webhookReadyCount}
+              {accountsQuery.isLoading ? '...' : activeLinkCount}
+            </span>
+          </div>
+          <div className="account-kv-row">
+            <span className="account-kv-label">Expired links</span>
+            <span className="account-kv-value">
+              {accountsQuery.isLoading ? '...' : expiredLinkCount}
             </span>
           </div>
         </div>
@@ -297,8 +311,8 @@ function AccountConnections() {
             does not delete your licenses or revoke unrelated app authorizations.
           </p>
           <p className="account-feature-copy">
-            If a provider returns an auth error, reconnect it here so the system can resume using
-            fresh credentials.
+            If a linked account expires or is revoked upstream, reconnect it here before retrying a
+            hosted verification flow.
           </p>
         </div>
       </AccountSectionCard>

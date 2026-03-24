@@ -39,6 +39,7 @@ import { Route as DashboardCollaborationRouteImport } from './routes/dashboard/c
 import { Route as DashboardCertificatesRouteImport } from './routes/dashboard/certificates'
 import { Route as DashboardAuditLogsRouteImport } from './routes/dashboard/audit-logs'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
+import { Route as AccountVerifyRouteImport } from './routes/account/verify'
 import { Route as AccountPrivacyRouteImport } from './routes/account/privacy'
 import { Route as AccountLicensesRouteImport } from './routes/account/licenses'
 import { Route as AccountConnectionsRouteImport } from './routes/account/connections'
@@ -196,6 +197,11 @@ const ApiSplatRoute = ApiSplatRouteImport.update({
   path: '/api/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountVerifyRoute = AccountVerifyRouteImport.update({
+  id: '/verify',
+  path: '/verify',
+  getParentRoute: () => AccountRoute,
+} as any)
 const AccountPrivacyRoute = AccountPrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
@@ -241,6 +247,7 @@ export interface FileRoutesByFullPath {
   '/account/connections': typeof AccountConnectionsRoute
   '/account/licenses': typeof AccountLicensesRoute
   '/account/privacy': typeof AccountPrivacyRoute
+  '/account/verify': typeof AccountVerifyRoute
   '/api/$': typeof ApiSplatRoute
   '/dashboard/audit-logs': typeof DashboardAuditLogsRoute
   '/dashboard/certificates': typeof DashboardCertificatesRoute
@@ -277,6 +284,7 @@ export interface FileRoutesByTo {
   '/account/connections': typeof AccountConnectionsRoute
   '/account/licenses': typeof AccountLicensesRoute
   '/account/privacy': typeof AccountPrivacyRoute
+  '/account/verify': typeof AccountVerifyRoute
   '/api/$': typeof ApiSplatRoute
   '/dashboard/audit-logs': typeof DashboardAuditLogsRoute
   '/dashboard/certificates': typeof DashboardCertificatesRoute
@@ -316,6 +324,7 @@ export interface FileRoutesById {
   '/account/connections': typeof AccountConnectionsRoute
   '/account/licenses': typeof AccountLicensesRoute
   '/account/privacy': typeof AccountPrivacyRoute
+  '/account/verify': typeof AccountVerifyRoute
   '/api/$': typeof ApiSplatRoute
   '/dashboard/audit-logs': typeof DashboardAuditLogsRoute
   '/dashboard/certificates': typeof DashboardCertificatesRoute
@@ -356,6 +365,7 @@ export interface FileRouteTypes {
     | '/account/connections'
     | '/account/licenses'
     | '/account/privacy'
+    | '/account/verify'
     | '/api/$'
     | '/dashboard/audit-logs'
     | '/dashboard/certificates'
@@ -392,6 +402,7 @@ export interface FileRouteTypes {
     | '/account/connections'
     | '/account/licenses'
     | '/account/privacy'
+    | '/account/verify'
     | '/api/$'
     | '/dashboard/audit-logs'
     | '/dashboard/certificates'
@@ -430,6 +441,7 @@ export interface FileRouteTypes {
     | '/account/connections'
     | '/account/licenses'
     | '/account/privacy'
+    | '/account/verify'
     | '/api/$'
     | '/dashboard/audit-logs'
     | '/dashboard/certificates'
@@ -694,6 +706,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account/verify': {
+      id: '/account/verify'
+      path: '/verify'
+      fullPath: '/account/verify'
+      preLoaderRoute: typeof AccountVerifyRouteImport
+      parentRoute: typeof AccountRoute
+    }
     '/account/privacy': {
       id: '/account/privacy'
       path: '/privacy'
@@ -745,6 +764,7 @@ interface AccountRouteChildren {
   AccountConnectionsRoute: typeof AccountConnectionsRoute
   AccountLicensesRoute: typeof AccountLicensesRoute
   AccountPrivacyRoute: typeof AccountPrivacyRoute
+  AccountVerifyRoute: typeof AccountVerifyRoute
   AccountIndexRoute: typeof AccountIndexRoute
 }
 
@@ -754,6 +774,7 @@ const AccountRouteChildren: AccountRouteChildren = {
   AccountConnectionsRoute: AccountConnectionsRoute,
   AccountLicensesRoute: AccountLicensesRoute,
   AccountPrivacyRoute: AccountPrivacyRoute,
+  AccountVerifyRoute: AccountVerifyRoute,
   AccountIndexRoute: AccountIndexRoute,
 }
 

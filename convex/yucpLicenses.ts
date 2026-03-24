@@ -374,6 +374,21 @@ export const getSubjectByDiscordUser = internalQuery({
   },
 });
 
+/** Find a subject by Better Auth user ID. */
+export const getSubjectByAuthUser = internalQuery({
+  args: { authUserId: v.string() },
+  returns: v.union(v.null(), v.object({ _id: v.id('subjects') })),
+  handler: async (ctx, args) => {
+    const subject = await ctx.db
+      .query('subjects')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
+      .filter((q) => q.eq(q.field('status'), 'active'))
+      .first();
+    if (!subject) return null;
+    return { _id: subject._id };
+  },
+});
+
 /**
  * Check if a subject has an active entitlement for a specific product within a tenant.
  * Used for Discord role-based license verification — the entitlement was granted by the bot.
@@ -396,6 +411,84 @@ export const checkSubjectEntitlement = internalQuery({
       )
       .first();
     return entitlement != null;
+  },
+});
+
+export const verifyLicenseProof = internalAction({
+  args: {
+    packageId: v.string(),
+    licenseKey: v.string(),
+    provider: v.string(),
+    productPermalink: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    if (!args.packageId || !args.licenseKey || !args.provider || !args.productPermalink) {
+      return { success: false, error: 'Missing required fields' };
+    }
+
+    let verifyResult: { valid: boolean; reason?: string } | null = null;
+
+    const product = await ctx.runQuery(internal.yucpLicenses.getProductByProviderRef, {
+      provider: args.provider,
+      providerProductRef: args.productPermalink,
+    });
+
+    if (product) {
+      const packageReg = await ctx.runQuery(internal.packageRegistry.getRegistration, {
+        packageId: args.packageId,
+      });
+      if (!packageReg || packageReg.yucpUserId !== product.authUserId) {
+        return {
+          success: false,
+          error: 'Package not found or not registered to the product owner',
+        };
+      }
+
+      const conn = await ctx.runQuery(internal.yucpLicenses.getProviderConnection, {
+        authUserId: product.authUserId,
+        provider: args.provider,
+      });
+
+      if (args.provider === 'gumroad' && conn?.credentials['oauth_access_token']) {
+        const token = await decryptCredential(conn.credentials['oauth_access_token']);
+        if (token) {
+          verifyResult = await verifyGumroadLicense(args.licenseKey, args.productPermalink, token);
+        }
+      } else if (args.provider === 'jinxxy') {
+        if (conn?.credentials['api_key']) {
+          const key = await decryptCredential(conn.credentials['api_key']);
+          if (key) {
+            verifyResult = await verifyJinxxyLicense(args.licenseKey, args.productPermalink, key);
+          }
+        }
+
+        if (!verifyResult?.valid) {
+          const collabConns = await ctx.runQuery(internal.yucpLicenses.getCollaboratorConnections, {
+            ownerAuthUserId: product.authUserId,
+          });
+          for (const collab of collabConns) {
+            if (!collab.credentialEncrypted) continue;
+            const key = await decryptCredential(collab.credentialEncrypted);
+            if (!key) continue;
+            const result = await verifyJinxxyLicense(args.licenseKey, args.productPermalink, key);
+            if (result.valid) {
+              verifyResult = result;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!verifyResult?.valid) {
+      return { success: false, error: verifyResult?.reason ?? 'License verification failed' };
+    }
+
+    return { success: true };
   },
 });
 

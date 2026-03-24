@@ -34,6 +34,7 @@ const config = {
   convexApiSecret: 'test-secret',
   convexSiteUrl: 'https://test.convex.site',
   encryptionSecret: 'test-enc-secret',
+  frontendBaseUrl: 'https://creators.test',
 };
 
 function makeRequest(headers: Record<string, string> = {}): Request {

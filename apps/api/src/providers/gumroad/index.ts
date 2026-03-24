@@ -16,6 +16,7 @@ import type {
   ProviderPurposes,
 } from '../types';
 import { backfill } from './backfill';
+import { buyerVerification } from './buyerVerification';
 import { connect } from './connect';
 import { verification } from './verification';
 import { webhook } from './webhook';
@@ -126,6 +127,7 @@ const gumroadProvider: ProviderPlugin = {
   webhook,
   connect,
   verification,
+  buyerVerification,
 
   async onDisconnect(ctx: DisconnectContext) {
     const encryptedToken = ctx.credentials.oauth_access_token;

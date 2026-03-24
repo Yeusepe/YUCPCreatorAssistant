@@ -8,12 +8,12 @@
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalQuery, mutation, query } from './_generated/server';
+import { requireApiSecret } from './lib/apiAuth';
 import {
   type ExternalAccountIdentityCandidate,
   selectCanonicalExternalAccountCandidates,
 } from './lib/externalAccountIdentity';
 import { ProviderV } from './lib/providers';
-import { requireApiSecret } from './lib/apiAuth';
 
 export const PublicSubjectSelector = v.union(
   v.object({
@@ -32,6 +32,47 @@ export const PublicSubjectSelector = v.union(
     }),
   })
 );
+
+const BuyerProviderLinkSummaryV = v.object({
+  id: v.id('buyer_provider_links'),
+  provider: ProviderV,
+  externalAccountId: v.id('external_accounts'),
+  providerUserId: v.string(),
+  providerUsername: v.optional(v.string()),
+  label: v.string(),
+  verificationMethod: v.optional(v.string()),
+  status: v.union(v.literal('active'), v.literal('expired')),
+  linkedAt: v.number(),
+  lastValidatedAt: v.optional(v.number()),
+  expiresAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+function resolveBuyerProviderLinkStatus(
+  link: Doc<'buyer_provider_links'>,
+  externalAccount: Pick<Doc<'external_accounts'>, 'status'> | null
+): 'active' | 'expired' | 'revoked' {
+  if (link.status === 'revoked') {
+    return 'revoked';
+  }
+  if (!externalAccount || externalAccount.status !== 'active') {
+    return 'expired';
+  }
+  if (link.status === 'expired') {
+    return 'expired';
+  }
+  if (link.expiresAt != null && link.expiresAt <= Date.now()) {
+    return 'expired';
+  }
+  return 'active';
+}
+
+function formatBuyerProviderLinkLabel(
+  account: Pick<Doc<'external_accounts'>, 'providerUserId' | 'providerUsername'>
+) {
+  return account.providerUsername?.trim() || account.providerUserId;
+}
 
 // ============================================================================
 // QUERIES
@@ -546,5 +587,226 @@ export const getSubjectIdByDiscordId = internalQuery({
     }
 
     return { found: true as const, subjectId: subject._id };
+  },
+});
+
+export const listBuyerProviderLinksForAuthUser = query({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+  },
+  returns: v.array(BuyerProviderLinkSummaryV),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+
+    const subject = await ctx.db
+      .query('subjects')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
+      .filter((q) => q.eq(q.field('status'), 'active'))
+      .first();
+
+    if (!subject) {
+      return [];
+    }
+
+    const links = await ctx.db
+      .query('buyer_provider_links')
+      .withIndex('by_subject', (q) => q.eq('subjectId', subject._id))
+      .collect();
+
+    const summaries: Array<{
+      id: Id<'buyer_provider_links'>;
+      provider: string;
+      externalAccountId: Id<'external_accounts'>;
+      providerUserId: string;
+      providerUsername?: string;
+      label: string;
+      verificationMethod?: string;
+      status: 'active' | 'expired';
+      linkedAt: number;
+      lastValidatedAt?: number;
+      expiresAt?: number;
+      createdAt: number;
+      updatedAt: number;
+    }> = [];
+
+    for (const link of links) {
+      const externalAccount = await ctx.db.get(link.externalAccountId);
+      const status = resolveBuyerProviderLinkStatus(link, externalAccount);
+      if (!externalAccount || status === 'revoked') {
+        continue;
+      }
+
+      summaries.push({
+        id: link._id,
+        provider: link.provider,
+        externalAccountId: link.externalAccountId,
+        providerUserId: externalAccount.providerUserId,
+        providerUsername: externalAccount.providerUsername,
+        label: formatBuyerProviderLinkLabel(externalAccount),
+        verificationMethod: link.verificationMethod,
+        status,
+        linkedAt: link.linkedAt,
+        lastValidatedAt: link.lastValidatedAt,
+        expiresAt: link.expiresAt,
+        createdAt: link.createdAt,
+        updatedAt: link.updatedAt,
+      });
+    }
+
+    return summaries.sort((a, b) => b.linkedAt - a.linkedAt);
+  },
+});
+
+export const getBuyerProviderLinkForSubject = internalQuery({
+  args: {
+    subjectId: v.id('subjects'),
+    provider: ProviderV,
+  },
+  returns: v.union(BuyerProviderLinkSummaryV, v.null()),
+  handler: async (ctx, args) => {
+    const links = await ctx.db
+      .query('buyer_provider_links')
+      .withIndex('by_subject_provider', (q) =>
+        q.eq('subjectId', args.subjectId).eq('provider', args.provider)
+      )
+      .collect();
+
+    const sortedLinks = links.sort((a, b) => b.linkedAt - a.linkedAt);
+    let expiredCandidate: {
+      id: Id<'buyer_provider_links'>;
+      provider: string;
+      externalAccountId: Id<'external_accounts'>;
+      providerUserId: string;
+      providerUsername?: string;
+      label: string;
+      verificationMethod?: string;
+      status: 'active' | 'expired';
+      linkedAt: number;
+      lastValidatedAt?: number;
+      expiresAt?: number;
+      createdAt: number;
+      updatedAt: number;
+    } | null = null;
+
+    for (const link of sortedLinks) {
+      const externalAccount = await ctx.db.get(link.externalAccountId);
+      const status = resolveBuyerProviderLinkStatus(link, externalAccount);
+      if (!externalAccount || status === 'revoked') {
+        continue;
+      }
+
+      const summary = {
+        id: link._id,
+        provider: link.provider,
+        externalAccountId: link.externalAccountId,
+        providerUserId: externalAccount.providerUserId,
+        providerUsername: externalAccount.providerUsername,
+        label: formatBuyerProviderLinkLabel(externalAccount),
+        verificationMethod: link.verificationMethod,
+        status,
+        linkedAt: link.linkedAt,
+        lastValidatedAt: link.lastValidatedAt,
+        expiresAt: link.expiresAt,
+        createdAt: link.createdAt,
+        updatedAt: link.updatedAt,
+      };
+
+      if (status === 'active') {
+        return summary;
+      }
+
+      expiredCandidate ??= summary;
+    }
+
+    return expiredCandidate;
+  },
+});
+
+export const upsertBuyerProviderLink = mutation({
+  args: {
+    apiSecret: v.string(),
+    subjectId: v.id('subjects'),
+    provider: ProviderV,
+    externalAccountId: v.id('external_accounts'),
+    verificationMethod: v.optional(v.string()),
+    verificationSessionId: v.optional(v.id('verification_sessions')),
+    expiresAt: v.optional(v.number()),
+  },
+  returns: v.id('buyer_provider_links'),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+
+    const externalAccount = await ctx.db.get(args.externalAccountId);
+    if (!externalAccount) {
+      throw new Error(`External account not found: ${args.externalAccountId}`);
+    }
+    if (externalAccount.provider !== args.provider) {
+      throw new Error('Buyer provider link provider does not match external account provider');
+    }
+
+    const now = Date.now();
+    const existing = await ctx.db
+      .query('buyer_provider_links')
+      .withIndex('by_subject_external', (q) =>
+        q.eq('subjectId', args.subjectId).eq('externalAccountId', args.externalAccountId)
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        provider: args.provider,
+        verificationMethod: args.verificationMethod ?? existing.verificationMethod,
+        verificationSessionId: args.verificationSessionId ?? existing.verificationSessionId,
+        status: 'active',
+        linkedAt: existing.linkedAt ?? now,
+        lastValidatedAt: now,
+        expiresAt: args.expiresAt,
+        updatedAt: now,
+      });
+      return existing._id;
+    }
+
+    return await ctx.db.insert('buyer_provider_links', {
+      subjectId: args.subjectId,
+      provider: args.provider,
+      externalAccountId: args.externalAccountId,
+      verificationMethod: args.verificationMethod,
+      verificationSessionId: args.verificationSessionId,
+      status: 'active',
+      linkedAt: now,
+      lastValidatedAt: now,
+      expiresAt: args.expiresAt,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const revokeBuyerProviderLink = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    linkId: v.id('buyer_provider_links'),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+
+    const link = await ctx.db.get(args.linkId);
+    if (!link) {
+      return { success: false };
+    }
+
+    const subject = await ctx.db.get(link.subjectId);
+    if (!subject || subject.authUserId !== args.authUserId) {
+      return { success: false };
+    }
+
+    await ctx.db.patch(link._id, {
+      status: 'revoked',
+      updatedAt: Date.now(),
+    });
+    return { success: true };
   },
 });

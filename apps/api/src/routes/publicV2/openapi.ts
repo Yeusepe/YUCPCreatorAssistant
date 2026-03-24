@@ -236,6 +236,167 @@ const OPENAPI_SPEC = {
           createdAt: { type: 'integer' },
         },
       },
+      VerificationIntentCapabilityInput: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['license_key'] },
+          label: { type: 'string' },
+          placeholder: { type: 'string', nullable: true },
+          masked: { type: 'boolean' },
+          submitLabel: { type: 'string' },
+        },
+        required: ['kind', 'label', 'masked', 'submitLabel'],
+      },
+      VerificationIntentCapability: {
+        type: 'object',
+        properties: {
+          methodKind: {
+            type: 'string',
+            enum: ['existing_entitlement', 'manual_license'],
+          },
+          completion: { type: 'string', enum: ['immediate', 'deferred'] },
+          actionLabel: { type: 'string' },
+          input: {
+            allOf: [{ $ref: '#/components/schemas/VerificationIntentCapabilityInput' }],
+            nullable: true,
+          },
+        },
+        required: ['methodKind', 'completion', 'actionLabel'],
+      },
+      VerificationIntentRequirementInput: {
+        type: 'object',
+        properties: {
+          methodKey: { type: 'string' },
+          providerKey: { type: 'string' },
+          kind: {
+            type: 'string',
+            enum: ['existing_entitlement', 'manual_license'],
+          },
+          title: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          creatorAuthUserId: { type: 'string', nullable: true },
+          productId: { type: 'string', nullable: true },
+          providerProductRef: { type: 'string', nullable: true },
+        },
+        required: ['methodKey', 'providerKey', 'kind', 'title'],
+      },
+      VerificationIntentRequirement: {
+        type: 'object',
+        properties: {
+          methodKey: { type: 'string' },
+          providerKey: { type: 'string' },
+          providerLabel: { type: 'string' },
+          kind: {
+            type: 'string',
+            enum: ['existing_entitlement', 'manual_license'],
+          },
+          title: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          creatorAuthUserId: { type: 'string', nullable: true },
+          productId: { type: 'string', nullable: true },
+          providerProductRef: { type: 'string', nullable: true },
+          capability: { $ref: '#/components/schemas/VerificationIntentCapability' },
+        },
+        required: ['methodKey', 'providerKey', 'providerLabel', 'kind', 'title', 'capability'],
+      },
+      VerificationIntent: {
+        type: 'object',
+        description:
+          'A hosted buyer verification attempt for one package and one public-client installation. Public clients should create an intent, open the hosted verification URL in the browser, then redeem the returned short-lived grant.',
+        properties: {
+          object: { type: 'string', enum: ['verification_intent'] },
+          id: { type: 'string' },
+          packageId: { type: 'string' },
+          packageName: { type: 'string', nullable: true },
+          status: {
+            type: 'string',
+            enum: ['pending', 'verified', 'redeemed', 'failed', 'expired', 'cancelled'],
+          },
+          verificationUrl: {
+            type: 'string',
+            format: 'uri',
+            description: 'Hosted buyer verification URL to open in the system browser.',
+          },
+          returnUrl: {
+            type: 'string',
+            format: 'uri',
+            description:
+              'Client-provided return URL, typically a loopback callback for native apps.',
+          },
+          requirements: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/VerificationIntentRequirement' },
+          },
+          verifiedMethodKey: { type: 'string', nullable: true },
+          errorCode: { type: 'string', nullable: true },
+          errorMessage: { type: 'string', nullable: true },
+          grantToken: {
+            type: 'string',
+            nullable: true,
+            description:
+              'Short-lived signed completion grant. Present only after the server verifies the buyer and before redemption.',
+          },
+          grantAvailable: { type: 'boolean' },
+          expiresAt: { type: 'integer', description: 'Unix ms timestamp.' },
+          createdAt: { type: 'integer', description: 'Unix ms timestamp.' },
+          updatedAt: { type: 'integer', description: 'Unix ms timestamp.' },
+        },
+        required: [
+          'object',
+          'id',
+          'packageId',
+          'status',
+          'verificationUrl',
+          'returnUrl',
+          'requirements',
+          'grantAvailable',
+          'expiresAt',
+          'createdAt',
+          'updatedAt',
+        ],
+      },
+      VerificationIntentCreateRequest: {
+        type: 'object',
+        properties: {
+          packageId: { type: 'string' },
+          packageName: { type: 'string', nullable: true },
+          machineFingerprint: { type: 'string' },
+          codeChallenge: {
+            type: 'string',
+            description: 'PKCE-style SHA-256 code challenge derived from a client-held verifier.',
+          },
+          returnUrl: {
+            type: 'string',
+            format: 'uri',
+            description: 'Absolute HTTPS or loopback HTTP callback URL for the public client.',
+          },
+          idempotencyKey: { type: 'string', nullable: true },
+          requirements: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/VerificationIntentRequirementInput' },
+          },
+        },
+        required: ['packageId', 'machineFingerprint', 'codeChallenge', 'returnUrl', 'requirements'],
+      },
+      VerificationIntentRedeemRequest: {
+        type: 'object',
+        properties: {
+          codeVerifier: { type: 'string' },
+          machineFingerprint: { type: 'string' },
+          grantToken: { type: 'string' },
+        },
+        required: ['codeVerifier', 'machineFingerprint', 'grantToken'],
+      },
+      VerificationRedemption: {
+        type: 'object',
+        properties: {
+          object: { type: 'string', enum: ['verification_redemption'] },
+          success: { type: 'boolean' },
+          token: { type: 'string' },
+          expiresAt: { type: 'integer', description: 'Unix seconds timestamp.' },
+        },
+        required: ['object', 'success', 'token', 'expiresAt'],
+      },
       Collaborator: {
         type: 'object',
         properties: {
@@ -1551,6 +1712,102 @@ const OPENAPI_SPEC = {
           '401': { $ref: '#/components/responses/Unauthorized' },
           '403': { $ref: '#/components/responses/Forbidden' },
           '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+
+    '/verification-intents': {
+      post: {
+        operationId: 'createVerificationIntent',
+        summary: 'Create a hosted verification intent',
+        description:
+          'Create a hosted buyer verification flow for a public client such as Unity. The client opens the returned `verificationUrl` in the system browser, waits for verification to complete, then redeems the signed completion grant.',
+        tags: ['Verification Intents'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/VerificationIntentCreateRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Created or resumed verification intent.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/VerificationIntent' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
+
+    '/verification-intents/{id}': {
+      get: {
+        operationId: 'getVerificationIntent',
+        summary: 'Get a verification intent',
+        description:
+          'Fetch the current state of a hosted verification intent. Public clients may poll this endpoint lightly while the browser flow is in progress.',
+        tags: ['Verification Intents'],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': {
+            description: 'Verification intent.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/VerificationIntent' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+
+    '/verification-intents/{id}/redeem': {
+      post: {
+        operationId: 'redeemVerificationIntent',
+        summary: 'Redeem a completed verification intent',
+        description:
+          'Redeem the short-lived completion grant for the machine-bound access artifact. Public clients must present the original code verifier and the same machine fingerprint used when the intent was created.',
+        tags: ['Verification Intents'],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/VerificationIntentRedeemRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Redeemed verification grant.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/VerificationRedemption' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '422': {
+            description: 'The verification grant or intent state was invalid for redemption.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Error' },
+              },
+            },
+          },
         },
       },
     },

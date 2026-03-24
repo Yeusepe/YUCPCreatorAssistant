@@ -19,6 +19,15 @@ const dashboardPrefetchSource = readFileSync(
   resolve(__dirname, '../../src/lib/dashboardPrefetch.ts'),
   'utf8'
 );
+const accountVerifyRouteSource = readFileSync(
+  resolve(__dirname, '../../src/routes/account/verify.tsx'),
+  'utf8'
+);
+const dashboardSource = readFileSync(resolve(__dirname, '../../src/lib/dashboard.ts'), 'utf8');
+const connectRouteSource = readFileSync(
+  resolve(__dirname, '../../../api/src/routes/connect.ts'),
+  'utf8'
+);
 const accountComponentSource = readFileSync(
   resolve(__dirname, '../../src/components/account/AccountPage.tsx'),
   'utf8'
@@ -68,7 +77,7 @@ describe('account UI contracts', () => {
       "createFileRoute('/dashboard/certificates')"
     );
     expect(dashboardCertificatesRouteSource).toContain('Manage Billing');
-    expect(dashboardCertificatesRouteSource).toContain('warmDashboardCertificates(queryClient)');
+    expect(dashboardCertificatesRouteSource).toContain("queryKey: ['creator-certificates']");
     expect(dashboardCertificatesRouteSource).not.toContain('ensureQueryData(');
     expect(dashboardPrefetchSource).toContain("queryKey: ['creator-certificates']");
     expect(dashboardPrefetchSource).toContain('prefetchQuery(');
@@ -78,8 +87,23 @@ describe('account UI contracts', () => {
     expect(dashboardCertificatesRouteSource).toContain('validateSearch:');
     expect(dashboardCertificatesRouteSource).toContain("search.checkout === '1'");
     expect(dashboardCertificatesRouteSource).toContain("search.portal === '1'");
-    expect(dashboardCertificatesRouteSource).toContain('checkoutMut.mutate(targetPlan.planKey)');
+    expect(dashboardCertificatesRouteSource).toContain('checkoutMut.mutate(target.planKey)');
     expect(dashboardCertificatesRouteSource).toContain('portalMut.mutate()');
     expect(dashboardCertificatesRouteSource).toContain('dashboard-tab-panel');
+  });
+
+  it('keeps buyer provider linking inside the hosted verification flow', () => {
+    expect(accountVerifyRouteSource).toContain('listUserAccounts');
+    expect(accountVerifyRouteSource).toContain('listUserProviders');
+    expect(accountVerifyRouteSource).toContain('startUserVerify');
+    expect(accountVerifyRouteSource).toContain('Connect ${method.providerLabel}');
+    expect(accountVerifyRouteSource).toContain('Reconnect ${method.providerLabel}');
+    expect(accountVerifyRouteSource).toContain('Open connections');
+    expect(dashboardSource).toContain('returnUrl?: string');
+    expect(connectRouteSource).toContain('getSafeRelativeRedirectTarget');
+    expect(connectRouteSource).toContain(
+      'const safeReturnUrl = getSafeRelativeRedirectTarget(body.returnUrl)'
+    );
+    expect(connectRouteSource).toContain("setupUrl.searchParams.set('returnUrl', safeReturnUrl);");
   });
 });

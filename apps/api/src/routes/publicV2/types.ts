@@ -3,6 +3,7 @@ export interface PublicV2Config {
   convexApiSecret: string;
   convexSiteUrl: string;
   encryptionSecret: string;
+  frontendBaseUrl: string;
   oauthAudience?: string;
 }
 
