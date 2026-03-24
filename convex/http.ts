@@ -78,8 +78,11 @@ import {
   type CertEnvelope,
   getPublicKeyFromPrivate,
   type LicenseClaims,
+  type CouplingRuntimeClaims,
+  signCouplingRuntimeJwt,
   signLicenseJwt,
   verifyCertEnvelope,
+  verifyCouplingRuntimeJwt,
 } from './lib/yucpCrypto';
 import { handleOAuthAuthorizationServerMetadata } from './oauthDiscovery';
 import './polyfills';
@@ -110,6 +113,7 @@ async function sha256HexHttp(input: string): Promise<string> {
 
 const PROTECTED_ASSET_ID_RE = /^[a-f0-9]{32}$/;
 const PROJECT_ID_RE = /^[a-f0-9]{32}$/;
+const WATERMARK_RUNTIME_TTL_SECONDS = 10 * 60;
 
 const http = httpRouter();
 
@@ -1512,6 +1516,163 @@ http.route({
       success: true,
       unlockToken: result.unlockToken,
       expiresAt: result.expiresAt,
+    });
+  }),
+});
+
+http.route({
+  method: 'POST',
+  path: '/v1/licenses/coupling-job',
+  handler: httpAction(async (ctx, request) => {
+    let body: {
+      packageId: string;
+      projectId: string;
+      machineFingerprint: string;
+      licenseToken: string;
+      assetPaths: string[];
+    };
+
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return errorResponse('Invalid JSON body', 400);
+    }
+
+    const { packageId, projectId, machineFingerprint, licenseToken, assetPaths } = body ?? {};
+    if (!packageId || !projectId || !machineFingerprint || !licenseToken || !Array.isArray(assetPaths)) {
+      return errorResponse(
+        'packageId, projectId, machineFingerprint, licenseToken, and assetPaths are required',
+        400
+      );
+    }
+
+    if (!PROJECT_ID_RE.test(projectId)) {
+      return errorResponse('Invalid projectId format', 400);
+    }
+
+    const issued = await ctx.runAction(internal.yucpLicenses.issueCouplingJob, {
+      packageId,
+      projectId,
+      machineFingerprint,
+      licenseToken,
+      assetPaths,
+    });
+
+    if (!issued.success) {
+      return jsonResponse({ error: issued.error }, 422);
+    }
+
+    const siteUrl = process.env.CONVEX_SITE_URL?.replace(/\/$/, '');
+    if (!siteUrl) {
+      return errorResponse('Service not configured', 503);
+    }
+
+    const artifact = await ctx.runAction(internal.couplingRuntime.getActiveRuntimeManifestData, {});
+    if (!artifact.success) {
+      return errorResponse(artifact.error ?? 'Coupling runtime is not configured on the server', 503);
+    }
+
+    const rootPrivateKey = process.env.YUCP_ROOT_PRIVATE_KEY;
+    if (!rootPrivateKey) {
+      throw new Error('YUCP_ROOT_PRIVATE_KEY not configured');
+    }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const exp = nowSeconds + WATERMARK_RUNTIME_TTL_SECONDS;
+    const keyId = process.env.YUCP_ROOT_KEY_ID ?? 'yucp-root';
+    const claims: CouplingRuntimeClaims = {
+      iss: `${siteUrl}/api/auth`,
+      aud: 'yucp-coupling-runtime',
+      sub: issued.subject ?? '',
+      jti: crypto.randomUUID(),
+      package_id: packageId,
+      machine_fingerprint: machineFingerprint,
+      project_id: projectId,
+      artifact_key: artifact.artifactKey ?? '',
+      artifact_channel: artifact.channel ?? '',
+      artifact_platform: artifact.platform ?? '',
+      artifact_version: artifact.version ?? '',
+      metadata_version: artifact.metadataVersion ?? 0,
+      delivery_name: artifact.deliveryName ?? 'runtime.bin',
+      content_type: artifact.contentType ?? 'application/octet-stream',
+      envelope_cipher: artifact.envelopeCipher ?? '',
+      envelope_iv_b64: artifact.envelopeIvBase64 ?? '',
+      envelope_key_b64: artifact.envelopeKeyBase64 ?? '',
+      ciphertext_sha256: artifact.ciphertextSha256 ?? '',
+      ciphertext_size: artifact.ciphertextSize ?? 0,
+      plaintext_sha256: artifact.plaintextSha256 ?? '',
+      plaintext_size: artifact.plaintextSize ?? 0,
+      code_signing_subject: artifact.codeSigningSubject,
+      code_signing_thumbprint: artifact.codeSigningThumbprint,
+      iat: nowSeconds,
+      exp,
+    };
+
+    const runtimeToken = await signCouplingRuntimeJwt(claims, rootPrivateKey, keyId);
+    return jsonResponse({
+      success: true,
+      runtimeToken,
+      expiresAt: exp,
+      files: issued.jobs ?? [],
+    });
+  }),
+});
+
+http.route({
+  method: 'GET',
+  path: '/v1/licenses/coupling-runtime',
+  handler: httpAction(async (ctx, request) => {
+    const siteUrl = process.env.CONVEX_SITE_URL?.replace(/\/$/, '');
+    if (!siteUrl) {
+      return errorResponse('Service not configured', 503);
+    }
+
+    const token = new URL(request.url).searchParams.get('token');
+    if (!token) {
+      return errorResponse('token query parameter is required', 400);
+    }
+
+    const rootPrivateKey = process.env.YUCP_ROOT_PRIVATE_KEY;
+    if (!rootPrivateKey) {
+      throw new Error('YUCP_ROOT_PRIVATE_KEY not configured');
+    }
+    const rootPublicKey =
+      process.env.YUCP_ROOT_PUBLIC_KEY ?? (await getPublicKeyFromPrivate(rootPrivateKey));
+    const claims = await verifyCouplingRuntimeJwt(token, rootPublicKey, `${siteUrl}/api/auth`);
+    if (!claims) {
+      return errorResponse('Runtime token is invalid or expired', 401);
+    }
+
+    const artifact = await ctx.runQuery(internal.releaseArtifacts.getActiveArtifact, {
+      artifactKey: claims.artifact_key,
+      channel: claims.artifact_channel,
+      platform: claims.artifact_platform,
+    });
+    if (!artifact) {
+      return errorResponse('Coupling runtime is not configured on the server', 503);
+    }
+    if (
+      artifact.version !== claims.artifact_version ||
+      artifact.metadataVersion !== claims.metadata_version ||
+      artifact.ciphertextSha256 !== claims.ciphertext_sha256 ||
+      artifact.plaintextSha256 !== claims.plaintext_sha256
+    ) {
+      return errorResponse('Configured coupling runtime metadata mismatch', 503);
+    }
+
+    const blob = await ctx.storage.get(artifact.storageId);
+    if (blob === null) {
+      return errorResponse('Coupling runtime artifact is missing from storage', 503);
+    }
+
+    return new Response(blob, {
+      status: 200,
+      headers: {
+        'Content-Type': artifact.contentType,
+        'Content-Disposition': 'attachment; filename=\"data.bin\"',
+        'Cache-Control': 'no-store, max-age=0',
+        'X-YUCP-Runtime-Ciphertext-Sha256': artifact.ciphertextSha256,
+      },
     });
   }),
 });

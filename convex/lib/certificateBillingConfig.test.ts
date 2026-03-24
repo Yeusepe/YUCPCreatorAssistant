@@ -46,8 +46,25 @@ describe('certificateBillingConfig', () => {
         auditRetentionDays: 30,
         supportTier: 'standard',
         billingGraceDays: 3,
+        capabilities: [],
       },
     ]);
+  });
+
+  it('parses sorted unique plan capabilities', () => {
+    const plans = parseCertificateBillingProductsJson(
+      JSON.stringify([
+        {
+          planKey: 'creator-suite-plus',
+          productId: 'prod_plus',
+          slug: 'creator-suite-plus',
+          deviceCap: 5,
+          capabilities: ['coupling_traceability', 'protected_exports', 'coupling_traceability'],
+        },
+      ])
+    );
+
+    expect(plans[0]?.capabilities).toEqual(['coupling_traceability', 'protected_exports']);
   });
 
   it('enables billing only when Polar credentials and products are configured', () => {

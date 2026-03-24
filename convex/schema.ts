@@ -165,6 +165,12 @@ const DownloadArtifactStatus = v.union(
 
 const DownloadArtifactSourceMode = v.union(v.literal('reply'), v.literal('webhook'));
 
+const SignedReleaseArtifactStatus = v.union(
+  v.literal('active'),
+  v.literal('inactive'),
+  v.literal('revoked')
+);
+
 /** Outbox job status */
 const OutboxJobStatus = v.union(
   v.literal('pending'),
@@ -304,7 +310,11 @@ const AuditEventType = v.union(
   v.literal('collaborator.invite.accepted'),
   v.literal('collaborator.invite.revoked'),
   v.literal('collaborator.connection.added'),
-  v.literal('collaborator.connection.removed')
+  v.literal('collaborator.connection.removed'),
+  v.literal('release.artifact.published'),
+  v.literal('coupling.unlock.issued'),
+  v.literal('coupling.trace.recorded'),
+  v.literal('coupling.lookup.performed')
 );
 
 // ============================================================================
@@ -1680,6 +1690,23 @@ const creator_billing_entitlements = defineTable({
   .index('by_workspace_key', ['workspaceKey'])
   .index('by_auth_user', ['authUserId']);
 
+const creator_billing_capabilities = defineTable({
+  workspaceKey: v.string(),
+  authUserId: v.string(),
+  creatorProfileId: v.optional(v.id('creator_profiles')),
+  planKey: v.string(),
+  capabilityKey: v.string(),
+  status: CreatorBillingStatus,
+  currentPeriodEnd: v.optional(v.number()),
+  graceUntil: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_workspace_key', ['workspaceKey'])
+  .index('by_workspace_capability', ['workspaceKey', 'capabilityKey'])
+  .index('by_auth_user', ['authUserId'])
+  .index('by_auth_user_capability', ['authUserId', 'capabilityKey']);
+
 const creator_billing_usage_events = defineTable({
   workspaceKey: v.string(),
   authUserId: v.string(),
@@ -1690,6 +1717,50 @@ const creator_billing_usage_events = defineTable({
 })
   .index('by_workspace_created', ['workspaceKey', 'createdAt'])
   .index('by_auth_user_created', ['authUserId', 'createdAt']);
+
+const signed_release_artifacts = defineTable({
+  artifactKey: v.string(),
+  channel: v.string(),
+  platform: v.string(),
+  version: v.string(),
+  metadataVersion: v.number(),
+  storageId: v.id('_storage'),
+  contentType: v.string(),
+  deliveryName: v.string(),
+  envelopeCipher: v.string(),
+  envelopeIvBase64: v.string(),
+  ciphertextSha256: v.string(),
+  ciphertextSize: v.number(),
+  plaintextSha256: v.string(),
+  plaintextSize: v.number(),
+  codeSigningSubject: v.optional(v.string()),
+  codeSigningThumbprint: v.optional(v.string()),
+  status: SignedReleaseArtifactStatus,
+  activatedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_artifact_key', ['artifactKey'])
+  .index('by_artifact_key_status', ['artifactKey', 'status'])
+  .index('by_status', ['status']);
+
+const coupling_trace_records = defineTable({
+  authUserId: v.string(),
+  packageId: v.string(),
+  licenseSubject: v.string(),
+  assetPath: v.string(),
+  tokenHash: v.string(),
+  tokenLength: v.number(),
+  machineFingerprintHash: v.string(),
+  projectIdHash: v.string(),
+  runtimeArtifactVersion: v.string(),
+  runtimePlaintextSha256: v.string(),
+  correlationId: v.string(),
+  createdAt: v.number(),
+})
+  .index('by_auth_user_created', ['authUserId', 'createdAt'])
+  .index('by_package_token', ['packageId', 'tokenHash'])
+  .index('by_correlation', ['correlationId']);
 
 /**
  * Package Name Registry, Layer 1 defense.
@@ -1960,7 +2031,10 @@ export default defineSchema({
   creator_billing_accounts,
   creator_billing_subscriptions,
   creator_billing_entitlements,
+  creator_billing_capabilities,
   creator_billing_usage_events,
+  signed_release_artifacts,
+  coupling_trace_records,
   yucp_certificates,
   package_registry,
   signing_log,

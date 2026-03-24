@@ -106,6 +106,8 @@ async function enrichDiscordRoleNames<
     requiredRoleId?: string;
     requiredRoleIds?: string[];
     requiredRoleMatchMode?: 'any' | 'all';
+    verifiedRoleId?: string;
+    verifiedRoleIds?: string[];
   },
 >(client: Client, items: T[]): Promise<T[]> {
   const toResolve = items.filter(
@@ -452,7 +454,8 @@ export async function handleProductTypeSelect(
         return;
       }
 
-      const products = data.products ?? [];
+      const products: Array<{ collaboratorName?: string; id: string; name: string }> =
+        data.products ?? [];
       if (products.length === 0) {
         await interaction.editReply({
           content: `${E.X_} No ${label} products found. Add products in your ${label} store first, then try again.`,

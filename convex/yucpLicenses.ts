@@ -34,6 +34,8 @@ import { symmetricDecrypt } from 'better-auth/crypto';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import { BILLING_CAPABILITY_KEYS } from './lib/billingCapabilities';
+import { RELEASE_ARTIFACT_KEYS, RELEASE_CHANNELS, RELEASE_PLATFORMS } from './lib/releaseArtifactKeys';
 import {
   getPublicKeyFromPrivate,
   type LicenseClaims,
@@ -45,6 +47,7 @@ import {
 
 const TOKEN_TTL_SECONDS = 3600; // 1 hour -- kept short; disk cache handles offline re-use
 const PROTECTED_UNLOCK_TTL_SECONDS = 30 * 24 * 60 * 60;
+const WATERMARK_ASSET_PATH_MAX_LENGTH = 512;
 const PACKAGE_ID_RE = /^[a-z0-9\-_./:]{1,128}$/;
 const PROTECTED_ASSET_ID_RE = /^[a-f0-9]{32}$/;
 const MACHINE_FINGERPRINT_RE = /^[a-z0-9:_\-]{16,256}$/i;
@@ -521,6 +524,41 @@ async function sha256Hex(input: string): Promise<string> {
     .join('');
 }
 
+function normalizeWatermarkAssetPath(input: string): string {
+  return input.replace(/\\/g, '/').replace(/^\/+/, '').trim();
+}
+
+function isValidWatermarkAssetPath(input: string): boolean {
+  return (
+    input.length > 0 &&
+    input.length <= WATERMARK_ASSET_PATH_MAX_LENGTH &&
+    !input.includes('|') &&
+    !input.includes('\r') &&
+    !input.includes('\n')
+  );
+}
+
+function getWatermarkTokenLength(assetPath: string): number {
+  const normalized = normalizeWatermarkAssetPath(assetPath).toLowerCase();
+  if (normalized.endsWith('.png')) return 32;
+  if (normalized.endsWith('.fbx')) return 8;
+  return 0;
+}
+
+async function hmacSha256Hex(secret: string, input: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 async function decryptCredential(encrypted: string): Promise<string | null> {
   const secret = process.env.BETTER_AUTH_SECRET;
   if (!secret || !encrypted) return null;
@@ -749,6 +787,75 @@ export const recordProtectedUnlockIssuance = internalMutation({
       firstUnlockedAt: now,
       lastIssuedAt: now,
       issueCount: 1,
+    });
+  },
+});
+
+export const recordCouplingTraceIssuance = internalMutation({
+  args: {
+    authUserId: v.string(),
+    packageId: v.string(),
+    licenseSubject: v.string(),
+    machineFingerprint: v.string(),
+    projectId: v.string(),
+    runtimeArtifactVersion: v.string(),
+    runtimePlaintextSha256: v.string(),
+    correlationId: v.string(),
+    jobs: v.array(
+      v.object({
+        assetPath: v.string(),
+        tokenHex: v.string(),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    const machineFingerprintHash = await sha256Hex(args.machineFingerprint);
+    const projectIdHash = await sha256Hex(args.projectId);
+    const now = Date.now();
+
+    for (const job of args.jobs) {
+      await ctx.db.insert('coupling_trace_records', {
+        authUserId: args.authUserId,
+        packageId: args.packageId,
+        licenseSubject: args.licenseSubject,
+        assetPath: job.assetPath,
+        tokenHash: await sha256Hex(job.tokenHex),
+        tokenLength: job.tokenHex.length,
+        machineFingerprintHash,
+        projectIdHash,
+        runtimeArtifactVersion: args.runtimeArtifactVersion,
+        runtimePlaintextSha256: args.runtimePlaintextSha256,
+        correlationId: args.correlationId,
+        createdAt: now,
+      });
+    }
+
+    await ctx.db.insert('audit_events', {
+      authUserId: args.authUserId,
+      eventType: 'coupling.trace.recorded',
+      actorType: 'system',
+      metadata: {
+        packageId: args.packageId,
+        licenseSubject: args.licenseSubject,
+        assetCount: args.jobs.length,
+        runtimeArtifactVersion: args.runtimeArtifactVersion,
+      },
+      correlationId: args.correlationId,
+      createdAt: now,
+    });
+
+    await ctx.db.insert('audit_events', {
+      authUserId: args.authUserId,
+      eventType: 'coupling.unlock.issued',
+      actorType: 'system',
+      metadata: {
+        packageId: args.packageId,
+        licenseSubject: args.licenseSubject,
+        assetCount: args.jobs.length,
+        runtimeArtifactVersion: args.runtimeArtifactVersion,
+      },
+      correlationId: args.correlationId,
+      createdAt: now,
     });
   },
 });
@@ -987,5 +1094,145 @@ export const issueProtectedUnlock = internalAction({
 
     const unlockToken = await signProtectedUnlockJwt(claims, rootPrivateKey, keyId);
     return { success: true, unlockToken, expiresAt: exp };
+  },
+});
+
+export const issueCouplingJob = internalAction({
+  args: {
+    packageId: v.string(),
+    machineFingerprint: v.string(),
+    projectId: v.string(),
+    licenseToken: v.string(),
+    assetPaths: v.array(v.string()),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    subject: v.optional(v.string()),
+    jobs: v.optional(
+      v.array(
+        v.object({
+          assetPath: v.string(),
+          tokenHex: v.string(),
+        })
+      )
+    ),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    if (!PACKAGE_ID_RE.test(args.packageId)) {
+      return { success: false, error: 'Invalid packageId format' };
+    }
+    if (!MACHINE_FINGERPRINT_RE.test(args.machineFingerprint)) {
+      return { success: false, error: 'Invalid machine fingerprint' };
+    }
+    if (!PROJECT_ID_RE.test(args.projectId)) {
+      return { success: false, error: 'Invalid project identifier' };
+    }
+    if (!args.licenseToken) {
+      return { success: false, error: 'licenseToken is required' };
+    }
+    if (!Array.isArray(args.assetPaths) || args.assetPaths.length === 0) {
+      return { success: false, error: 'At least one asset path is required' };
+    }
+    if (args.assetPaths.length > 512) {
+      return { success: false, error: 'Too many coupling asset paths in one request' };
+    }
+
+    const rootPrivateKey = process.env.YUCP_ROOT_PRIVATE_KEY;
+    if (!rootPrivateKey) throw new Error('YUCP_ROOT_PRIVATE_KEY not configured');
+
+    const siteUrl = process.env.CONVEX_SITE_URL?.replace(/\/$/, '') ?? '';
+    const rootPublicKey = process.env.YUCP_ROOT_PUBLIC_KEY ?? (await getPublicKeyFromPrivate(rootPrivateKey));
+    const licenseClaims = await verifyLicenseJwt(
+      args.licenseToken,
+      rootPublicKey,
+      `${siteUrl}/api/auth`
+    );
+
+    if (!licenseClaims) {
+      return { success: false, error: 'License token is invalid or expired' };
+    }
+    if (licenseClaims.package_id !== args.packageId) {
+      return { success: false, error: 'License token package mismatch' };
+    }
+    if (licenseClaims.machine_fingerprint !== args.machineFingerprint) {
+      return { success: false, error: 'License token machine mismatch' };
+    }
+
+    const packageReg = await ctx.runQuery(internal.packageRegistry.getRegistration, {
+      packageId: args.packageId,
+    });
+    if (!packageReg) {
+      return { success: false, error: 'Package registration not found' };
+    }
+
+    const creatorCanTrace = await ctx.runQuery(internal.certificateBilling.hasCapabilityForAuthUser, {
+      authUserId: packageReg.yucpUserId,
+      capabilityKey: BILLING_CAPABILITY_KEYS.couplingTraceability,
+    });
+    if (!creatorCanTrace) {
+      return {
+        success: false,
+        error: 'The creator plan does not allow coupling traceability for this PackageID',
+      };
+    }
+
+    const watermarkSecret = process.env.YUCP_WATERMARK_HMAC_KEY ?? rootPrivateKey;
+    const jobs: Array<{ assetPath: string; tokenHex: string }> = [];
+    const seen = new Set<string>();
+
+    for (const rawAssetPath of args.assetPaths) {
+      const assetPath = normalizeWatermarkAssetPath(rawAssetPath ?? '');
+      if (!isValidWatermarkAssetPath(assetPath)) {
+        return { success: false, error: `Invalid coupling asset path: ${rawAssetPath ?? ''}` };
+      }
+      if (seen.has(assetPath)) {
+        continue;
+      }
+      seen.add(assetPath);
+
+      const tokenLength = getWatermarkTokenLength(assetPath);
+      if (tokenLength <= 0) {
+        continue;
+      }
+
+      const tokenInput = [
+        args.packageId,
+        licenseClaims.sub,
+        args.machineFingerprint,
+        args.projectId,
+        assetPath,
+      ].join('|');
+      const tokenHex = (await hmacSha256Hex(watermarkSecret, tokenInput)).slice(0, tokenLength);
+      jobs.push({ assetPath, tokenHex });
+    }
+
+    const activeRuntimeArtifact = await ctx.runQuery(internal.releaseArtifacts.getActiveArtifact, {
+      artifactKey: RELEASE_ARTIFACT_KEYS.couplingRuntime,
+      channel: RELEASE_CHANNELS.stable,
+      platform: RELEASE_PLATFORMS.winX64,
+    });
+    if (!activeRuntimeArtifact) {
+      return { success: false, error: 'Coupling runtime is not configured on the server' };
+    }
+
+    const correlationId = crypto.randomUUID();
+    await ctx.runMutation(internal.yucpLicenses.recordCouplingTraceIssuance, {
+      authUserId: packageReg.yucpUserId,
+      packageId: args.packageId,
+      licenseSubject: licenseClaims.sub,
+      machineFingerprint: args.machineFingerprint,
+      projectId: args.projectId,
+      runtimeArtifactVersion: activeRuntimeArtifact.version,
+      runtimePlaintextSha256: activeRuntimeArtifact.plaintextSha256,
+      correlationId,
+      jobs,
+    });
+
+    return {
+      success: true,
+      subject: licenseClaims.sub,
+      jobs,
+    };
   },
 });

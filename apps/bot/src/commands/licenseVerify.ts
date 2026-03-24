@@ -469,6 +469,9 @@ export async function handleVrchatCredentialsModal(
       avatarUrl: interaction.user.displayAvatarURL(),
     });
     subjectId = ensureResult.subjectId;
+    if (!subjectId) {
+      throw new Error('Subject lookup did not return a subjectId');
+    }
   } catch (err) {
     logger.error('Failed to ensure subject for VRChat', { err, discordUserId });
     await interaction.editReply({
