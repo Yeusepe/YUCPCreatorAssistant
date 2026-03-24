@@ -57,7 +57,8 @@ describe('verificationSupport', () => {
       errorSummary: 'Internal route error',
     });
 
-    const tampered = `${encoded.supportCode.slice(0, -1)}A`;
+    const tamperedLastChar = encoded.supportCode.endsWith('A') ? 'B' : 'A';
+    const tampered = `${encoded.supportCode.slice(0, -1)}${tamperedLastChar}`;
     await expect(decodeVerificationSupportToken(tampered)).rejects.toThrow(
       'Verification support token could not be decrypted.'
     );
