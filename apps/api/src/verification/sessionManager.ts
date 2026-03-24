@@ -858,14 +858,14 @@ export function createVerificationSessionManager(
         });
       }
 
-      if (session.verificationMethod === 'account_link' && syncResult.externalAccountId) {
+      if (syncResult.externalAccountId) {
         try {
           await convex.mutation(api.subjects.upsertBuyerProviderLink, {
             apiSecret,
             subjectId: syncResult.subjectId,
             provider,
             externalAccountId: syncResult.externalAccountId,
-            verificationMethod: session.verificationMethod,
+            verificationMethod: session.verificationMethod ?? sessionMode,
             verificationSessionId: session._id,
           });
           logger.info('[verification] Buyer provider link stored', {

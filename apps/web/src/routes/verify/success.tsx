@@ -98,92 +98,84 @@ function VerifySuccessPage() {
 
   return (
     <div className="verify-success-page-wrapper">
-      <main
-        className={`verify-success-page text-center max-w-2xl w-full px-4 sm:px-6 relative z-10${isVisible ? ' is-visible' : ''}`}
-      >
-        <div className="success-checkmark">
-          <svg viewBox="0 0 100 100" aria-hidden="true">
-            <circle
-              className="circle-path"
-              cx="50"
-              cy="50"
-              r="45"
-              stroke="#00e676"
-              strokeWidth="6"
-              fill="none"
-            />
-            <path
-              className="check-path"
-              d="M30 50 L45 65 L70 35"
-              stroke="#00e676"
-              strokeWidth="6"
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </div>
-        <h1
-          className="text-4xl sm:text-6xl lg:text-7xl text-[#ffffff] mb-6 fade-up"
-          style={{ animationDelay: '0.3s' }}
-        >
-          You're verified!
-        </h1>
-        <p
-          className="text-lg sm:text-xl md:text-2xl text-[rgba(255,255,255,0.85)] mb-10 leading-relaxed fade-up"
-          style={{ animationDelay: '0.5s' }}
-        >
-          Your Discord® account has been verified. Your roles will be updated shortly. You can
-          return to Discord® now.
-        </p>
-        <div className="fade-up" style={{ animationDelay: '0.7s' }}>
-          {safeReturnTo && deepLink ? (
-            <>
-              <a
+      <main className={`verify-success-page${isVisible ? ' is-visible' : ''}`}>
+        <section className="verify-success-card">
+          <div className="verify-success-eyebrow fade-up" style={{ animationDelay: '0.15s' }}>
+            Verification complete
+          </div>
+
+          <div className="verify-success-icon-ring fade-up" style={{ animationDelay: '0.25s' }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 7 10.5 16.5 6 12" />
+            </svg>
+          </div>
+
+          <h1 className="verify-success-title fade-up" style={{ animationDelay: '0.35s' }}>
+            You're verified
+          </h1>
+
+          <p className="verify-success-subtitle fade-up" style={{ animationDelay: '0.45s' }}>
+            Your Discord account has been verified. Your roles will update shortly, and you can head
+            back to Discord now.
+          </p>
+
+          <div className="verify-success-note fade-up" style={{ animationDelay: '0.55s' }}>
+            <div className="verify-success-note-label">Next</div>
+            <p className="verify-success-note-copy">
+              {safeReturnTo
+                ? 'We will try to reopen Discord automatically. If it does not open, use the button below or continue in your browser.'
+                : 'Verification is complete. You can close this tab and return to Discord whenever you are ready.'}
+            </p>
+          </div>
+
+          <div className="verify-success-actions fade-up" style={{ animationDelay: '0.65s' }}>
+            {safeReturnTo && deepLink ? (
+              <>
+                <a
+                  id="return-btn"
+                  href={deepLink}
+                  className="verify-success-btn verify-success-btn--primary"
+                >
+                  Open Discord app
+                </a>
+                <a
+                  id="return-web-btn"
+                  href={safeReturnTo}
+                  className="verify-success-btn verify-success-btn--ghost"
+                >
+                  Continue in browser
+                </a>
+              </>
+            ) : (
+              <button
                 id="return-btn"
-                href={deepLink}
-                className="action-btn inline-block w-full sm:w-auto px-8 py-4 sm:px-12 sm:py-5 rounded-full text-lg sm:text-xl font-black uppercase tracking-widest no-underline mb-4"
+                type="button"
+                onClick={handleClose}
+                className="verify-success-btn verify-success-btn--primary"
               >
-                Open Discord App
-              </a>
-              <br />
-              <a
-                id="return-web-btn"
-                href={safeReturnTo}
-                className="text-sm text-white/50 hover:text-white transition-colors underline underline-offset-4"
-                style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 600 }}
-              >
-                Or continue in browser
-              </a>
-            </>
-          ) : (
-            <button
-              id="return-btn"
-              type="button"
-              onClick={handleClose}
-              className="action-btn inline-block w-full sm:w-auto px-8 py-4 sm:px-12 sm:py-5 rounded-full text-lg sm:text-xl font-black uppercase tracking-widest no-underline mb-4"
+                Close tab
+              </button>
+            )}
+          </div>
+
+          {safeReturnTo ? (
+            <div
+              id="redirect-msg"
+              className="verify-success-status fade-up"
+              style={{ animationDelay: '0.75s' }}
             >
-              Close
-            </button>
+              {redirectText}
+            </div>
+          ) : (
+            <div
+              id="close-msg"
+              className="verify-success-status fade-up"
+              style={{ animationDelay: '0.75s' }}
+            >
+              You can close this tab.
+            </div>
           )}
-        </div>
-        {safeReturnTo ? (
-          <div
-            id="redirect-msg"
-            className="mt-12 text-sm font-bold uppercase tracking-widest opacity-40 fade-up"
-            style={{ animationDelay: '0.9s' }}
-          >
-            {redirectText}
-          </div>
-        ) : (
-          <div
-            id="close-msg"
-            className="mt-12 text-sm font-bold uppercase tracking-widest opacity-40 fade-up"
-            style={{ animationDelay: '0.9s' }}
-          >
-            You can close this tab.
-          </div>
-        )}
+        </section>
       </main>
     </div>
   );
