@@ -182,16 +182,16 @@
         /* ── Reveal on scroll ────────────────────────────────────────────────── */
         .reveal {
             opacity: 0;
-            transform: translateY(30px) scale(0.975);
-            filter: blur(10px);
-            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
-                        transform 0.8s cubic-bezier(0.16, 1, 0.3, 1),
-                        filter 0.6s ease-out;
+            transform: scale(0.97);
+            filter: blur(12px);
+            transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+                        filter 0.7s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .reveal.visible {
             opacity: 1;
-            transform: translateY(0) scale(1);
+            transform: scale(1);
             filter: blur(0);
         }
 
@@ -230,17 +230,53 @@
             }
         }
 
-        /* ── Aurora Text (blob rainbow colors) ───────────────────────────────── */
+        /* ── Aurora Text: iridescent pastel shimmer ─────────────────────────── */
         .aurora-text {
-            /* oklch interpolation keeps every hue at full perceived brightness — no dark muddy midpoints */
-            background: linear-gradient(in oklch 90deg,
-                #FF007F, #FF5500, #FFE600, #00FF55, #00EEFF, #A800FF, #FF007F
-            );
-            background-size: 200% auto;
+            position: relative;
+            display: inline-block;
+            background:
+                linear-gradient(
+                    -45deg,
+                    #98E595 0%,
+                    #78DCF6 16%,
+                    #FB78C4 33%,
+                    #FEC96A 50%,
+                    #98E595 66%,
+                    #78DCF6 83%,
+                    #FB78C4 100%
+                );
+            background-size: 400% 400%;
             -webkit-background-clip: text;
             background-clip: text;
             -webkit-text-fill-color: transparent;
-            animation: aurora 4s linear infinite;
+            animation: aurora-drift 6s ease-in-out infinite;
+            filter: drop-shadow(0 0 24px rgba(251,120,196,0.4))
+                    drop-shadow(0 0 48px rgba(120,220,246,0.3))
+                    drop-shadow(0 0 12px rgba(254,201,106,0.35));
+        }
+        /* Shimmer sweep highlight */
+        .aurora-text::after {
+            content: 'Done.';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(
+                    110deg,
+                    transparent 0%,
+                    transparent 30%,
+                    rgba(255,255,255,0.55) 44%,
+                    rgba(255,255,255,0.75) 50%,
+                    rgba(255,255,255,0.55) 56%,
+                    transparent 70%,
+                    transparent 100%
+                );
+            background-size: 250% 100%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: aurora-shimmer 3.5s ease-in-out infinite 0.8s;
+            pointer-events: none;
+            mix-blend-mode: overlay;
         }
         .text-animate.aurora-text {
             opacity: 0;
@@ -249,9 +285,17 @@
         #hero.hero-visible .text-animate.aurora-text {
             opacity: 1;
         }
-        @keyframes aurora {
-            from { background-position:   0% 50%; }
-            to   { background-position: 200% 50%; }
+        @keyframes aurora-drift {
+            0%   { background-position: 0% 50%; }
+            20%  { background-position: 40% 0%; }
+            40%  { background-position: 100% 30%; }
+            60%  { background-position: 70% 100%; }
+            80%  { background-position: 20% 60%; }
+            100% { background-position: 0% 50%; }
+        }
+        @keyframes aurora-shimmer {
+            0%   { background-position: 200% 0%; }
+            100% { background-position: -50% 0%; }
         }
 
         /* ── Text Reveal (scroll-into-view, word stagger) ────────────────────── */
@@ -493,15 +537,17 @@
             will-change: transform;
         }
 
-        /* ── Discord® Mockup ──────────────────────────────────────────────────── */
+        /* ── Discord® Mockup — light frosted glass ─────────────────────────── */
         .discord-mockup {
-            background: #1e1f22;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(48px) saturate(180%);
+            -webkit-backdrop-filter: blur(48px) saturate(180%);
             border-radius: 16px;
             box-shadow:
-                0 20px 48px rgba(0, 0, 0, 0.18),
-                0 0 0 1px rgba(0, 0, 0, 0.08);
+                0 1px 3px rgba(0, 0, 0, 0.06),
+                0 8px 32px rgba(0, 0, 0, 0.08);
             overflow: hidden;
-            border: none;
+            border: 1px solid rgba(255, 255, 255, 0.7);
             position: relative;
             transition: box-shadow 0.3s ease;
         }
@@ -510,7 +556,7 @@
             content: '';
             position: absolute;
             inset: 0;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, transparent 55%);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, transparent 55%);
             pointer-events: none;
             z-index: 1;
         }
@@ -520,26 +566,26 @@
             z-index: 2;
         }
 
-        /* Feature section mockup inner cards */
+        /* Feature section mockup inner cards — light glass */
         .discord-mockup .bg-\[\#1e1f22\] {
-            background: rgba(0, 0, 0, 0.25) !important;
-            border-color: rgba(255, 255, 255, 0.09) !important;
+            background: rgba(255, 255, 255, 0.5) !important;
+            border-color: rgba(0, 0, 0, 0.06) !important;
         }
 
         .mockup-header {
-            background: rgba(4, 5, 15, 0.90);
+            background: rgba(255, 255, 255, 0.5);
             padding: 12px;
             display: flex;
             align-items: center;
             gap: 8px;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.4);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
         }
 
         .mockup-dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #4e5058;
+            background: #cbd5e1;
         }
 
         /* ── Stat Cards ──────────────────────────────────────────────────────── */
@@ -572,6 +618,8 @@
             transition: all 0.25s ease;
             position: relative;
             overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
         .bento-card::before {
@@ -588,6 +636,15 @@
             box-shadow:
                 0 0 0 1px rgba(0, 0, 0, 0.04),
                 0 12px 32px rgba(0, 0, 0, 0.08);
+        }
+
+        .bento-card > p {
+            flex: 1;
+        }
+
+        .bento-card > .flex:last-child,
+        .bento-card > div:last-child {
+            margin-top: auto;
         }
 
         .bento-icon {
@@ -726,13 +783,16 @@
             50% { box-shadow: 0 0 20px rgba(14, 165, 233, 0.2); }
         }
 
-        /* ── Integration Diagram ────────────────────────────────────────────── */
+        /* ── Integration Diagram — light frosted glass ───────────────────── */
         .int-diagram {
-            background: #1e1f22;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(48px) saturate(180%);
+            -webkit-backdrop-filter: blur(48px) saturate(180%);
             border-radius: 20px;
             box-shadow:
-                0 20px 48px rgba(0, 0, 0, 0.18),
-                0 0 0 1px rgba(0, 0, 0, 0.08);
+                0 1px 3px rgba(0, 0, 0, 0.06),
+                0 8px 32px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.7);
             padding: 18px;
             display: flex;
             flex-direction: column;
@@ -743,20 +803,20 @@
             align-items: center;
             justify-content: space-between;
             padding-bottom: 12px;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
+            border-bottom: 1px solid rgba(0,0,0,0.06);
         }
         .int-stores-row {
             display: flex;
             flex-direction: column;
             gap: 0;
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.07);
+            background: rgba(255,255,255,0.4);
+            border: 1px solid rgba(0,0,0,0.06);
             border-radius: 14px;
             overflow: hidden;
         }
         .int-stores-divider {
             height: 1px;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+            background: linear-gradient(90deg, transparent, rgba(0,0,0,0.06), transparent);
             flex-shrink: 0;
         }
         .int-store-node {
@@ -767,7 +827,7 @@
             padding: 10px 14px;
             transition: background 0.2s ease;
         }
-        .int-store-node:hover { background: rgba(255,255,255,0.04); }
+        .int-store-node:hover { background: rgba(255,255,255,0.3); }
         .int-store-node:first-child { padding-top: 12px; }
         .int-store-node:last-child { padding-bottom: 12px; }
         .int-store-icon {
@@ -783,10 +843,10 @@
         }
         .int-store-icon img { width: 20px; height: 20px; object-fit: contain; }
         .int-store-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-        .int-store-label { font-size: 13px; font-weight: 800; color: rgba(255,255,255,0.9); letter-spacing: -0.02em; }
+        .int-store-label { font-size: 13px; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
         .int-store-method {
             font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
-            color: rgba(255,255,255,0.45); background: rgba(255,255,255,0.06);
+            color: #64748b; background: rgba(0,0,0,0.04);
             padding: 2px 6px; border-radius: 6px; align-self: flex-start;
         }
         .int-store-status {
@@ -795,22 +855,18 @@
         }
         .int-arrow-down { display: flex; flex-direction: column; align-items: center; gap: 4px; }
         .int-arrow-line {
-            width: 1px; height: 28px;
-            background: linear-gradient(to bottom, rgba(56,189,248,0.5), rgba(56,189,248,0.05));
+            width: 40px; height: 32px;
             position: relative; overflow: visible;
         }
-        .int-flow-dot {
-            position: absolute; top: -4px; left: 50%; transform: translateX(-50%);
-            width: 5px; height: 5px; border-radius: 50%;
-            background: #38bdf8;
-            box-shadow: 0 0 6px #38bdf8;
-            animation: flow-down 1.4s linear infinite;
+        .int-wave-path {
+            stroke-dasharray: 60;
+            stroke-dashoffset: 60;
+            animation: wave-draw 1.8s ease-in-out infinite;
         }
-        @keyframes flow-down {
-            0%   { top: -5px; opacity: 0; }
-            15%  { opacity: 1; }
-            85%  { opacity: 1; }
-            100% { top: 100%; opacity: 0; }
+        @keyframes wave-draw {
+            0%   { stroke-dashoffset: 60; opacity: 0.3; }
+            50%  { stroke-dashoffset: 0; opacity: 1; }
+            100% { stroke-dashoffset: -60; opacity: 0.3; }
         }
         .int-hub {
             position: relative;
@@ -818,11 +874,11 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            background: linear-gradient(135deg, rgba(14,165,233,0.14), rgba(45,212,191,0.07));
-            border: 1px solid rgba(56,189,248,0.3);
+            background: linear-gradient(135deg, rgba(14,165,233,0.08), rgba(45,212,191,0.05));
+            border: 1px solid rgba(14,165,233,0.18);
             border-radius: 18px;
             padding: 18px;
-            box-shadow: 0 0 48px rgba(14,165,233,0.12);
+            box-shadow: 0 0 48px rgba(14,165,233,0.06);
             overflow: hidden;
         }
         .int-hub-pulse {
@@ -839,15 +895,15 @@
         .int-hub-inner { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 14px; position: relative; width: 100%; }
         .int-hub-stats {
             display: flex; align-items: center; justify-content: center;
-            background: rgba(0,0,0,0.3); border-radius: 10px;
-            padding: 10px 0; border: 1px solid rgba(255,255,255,0.06);
+            background: rgba(255,255,255,0.5); border-radius: 10px;
+            padding: 10px 0; border: 1px solid rgba(0,0,0,0.06);
             position: relative; width: 100%;
         }
         .int-hub-stat { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-        .int-hub-stat-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.08); flex-shrink: 0; }
+        .int-hub-stat-divider { width: 1px; height: 28px; background: rgba(0,0,0,0.08); flex-shrink: 0; }
         .int-discord-result {
-            background: rgba(88,101,242,0.07);
-            border: 1px solid rgba(88,101,242,0.22);
+            background: rgba(88,101,242,0.06);
+            border: 1px solid rgba(88,101,242,0.18);
             border-radius: 16px;
             padding: 16px;
         }
@@ -884,10 +940,10 @@
 
         /* ── Feature download mockup ─────────────────────────────────────────── */
         .dl-message {
-            background: rgba(0, 0, 0, 0.3);
+            background: rgba(255, 255, 255, 0.4);
             border-radius: 12px;
             padding: 12px 16px;
-            border: 1px solid rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(0, 0, 0, 0.06);
             margin-bottom: 8px;
         }
 
@@ -910,7 +966,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            background: #e8f4fc;
+            background: #09090f;
             overflow: hidden;
             transition: opacity 0.5s ease;
         }
@@ -931,16 +987,16 @@
             transform: scale(28);
         }
         @keyframes plo-glow {
-            0%   { filter: drop-shadow(0 0 12px rgba(14,165,233,0.4)) drop-shadow(0 0 30px rgba(56,189,248,0.2)); }
-            25%  { filter: drop-shadow(0 0 12px rgba(167,139,250,0.4)) drop-shadow(0 0 30px rgba(14,165,233,0.2)); }
-            50%  { filter: drop-shadow(0 0 12px rgba(56,189,248,0.4)) drop-shadow(0 0 30px rgba(129,140,248,0.2)); }
-            75%  { filter: drop-shadow(0 0 12px rgba(14,165,233,0.4)) drop-shadow(0 0 30px rgba(167,139,250,0.2)); }
-            100% { filter: drop-shadow(0 0 12px rgba(14,165,233,0.4)) drop-shadow(0 0 30px rgba(56,189,248,0.2)); }
+            0%   { filter: drop-shadow(0 0 12px rgba(255,117,195,0.4)) drop-shadow(0 0 30px rgba(112,226,255,0.2)); }
+            25%  { filter: drop-shadow(0 0 12px rgba(167,139,250,0.4)) drop-shadow(0 0 30px rgba(255,232,63,0.2)); }
+            50%  { filter: drop-shadow(0 0 12px rgba(112,226,255,0.4)) drop-shadow(0 0 30px rgba(255,144,232,0.2)); }
+            75%  { filter: drop-shadow(0 0 12px rgba(255,232,63,0.4)) drop-shadow(0 0 30px rgba(167,139,250,0.2)); }
+            100% { filter: drop-shadow(0 0 12px rgba(255,117,195,0.4)) drop-shadow(0 0 30px rgba(112,226,255,0.2)); }
         }
         .plo-bag-color {
             position: absolute;
             inset: 0;
-            background: linear-gradient(135deg, #0ea5e9 0%, #a78bfa 40%, #38bdf8 100%);
+            background: linear-gradient(135deg, #FF75C3 0%, #a78bfa 40%, #70E2FF 100%);
             -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 58 66'%3E%3Cpath fill='white' d='M10.4532 65.9999C3.56938 65.9999 0 62.4297 0 55.5789V22.2894C0 15.4064 3.56938 11.8684 10.4532 11.8684H15.6479C16.3172 5.08187 21.7031 0 28.7781 0C35.885 0 41.271 5.0497 41.9084 11.8684H47.135C53.9869 11.8684 57.5882 15.4386 57.5882 22.2894V55.5789C57.5882 62.4297 54.0188 65.9999 47.9317 65.9999H10.4532ZM28.7781 5.62865C25.0176 5.62865 22.2768 8.13742 21.735 11.8684H35.8532C35.3114 8.13742 32.5706 5.62865 28.7781 5.62865Z'/%3E%3C/svg%3E");
             mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 58 66'%3E%3Cpath fill='white' d='M10.4532 65.9999C3.56938 65.9999 0 62.4297 0 55.5789V22.2894C0 15.4064 3.56938 11.8684 10.4532 11.8684H15.6479C16.3172 5.08187 21.7031 0 28.7781 0C35.885 0 41.271 5.0497 41.9084 11.8684H47.135C53.9869 11.8684 57.5882 15.4386 57.5882 22.2894V55.5789C57.5882 62.4297 54.0188 65.9999 47.9317 65.9999H10.4532ZM28.7781 5.62865C25.0176 5.62865 22.2768 8.13742 21.735 11.8684H35.8532C35.3114 8.13742 32.5706 5.62865 28.7781 5.62865Z'/%3E%3C/svg%3E");
             -webkit-mask-size: 100% 100%;
@@ -958,11 +1014,11 @@
             animation: plo-pan 22s infinite alternate ease-in-out;
             will-change: transform;
         }
-        .plo-blob-1 { background: #0ea5e9; top: -10%; left: -10%; animation-delay:   0s; }
-        .plo-blob-2 { background: #38bdf8; top:  10%; left:  55%; animation-delay:  -4s; }
-        .plo-blob-3 { background: #818cf8; top:  55%; left:  15%; animation-delay:  -9s; }
-        .plo-blob-4 { background: #a78bfa; top:  70%; left:  65%; animation-delay: -14s; }
-        .plo-blob-5 { background: #7dd3fc; top:  25%; left:  35%; animation-delay: -19s; }
+        .plo-blob-1 { background: #FF75C3; top: -10%; left: -10%; animation-delay:   0s; }
+        .plo-blob-2 { background: #70E2FF; top:  10%; left:  55%; animation-delay:  -4s; }
+        .plo-blob-3 { background: #FFE83F; top:  55%; left:  15%; animation-delay:  -9s; }
+        .plo-blob-4 { background: #A78BFA; top:  70%; left:  65%; animation-delay: -14s; }
+        .plo-blob-5 { background: #FF90E8; top:  25%; left:  35%; animation-delay: -19s; }
         @keyframes plo-pan {
             from { transform: translate(-20px, -20px); }
             to   { transform: translate( 45px,  45px); }
@@ -1069,7 +1125,7 @@
             padding: 4px 10px;
             border-radius: 4px;
             margin: 1px 4px;
-            color: rgba(255,255,255,0.32);
+            color: #94a3b8;
             font-size: 12px;
             font-weight: 600;
             cursor: default;
@@ -1079,7 +1135,7 @@
             text-overflow: ellipsis;
         }
         .discord-sidebar-channel.active {
-            background: rgba(255,255,255,0.1);
+            background: rgba(0,0,0,0.05);
             color: rgba(255,255,255,0.9);
         }
 
@@ -1151,11 +1207,7 @@
         }
 
         /* Section text: dark on light glass */
-        #sections-glass h2,
         #sections-glass h3 { color: #0f172a !important; }
-
-        #sections-glass p,
-        /* Dark mockup containers keep white text naturally; section-level text uses inline styles */
 
         /* Grad-text spans: keep gradient colors */
         #sections-glass .grad-text { color: transparent !important; }
@@ -1321,16 +1373,16 @@
 
         /* ── Directional reveal variants (left ↔ right) ──────────────────── */
         /* Override translateY with translateX for featured section columns   */
-        .reveal.reveal-l { transform: translateX(-60px) scale(0.970); }
-        .reveal.reveal-r { transform: translateX( 60px) scale(0.970); }
-        .reveal.reveal-l.visible { transform: translateX(0) scale(1); }
-        .reveal.reveal-r.visible { transform: translateX(0) scale(1); }
-        /* Mobile: fall back to vertical reveal */
+        .reveal.reveal-l { transform: scale(0.97); }
+        .reveal.reveal-r { transform: scale(0.97); }
+        .reveal.reveal-l.visible { transform: scale(1); }
+        .reveal.reveal-r.visible { transform: scale(1); }
+        /* Mobile: same as desktop now */
         @media (max-width: 1023px) {
             .reveal.reveal-l,
-            .reveal.reveal-r { transform: translateY(30px) scale(0.975); }
+            .reveal.reveal-r { transform: scale(0.97); }
             .reveal.reveal-l.visible,
-            .reveal.reveal-r.visible { transform: translateY(0) scale(1); }
+            .reveal.reveal-r.visible { transform: scale(1); }
         }
 
 
@@ -1344,7 +1396,7 @@
             background: linear-gradient(
                 100deg,
                 transparent 0%,
-                rgba(255,255,255,0.025) 50%,
+                rgba(255,255,255,0.25) 50%,
                 transparent 100%
             );
             transform: skewX(-12deg);
@@ -1427,7 +1479,7 @@
                 </button>
 
                 <!-- Logo -->
-                <img src="Icons/MainLogo.png" alt="Creator Assistant"
+                <img src="Icons/MainLogoDark.png" alt="Creator Assistant"
                     class="h-3.5 sm:h-4 md:h-[18px] w-auto max-w-[45vw] sm:max-w-[180px] object-contain clickable cursor-pointer mx-auto md:mx-2 flex-shrink-0"
                     onclick="window.scrollTo({top:0,behavior:'smooth'})">
 
@@ -1488,20 +1540,6 @@
 
                 <!-- ── Left: Copy ────────────────────────────────────────────── -->
                 <div class="text-center lg:text-left">
-                    <!-- Top pill -->
-                    <div class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full mb-8 reveal"
-                        style="background:rgba(0,0,0,0.06);border:1px solid rgba(0,0,0,0.14);">
-                        <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 animate-pulse"
-                            style="background:#00c853;box-shadow:0 0 6px rgba(0,200,83,0.6);"></span>
-                        <span class="flex items-center gap-1.5">
-                            <img src="Icons/Gumorad.png" class="h-3.5 w-3.5 object-contain opacity-70" alt="">
-                            <img src="Icons/Jinxxy.png" class="h-3.5 w-3.5 object-contain opacity-70" alt="">
-                            <img src="Icons/VRC.png" class="h-3.5 w-3.5 object-contain opacity-70" alt="">
-                            <img src="Icons/Discord.png" class="h-3.5 w-3.5 object-contain opacity-70" alt="">
-                        </span>
-                        <div class="w-px h-3.5 flex-shrink-0" style="background:rgba(0,0,0,0.12);"></div>
-                        <span class="text-[#0d0e14]/60 text-[11px] font-bold uppercase tracking-[0.12em]">Gumroad® &middot; Jinxxy™ &middot; Lemon Squeezy® &middot; VRChat®</span>
-                    </div>
 
                     <!-- Headline -->
                     <h1 class="text-[#0d0e14] mb-5 reveal reveal-delay-1"
@@ -1533,7 +1571,7 @@
                         </button>
                         <a href="https://api.creators.yucp.club/sign-in"
                             rel="noopener noreferrer"
-                            class="clickable text-sm font-bold uppercase tracking-widest transition-colors flex items-center gap-2" style="color:#64748b;">
+                            class="clickable text-sm font-bold uppercase tracking-widest transition-colors flex items-center gap-2" style="color:#0f172a;">
                             Sign in to Dashboard
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
@@ -1549,29 +1587,29 @@
 
                     <!-- Floating chip: verified (top-right) -->
                     <div class="absolute -top-5 -right-6 z-20 hidden md:flex items-center gap-3 px-4 py-3 rounded-2xl mouse-parallax-chip"
-                        style="background:rgba(8,10,18,0.92);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.09);box-shadow:0 16px 48px rgba(0,0,0,0.6);">
+                        style="background:rgba(255,255,255,0.85);backdrop-filter:blur(20px);border:1px solid #e2e8f0;box-shadow:0 8px 32px rgba(0,0,0,0.1);">
                         <div class="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
                             style="background:rgba(0,230,118,0.15);border:1px solid rgba(0,230,118,0.2);">
                             <img src="Icons/Checkmark.png" class="w-4 h-4 object-contain" alt="">
                         </div>
                         <div>
-                            <div class="text-white text-xs font-black leading-none mb-0.5">Purchase verified</div>
-                            <div class="text-white/35 text-[10px] font-semibold">Role assigned instantly</div>
+                            <div class="text-xs font-black leading-none mb-0.5" style="color:#0f172a;">Purchase verified</div>
+                            <div class="text-[10px] font-semibold" style="color:#64748b;">Role assigned instantly</div>
                         </div>
                     </div>
 
                     <!-- Floating chip: protected (bottom-left) -->
                     <div class="absolute -bottom-5 -left-6 z-20 hidden md:block px-4 py-3 rounded-2xl mouse-parallax-chip"
-                        style="background:rgba(8,10,18,0.92);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.09);box-shadow:0 16px 48px rgba(0,0,0,0.6);">
-                        <div class="text-white/30 text-[10px] font-bold uppercase tracking-wider mb-1">Protected from</div>
-                        <div class="text-white text-sm font-black flex items-center gap-2">
+                        style="background:rgba(255,255,255,0.85);backdrop-filter:blur(20px);border:1px solid #e2e8f0;box-shadow:0 8px 32px rgba(0,0,0,0.1);">
+                        <div class="text-[10px] font-bold uppercase tracking-wider mb-1" style="color:#64748b;">Protected from</div>
+                        <div class="text-sm font-black flex items-center gap-2" style="color:#0f172a;">
                             <img src="Icons/Key.png" class="w-4 h-4 object-contain" alt="">
                             Leaks &amp; Fraud
                         </div>
                     </div>
 
                     <!-- The window -->
-                    <div class="discord-mockup w-full" style="box-shadow:0 32px 80px rgba(0,0,0,0.6);">
+                    <div class="discord-mockup w-full" style="box-shadow:0 24px 64px rgba(0,0,0,0.08),0 8px 24px rgba(0,0,0,0.04);">
 
 
                         <!-- Body: sidebar + chat -->
@@ -1579,17 +1617,17 @@
 
                             <!-- Sidebar -->
                             <div class="hidden lg:flex flex-col flex-shrink-0 py-3"
-                                style="width:160px;background:#2b2d31;border-right:1px solid rgba(0,0,0,0.4);">
+                                style="width:160px;background:rgba(255,255,255,0.35);border-right:1px solid rgba(0,0,0,0.06);">
                                 <!-- Server name -->
-                                <div class="px-3 pb-2.5 mb-1" style="border-bottom:1px solid rgba(0,0,0,0.35);">
-                                    <div class="text-white text-xs font-black leading-tight truncate">Creator Server</div>
+                                <div class="px-3 pb-2.5 mb-1" style="border-bottom:1px solid rgba(0,0,0,0.06);">
+                                    <div class="text-xs font-black leading-tight truncate" style="color:#0f172a;">Creator Server</div>
                                     <div class="flex items-center gap-1 mt-0.5">
-                                        <div class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:#00e676;"></div>
-                                        <span class="text-white/30 text-[10px] font-semibold">247 online</span>
+                                        <div class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:#16a34a;"></div>
+                                        <span class="text-[10px] font-semibold" style="color:#94a3b8;">247 online</span>
                                     </div>
                                 </div>
                                 <!-- Category -->
-                                <div class="px-3 pt-2 pb-1 text-[9px] font-black uppercase tracking-[0.12em] text-white/20">Verification</div>
+                                <div class="px-3 pt-2 pb-1 text-[9px] font-black uppercase tracking-[0.12em]" style="color:#94a3b8;">Verification</div>
                                 <div class="discord-sidebar-channel active">
                                     <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/>
@@ -1602,43 +1640,43 @@
                                     </svg>
                                     general
                                 </div>
-                                <div class="px-3 pt-3 pb-1 text-[9px] font-black uppercase tracking-[0.12em] text-white/20">Premium</div>
+                                <div class="px-3 pt-3 pb-1 text-[9px] font-black uppercase tracking-[0.12em]" style="color:#94a3b8;">Premium</div>
                                 <div class="discord-sidebar-channel">
                                     <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                                     </svg>
-                                    <span style="color:rgba(255,235,59,0.6);">vip-only</span>
+                                    <span style="color:rgba(234,179,8,0.7);">vip-only</span>
                                 </div>
                                 <div class="discord-sidebar-channel">
                                     <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                                     </svg>
-                                    <span style="color:rgba(129,140,248,0.6);">downloads</span>
+                                    <span style="color:rgba(99,102,241,0.6);">downloads</span>
                                 </div>
                                 <!-- User profile -->
                                 <div class="mt-auto mx-2 px-2 py-2 rounded-lg flex items-center gap-2"
-                                    style="background:rgba(0,0,0,0.2);">
+                                    style="background:rgba(0,0,0,0.04);">
                                     <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-black"
-                                        style="background:linear-gradient(135deg,#818cf8,#FF90E8);">M</div>
+                                        style="background:linear-gradient(135deg,#818cf8,#FF90E8);color:#fff;">M</div>
                                     <div class="flex-1 min-w-0">
-                                        <div class="text-white text-[11px] font-bold truncate leading-tight">maya.creates</div>
-                                        <div class="text-white/30 text-[9px] leading-tight">✦ Verified</div>
+                                        <div class="text-[11px] font-bold truncate leading-tight" style="color:#0f172a;">maya.creates</div>
+                                        <div class="text-[9px] leading-tight" style="color:#94a3b8;">Verified</div>
                                     </div>
                                 </div>
                             </div>
 
                             <!-- Chat area -->
-                            <div class="flex-1 flex flex-col min-w-0" style="background:#313338;">
+                            <div class="flex-1 flex flex-col min-w-0" style="background:rgba(255,255,255,0.2);">
                                 <!-- Channel header -->
                                 <div class="px-4 py-2.5 flex items-center gap-2 flex-shrink-0"
-                                    style="border-bottom:1px solid rgba(0,0,0,0.35);">
+                                    style="border-bottom:1px solid rgba(0,0,0,0.06);">
                                     <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor"
-                                        stroke-width="2" viewBox="0 0 24 24" style="color:rgba(255,255,255,0.3);">
+                                        stroke-width="2" viewBox="0 0 24 24" style="color:#94a3b8;">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/>
                                     </svg>
-                                    <span class="text-white/80 text-xs font-bold">verify-here</span>
-                                    <div class="w-px h-3 flex-shrink-0 mx-1" style="background:rgba(255,255,255,0.1);"></div>
-                                    <span class="text-white/25 text-xs truncate">Verify your purchase</span>
+                                    <span class="text-xs font-bold" style="color:#334155;">verify-here</span>
+                                    <div class="w-px h-3 flex-shrink-0 mx-1" style="background:rgba(0,0,0,0.08);"></div>
+                                    <span class="text-xs truncate" style="color:#94a3b8;">Verify your purchase</span>
                                 </div>
 
                                 <!-- Messages -->
@@ -1647,7 +1685,7 @@
                                     <!-- Bot welcome / pin -->
                                     <div class="flex items-start gap-2.5">
                                         <div class="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden"
-                                            style="background:rgba(88,101,242,0.2);border:1px solid rgba(88,101,242,0.3);">
+                                            style="background:rgba(88,101,242,0.12);border:1px solid rgba(88,101,242,0.2);">
                                             <img src="Icons/Assistant.png" class="w-full h-full object-cover" alt="">
                                         </div>
                                         <div class="flex-1 min-w-0">
@@ -1657,10 +1695,10 @@
                                                     style="background:#5865F2;font-size:9px;line-height:1.4;">BOT</span>
                                             </div>
                                             <div class="rounded-lg overflow-hidden inline-block"
-                                                style="border-left:4px solid #5865F2;background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,0.06);border-left:4px solid #5865F2;">
+                                                style="border-left:4px solid #5865F2;background:rgba(88,101,242,0.06);border:1px solid rgba(88,101,242,0.12);border-left:4px solid #5865F2;">
                                                 <div class="p-3">
-                                                    <div class="text-white text-xs font-black mb-1">Verify your purchase</div>
-                                                    <p class="text-white/45 text-xs leading-relaxed mb-2.5">Click below to link your purchase and unlock your exclusive roles.</p>
+                                                    <div class="text-xs font-black mb-1" style="color:#0f172a;">Verify your purchase</div>
+                                                    <p class="text-xs leading-relaxed mb-2.5" style="color:#64748b;">Click below to link your purchase and unlock your exclusive roles.</p>
                                                     <button id="mockup-verify-btn" class="px-3.5 py-1.5 rounded text-white text-xs font-bold cursor-pointer transition-all"
                                                         style="background:#5865F2;">Verify Purchase</button>
                                                 </div>
@@ -1671,14 +1709,14 @@
                                     <!-- User types /verify -->
                                     <div id="mockup-user-verify" class="flex items-start gap-2.5" style="opacity:0;transform:translateY(6px);transition:opacity 0.35s ease,transform 0.35s ease;">
                                         <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-black"
-                                            style="background:linear-gradient(135deg,#818cf8,#FF90E8);">M</div>
+                                            style="background:linear-gradient(135deg,#818cf8,#FF90E8);color:#fff;">M</div>
                                         <div>
                                             <div class="flex items-baseline gap-2 mb-1">
-                                                <span class="text-white text-xs font-bold">maya.creates</span>
-                                                <span class="text-white/20 text-[10px]">2:41 PM</span>
+                                                <span class="text-xs font-bold" style="color:#0f172a;">maya.creates</span>
+                                                <span class="text-[10px]" style="color:#94a3b8;">2:41 PM</span>
                                             </div>
-                                            <div class="text-white/60 text-sm font-mono rounded-lg px-3 py-1.5 inline-block"
-                                                style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);">
+                                            <div class="text-sm font-mono rounded-lg px-3 py-1.5 inline-block"
+                                                style="color:#334155;background:rgba(0,0,0,0.04);border:1px solid rgba(0,0,0,0.06);">
                                                 /verify
                                             </div>
                                         </div>
@@ -1687,7 +1725,7 @@
                                     <!-- Bot verified response -->
                                     <div id="mockup-verify-response" class="flex items-start gap-2.5" style="opacity:0;transform:translateY(6px);transition:opacity 0.35s ease,transform 0.35s ease;">
                                         <div class="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden"
-                                            style="background:rgba(88,101,242,0.2);border:1px solid rgba(88,101,242,0.3);">
+                                            style="background:rgba(88,101,242,0.12);border:1px solid rgba(88,101,242,0.2);">
                                             <img src="Icons/Assistant.png" class="w-full h-full object-cover" alt="">
                                         </div>
                                         <div class="flex-1 min-w-0">
@@ -1695,25 +1733,25 @@
                                                 <span class="text-[#5865F2] text-xs font-bold">Creator Assistant</span>
                                                 <span class="font-bold px-1.5 py-0.5 rounded text-white"
                                                     style="background:#5865F2;font-size:9px;line-height:1.4;">BOT</span>
-                                                <span class="text-white/20 text-[10px]">2:41 PM</span>
+                                                <span class="text-[10px]" style="color:#94a3b8;">2:41 PM</span>
                                             </div>
                                             <div class="rounded-lg overflow-hidden"
-                                                style="border-left:4px solid #00e676;background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,0.06);border-left:4px solid #00e676;">
+                                                style="border-left:4px solid #16a34a;background:rgba(22,163,74,0.06);border:1px solid rgba(22,163,74,0.12);border-left:4px solid #16a34a;">
                                                 <div class="p-3">
                                                     <div class="flex items-center gap-2 mb-1.5">
-                                                        <div class="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" style="background:#00e676;">
-                                                            <svg class="w-2.5 h-2.5" fill="#000" viewBox="0 0 20 20">
+                                                        <div class="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" style="background:#16a34a;">
+                                                            <svg class="w-2.5 h-2.5" fill="#fff" viewBox="0 0 20 20">
                                                                 <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
                                                             </svg>
                                                         </div>
-                                                        <span class="text-white text-xs font-black">Purchase Verified!</span>
+                                                        <span class="text-xs font-black" style="color:#0f172a;">Purchase Verified!</span>
                                                     </div>
-                                                    <p class="text-white/50 text-xs leading-relaxed mb-2.5">Gumroad® purchase confirmed. Welcome!</p>
+                                                    <p class="text-xs leading-relaxed mb-2.5" style="color:#64748b;">Gumroad purchase confirmed. Welcome!</p>
                                                     <div class="flex flex-wrap gap-1.5">
                                                         <span class="text-xs font-bold px-2.5 py-1 rounded-full"
-                                                            style="background:rgba(0,230,118,0.12);color:#00e676;border:1px solid rgba(0,230,118,0.25);">@Premium Member</span>
+                                                            style="background:rgba(22,163,74,0.1);color:#16a34a;border:1px solid rgba(22,163,74,0.2);">@Premium Member</span>
                                                         <span class="text-xs font-bold px-2.5 py-1 rounded-full"
-                                                            style="background:rgba(88,101,242,0.12);color:#818cf8;border:1px solid rgba(88,101,242,0.25);">@VIP Access</span>
+                                                            style="background:rgba(88,101,242,0.08);color:#5865F2;border:1px solid rgba(88,101,242,0.18);">@VIP Access</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1722,9 +1760,9 @@
 
                                     <!-- System line -->
                                     <div id="mockup-system-line" class="flex items-center gap-2" style="opacity:0;transition:opacity 0.35s ease;">
-                                        <div class="flex-1 h-px" style="background:rgba(255,255,255,0.04);"></div>
-                                        <span class="text-[10px] font-semibold whitespace-nowrap" style="color:rgba(255,255,255,0.18);">maya.creates was given @Premium Member</span>
-                                        <div class="flex-1 h-px" style="background:rgba(255,255,255,0.04);"></div>
+                                        <div class="flex-1 h-px" style="background:rgba(0,0,0,0.06);"></div>
+                                        <span class="text-[10px] font-semibold whitespace-nowrap" style="color:#94a3b8;">maya.creates was given @Premium Member</span>
+                                        <div class="flex-1 h-px" style="background:rgba(0,0,0,0.06);"></div>
                                     </div>
 
                                 </div>
@@ -1738,12 +1776,12 @@
                         <div class="flex items-center gap-2 px-3 py-2 rounded-xl"
                             style="background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.2);">
                             <img src="Icons/Checkmark.png" class="w-3.5 h-3.5 object-contain" alt="">
-                            <span class="text-[11px] font-black" style="color:#00e676;">Purchase Verified</span>
+                            <span class="text-[11px] font-black" style="color:#16a34a;">Purchase Verified</span>
                         </div>
                         <div class="flex items-center gap-2 px-3 py-2 rounded-xl"
-                            style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.09);">
+                            style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.15);">
                             <img src="Icons/Key.png" class="w-3.5 h-3.5 object-contain opacity-70" alt="">
-                            <span class="text-[11px] font-black text-white/70">Leaks &amp; Fraud Blocked</span>
+                            <span class="text-[11px] font-black" style="color:#64748b;">Leaks &amp; Fraud Blocked</span>
                         </div>
                     </div>
                 </div>
@@ -1761,9 +1799,9 @@
             <div class="max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-10 lg:gap-20">
                 <div class="lg:w-5/12 reveal section-graphic mouse-parallax text-center lg:text-left" data-parallax-speed="0.6">
                     <p class="text-[#0ea5e9] font-bold uppercase tracking-[0.25em] text-xs mb-3">The Philosophy</p>
-                    <h2 class="text-3xl sm:text-4xl md:text-5xl leading-[1.1] text-reveal">
-                        <span class="text-reveal-word">Functionality</span> <span class="text-reveal-word">with</span> <span
-                            class="text-reveal-word text-[#f59e0b] inline-block transform -rotate-2 hover:rotate-2 transition-transform cursor-default">flavor.</span>
+                    <h2 class="text-3xl sm:text-4xl md:text-5xl leading-[1.1] text-reveal" style="color:#0f172a;">
+                        <span class="text-reveal-word">Built</span> <span class="text-reveal-word">for</span> <span
+                            class="text-reveal-word grad-text inline-block transform -rotate-2 hover:rotate-2 transition-transform cursor-default" style="background-image:linear-gradient(90deg,#f59e0b,#ec4899);">creators.</span>
                     </h2>
                 </div>
                 <div class="lg:w-7/12 text-base sm:text-lg leading-relaxed reveal reveal-delay-1" style="color:#334155;">
@@ -1854,11 +1892,11 @@
                         <div class="int-diagram-header">
                             <div class="flex items-center gap-2">
                                 <img src="Icons/Link.png" class="w-3.5 h-3.5 object-contain opacity-50" alt="">
-                                <span class="text-[10px] font-black uppercase tracking-[0.15em] text-white/50">Active Connections</span>
+                                <span class="text-[10px] font-black uppercase tracking-[0.15em]" style="color:#64748b;">Active Connections</span>
                             </div>
                             <div class="flex items-center gap-1.5">
                                 <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
-                                <span class="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Live</span>
+                                <span class="text-[10px] text-emerald-600 font-bold uppercase tracking-widest">Live</span>
                             </div>
                         </div>
 
@@ -1924,8 +1962,9 @@
                         <!-- Arrow down -->
                         <div class="int-arrow-down">
                             <div class="int-arrow-line">
-                                <div class="int-flow-dot"></div>
-                                <div class="int-flow-dot" style="animation-delay:0.7s"></div>
+                                <svg width="40" height="32" viewBox="0 0 40 32" fill="none">
+                                    <path class="int-wave-path" d="M20 0 L20 4 Q20 8 25 10 Q30 12 30 16 Q30 20 25 22 Q20 24 20 28 L20 32" stroke="rgba(56,189,248,0.5)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+                                </svg>
                             </div>
                             <svg width="14" height="8" viewBox="0 0 14 8" fill="none">
                                 <path d="M1 1L7 7L13 1" stroke="rgba(56,189,248,0.45)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1939,24 +1978,24 @@
                             <div class="int-hub-inner">
                                 <img src="Icons/Assistant.png" class="w-8 h-8 object-contain relative z-10" alt="Creator Assistant">
                                 <div class="relative z-10">
-                                    <div class="text-sm font-black text-white">Creator Assistant</div>
-                                    <div class="text-[10px] text-white/45 uppercase tracking-widest">Verification Hub</div>
+                                    <div class="text-sm font-black" style="color:#0f172a;">Creator Assistant</div>
+                                    <div class="text-[10px] uppercase tracking-widest" style="color:#64748b;">Verification Hub</div>
                                 </div>
                             </div>
                             <div class="int-hub-stats">
                                 <div class="int-hub-stat">
-                                    <span class="text-base font-black text-white">247</span>
-                                    <span class="text-[9px] text-white/45 uppercase tracking-wide">Verified</span>
+                                    <span class="text-base font-black" style="color:#0f172a;">247</span>
+                                    <span class="text-[9px] uppercase tracking-wide" style="color:#94a3b8;">Verified</span>
                                 </div>
                                 <div class="int-hub-stat-divider"></div>
                                 <div class="int-hub-stat">
-                                    <span class="text-base font-black text-white">3</span>
-                                    <span class="text-[9px] text-white/45 uppercase tracking-wide">Products</span>
+                                    <span class="text-base font-black" style="color:#0f172a;">3</span>
+                                    <span class="text-[9px] uppercase tracking-wide" style="color:#94a3b8;">Products</span>
                                 </div>
                                 <div class="int-hub-stat-divider"></div>
                                 <div class="int-hub-stat">
-                                    <span class="text-base font-black text-white">24/7</span>
-                                    <span class="text-[9px] text-white/45 uppercase tracking-wide">Active</span>
+                                    <span class="text-base font-black" style="color:#0f172a;">24/7</span>
+                                    <span class="text-[9px] uppercase tracking-wide" style="color:#94a3b8;">Active</span>
                                 </div>
                             </div>
                         </div>
@@ -1964,8 +2003,9 @@
                         <!-- Arrow down 2 -->
                         <div class="int-arrow-down">
                             <div class="int-arrow-line">
-                                <div class="int-flow-dot" style="animation-delay:0.35s"></div>
-                                <div class="int-flow-dot" style="animation-delay:1.05s"></div>
+                                <svg width="40" height="32" viewBox="0 0 40 32" fill="none">
+                                    <path class="int-wave-path" style="animation-delay:0.4s" d="M20 0 L20 4 Q20 8 25 10 Q30 12 30 16 Q30 20 25 22 Q20 24 20 28 L20 32" stroke="rgba(56,189,248,0.5)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+                                </svg>
                             </div>
                             <svg width="14" height="8" viewBox="0 0 14 8" fill="none">
                                 <path d="M1 1L7 7L13 1" stroke="rgba(56,189,248,0.45)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1975,16 +2015,16 @@
                         <!-- Discord® result -->
                         <div class="int-discord-result">
                             <div class="flex items-center gap-3">
-                                <div class="int-store-icon" style="width:40px;height:40px;background:rgba(88,101,242,0.15);border-color:rgba(88,101,242,0.25);">
+                                <div class="int-store-icon" style="width:40px;height:40px;background:rgba(88,101,242,0.1);border-color:rgba(88,101,242,0.2);">
                                     <img src="Icons/Discord.png" alt="Discord®">
                                 </div>
                                 <div>
-                                    <div class="text-sm font-bold text-white">Discord® Server</div>
-                                    <div class="text-[10px] text-white/45 uppercase tracking-wide">Role Assignment</div>
+                                    <div class="text-sm font-bold" style="color:#0f172a;">Discord® Server</div>
+                                    <div class="text-[10px] uppercase tracking-wide" style="color:#64748b;">Role Assignment</div>
                                 </div>
                                 <div class="ml-auto flex items-center gap-1.5">
                                     <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
-                                    <span class="text-[10px] text-emerald-400 font-bold">Active</span>
+                                    <span class="text-[10px] text-emerald-600 font-bold">Active</span>
                                 </div>
                             </div>
                             <div class="flex flex-wrap gap-2 mt-3">
@@ -2005,49 +2045,6 @@
             </div>
         </section>
 
-        <!-- ── Integration marquee ───────────────────────────────────────────────── -->
-        <div class="section-marquee" aria-hidden="true">
-            <div class="section-marquee-track">
-                <div class="section-marquee-item"><img src="Icons/Gumorad.png" alt="">Gumroad®</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/LemonSqueezy.png" alt="">Lemon Squeezy®</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/Jinxxy.png" alt="">Jinxxy™</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/Patreon.png" alt="">Patreon®</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/PayHip.png" alt="">Payhip®</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/ItchIo.png" alt="">Itch.io</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/VRC.png" alt="">VRChat® CE</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/Discord.png" alt="">Discord® Roles</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/Checkmark.png" alt="">Verified Instantly</div>
-                <div class="section-marquee-sep"></div>
-                <!-- duplicate for seamless loop -->
-                <div class="section-marquee-item"><img src="Icons/Gumorad.png" alt="">Gumroad®</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/LemonSqueezy.png" alt="">Lemon Squeezy®</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/Jinxxy.png" alt="">Jinxxy™</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/Patreon.png" alt="">Patreon®</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/PayHip.png" alt="">Payhip®</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/ItchIo.png" alt="">Itch.io</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/VRC.png" alt="">VRChat® CE</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/Discord.png" alt="">Discord® Roles</div>
-                <div class="section-marquee-sep"></div>
-                <div class="section-marquee-item"><img src="Icons/Checkmark.png" alt="">Verified Instantly</div>
-                <div class="section-marquee-sep"></div>
-            </div>
-        </div>
-
         <!-- ── Feature: Rules Engine ─────────────────────────────────────────────── -->
         <section class="py-14 lg:py-20 px-4 sm:px-6 relative" data-blob-index="3">
             <div class="max-w-7xl mx-auto flex flex-col lg:flex-row-reverse items-center gap-12 lg:gap-20">
@@ -2066,47 +2063,39 @@
                         Map any product to any Discord® role with one command. The moment a purchase lands, the role
                         appears. When a refund hits, it's revoked. Zero manual work, ever.
                     </p>
-                    <div class="flex flex-wrap gap-3 justify-center lg:justify-start">
-                        <div class="tag-pill">
-                            <div class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>Auto Role Assignment
-                        </div>
-                        <div class="tag-pill">
-                            <div class="w-2 h-2 rounded-full bg-emerald-400"></div>Cross-Server Checks
-                        </div>
-                        <div class="tag-pill">
-                            <div class="w-2 h-2 rounded-full bg-sky-400"></div>Real-time Webhooks
-                        </div>
-                    </div>
+                    <p class="text-sm leading-relaxed" style="font-family:'DM Sans',sans-serif;color:#64748b;">
+                        <span style="color:#0f172a;font-weight:600;">Auto Role Assignment</span> · <span style="color:#0f172a;font-weight:600;">Cross-Server Checks</span> · <span style="color:#0f172a;font-weight:600;">Real-time Webhooks</span>
+                    </p>
                 </div>
                 <div class="flex-1 w-full mobile-mockup-cap reveal reveal-delay-1">
                     <div class="discord-mockup mouse-parallax section-graphic p-8" data-parallax-speed="0.7">
-                        <div class="bg-[#1e1f22] rounded-xl border border-white/5 overflow-hidden">
-                            <div class="bg-black/20 p-4 border-b border-white/5 flex items-center gap-3">
+                        <div class="rounded-xl border overflow-hidden" style="background:rgba(255,255,255,0.5);border-color:rgba(0,0,0,0.06);">
+                            <div class="p-4 border-b flex items-center gap-3" style="background:rgba(255,255,255,0.4);border-color:rgba(0,0,0,0.06);">
                                 <div class="w-8 h-8 rounded bg-[#FF90E8]/20 flex items-center justify-center">
                                     <img src="Icons/LemonSqueezy.png" class="w-4 h-4 object-contain" alt="">
                                 </div>
                                 <div>
-                                    <div class="text-sm font-bold text-white">Product to Role Mapping</div>
-                                    <div class="text-[10px] text-white/50 uppercase tracking-widest">Active Rule</div>
+                                    <div class="text-sm font-bold" style="color:#0f172a;">Product to Role Mapping</div>
+                                    <div class="text-[10px] uppercase tracking-widest" style="color:#94a3b8;">Active Rule</div>
                                 </div>
                             </div>
                             <div class="p-6">
                                 <div class="mb-4">
                                     <div
-                                        class="text-[10px] uppercase tracking-widest text-emerald-400 font-black mb-2 px-2">
+                                        class="text-[10px] uppercase tracking-widest text-emerald-600 font-black mb-2 px-2">
                                         If user owns</div>
                                     <div
-                                        class="bg-black/40 rounded-lg p-3 border border-white/5 flex items-center gap-3">
-                                        <div class="w-8 h-8 bg-white/10 rounded flex items-center justify-center">
+                                        class="rounded-lg p-3 flex items-center gap-3" style="background:rgba(0,0,0,0.03);border:1px solid rgba(0,0,0,0.06);">
+                                        <div class="w-8 h-8 rounded flex items-center justify-center" style="background:rgba(0,0,0,0.04);">
                                             <img src="Icons/GiftCard.png" class="w-4 h-4 object-contain" alt="">
                                         </div>
                                         <div class="flex-1">
-                                            <div class="text-sm text-white font-bold">Ultimate Avatar Base</div>
-                                            <div class="text-xs text-white/40">Gumroad® Product</div>
+                                            <div class="text-sm font-bold" style="color:#0f172a;">Ultimate Avatar Base</div>
+                                            <div class="text-xs" style="color:#94a3b8;">Gumroad® Product</div>
                                         </div>
                                     </div>
                                 </div>
-                                <div class="flex justify-center my-2 text-white/20">
+                                <div class="flex justify-center my-2" style="color:#cbd5e1;">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                             d="M19 14l-7 7m0 0l-7-7m7 7V3" />
@@ -2114,12 +2103,12 @@
                                 </div>
                                 <div>
                                     <div
-                                        class="text-[10px] uppercase tracking-widest text-sky-400 font-black mb-2 px-2">
+                                        class="text-[10px] uppercase tracking-widest text-sky-500 font-black mb-2 px-2">
                                         Then grant role</div>
                                     <div
-                                        class="bg-black/40 rounded-lg p-3 border border-white/5 flex items-center gap-3">
+                                        class="rounded-lg p-3 flex items-center gap-3" style="background:rgba(0,0,0,0.03);border:1px solid rgba(0,0,0,0.06);">
                                         <div class="w-4 h-4 rounded-full bg-yellow-400 ml-2"></div>
-                                        <div class="text-sm text-white font-bold">@Verified Buyer</div>
+                                        <div class="text-sm font-bold" style="color:#0f172a;">@Verified Buyer</div>
                                     </div>
                                 </div>
                             </div>
@@ -2149,17 +2138,9 @@
                             class="font-bold" style="color:#0f172a;">Download button</span>. Only verified buyers can access the
                         files, delivered privately via ephemeral message.
                     </p>
-                    <div class="flex flex-wrap gap-3 mb-8 justify-center lg:justify-start">
-                        <div class="tag-pill">
-                            <div class="w-2 h-2 rounded-full bg-emerald-400"></div>FBX &amp; Unity® Packages
-                        </div>
-                        <div class="tag-pill">
-                            <div class="w-2 h-2 rounded-full bg-teal-400"></div>Zip &amp; Blend Files
-                        </div>
-                        <div class="tag-pill">
-                            <div class="w-2 h-2 rounded-full bg-cyan-400"></div>Substance Files
-                        </div>
-                    </div>
+                    <p class="text-sm leading-relaxed mb-8" style="font-family:'DM Sans',sans-serif;color:#64748b;">
+                        Supports <span style="color:#0f172a;font-weight:600;">FBX &amp; Unity® Packages</span>, <span style="color:#0f172a;font-weight:600;">Zip &amp; Blend Files</span>, and <span style="color:#0f172a;font-weight:600;">Substance Files</span>.
+                    </p>
                     <p class="text-sm font-medium" style="font-family:'DM Sans',sans-serif;color:#64748b;">
                         Set up with <code
                             class="px-2 py-0.5 rounded" style="background:#f1f5f9;color:#334155;">/creator-admin downloads setup</code>.
@@ -2172,26 +2153,26 @@
 
                         <div class="p-6 space-y-4">
                             <div>
-                                <div class="text-[10px] text-white/30 uppercase tracking-widest font-bold mb-2">Before
+                                <div class="text-[10px] uppercase tracking-widest font-bold mb-2" style="color:#94a3b8;">Before
                                 </div>
                                 <div class="dl-message opacity-50">
                                     <div class="flex items-center gap-3 mb-2">
                                         <div
-                                            class="w-8 h-8 rounded-full bg-purple-500/30 flex items-center justify-center text-xs font-bold text-purple-300">
+                                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style="background:rgba(168,85,247,0.15);color:#a855f7;">
                                             CR</div>
-                                        <span class="text-xs text-white/60 font-bold">Creator</span>
-                                        <span class="text-[10px] text-white/30">Today at 2:14 PM</span>
+                                        <span class="text-xs font-bold" style="color:#334155;">Creator</span>
+                                        <span class="text-[10px]" style="color:#94a3b8;">Today at 2:14 PM</span>
                                     </div>
-                                    <p class="text-sm text-white/50 mb-2">Here's the new pack!</p>
+                                    <p class="text-sm mb-2" style="color:#64748b;">Here's the new pack!</p>
                                     <div
-                                        class="bg-white/5 rounded-lg p-3 flex items-center gap-3 border border-white/5">
-                                        <div class="w-8 h-8 bg-white/10 rounded flex items-center justify-center">
+                                        class="rounded-lg p-3 flex items-center gap-3" style="background:rgba(0,0,0,0.03);border:1px solid rgba(0,0,0,0.06);">
+                                        <div class="w-8 h-8 rounded flex items-center justify-center" style="background:rgba(0,0,0,0.04);">
                                             <img src="Icons/Library.png" class="w-4 h-4 object-contain opacity-60"
                                                 alt="">
                                         </div>
                                         <div>
-                                            <div class="text-xs font-bold text-white/60">avatar_pack_v2.zip</div>
-                                            <div class="text-[10px] text-white/30">84 MB, visible to everyone</div>
+                                            <div class="text-xs font-bold" style="color:#334155;">avatar_pack_v2.zip</div>
+                                            <div class="text-[10px]" style="color:#94a3b8;">84 MB, visible to everyone</div>
                                         </div>
                                     </div>
                                 </div>
@@ -2200,39 +2181,39 @@
                             <div class="flex items-center gap-2 pl-2">
                                 <div
                                     class="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                                    <svg class="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor"
+                                    <svg class="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor"
                                         viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3"
                                             d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                                     </svg>
                                 </div>
                                 <span
-                                    class="text-[10px] text-emerald-400 font-black uppercase tracking-widest">Assistant
+                                    class="text-[10px] text-emerald-600 font-black uppercase tracking-widest">Assistant
                                     Secured</span>
                             </div>
 
                             <div>
-                                <div class="text-[10px] text-emerald-400 uppercase tracking-widest font-bold mb-2">After
+                                <div class="text-[10px] text-emerald-600 uppercase tracking-widest font-bold mb-2">After
                                 </div>
-                                <div class="dl-message border-emerald-500/20">
+                                <div class="dl-message" style="border:1px solid rgba(22,163,74,0.15);">
                                     <div class="flex items-center gap-3 mb-3">
                                         <div
-                                            class="w-8 h-8 rounded-full bg-purple-500/30 flex items-center justify-center text-xs font-bold text-purple-300">
+                                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style="background:rgba(168,85,247,0.15);color:#a855f7;">
                                             CR</div>
-                                        <span class="text-xs text-white/60 font-bold">Creator</span>
-                                        <span class="text-[10px] text-white/30">Today at 2:14 PM</span>
+                                        <span class="text-xs font-bold" style="color:#334155;">Creator</span>
+                                        <span class="text-[10px]" style="color:#94a3b8;">Today at 2:14 PM</span>
                                     </div>
-                                    <p class="text-sm text-white/80 mb-3">Here's the new pack!</p>
+                                    <p class="text-sm mb-3" style="color:#334155;">Here's the new pack!</p>
                                     <div
-                                        class="bg-emerald-500/10 rounded-xl p-4 border border-emerald-500/20 flex items-center justify-between">
+                                        class="rounded-xl p-4 flex items-center justify-between" style="background:rgba(22,163,74,0.06);border:1px solid rgba(22,163,74,0.15);">
                                         <div class="flex items-center gap-3">
                                             <div
-                                                class="w-10 h-10 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+                                                class="w-10 h-10 rounded-lg flex items-center justify-center" style="background:rgba(22,163,74,0.1);">
                                                 <img src="Icons/Key.png" class="w-5 h-5 object-contain" alt="">
                                             </div>
                                             <div>
-                                                <div class="text-xs font-bold text-white">avatar_pack_v2.zip</div>
-                                                <div class="text-[10px] text-emerald-400 font-bold">Requires @Verified
+                                                <div class="text-xs font-bold" style="color:#0f172a;">avatar_pack_v2.zip</div>
+                                                <div class="text-[10px] font-bold" style="color:#16a34a;">Requires @Verified
                                                     Buyer</div>
                                             </div>
                                         </div>
@@ -2269,18 +2250,9 @@
                         manual role granting, no spreadsheets, and no one has to share secrets, API keys, or other
                         credentials.
                     </p>
-                    <div class="flex flex-wrap gap-3 mb-8 justify-center lg:justify-start">
-                        <div class="tag-pill">
-                            <div class="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>Discord® OAuth
-                            Verification
-                        </div>
-                        <div class="tag-pill">
-                            <div class="w-2 h-2 rounded-full bg-pink-400"></div>Account or API Key Linking
-                        </div>
-                        <div class="tag-pill">
-                            <div class="w-2 h-2 rounded-full bg-violet-400"></div>Real-time Webhook Sync
-                        </div>
-                    </div>
+                    <p class="text-sm leading-relaxed mb-8" style="font-family:'DM Sans',sans-serif;color:#64748b;">
+                        <span style="color:#0f172a;font-weight:600;">Discord® OAuth Verification</span> · <span style="color:#0f172a;font-weight:600;">Account or API Key Linking</span> · <span style="color:#0f172a;font-weight:600;">Real-time Webhook Sync</span>
+                    </p>
                     <p class="text-sm" style="font-family:'DM Sans',sans-serif;color:#64748b;">
                         Owner runs <code
                             class="px-2 py-0.5 rounded" style="background:#f1f5f9;color:#334155;">/creator-admin collab invite</code>
@@ -2293,66 +2265,66 @@
                         <div class="space-y-4">
                             <div class="grid grid-cols-2 gap-3">
                                 <div
-                                    class="bg-[#1e1f22] rounded-xl p-4 border border-[#9146FF]/20 flex flex-col items-center gap-3 text-center">
-                                    <div class="w-10 h-10 rounded-xl bg-[#9146FF]/20 flex items-center justify-center">
+                                    class="rounded-xl p-4 flex flex-col items-center gap-3 text-center" style="background:rgba(255,255,255,0.5);border:1px solid rgba(145,70,255,0.15);">
+                                    <div class="w-10 h-10 rounded-xl bg-[#9146FF]/15 flex items-center justify-center">
                                         <img src="Icons/Jinxxy.png" class="w-6 h-6 rounded object-cover" alt="">
                                     </div>
-                                    <div class="text-xs font-bold text-white">Your Store</div>
-                                    <div class="text-[10px] text-white/40">Owner's Jinxxy™</div>
+                                    <div class="text-xs font-bold" style="color:#0f172a;">Your Store</div>
+                                    <div class="text-[10px]" style="color:#94a3b8;">Owner's Jinxxy</div>
                                     <div
-                                        class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/20">
+                                        class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 text-[10px] font-bold border border-emerald-500/20">
                                         Active</div>
                                 </div>
                                 <div
-                                    class="bg-[#1e1f22] rounded-xl p-4 border border-purple-500/20 flex flex-col items-center gap-3 text-center">
-                                    <div class="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                                    class="rounded-xl p-4 flex flex-col items-center gap-3 text-center" style="background:rgba(255,255,255,0.5);border:1px solid rgba(168,85,247,0.15);">
+                                    <div class="w-10 h-10 rounded-xl bg-purple-500/15 flex items-center justify-center">
                                         <img src="Icons/Jinxxy.png" class="w-6 h-6 rounded object-cover opacity-70"
                                             alt="">
                                     </div>
-                                    <div class="text-xs font-bold text-white">Collab Store</div>
-                                    <div class="text-[10px] text-white/40">Partner's Jinxxy™</div>
+                                    <div class="text-xs font-bold" style="color:#0f172a;">Collab Store</div>
+                                    <div class="text-[10px]" style="color:#94a3b8;">Partner's Jinxxy</div>
                                     <div
-                                        class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 text-[10px] font-bold border border-purple-500/20">
+                                        class="px-2 py-0.5 rounded bg-purple-500/15 text-purple-600 text-[10px] font-bold border border-purple-500/20">
                                         Linked</div>
                                 </div>
                             </div>
 
                             <div class="flex justify-center">
                                 <div class="flex flex-col items-center gap-1">
-                                    <svg class="w-5 h-5 text-white/20" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24" style="color:#cbd5e1;">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                             d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                                     </svg>
-                                    <svg class="w-5 h-5 text-white/20" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24" style="color:#cbd5e1;">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                             d="M5 10l7-7m0 0l7 7m-7-7v18" />
                                     </svg>
                                 </div>
                             </div>
 
-                            <div class="bg-[#1e1f22] rounded-xl p-4 border border-[#5865F2]/25 flex items-center gap-4">
+                            <div class="rounded-xl p-4 flex items-center gap-4" style="background:rgba(255,255,255,0.5);border:1px solid rgba(88,101,242,0.18);">
                                 <div
                                     class="w-12 h-12 rounded-2xl bg-[#5865F2] flex items-center justify-center flex-shrink-0">
                                     <img src="Icons/Discord.png" class="w-6 h-6 object-contain" alt="">
                                 </div>
                                 <div class="flex-1">
-                                    <div class="text-sm font-bold text-white">Your Discord® Server</div>
-                                    <div class="text-xs text-white/50">Buyers from both stores verified here</div>
+                                    <div class="text-sm font-bold" style="color:#0f172a;">Your Discord Server</div>
+                                    <div class="text-xs" style="color:#64748b;">Buyers from both stores verified here</div>
                                 </div>
                                 <div class="text-right">
-                                    <div class="text-xs font-black text-emerald-400">2 stores</div>
-                                    <div class="text-[10px] text-white/30">connected</div>
+                                    <div class="text-xs font-black text-emerald-600">2 stores</div>
+                                    <div class="text-[10px]" style="color:#94a3b8;">connected</div>
                                 </div>
                             </div>
 
-                            <div class="bg-white/5 border border-white/8 rounded-xl p-3 flex items-center gap-3">
+                            <div class="rounded-xl p-3 flex items-center gap-3" style="background:rgba(0,0,0,0.02);border:1px solid rgba(0,0,0,0.06);">
                                 <img src="Icons/Checkmark.png" class="w-5 h-5 object-contain opacity-80 flex-shrink-0"
                                     alt="">
-                                <p class="text-xs text-white/60" style="font-family:'DM Sans',sans-serif;">
+                                <p class="text-xs" style="font-family:'DM Sans',sans-serif;color:#64748b;">
                                     Buyer from partner's store verifies and receives <span
-                                        class="text-white font-bold">@Verified Buyer</span> automatically
+                                        class="font-bold" style="color:#0f172a;">@Verified Buyer</span> automatically
                                 </p>
                             </div>
                         </div>
@@ -2383,17 +2355,9 @@
                         Automatically verify avatar and world purchases, active subscriptions, and more.
                         Roles are granted the <span style="color:#16a34a;font-weight:700;">moment a purchase is confirmed</span>.
                     </p>
-                    <div class="flex flex-wrap gap-3 mb-8 justify-center lg:justify-start">
-                        <div class="tag-pill" style="color:#16a34a;border-color:rgba(0,230,118,0.25);background:rgba(0,230,118,0.08);">
-                            <div class="w-2 h-2 rounded-full animate-pulse" style="background:#16a34a;"></div>Avatar Purchases
-                        </div>
-                        <div class="tag-pill" style="color:#0d9488;border-color:rgba(29,233,182,0.25);background:rgba(29,233,182,0.08);">
-                            <div class="w-2 h-2 rounded-full" style="background:#0d9488;"></div>World Purchases
-                        </div>
-                        <div class="tag-pill" style="color:#059669;border-color:rgba(52,211,153,0.25);background:rgba(52,211,153,0.08);">
-                            <div class="w-2 h-2 rounded-full" style="background:#059669;"></div>Active Subscriptions
-                        </div>
-                    </div>
+                    <p class="text-sm leading-relaxed mb-8" style="font-family:'DM Sans',sans-serif;color:#64748b;">
+                        <span style="color:#16a34a;font-weight:600;">Avatar Purchases</span> · <span style="color:#0d9488;font-weight:600;">World Purchases</span> · <span style="color:#059669;font-weight:600;">Active Subscriptions</span>
+                    </p>
                     <p class="text-sm" style="color:#64748b;font-family:'DM Sans',sans-serif;">
                         Buyer visits VRChat® &rarr; purchases avatar or world &rarr; receives
                         <code class="px-2 py-0.5 rounded" style="background:rgba(0,230,118,0.1);color:#16a34a;">@Creator Supporter</code> in Discord® instantly.
@@ -2408,80 +2372,80 @@
                         <div class="p-6 space-y-1">
 
                             <!-- Source: VRChat CE header card -->
-                            <div class="rounded-xl p-4 flex items-center gap-4 mb-4" style="background:rgba(0,230,118,0.07);border:1px solid rgba(0,230,118,0.18);">
-                                <div class="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style="background:rgba(0,230,118,0.15);box-shadow:0 0 20px rgba(0,230,118,0.2);">
+                            <div class="rounded-xl p-4 flex items-center gap-4 mb-4" style="background:rgba(22,163,74,0.06);border:1px solid rgba(22,163,74,0.15);">
+                                <div class="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style="background:rgba(22,163,74,0.1);box-shadow:0 0 20px rgba(22,163,74,0.12);">
                                     <img src="Icons/VRC.png" class="w-7 h-7 object-contain" alt="VRChat">
                                 </div>
                                 <div class="flex-1 min-w-0">
-                                    <div class="text-sm font-black" style="color:#a7f3d0;">VRChat® Creator Economy</div>
-                                    <div class="text-xs" style="color:rgba(0,230,118,0.5);">Avatar & world marketplace</div>
+                                    <div class="text-sm font-black" style="color:#16a34a;">VRChat Creator Economy</div>
+                                    <div class="text-xs" style="color:#94a3b8;">Avatar & world marketplace</div>
                                 </div>
                                 <div class="flex items-center gap-1.5 flex-shrink-0">
-                                    <span class="w-2 h-2 rounded-full animate-pulse" style="background:#00e676;box-shadow:0 0 6px #00e676;"></span>
-                                    <span class="text-xs font-black" style="color:#00e676;">Connected</span>
+                                    <span class="w-2 h-2 rounded-full animate-pulse" style="background:#16a34a;box-shadow:0 0 6px #16a34a;"></span>
+                                    <span class="text-xs font-black" style="color:#16a34a;">Connected</span>
                                 </div>
                             </div>
 
                             <!-- IF block -->
-                            <div class="bg-black/30 rounded-lg px-3 py-1.5 mb-1">
-                                <div class="text-[10px] uppercase tracking-widest font-black" style="color:#00e676;">If purchase detected</div>
+                            <div class="rounded-lg px-3 py-1.5 mb-1" style="background:rgba(22,163,74,0.06);">
+                                <div class="text-[10px] uppercase tracking-widest font-black" style="color:#16a34a;">If purchase detected</div>
                             </div>
-                            <div class="rounded-lg p-3 flex items-center gap-3 mb-3" style="background:rgba(0,0,0,0.35);border:1px solid rgba(0,230,118,0.12);">
-                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style="background:rgba(0,230,118,0.12);">
+                            <div class="rounded-lg p-3 flex items-center gap-3 mb-3" style="background:rgba(0,0,0,0.02);border:1px solid rgba(22,163,74,0.1);">
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style="background:rgba(22,163,74,0.08);">
                                     <img src="Icons/Bag.png" class="w-4 h-4 object-contain" alt="">
                                 </div>
                                 <div class="flex-1 min-w-0">
-                                    <div class="text-sm font-bold" style="color:#a7f3d0;">Avatar, World, or Subscription</div>
-                                    <div class="text-xs" style="color:rgba(29,233,182,0.5);">Any VRChat® Creator Economy purchase</div>
+                                    <div class="text-sm font-bold" style="color:#0f172a;">Avatar, World, or Subscription</div>
+                                    <div class="text-xs" style="color:#94a3b8;">Any VRChat Creator Economy purchase</div>
                                 </div>
                             </div>
 
                             <!-- Arrow -->
                             <div class="flex justify-center py-1">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:rgba(0,230,118,0.3);">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:rgba(22,163,74,0.3);">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
                                 </svg>
                             </div>
 
                             <!-- VERIFY block -->
-                            <div class="bg-black/30 rounded-lg px-3 py-1.5 mb-1">
-                                <div class="text-[10px] uppercase tracking-widest font-black" style="color:#1DE9B6;">Verify ownership confirmed</div>
+                            <div class="rounded-lg px-3 py-1.5 mb-1" style="background:rgba(22,163,74,0.06);">
+                                <div class="text-[10px] uppercase tracking-widest font-black" style="color:#0d9488;">Verify ownership confirmed</div>
                             </div>
                             <div class="grid grid-cols-2 gap-2 mb-3">
-                                <div class="rounded-lg p-3 flex items-center gap-2" style="background:rgba(0,0,0,0.35);border:1px solid rgba(0,230,118,0.12);">
-                                    <img src="Icons/Checkmark.png" class="w-4 h-4 object-contain flex-shrink-0" style="filter:drop-shadow(0 0 4px #00e676);" alt="">
+                                <div class="rounded-lg p-3 flex items-center gap-2" style="background:rgba(0,0,0,0.02);border:1px solid rgba(22,163,74,0.1);">
+                                    <img src="Icons/Checkmark.png" class="w-4 h-4 object-contain flex-shrink-0" alt="">
                                     <div>
-                                        <div class="text-xs font-bold" style="color:#a7f3d0;">Avatar / World</div>
-                                        <div class="text-[10px] font-bold" style="color:#00e676;">Verified ✓</div>
+                                        <div class="text-xs font-bold" style="color:#0f172a;">Avatar / World</div>
+                                        <div class="text-[10px] font-bold" style="color:#16a34a;">Verified</div>
                                     </div>
                                 </div>
-                                <div class="rounded-lg p-3 flex items-center gap-2" style="background:rgba(0,0,0,0.35);border:1px solid rgba(29,233,182,0.12);">
-                                    <img src="Icons/CreditCard.png" class="w-4 h-4 object-contain flex-shrink-0" style="filter:drop-shadow(0 0 4px #1DE9B6);" alt="">
+                                <div class="rounded-lg p-3 flex items-center gap-2" style="background:rgba(0,0,0,0.02);border:1px solid rgba(13,148,136,0.1);">
+                                    <img src="Icons/CreditCard.png" class="w-4 h-4 object-contain flex-shrink-0" alt="">
                                     <div>
-                                        <div class="text-xs font-bold" style="color:#a7f3d0;">Subscription</div>
-                                        <div class="text-[10px] font-bold" style="color:#1DE9B6;">Active ✓</div>
+                                        <div class="text-xs font-bold" style="color:#0f172a;">Subscription</div>
+                                        <div class="text-[10px] font-bold" style="color:#0d9488;">Active</div>
                                     </div>
                                 </div>
                             </div>
 
                             <!-- Arrow -->
                             <div class="flex justify-center py-1">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:rgba(0,230,118,0.3);">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:rgba(22,163,74,0.3);">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
                                 </svg>
                             </div>
 
                             <!-- GRANT block -->
-                            <div class="bg-black/30 rounded-lg px-3 py-1.5 mb-1">
-                                <div class="text-[10px] uppercase tracking-widest font-black" style="color:#00e676;">Grant role instantly</div>
+                            <div class="rounded-lg px-3 py-1.5 mb-1" style="background:rgba(22,163,74,0.06);">
+                                <div class="text-[10px] uppercase tracking-widest font-black" style="color:#16a34a;">Grant role instantly</div>
                             </div>
-                            <div class="rounded-lg p-3 flex items-center gap-3" style="background:rgba(0,0,0,0.35);border:1px solid rgba(88,101,242,0.2);">
-                                <div class="w-5 h-5 rounded-full flex-shrink-0" style="background:linear-gradient(135deg,#00e676,#1DE9B6);box-shadow:0 0 10px rgba(0,230,118,0.4);"></div>
+                            <div class="rounded-lg p-3 flex items-center gap-3" style="background:rgba(0,0,0,0.02);border:1px solid rgba(88,101,242,0.12);">
+                                <div class="w-5 h-5 rounded-full flex-shrink-0" style="background:linear-gradient(135deg,#16a34a,#0d9488);box-shadow:0 0 10px rgba(22,163,74,0.25);"></div>
                                 <div class="flex-1 min-w-0">
-                                    <span class="text-sm font-black" style="color:#a7f3d0;">@Creator Supporter</span>
-                                    <span class="text-xs ml-2" style="color:rgba(29,233,182,0.5);">added to member</span>
+                                    <span class="text-sm font-black" style="color:#0f172a;">@Creator Supporter</span>
+                                    <span class="text-xs ml-2" style="color:#94a3b8;">added to member</span>
                                 </div>
-                                <div class="text-xs font-black flex-shrink-0" style="color:#00e676;">⚡ Instant</div>
+                                <div class="text-xs font-black flex-shrink-0" style="color:#16a34a;">Instant</div>
                             </div>
 
                         </div>
@@ -2516,7 +2480,7 @@
                             <img src="Icons/World.png" alt="">
                         </div>
                         <h3 class="text-lg font-bold mb-2" style="color:#0f172a;">Email Flexibility</h3>
-                        <p class="text-sm mb-5 leading-relaxed" style="color:#64748b;">Discord® email doesn't match the purchase
+                        <p class="text-sm leading-relaxed" style="color:#64748b;">Discord® email doesn't match the purchase
                             email? You decide whether to allow or block mismatches.</p>
                         <div class="flex items-center gap-3 cursor-pointer select-none" onclick="mockupToggle(this)">
                             <div class="w-11 h-6 bg-emerald-500 rounded-full p-0.5 relative shadow-inner">
@@ -2531,7 +2495,7 @@
                             <img src="Icons/Refresh.png" alt="">
                         </div>
                         <h3 class="text-lg font-bold mb-2" style="color:#0f172a;">Auto-Verify on Join</h3>
-                        <p class="text-sm mb-5 leading-relaxed" style="color:#64748b;">Returning buyers get their role the moment
+                        <p class="text-sm leading-relaxed" style="color:#64748b;">Returning buyers get their role the moment
                             they join. No commands, no waiting, no friction.</p>
                         <div class="flex items-center gap-3 cursor-pointer select-none" onclick="mockupToggle(this)">
                             <div class="w-11 h-6 bg-emerald-500 rounded-full p-0.5 relative shadow-inner">
@@ -2546,7 +2510,7 @@
                             <img src="Icons/World.png" alt="">
                         </div>
                         <h3 class="text-lg font-bold mb-2" style="color:#0f172a;">Cross-Server Trust</h3>
-                        <p class="text-sm mb-5 leading-relaxed" style="color:#64748b;">Verify once in your main server and
+                        <p class="text-sm leading-relaxed" style="color:#64748b;">Verify once in your main server and
                             sub-servers inherit that trust automatically. One community, one verification.</p>
                         <div class="flex items-center gap-3 cursor-pointer select-none" onclick="mockupToggle(this)">
                             <div class="w-11 h-6 bg-emerald-500 rounded-full p-0.5 relative shadow-inner">
@@ -2561,7 +2525,7 @@
                             <img src="Icons/Key.png" alt="">
                         </div>
                         <h3 class="text-lg font-bold mb-2" style="color:#0f172a;">Verification Scope</h3>
-                        <p class="text-sm mb-5 leading-relaxed" style="color:#64748b;">Tie verifications to a specific License
+                        <p class="text-sm leading-relaxed" style="color:#64748b;">Tie verifications to a specific License
                             Key or the entire purchasing Account. Match your product's security requirements.</p>
                         <div class="flex gap-2">
                             <span class="bento-badge cursor-pointer" style="background:#f1f5f9;color:#64748b;" data-badge-group="scope" onclick="mockupBadge(this)">Account</span>
@@ -2574,7 +2538,7 @@
                             <img src="Icons/Timer.png" alt="">
                         </div>
                         <h3 class="text-lg font-bold mb-2" style="color:#0f172a;">Duplicate Prevention</h3>
-                        <p class="text-sm mb-5 leading-relaxed" style="color:#64748b;">When a license key is used more than once,
+                        <p class="text-sm leading-relaxed" style="color:#64748b;">When a license key is used more than once,
                             block the attempt or flag it to your moderation team.</p>
                         <div class="flex gap-2">
                             <span
@@ -2588,7 +2552,7 @@
                             <img src="Icons/X.png" alt="">
                         </div>
                         <h3 class="text-lg font-bold mb-2" style="color:#0f172a;">Fraud Protection</h3>
-                        <p class="text-sm mb-5 leading-relaxed" style="color:#64748b;">Suspicious accounts attempting
+                        <p class="text-sm leading-relaxed" style="color:#64748b;">Suspicious accounts attempting
                             unauthorized access can be quarantined or have their verification revoked instantly.</p>
                         <div class="flex gap-2">
                             <span
@@ -2603,7 +2567,7 @@
         </div><!-- /#sections-glass -->
 
         <!-- ── Footer ────────────────────────────────────────────────────────────── -->
-        <footer class="relative z-20 border-t border-black/6"
+        <footer class="relative z-20"
             style="background:rgba(255,255,255,0.55);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);">
 
             <!-- CTA -->
@@ -2616,16 +2580,18 @@
                     style="font-family:'DM Sans',sans-serif;color:#64748b;">Buyers get instant access. You get your time back. Free to
                     install.</p>
                 <button
-                    class="btn-primary clickable px-10 py-3.5 text-sm font-black uppercase tracking-widest text-white reveal reveal-delay-2"
+                    class="pill-cta clickable items-center gap-2.5 px-8 py-3.5 text-sm font-black uppercase tracking-widest"
+                    style="display:inline-flex;"
                     onclick="fireConfetti(this);window.open('https://discord.com/api/oauth2/authorize?client_id=1460374394663735582&permissions=327222946816&scope=bot%20applications.commands','_blank')">
+                    <img src="Icons/Discord.png" class="h-5 w-5 object-contain" alt="">
                     Add to Discord®
                 </button>
             </div>
 
             <!-- Bottom bar -->
             <div
-                class="border-t border-black/6 px-8 py-7 flex flex-col md:flex-row items-center justify-between gap-5 max-w-7xl mx-auto">
-                <img src="Icons/MainLogo.png" alt="Creator Assistant" class="h-5 opacity-40">
+                class="px-8 py-7 flex flex-col md:flex-row items-center justify-between gap-5 max-w-7xl mx-auto" style="border-top:1px solid rgba(0,0,0,0.04);">
+                <img src="Icons/MainLogoDark.png" alt="Creator Assistant" class="h-5" style="opacity:0.55;">
                 <div class="flex flex-wrap justify-center items-center gap-x-8 gap-y-2">
                     <a href="#features" class="footer-link">Features</a>
                     <a href="#integrations" class="footer-link">Integrations</a>
