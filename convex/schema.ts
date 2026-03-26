@@ -314,7 +314,15 @@ const AuditEventType = v.union(
   v.literal('release.artifact.published'),
   v.literal('coupling.unlock.issued'),
   v.literal('coupling.trace.recorded'),
+  v.literal('protected.materialization.grant.issued'),
+  v.literal('protected.materialization.grant.redeemed'),
+  v.literal('protected.materialization.grant.receipted'),
   v.literal('coupling.lookup.performed')
+);
+
+const ProtectedMaterializationGrantTraceStatus = v.union(
+  v.literal('issued'),
+  v.literal('receipted')
 );
 
 // ============================================================================
@@ -1755,12 +1763,16 @@ const coupling_trace_records = defineTable({
   projectIdHash: v.string(),
   runtimeArtifactVersion: v.string(),
   runtimePlaintextSha256: v.string(),
+  grantId: v.optional(v.string()),
+  grantIssuanceStatus: v.optional(ProtectedMaterializationGrantTraceStatus),
+  grantReceiptedAt: v.optional(v.number()),
   correlationId: v.string(),
   createdAt: v.number(),
 })
   .index('by_auth_user_created', ['authUserId', 'createdAt'])
   .index('by_package_token', ['packageId', 'tokenHash'])
-  .index('by_correlation', ['correlationId']);
+  .index('by_correlation', ['correlationId'])
+  .index('by_grant_id', ['grantId']);
 
 /**
  * Package Name Registry, Layer 1 defense.

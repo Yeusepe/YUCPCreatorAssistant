@@ -164,8 +164,12 @@ export const recordLookupAudit = mutation({
     packageId: v.string(),
     source: v.union(v.literal('dashboard'), v.literal('discord')),
     status: v.union(
+      v.literal('attributed'),
       v.literal('matched'),
       v.literal('no_match'),
+      v.literal('tampered_suspected'),
+      v.literal('hostile_unknown'),
+      v.literal('no_candidate_assets'),
       v.literal('denied'),
       v.literal('error')
     ),

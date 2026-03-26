@@ -165,12 +165,14 @@ describe('forensics routes', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       packageId: 'creator.package',
+      lookupStatus: 'attributed',
       candidateAssetCount: 1,
       decodedAssetCount: 1,
       results: [
         {
           assetPath: 'Assets/Character/body.png',
           matched: true,
+          classification: 'attributed',
           matches: [
             {
               licenseSubject: 'license-subject-1',
@@ -185,11 +187,11 @@ describe('forensics routes', () => {
       apiSecret: 'convex-secret',
       authUserId: 'creator-user',
       packageId: 'creator.package',
-      status: 'matched',
+      status: 'attributed',
     });
   });
 
-  it('returns a clean no-match response when the coupling service finds no trace tokens', async () => {
+  it('returns a tamper-suspected response when candidate assets have no decodable coupling signals', async () => {
     queryMock.mockImplementation(async () => {
       throw new Error('Trace lookup should not run without coupling findings');
     });
@@ -220,16 +222,98 @@ describe('forensics routes', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       packageId: 'creator.package',
+      lookupStatus: 'tampered_suspected',
       candidateAssetCount: 1,
       decodedAssetCount: 0,
-      message: 'No authorized match found',
+      message: 'Candidate assets were found, but no valid coupling signals could be decoded',
       results: [],
     });
     expect(queryMock).not.toHaveBeenCalled();
     expect(mutationMock).toHaveBeenCalledTimes(1);
     expect(mutationMock.mock.calls[0]?.[1]).toMatchObject({
       packageId: 'creator.package',
-      status: 'no_match',
+      status: 'tampered_suspected',
+    });
+  });
+
+  it('returns a hostile-unknown response when decoded coupling signals do not match an authorized trace record', async () => {
+    const expectedTokenHash = sha256Hex('deadbeef');
+
+    queryMock.mockImplementation(async (ref: unknown, args: unknown) => {
+      if (ref === apiMock.couplingForensics.lookupTraceMatchesForAuthUser) {
+        expect(args).toEqual({
+          apiSecret: 'convex-secret',
+          authUserId: 'creator-user',
+          packageId: 'creator.package',
+          tokenHashes: [expectedTokenHash],
+        });
+        return {
+          capabilityEnabled: true,
+          packageOwned: true,
+          matches: [],
+          unmatchedTokenHashes: [expectedTokenHash],
+        };
+      }
+      throw new Error(`Unexpected query ${String(ref)}`);
+    });
+
+    mutationMock.mockResolvedValue(undefined);
+
+    const fetchMock = mock(async () => {
+      return new Response(
+        JSON.stringify({
+          results: [
+            {
+              assetPath: 'Assets/Character/body.png',
+              assetType: 'png',
+              decoderKind: 'png',
+              tokenHex: 'deadbeef',
+              tokenLength: 8,
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const formData = new FormData();
+    formData.set('packageId', 'creator.package');
+    formData.set(
+      'file',
+      new File([Uint8Array.from([7, 8, 9])], 'bundle.zip', { type: 'application/zip' })
+    );
+
+    const response = await routes.lookup(
+      new Request('http://localhost:3001/api/forensics/lookup', {
+        method: 'POST',
+        body: formData,
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      packageId: 'creator.package',
+      lookupStatus: 'hostile_unknown',
+      candidateAssetCount: 1,
+      decodedAssetCount: 1,
+      message: 'Coupling signals were decoded, but none matched an authorized trace record',
+      results: [
+        {
+          assetPath: 'Assets/Character/body.png',
+          matched: false,
+          classification: 'hostile_unknown',
+          matches: [],
+        },
+      ],
+    });
+    expect(mutationMock).toHaveBeenCalledTimes(1);
+    expect(mutationMock.mock.calls[0]?.[1]).toMatchObject({
+      packageId: 'creator.package',
+      status: 'hostile_unknown',
     });
   });
 });
