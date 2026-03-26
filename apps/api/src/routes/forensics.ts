@@ -32,6 +32,40 @@ type ForensicsViewer = {
   source: 'dashboard' | 'discord';
 };
 
+type ForensicsLookupStatus =
+  | 'attributed'
+  | 'tampered_suspected'
+  | 'hostile_unknown'
+  | 'no_candidate_assets';
+
+function buildLookupMessage(status: ForensicsLookupStatus): string {
+  switch (status) {
+    case 'attributed':
+      return 'Authorized matches found';
+    case 'tampered_suspected':
+      return 'Candidate assets were found, but no valid coupling signals could be decoded';
+    case 'hostile_unknown':
+      return 'Coupling signals were decoded, but none matched an authorized trace record';
+    case 'no_candidate_assets':
+      return 'No coupling candidate assets were found';
+  }
+}
+
+function buildAuditStatus(
+  status: ForensicsLookupStatus
+): 'matched' | 'attributed' | 'tampered_suspected' | 'hostile_unknown' | 'no_candidate_assets' {
+  switch (status) {
+    case 'attributed':
+      return 'attributed';
+    case 'tampered_suspected':
+      return 'tampered_suspected';
+    case 'hostile_unknown':
+      return 'hostile_unknown';
+    case 'no_candidate_assets':
+      return 'no_candidate_assets';
+  }
+}
+
 function jsonResponse(body: object, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -218,19 +252,21 @@ export function createForensicsRoutes(auth: Auth, config: ForensicsConfig) {
       }
 
       if (extraction.assets.length === 0) {
+        const lookupStatus: ForensicsLookupStatus = 'no_candidate_assets';
         await convex.mutation(api.couplingForensics.recordLookupAudit, {
           apiSecret: config.convexApiSecret,
           authUserId: viewer.authUserId,
           packageId,
           source: viewer.source,
-          status: 'no_match',
+          status: buildAuditStatus(lookupStatus),
           requestedTokenCount: 0,
           matchedTokenCount: 0,
           uploadSha256,
         });
         return jsonResponse({
           packageId,
-          message: 'No coupling candidate assets were found',
+          lookupStatus,
+          message: buildLookupMessage(lookupStatus),
           candidateAssetCount: 0,
           decodedAssetCount: 0,
           results: [],
@@ -242,19 +278,21 @@ export function createForensicsRoutes(auth: Auth, config: ForensicsConfig) {
         sharedSecret: config.couplingServiceSharedSecret,
       });
       if (findings.length === 0) {
+        const lookupStatus: ForensicsLookupStatus = 'tampered_suspected';
         await convex.mutation(api.couplingForensics.recordLookupAudit, {
           apiSecret: config.convexApiSecret,
           authUserId: viewer.authUserId,
           packageId,
           source: viewer.source,
-          status: 'no_match',
+          status: buildAuditStatus(lookupStatus),
           requestedTokenCount: 0,
           matchedTokenCount: 0,
           uploadSha256,
         });
         return jsonResponse({
           packageId,
-          message: 'No authorized match found',
+          lookupStatus,
+          message: buildLookupMessage(lookupStatus),
           candidateAssetCount: extraction.assets.length,
           decodedAssetCount: 0,
           results: [],
@@ -326,6 +364,7 @@ export function createForensicsRoutes(auth: Auth, config: ForensicsConfig) {
           decoderKind: finding.decoderKind,
           tokenLength: finding.tokenLength,
           matched: matches.length > 0,
+          classification: matches.length > 0 ? 'attributed' : 'hostile_unknown',
           matches: matches.map((match: (typeof matches)[number]) => ({
             licenseSubject: match.licenseSubject,
             assetPath: match.assetPath,
@@ -338,12 +377,14 @@ export function createForensicsRoutes(auth: Auth, config: ForensicsConfig) {
       });
 
       const matchedTokenCount = results.filter((entry) => entry.matched).length;
+      const lookupStatus: ForensicsLookupStatus =
+        matchedTokenCount > 0 ? 'attributed' : 'hostile_unknown';
       await convex.mutation(api.couplingForensics.recordLookupAudit, {
         apiSecret: config.convexApiSecret,
         authUserId: viewer.authUserId,
         packageId,
         source: viewer.source,
-        status: matchedTokenCount > 0 ? 'matched' : 'no_match',
+        status: buildAuditStatus(lookupStatus),
         requestedTokenCount: tokenHashes.length,
         matchedTokenCount,
         uploadSha256,
@@ -351,7 +392,8 @@ export function createForensicsRoutes(auth: Auth, config: ForensicsConfig) {
 
       return jsonResponse({
         packageId,
-        message: matchedTokenCount > 0 ? 'Authorized matches found' : 'No authorized match found',
+        lookupStatus,
+        message: buildLookupMessage(lookupStatus),
         candidateAssetCount: extraction.assets.length,
         decodedAssetCount: findings.length,
         results,

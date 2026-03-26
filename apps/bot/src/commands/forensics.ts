@@ -11,6 +11,7 @@ const MAX_UPLOAD_SIZE_BYTES = 100 * 1024 * 1024;
 
 type ForensicsLookupResponse = {
   packageId: string;
+  lookupStatus: 'attributed' | 'tampered_suspected' | 'hostile_unknown' | 'no_candidate_assets';
   message: string;
   candidateAssetCount: number;
   decodedAssetCount: number;
@@ -20,6 +21,7 @@ type ForensicsLookupResponse = {
     decoderKind: string;
     tokenLength: number;
     matched: boolean;
+    classification: 'attributed' | 'hostile_unknown';
     matches: Array<{
       licenseSubject: string;
       assetPath: string;
@@ -172,6 +174,7 @@ export async function handleForensicsLookup(
         : `${E.Library} Coupling lookup complete`,
       `Package: \`${payload.packageId}\``,
       `File: \`${attachment.name ?? 'upload'}\``,
+      `Status: ${payload.lookupStatus.replace(/_/g, ' ')}`,
       `Candidates scanned: ${payload.candidateAssetCount}`,
       `Decoded assets: ${payload.decodedAssetCount}`,
       `Matched assets: ${matchedEntries.length}`,

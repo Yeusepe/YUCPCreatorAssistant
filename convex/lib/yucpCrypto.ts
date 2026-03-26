@@ -260,6 +260,7 @@ export interface ProtectedUnlockClaims {
   unlock_mode: 'wrapped_content_key' | 'content_key_b64';
   wrapped_content_key?: string;
   content_key_b64?: string;
+  content_hash: string;
   iat: number;
   exp: number;
 }
@@ -289,7 +290,6 @@ export interface CouplingRuntimeClaims {
   content_type: string;
   envelope_cipher: string;
   envelope_iv_b64: string;
-  envelope_key_b64: string;
   ciphertext_sha256: string;
   ciphertext_size: number;
   plaintext_sha256: string;
@@ -362,6 +362,19 @@ export async function verifyLicenseJwt(
   expectedIssuer: string
 ): Promise<LicenseClaims | null> {
   return verifyJwt<LicenseClaims>(jwt, publicKeyBase64, expectedIssuer, 'yucp-license-gate');
+}
+
+export async function verifyProtectedUnlockJwt(
+  jwt: string,
+  publicKeyBase64: string,
+  expectedIssuer: string
+): Promise<ProtectedUnlockClaims | null> {
+  return verifyJwt<ProtectedUnlockClaims>(
+    jwt,
+    publicKeyBase64,
+    expectedIssuer,
+    'yucp-protected-unlock'
+  );
 }
 
 export async function verifyCouplingRuntimeJwt(

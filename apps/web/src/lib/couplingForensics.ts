@@ -15,11 +15,13 @@ export interface CouplingForensicsAssetResult {
   decoderKind: string;
   tokenLength: number;
   matched: boolean;
+  classification: 'attributed' | 'hostile_unknown';
   matches: CouplingForensicsMatchSummary[];
 }
 
 export interface CouplingForensicsLookupResponse {
   packageId: string;
+  lookupStatus: 'attributed' | 'tampered_suspected' | 'hostile_unknown' | 'no_candidate_assets';
   message: string;
   candidateAssetCount: number;
   decodedAssetCount: number;

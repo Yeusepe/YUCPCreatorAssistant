@@ -610,6 +610,7 @@ export async function handleLicenseKeyModal(
     const data = await completeLicenseVerification({
       licenseKey,
       productId: providerProductRef,
+      provider,
       authUserId,
       subjectId,
       discordUserId,

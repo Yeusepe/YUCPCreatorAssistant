@@ -71,6 +71,7 @@ import {
   getBetterAuthPage,
 } from './lib/betterAuthAdapter';
 import { isSigningRequestTimestampFresh, verifySigningProof } from './lib/certificateSigning';
+import { deriveCouplingRuntimeEnvelopeKeyBytes } from './lib/couplingRuntimeEnvelope';
 import { buildPublicAuthIssuer, resolveConfiguredPublicApiBaseUrl } from './lib/publicAuthIssuer';
 import { type PublicProductRecord } from './lib/publicProducts';
 import { decryptArtifactEnvelope, sha256HexBytes } from './lib/releaseArtifactEnvelope';
@@ -134,6 +135,29 @@ function jsonResponse(body: unknown, status = 200, headers?: HeadersInit): Respo
 
 function errorResponse(message: string, status: number): Response {
   return jsonResponse({ error: message }, status);
+}
+
+function getProtectedMaterializationBrokerSecret(): string | null {
+  const secret = process.env.YUCP_BROKER_SHARED_SECRET?.trim();
+  return secret ? secret : null;
+}
+
+function isBrokerAuthorized(request: Request): boolean {
+  const configuredSecret = getProtectedMaterializationBrokerSecret();
+  if (!configuredSecret) {
+    return false;
+  }
+
+  const authHeader = request.headers.get('authorization');
+  const headerSecret =
+    (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null) ??
+    request.headers.get('x-yucp-broker-secret');
+
+  if (!headerSecret) {
+    return false;
+  }
+
+  return constantTimeEqual(headerSecret, configuredSecret);
 }
 
 function buildServerTimingHeader(
@@ -1068,6 +1092,7 @@ http.route({
         unlockMode: 'wrapped_content_key' | 'content_key_b64';
         wrappedContentKey?: string;
         contentKeyBase64?: string;
+        contentHash?: string;
         displayName?: string;
       }>;
     };
@@ -1184,6 +1209,9 @@ http.route({
           }
         } else {
           return errorResponse('Invalid protected asset unlockMode', 400);
+        }
+        if (asset.contentHash && !/^[0-9a-f]{64}$/.test(asset.contentHash)) {
+          return errorResponse('Invalid protected asset contentHash format', 400);
         }
       }
 
@@ -1589,6 +1617,209 @@ http.route({
 
 http.route({
   method: 'POST',
+  path: '/v1/licenses/protected-materialization-grant',
+  handler: httpAction(async (ctx, request) => {
+    let body: {
+      packageId: string;
+      protectedAssetId: string;
+      projectId: string;
+      machineFingerprint: string;
+      licenseToken: string;
+      assetPaths: string[];
+    };
+
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return errorResponse('Invalid JSON body', 400);
+    }
+
+    const { packageId, protectedAssetId, projectId, machineFingerprint, licenseToken, assetPaths } =
+      body ?? {};
+    if (
+      !packageId ||
+      !protectedAssetId ||
+      !projectId ||
+      !machineFingerprint ||
+      !licenseToken ||
+      !Array.isArray(assetPaths)
+    ) {
+      return errorResponse(
+        'packageId, protectedAssetId, projectId, machineFingerprint, licenseToken, and assetPaths are required',
+        400
+      );
+    }
+
+    if (!PROTECTED_ASSET_ID_RE.test(protectedAssetId)) {
+      return errorResponse('Invalid protectedAssetId format', 400);
+    }
+    if (!PROJECT_ID_RE.test(projectId)) {
+      return errorResponse('Invalid projectId format', 400);
+    }
+
+    const publicIssuerBaseUrl = resolveConfiguredPublicApiBaseUrl();
+    if (!publicIssuerBaseUrl) return errorResponse('Service not configured', 503);
+    console.log(
+      '[DELETE ME][http.protected-materialization-grant] request',
+      JSON.stringify({
+        packageId,
+        protectedAssetId,
+        projectId,
+        assetCount: assetPaths.length,
+      })
+    );
+
+    const result = await ctx.runAction(internal.yucpLicenses.issueProtectedMaterializationGrant, {
+      packageId,
+      protectedAssetId,
+      machineFingerprint,
+      projectId,
+      licenseToken,
+      assetPaths,
+      issuerBaseUrl: publicIssuerBaseUrl,
+    });
+
+    if (!result.success) {
+      console.log(
+        '[DELETE ME][http.protected-materialization-grant] failed',
+        JSON.stringify({
+          packageId,
+          protectedAssetId,
+          error: result.error ?? 'unknown',
+        })
+      );
+      return jsonResponse({ error: result.error }, 422);
+    }
+
+    console.log(
+      '[DELETE ME][http.protected-materialization-grant] succeeded',
+      JSON.stringify({
+        packageId,
+        protectedAssetId,
+        expiresAt: result.expiresAt ?? null,
+      })
+    );
+    return jsonResponse({
+      success: true,
+      grant: result.grant,
+      expiresAt: result.expiresAt,
+    });
+  }),
+});
+
+http.route({
+  method: 'POST',
+  path: '/v1/licenses/protected-materialization-redeem',
+  handler: httpAction(async (ctx, request) => {
+    if (!isBrokerAuthorized(request)) {
+      return errorResponse('Broker authorization is required', 401);
+    }
+
+    let body: { grant: string };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return errorResponse('Invalid JSON body', 400);
+    }
+
+    if (!body?.grant) {
+      return errorResponse('grant is required', 400);
+    }
+
+    const publicIssuerBaseUrl = resolveConfiguredPublicApiBaseUrl();
+    if (!publicIssuerBaseUrl) return errorResponse('Service not configured', 503);
+    console.log('[DELETE ME][http.protected-materialization-redeem] request', JSON.stringify({ hasGrant: true }));
+
+    const result = await ctx.runAction(internal.yucpLicenses.redeemProtectedMaterializationGrant, {
+      grant: body.grant,
+      issuerBaseUrl: publicIssuerBaseUrl,
+    });
+
+    if (!result.success) {
+      console.log(
+        '[DELETE ME][http.protected-materialization-redeem] failed',
+        JSON.stringify({
+          error: result.error ?? 'unknown',
+        })
+      );
+      return jsonResponse({ error: result.error }, 422);
+    }
+
+    console.log(
+      '[DELETE ME][http.protected-materialization-redeem] succeeded',
+      JSON.stringify({
+        grantId: result.grantId ?? null,
+        packageId: result.packageId ?? null,
+        protectedAssetId: result.protectedAssetId ?? null,
+        couplingJobCount: result.couplingJobs?.length ?? 0,
+      })
+    );
+    return jsonResponse({
+      success: true,
+      grantId: result.grantId,
+      packageId: result.packageId,
+      protectedAssetId: result.protectedAssetId,
+      machineFingerprint: result.machineFingerprint,
+      projectId: result.projectId,
+      licenseSubject: result.licenseSubject,
+      contentKeyBase64: result.contentKeyBase64,
+      contentHash: result.contentHash,
+      couplingJobs: result.couplingJobs ?? [],
+      skipReason: result.skipReason,
+      expiresAt: result.expiresAt,
+    });
+  }),
+});
+
+http.route({
+  method: 'POST',
+  path: '/v1/licenses/protected-materialization-receipt',
+  handler: httpAction(async (ctx, request) => {
+    if (!isBrokerAuthorized(request)) {
+      return errorResponse('Broker authorization is required', 401);
+    }
+
+    let body: { grant: string };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return errorResponse('Invalid JSON body', 400);
+    }
+
+    if (!body?.grant) {
+      return errorResponse('grant is required', 400);
+    }
+    console.log('[DELETE ME][http.protected-materialization-receipt] request', JSON.stringify({ hasGrant: true }));
+
+    const result = await ctx.runMutation(internal.yucpLicenses.receiptProtectedMaterializationGrant, {
+      grant: body.grant,
+    });
+
+    if (!result.success) {
+      console.log(
+        '[DELETE ME][http.protected-materialization-receipt] failed',
+        JSON.stringify({
+          error: result.error ?? 'unknown',
+        })
+      );
+      return jsonResponse({ error: result.error }, 422);
+    }
+
+    console.log(
+      '[DELETE ME][http.protected-materialization-receipt] succeeded',
+      JSON.stringify({
+        updatedCount: result.updatedCount,
+      })
+    );
+    return jsonResponse({
+      success: true,
+      updatedCount: result.updatedCount,
+    });
+  }),
+});
+
+http.route({
+  method: 'POST',
   path: '/v1/licenses/coupling-job',
   handler: httpAction(async (ctx, request) => {
     let body: {
@@ -1680,7 +1911,6 @@ http.route({
       content_type: artifact.contentType ?? 'application/octet-stream',
       envelope_cipher: artifact.envelopeCipher ?? '',
       envelope_iv_b64: artifact.envelopeIvBase64 ?? '',
-      envelope_key_b64: artifact.envelopeKeyBase64 ?? '',
       ciphertext_sha256: artifact.ciphertextSha256 ?? '',
       ciphertext_size: artifact.ciphertextSize ?? 0,
       plaintext_sha256: artifact.plaintextSha256 ?? '',
@@ -1754,15 +1984,28 @@ http.route({
       return errorResponse('Coupling runtime artifact is missing from storage', 503);
     }
 
-    if (!claims.envelope_key_b64 || !claims.envelope_iv_b64) {
+    if (!claims.envelope_iv_b64) {
       return errorResponse('Runtime token is missing decryption metadata', 401);
+    }
+
+    let envelopeKey: Uint8Array;
+    try {
+      envelopeKey = await deriveCouplingRuntimeEnvelopeKeyBytes({
+        artifactKey: artifact.artifactKey,
+        channel: artifact.channel,
+        platform: artifact.platform,
+        version: artifact.version,
+        plaintextSha256: artifact.plaintextSha256,
+      });
+    } catch {
+      return errorResponse('Coupling runtime artifact decryption failed', 503);
     }
 
     let plaintextRuntime: Uint8Array;
     try {
       plaintextRuntime = await decryptArtifactEnvelope(
         new Uint8Array(await blob.arrayBuffer()),
-        base64ToBytes(claims.envelope_key_b64),
+        envelopeKey,
         claims.envelope_iv_b64
       );
     } catch {

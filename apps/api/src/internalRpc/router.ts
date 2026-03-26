@@ -464,6 +464,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
                 apiSecret: deps.config.convexApiSecret,
                 licenseKey: request.licenseKey ?? '',
                 productId: request.productId,
+                provider: request.provider,
                 authUserId: request.authUserId ?? '',
                 subjectId: request.subjectId ?? '',
                 discordUserId: request.discordUserId,

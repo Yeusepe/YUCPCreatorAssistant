@@ -12,6 +12,7 @@
 import { api } from '../../../../../convex/_generated/api';
 import type { ProductRecord, ProviderContext, ProviderPlugin, ProviderPurposes } from '../types';
 import { connect } from './connect';
+import { verification } from './verification';
 import { webhook } from './webhook';
 
 export const PURPOSES = {
@@ -70,6 +71,7 @@ const payhipProvider: ProviderPlugin = {
   backfill: undefined,
   webhook,
   connect,
+  verification,
 };
 
 export default payhipProvider;

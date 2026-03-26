@@ -5,13 +5,9 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { type ActionCtx, internalAction } from './_generated/server';
+import { deriveCouplingRuntimeEnvelopeKeyBytes } from './lib/couplingRuntimeEnvelope';
 import { DEFAULT_COUPLING_RUNTIME_DELIVERY_NAME } from './lib/couplingRuntimeConfig';
-import {
-  bytesToBase64,
-  deriveEnvelopeKeyBytes,
-  encryptArtifactEnvelope,
-  sha256HexBytes,
-} from './lib/releaseArtifactEnvelope';
+import { encryptArtifactEnvelope, sha256HexBytes } from './lib/releaseArtifactEnvelope';
 import {
   RELEASE_ARTIFACT_KEYS,
   RELEASE_CHANNELS,
@@ -49,58 +45,24 @@ type RuntimePublishResult = {
   error?: string;
 };
 
-function getEnvelopeSecret(): string {
-  return (
-    process.env.YUCP_RELEASE_ENVELOPE_SECRET?.trim() ||
-    process.env.YUCP_COUPLING_ENVELOPE_SECRET?.trim() ||
-    process.env.YUCP_ROOT_PRIVATE_KEY?.trim() ||
-    ''
-  );
-}
-
-function buildEnvelopePurpose(args: {
-  artifactKey: string;
-  channel: string;
-  platform: string;
-  version: string;
-  plaintextSha256: string;
-}): string {
-  return [
-    'signed-release-artifact',
-    args.artifactKey,
-    args.channel,
-    args.platform,
-    args.version,
-    args.plaintextSha256,
-  ].join('|');
-}
-
 async function publishRuntimeArtifact(
   ctx: ActionCtx,
   args: RuntimePublishArgs,
   plaintext: Uint8Array,
   sourcePath: string
 ): Promise<RuntimePublishResult> {
-  const envelopeSecret = getEnvelopeSecret();
-  if (!envelopeSecret) {
-    throw new Error('YUCP_RELEASE_ENVELOPE_SECRET or YUCP_ROOT_PRIVATE_KEY must be configured');
-  }
-
   const artifactKey = RELEASE_ARTIFACT_KEYS.couplingRuntime;
   const channel = (args.channel || '').trim() || RELEASE_CHANNELS.stable;
   const platform = (args.platform || '').trim() || RELEASE_PLATFORMS.winX64;
   const deliveryName = (args.deliveryName || '').trim() || DEFAULT_COUPLING_RUNTIME_DELIVERY_NAME;
   const plaintextSha256 = await sha256HexBytes(plaintext);
-  const envelopeKey = await deriveEnvelopeKeyBytes(
-    envelopeSecret,
-    buildEnvelopePurpose({
-      artifactKey,
-      channel,
-      platform,
-      version: args.version,
-      plaintextSha256,
-    })
-  );
+  const envelopeKey = await deriveCouplingRuntimeEnvelopeKeyBytes({
+    artifactKey,
+    channel,
+    platform,
+    version: args.version,
+    plaintextSha256,
+  });
   const encrypted = await encryptArtifactEnvelope(plaintext, envelopeKey);
   const ciphertextBuffer = Uint8Array.from(encrypted.ciphertext).buffer;
   const storageId = await ctx.storage.store(
@@ -250,7 +212,6 @@ export const getActiveRuntimeManifestData = internalAction({
     contentType: v.optional(v.string()),
     envelopeCipher: v.optional(v.string()),
     envelopeIvBase64: v.optional(v.string()),
-    envelopeKeyBase64: v.optional(v.string()),
     ciphertextSha256: v.optional(v.string()),
     ciphertextSize: v.optional(v.number()),
     plaintextSha256: v.optional(v.string()),
@@ -273,7 +234,6 @@ export const getActiveRuntimeManifestData = internalAction({
     contentType?: string;
     envelopeCipher?: string;
     envelopeIvBase64?: string;
-    envelopeKeyBase64?: string;
     ciphertextSha256?: string;
     ciphertextSize?: number;
     plaintextSha256?: string;
@@ -296,21 +256,13 @@ export const getActiveRuntimeManifestData = internalAction({
       };
     }
 
-    const envelopeSecret = getEnvelopeSecret();
-    if (!envelopeSecret) {
-      throw new Error('YUCP_RELEASE_ENVELOPE_SECRET or YUCP_ROOT_PRIVATE_KEY must be configured');
-    }
-
-    const envelopeKey = await deriveEnvelopeKeyBytes(
-      envelopeSecret,
-      buildEnvelopePurpose({
-        artifactKey: artifact.artifactKey,
-        channel: artifact.channel,
-        platform: artifact.platform,
-        version: artifact.version,
-        plaintextSha256: artifact.plaintextSha256,
-      })
-    );
+    await deriveCouplingRuntimeEnvelopeKeyBytes({
+      artifactKey: artifact.artifactKey,
+      channel: artifact.channel,
+      platform: artifact.platform,
+      version: artifact.version,
+      plaintextSha256: artifact.plaintextSha256,
+    });
 
     return {
       success: true,
@@ -323,7 +275,6 @@ export const getActiveRuntimeManifestData = internalAction({
       contentType: artifact.contentType,
       envelopeCipher: artifact.envelopeCipher,
       envelopeIvBase64: artifact.envelopeIvBase64,
-      envelopeKeyBase64: bytesToBase64(envelopeKey),
       ciphertextSha256: artifact.ciphertextSha256,
       ciphertextSize: artifact.ciphertextSize,
       plaintextSha256: artifact.plaintextSha256,

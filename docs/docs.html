@@ -529,6 +529,12 @@
             <a href="#downloads"     class="sidebar-link clickable" data-section="downloads">    <span class="sidebar-num">8</span> Liened Downloads</a>
             <a href="#moderation"    class="sidebar-link clickable" data-section="moderation">   <span class="sidebar-num">9</span> Moderation</a>
             <a href="#analytics"     class="sidebar-link clickable" data-section="analytics">    <span class="sidebar-num">10</span> Analytics</a>
+            <div class="sidebar-group-label">Advanced</div>
+            <a href="#manual-keys"  class="sidebar-link clickable" data-section="manual-keys"> <span class="sidebar-num">11</span> Manual License Keys</a>
+            <a href="#webhooks"     class="sidebar-link clickable" data-section="webhooks">    <span class="sidebar-num">12</span> Webhooks</a>
+            <div class="sidebar-group-label">Developer</div>
+            <a href="#api-access"   class="sidebar-link clickable" data-section="api-access">  <span class="sidebar-num">13</span> API Access</a>
+            <a href="#audit-log"    class="sidebar-link clickable" data-section="audit-log">   <span class="sidebar-num">14</span> Audit Log</a>
         </aside>
 
         <!-- ── Main ─────────────────────────────────────────────────────────── -->
@@ -542,8 +548,8 @@
                 </h1>
                 <p style="font-size:15.5px;color:rgba(255,255,255,0.45);max-width:520px;margin:0 0 2rem;line-height:1.7;">Everything you need to install, configure, and operate Creator Assistant, from first setup to advanced moderation.</p>
                 <div style="display:flex;flex-wrap:wrap;gap:10px;">
-                    <span class="tag-pill"><span style="width:7px;height:7px;border-radius:50%;background:#38bdf8;display:inline-block;"></span>10 Sections</span>
-                    <span class="tag-pill"><span style="width:7px;height:7px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>18+ Commands</span>
+                    <span class="tag-pill"><span style="width:7px;height:7px;border-radius:50%;background:#38bdf8;display:inline-block;"></span>14 Sections</span>
+                    <span class="tag-pill"><span style="width:7px;height:7px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>25+ Commands</span>
                     <span class="tag-pill"><span style="width:7px;height:7px;border-radius:50%;background:#34d399;display:inline-block;"></span>5 Product Types</span>
                 </div>
                 <div class="hero-cta-actions">
@@ -726,6 +732,10 @@
                         <span class="cmd-row-desc">View linked accounts and verified products</span>
                     </div>
                     <div class="cmd-row">
+                        <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator account')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator</span> <span class="cmd-sub">account</span></span></div>
+                        <span class="cmd-row-desc">Open the account portal to manage linked stores and personal settings</span>
+                    </div>
+                    <div class="cmd-row">
                         <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator verify')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator</span> <span class="cmd-sub">verify</span> <span class="cmd-req">&lt;product&gt;</span></span></div>
                         <span class="cmd-row-desc">Verify a specific product with a license key. Supports autocomplete.</span>
                     </div>
@@ -752,6 +762,10 @@
                     <div class="cmd-row">
                         <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator status')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator</span> <span class="cmd-sub">status</span></span></div>
                         <span class="cmd-row-desc">Open the verification panel; shows linked accounts and verified products</span>
+                    </div>
+                    <div class="cmd-row">
+                        <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator account')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator</span> <span class="cmd-sub">account</span></span></div>
+                        <span class="cmd-row-desc">Open the account portal to manage linked stores and personal settings</span>
                     </div>
                     <div class="cmd-row">
                         <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator verify')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator</span> <span class="cmd-sub">verify</span> <span class="cmd-req">&lt;product&gt;</span></span></div>
@@ -783,6 +797,10 @@
                     <div class="cmd-row">
                         <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator-admin setup start')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator-admin</span> <span class="cmd-sub">setup start</span></span></div>
                         <span class="cmd-row-desc">Send a private secure dashboard link for store connections, onboarding progress, and server setup. Once your server is fully configured this becomes <code>/creator-admin dashboard</code>.</span>
+                    </div>
+                    <div class="cmd-row">
+                        <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator-admin dashboard')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator-admin</span> <span class="cmd-sub">dashboard</span></span></div>
+                        <span class="cmd-row-desc">Open a direct link to the web dashboard for managing your server configuration, products, and analytics.</span>
                     </div>
                 </div>
 
@@ -890,6 +908,15 @@
                     <div class="cmd-row">
                         <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator-admin collab list')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator-admin</span> <span class="cmd-sub">collab list</span></span></div>
                         <span class="cmd-row-desc">View all active collaborator connections and their linked stores.</span>
+                    </div>
+                </div>
+
+                <p class="cmd-group-label">Forensics</p>
+                <div class="cmd-table" style="margin-bottom:1.5rem;">
+                    <div class="cmd-table-head"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> forensics</div>
+                    <div class="cmd-row">
+                        <div class="cmd-row-left"><button class="copy-btn-sm clickable" onclick="copyCmd(this,'/creator-admin forensics lookup')" aria-label="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button><span class="cmd-row-syntax"><span class="cmd-slash">/</span><span class="cmd-name">creator-admin</span> <span class="cmd-sub">forensics lookup</span></span></div>
+                        <span class="cmd-row-desc">Perform a deep forensic analysis of a package or asset. Returns metadata, linked accounts, and usage patterns.</span>
                     </div>
                 </div>
             </section>
@@ -1088,6 +1115,178 @@
                 <div class="callout callout-info" style="margin-top:1rem;">
                     <span class="callout-icon"><img src="Icons/ClapStars.png" alt="Analytics"></span>
                     <span>The PostHog® link returned by <code>/creator-admin analytics</code> is pre-filtered to your server's data only.</span>
+                </div>
+            </section>
+
+            <!-- ══ 11. Manual License Keys ══════════════════════════════════ -->
+            <section class="doc-section" id="manual-keys">
+                <p class="section-label">Section 11</p>
+                <h2 class="section-title">Manual <span class="grad-text grad-green">License Keys</span></h2>
+                <p class="section-lead">Issue custom license keys that are not tied to any storefront. Perfect for off-platform sales, giveaways, beta access, or Patreon rewards.</p>
+
+                <div class="bento-card" style="margin-bottom:1.25rem;">
+                    <p style="font-family:'Plus Jakarta Sans',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.25);margin:0 0 1rem;">Key Lifecycle</p>
+                    <div class="overview-steps">
+                        <div class="overview-step"><div class="overview-num" style="border-color:rgba(0,230,118,0.45);color:#34d399;font-size:22px;">&#9679;</div><h4>Active</h4><p>Key is valid and can be redeemed</p></div>
+                        <div class="overview-step"><div class="overview-num" style="border-color:rgba(245,158,11,0.45);color:#fbbf24;font-size:22px;">&#9679;</div><h4>Exhausted</h4><p>Max uses reached</p></div>
+                        <div class="overview-step"><div class="overview-num" style="border-color:rgba(255,255,255,0.2);color:rgba(255,255,255,0.35);font-size:22px;">&#9679;</div><h4>Expired</h4><p>Past expiration date</p></div>
+                        <div class="overview-step"><div class="overview-num" style="border-color:rgba(239,68,68,0.45);color:#f87171;font-size:22px;">&#9679;</div><h4>Revoked</h4><p>Manually disabled by creator</p></div>
+                    </div>
+                </div>
+
+                <h3 class="sub-heading"><span class="sub-dot"></span>How It Works</h3>
+                <div class="step-flow">
+                    <div class="step-item"><div class="step-left"><div class="step-badge">1</div><div class="step-connector"></div></div><div class="step-content"><h4>Create keys</h4><p>Generate keys from the dashboard or via the Public API. Each key can have an optional max-use limit and expiration date.</p></div></div>
+                    <div class="step-item"><div class="step-left"><div class="step-badge">2</div><div class="step-connector"></div></div><div class="step-content"><h4>Distribute to buyers</h4><p>Share keys through email, DMs, Patreon, or any channel you prefer. Bulk import is supported for large batches.</p></div></div>
+                    <div class="step-item"><div class="step-left"><div class="step-badge">3</div><div class="step-connector"></div></div><div class="step-content"><h4>Buyer verifies</h4><p>The buyer enters the key in the verification flow, just like a storefront license key. The bot validates it and grants the mapped role.</p></div></div>
+                    <div class="step-item"><div class="step-left"><div class="step-badge">4</div></div><div class="step-content"><h4>Lifecycle managed automatically</h4><p>Keys are tracked for usage count and expiration. Exhausted or expired keys are rejected automatically. You can revoke a key at any time from the dashboard.</p></div></div>
+                </div>
+
+                <div class="two-col">
+                    <div class="two-col-card" style="border-color:rgba(0,230,118,0.18);">
+                        <h4 style="color:#34d399;">Security</h4>
+                        <ul>
+                            <li>Keys are stored hashed, never in plaintext</li>
+                            <li>One-way hash means keys cannot be recovered</li>
+                            <li>Revocation takes effect immediately</li>
+                            <li>Usage attempts are logged in the audit trail</li>
+                        </ul>
+                    </div>
+                    <div class="two-col-card" style="border-color:rgba(56,189,248,0.18);">
+                        <h4 style="color:#38bdf8;">Management</h4>
+                        <ul>
+                            <li>Create individual keys or bulk import</li>
+                            <li>Set optional max uses per key</li>
+                            <li>Set optional expiration dates</li>
+                            <li>Manage via dashboard or Public API</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="callout callout-info" style="margin-top:1rem;">
+                    <span class="callout-icon"><img src="Icons/Key.png" alt="Key"></span>
+                    <span>Manual license keys appear as <span class="badge badge-manual">Manual License</span> in the product type selector when adding a product via <code>/creator-admin product add</code>.</span>
+                </div>
+            </section>
+
+            <!-- ══ 12. Webhooks ═════════════════════════════════════════════ -->
+            <section class="doc-section" id="webhooks">
+                <div class="glow-ring" style="width:260px;height:260px;background:#a78bfa;top:-50px;left:-60px;opacity:0.12;"></div>
+                <p class="section-label">Section 12</p>
+                <h2 class="section-title">Outgoing <span class="grad-text grad-purple">Webhooks</span></h2>
+                <p class="section-lead">Subscribe to events and receive HTTP callbacks whenever something important happens in your verification system. Build custom integrations, sync with external tools, or trigger workflows.</p>
+
+                <h3 class="sub-heading"><span class="sub-dot"></span>Supported Events</h3>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem;margin-bottom:1.75rem;">
+                    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:1rem;"><div style="font-size:10px;color:rgba(255,255,255,0.25);font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;">Verification Completed</div><div style="font-size:13.5px;color:rgba(255,255,255,0.65);">Fires when a buyer successfully completes verification</div></div>
+                    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:1rem;"><div style="font-size:10px;color:rgba(255,255,255,0.25);font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;">Entitlement Granted / Revoked</div><div style="font-size:13.5px;color:rgba(255,255,255,0.65);">Fires when a role entitlement is granted or revoked</div></div>
+                    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:1rem;"><div style="font-size:10px;color:rgba(255,255,255,0.25);font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;">Role Synced</div><div style="font-size:13.5px;color:rgba(255,255,255,0.65);">Fires when Discord roles are synced after a refresh</div></div>
+                    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:1rem;"><div style="font-size:10px;color:rgba(255,255,255,0.25);font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;">Refund Processed</div><div style="font-size:13.5px;color:rgba(255,255,255,0.65);">Fires when a refund is processed and roles are adjusted</div></div>
+                </div>
+
+                <h3 class="sub-heading"><span class="sub-dot"></span>Security</h3>
+                <p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.75;margin-bottom:1.5rem;">Every webhook payload is signed with <strong style="color:#fff;">HMAC-SHA256</strong>. The signature is included in the <code>X-Signature-256</code> header so your endpoint can verify that the request is authentic and has not been tampered with.</p>
+
+                <h3 class="sub-heading"><span class="sub-dot"></span>Retry Policy</h3>
+                <p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.75;margin-bottom:1rem;">If your endpoint returns a non-2xx status code or times out, the system retries with exponential backoff:</p>
+                <div class="bento-card" style="margin-bottom:1.5rem;">
+                    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
+                        <span class="tag-pill" style="font-size:10px;">30s</span>
+                        <span style="color:rgba(255,255,255,0.15);font-size:16px;">→</span>
+                        <span class="tag-pill" style="font-size:10px;">5 min</span>
+                        <span style="color:rgba(255,255,255,0.15);font-size:16px;">→</span>
+                        <span class="tag-pill" style="font-size:10px;">30 min</span>
+                        <span style="color:rgba(255,255,255,0.15);font-size:16px;">→</span>
+                        <span class="tag-pill" style="font-size:10px;">2 hours</span>
+                        <span style="color:rgba(255,255,255,0.15);font-size:16px;">→</span>
+                        <span class="tag-pill" style="font-size:10px;">8 hours</span>
+                    </div>
+                </div>
+                <p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.75;margin-bottom:1.5rem;">After all retries are exhausted, the delivery is moved to a <strong style="color:#fff;">dead letter queue</strong>. You can inspect and replay failed deliveries from the dashboard.</p>
+
+                <h3 class="sub-heading"><span class="sub-dot"></span>Management</h3>
+                <div class="two-col">
+                    <div class="two-col-card" style="border-color:rgba(167,139,250,0.2);">
+                        <h4 style="color:#a78bfa;">Dashboard</h4>
+                        <ul>
+                            <li>Create and manage webhook subscriptions</li>
+                            <li>View delivery history and status</li>
+                            <li>Inspect and replay failed deliveries</li>
+                            <li>Rotate signing secrets</li>
+                        </ul>
+                    </div>
+                    <div class="two-col-card" style="border-color:rgba(56,189,248,0.18);">
+                        <h4 style="color:#38bdf8;">Public API</h4>
+                        <ul>
+                            <li>Programmatically manage subscriptions</li>
+                            <li>Query delivery logs</li>
+                            <li>Replay failed deliveries via API</li>
+                            <li>Full CRUD on webhook endpoints</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══ 13. API Access ═══════════════════════════════════════════ -->
+            <section class="doc-section" id="api-access">
+                <div class="glow-ring" style="width:280px;height:280px;background:var(--accent-sky);top:-40px;right:-60px;opacity:0.15;"></div>
+                <p class="section-label">Section 13</p>
+                <h2 class="section-title">API <span class="grad-text grad-sky">Access</span></h2>
+                <p class="section-lead">Programmatically manage your verification data, products, entitlements, and more through the Public API v2 with 56 endpoints.</p>
+
+                <h3 class="sub-heading"><span class="sub-dot"></span>Getting an API Key</h3>
+                <div class="step-flow">
+                    <div class="step-item"><div class="step-left"><div class="step-badge">1</div><div class="step-connector"></div></div><div class="step-content"><h4>Open Account Settings</h4><p>Navigate to <strong style="color:#fff;">Account → API Keys</strong> in the Creator Assistant dashboard.</p></div></div>
+                    <div class="step-item"><div class="step-left"><div class="step-badge">2</div><div class="step-connector"></div></div><div class="step-content"><h4>Generate a new key</h4><p>Click <strong style="color:#fff;">Generate API Key</strong>. The key is shown once; copy it immediately and store it securely.</p></div></div>
+                    <div class="step-item"><div class="step-left"><div class="step-badge">3</div></div><div class="step-content"><h4>Authenticate requests</h4><p>Include the key in the <code>Authorization</code> header: <code>Bearer ypsk_...</code></p></div></div>
+                </div>
+
+                <div class="bento-card" style="margin-bottom:1.5rem;">
+                    <p style="font-family:'Plus Jakarta Sans',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.25);margin:0 0 1rem;">Key Format</p>
+                    <div class="cmd-wrap" style="margin:0;">
+                        <div class="cmd-block" style="font-size:14px;"><span style="color:#38bdf8;font-weight:600;">ypsk_</span><span style="color:rgba(255,255,255,0.35);">&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;</span></div>
+                    </div>
+                    <p style="font-size:13px;color:rgba(255,255,255,0.4);margin:0.75rem 0 0;line-height:1.5;">All API keys start with the <code>ypsk_</code> prefix. The full API covers 56 endpoints for managing verification data, products, entitlements, webhooks, and more.</p>
+                </div>
+
+                <div class="callout callout-warn">
+                    <span class="callout-icon"><img src="Icons/KeyCloud.png" alt="Security"></span>
+                    <span>Treat your API key like a password. Do not commit it to source control or share it publicly. You can revoke and regenerate keys at any time from the dashboard.</span>
+                </div>
+
+                <h3 class="sub-heading"><span class="sub-dot"></span>Full API Reference</h3>
+                <p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.75;margin-bottom:1rem;">The complete API documentation, including request/response schemas, authentication details, and interactive examples, is hosted on Fern:</p>
+                <a href="https://yucp-creator-assistant.docs.buildwithfern.com" target="_blank" rel="noopener noreferrer" class="hero-cta-button clickable" style="display:inline-flex;margin-bottom:1rem;">
+                    API Reference (Fern Docs)
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                </a>
+            </section>
+
+            <!-- ══ 14. Audit Log ════════════════════════════════════════════ -->
+            <section class="doc-section" id="audit-log">
+                <p class="section-label">Section 14</p>
+                <h2 class="section-title">Audit <span class="grad-text grad-gold">Log</span></h2>
+                <p class="section-lead">Every significant action is logged with full context: who did it, when, and what changed. Use audit logs for compliance, debugging, and support investigations.</p>
+
+                <h3 class="sub-heading"><span class="sub-dot"></span>What Gets Logged</h3>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem;margin-bottom:1.75rem;">
+                    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:1rem;"><div style="font-size:10px;color:rgba(255,255,255,0.25);font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;">Verifications</div><div style="font-size:13.5px;color:rgba(255,255,255,0.65);">Successful and failed verification attempts with method and product</div></div>
+                    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:1rem;"><div style="font-size:10px;color:rgba(255,255,255,0.25);font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;">Role Changes</div><div style="font-size:13.5px;color:rgba(255,255,255,0.65);">Roles granted, revoked, or synced with timestamps and reasons</div></div>
+                    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:1rem;"><div style="font-size:10px;color:rgba(255,255,255,0.25);font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;">Refunds</div><div style="font-size:13.5px;color:rgba(255,255,255,0.65);">Refund detections and any resulting role revocations</div></div>
+                    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:1rem;"><div style="font-size:10px;color:rgba(255,255,255,0.25);font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;">Settings</div><div style="font-size:13.5px;color:rgba(255,255,255,0.65);">Configuration changes: product mappings, connections, server settings</div></div>
+                </div>
+
+                <h3 class="sub-heading"><span class="sub-dot"></span>Viewing Logs</h3>
+                <p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.75;margin-bottom:1rem;">Open <strong style="color:#fff;">Dashboard → Audit Logs</strong> to browse the full event history. Use the built-in filters to narrow results:</p>
+                <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:1.75rem;">
+                    <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(255,255,255,0.6);"><span style="color:#38bdf8;font-weight:700;">→</span> Filter by event type (verification, role change, refund, settings)</div>
+                    <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(255,255,255,0.6);"><span style="color:#38bdf8;font-weight:700;">→</span> Filter by user (Discord ID or username)</div>
+                    <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(255,255,255,0.6);"><span style="color:#38bdf8;font-weight:700;">→</span> Filter by date range</div>
+                </div>
+
+                <div class="callout callout-info">
+                    <span class="callout-icon"><img src="Icons/Assistant.png" alt="API"></span>
+                    <span>Audit logs are also queryable via the <a href="https://yucp-creator-assistant.docs.buildwithfern.com" target="_blank" rel="noopener noreferrer" style="color:#38bdf8;text-decoration:underline;">Public API</a>, making it easy to integrate with external compliance or monitoring tools.</span>
                 </div>
             </section>
 

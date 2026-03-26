@@ -39,6 +39,10 @@ import {
   decryptProtectedBlobContentKey,
   encryptProtectedBlobContentKey,
 } from './lib/protectedAssetKeyCrypto';
+import {
+  sealProtectedMaterializationGrant,
+  unsealProtectedMaterializationGrant,
+} from './lib/protectedMaterializationGrant';
 import { resolveProtectedAssetUnlockMode } from './lib/protectedAssetUnlockMode';
 import { buildPublicAuthIssuer } from './lib/publicAuthIssuer';
 import {
@@ -53,20 +57,23 @@ import {
   signLicenseJwt,
   signProtectedUnlockJwt,
   verifyLicenseJwt,
+  verifyProtectedUnlockJwt,
 } from './lib/yucpCrypto';
 
 const TOKEN_TTL_SECONDS = 3600; // 1 hour -- kept short; disk cache handles offline re-use
-const PROTECTED_UNLOCK_TTL_SECONDS = 30 * 24 * 60 * 60;
+const PROTECTED_UNLOCK_TTL_SECONDS = 10 * 60;
 const COUPLING_ASSET_PATH_MAX_LENGTH = 512;
 const PACKAGE_ID_RE = /^[a-z0-9\-_./:]{1,128}$/;
 const PROTECTED_ASSET_ID_RE = /^[a-f0-9]{32}$/;
 const MACHINE_FINGERPRINT_RE = /^[a-z0-9:_-]{16,256}$/i;
 const PROJECT_ID_RE = /^[a-f0-9]{32}$/;
+const CONTENT_HASH_RE = /^[0-9a-f]{64}$/;
 const PROTECTED_ASSET_REGISTRATION = v.object({
   protectedAssetId: v.string(),
   unlockMode: v.union(v.literal('wrapped_content_key'), v.literal('content_key_b64')),
   wrappedContentKey: v.optional(v.string()),
   contentKeyBase64: v.optional(v.string()),
+  contentHash: v.optional(v.string()),
   displayName: v.optional(v.string()),
 });
 
@@ -690,6 +697,10 @@ export const upsertProtectedAssets = internalMutation({
       if (!PROTECTED_ASSET_ID_RE.test(asset.protectedAssetId)) {
         throw new ConvexError(`Invalid protectedAssetId format: ${asset.protectedAssetId}`);
       }
+      const assetContentHash = asset.contentHash ?? args.contentHash;
+      if (!CONTENT_HASH_RE.test(assetContentHash)) {
+        throw new ConvexError('contentHash must be 64 lowercase hex characters');
+      }
       if (asset.unlockMode === 'wrapped_content_key') {
         if (!asset.wrappedContentKey) {
           throw new ConvexError('wrappedContentKey is required for wrapped_content_key assets');
@@ -719,7 +730,7 @@ export const upsertProtectedAssets = internalMutation({
             asset.unlockMode === 'wrapped_content_key' ? asset.wrappedContentKey : undefined,
           encryptedContentKey,
           displayName: asset.displayName,
-          contentHash: args.contentHash,
+          contentHash: assetContentHash,
           packageVersion: args.packageVersion,
           publisherId: args.publisherId,
           yucpUserId: args.yucpUserId,
@@ -735,7 +746,7 @@ export const upsertProtectedAssets = internalMutation({
             asset.unlockMode === 'wrapped_content_key' ? asset.wrappedContentKey : undefined,
           encryptedContentKey,
           displayName: asset.displayName,
-          contentHash: args.contentHash,
+          contentHash: assetContentHash,
           packageVersion: args.packageVersion,
           publisherId: args.publisherId,
           yucpUserId: args.yucpUserId,
@@ -760,6 +771,7 @@ export const getProtectedAsset = internalQuery({
       unlockMode: v.union(v.literal('wrapped_content_key'), v.literal('content_key_b64')),
       wrappedContentKey: v.optional(v.string()),
       encryptedContentKey: v.optional(v.string()),
+      contentHash: v.string(),
       yucpUserId: v.string(),
     })
   ),
@@ -777,6 +789,7 @@ export const getProtectedAsset = internalQuery({
       unlockMode,
       wrappedContentKey: row.wrappedContentKey,
       encryptedContentKey: row.encryptedContentKey,
+      contentHash: row.contentHash,
       yucpUserId: row.yucpUserId,
     };
   },
@@ -834,6 +847,7 @@ export const recordCouplingTraceIssuance = internalMutation({
     projectId: v.string(),
     runtimeArtifactVersion: v.string(),
     runtimePlaintextSha256: v.string(),
+    grantId: v.optional(v.string()),
     correlationId: v.string(),
     jobs: v.array(
       v.object({
@@ -859,6 +873,8 @@ export const recordCouplingTraceIssuance = internalMutation({
         projectIdHash,
         runtimeArtifactVersion: args.runtimeArtifactVersion,
         runtimePlaintextSha256: args.runtimePlaintextSha256,
+        grantId: args.grantId,
+        grantIssuanceStatus: args.grantId ? 'issued' : undefined,
         correlationId: args.correlationId,
         createdAt: now,
       });
@@ -891,6 +907,87 @@ export const recordCouplingTraceIssuance = internalMutation({
       correlationId: args.correlationId,
       createdAt: now,
     });
+
+    if (args.grantId) {
+      await ctx.db.insert('audit_events', {
+        authUserId: args.authUserId,
+        eventType: 'protected.materialization.grant.issued',
+        actorType: 'system',
+        metadata: {
+          grantId: args.grantId,
+          packageId: args.packageId,
+          licenseSubject: args.licenseSubject,
+          assetCount: args.jobs.length,
+          runtimeArtifactVersion: args.runtimeArtifactVersion,
+        },
+        correlationId: args.correlationId,
+        createdAt: now,
+      });
+    }
+  },
+});
+
+export const recordProtectedMaterializationReceipt = internalMutation({
+  args: {
+    grantId: v.string(),
+    authUserId: v.string(),
+    machineFingerprint: v.string(),
+    projectId: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    updatedCount: v.number(),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const machineFingerprintHash = await sha256Hex(args.machineFingerprint);
+    const projectIdHash = await sha256Hex(args.projectId);
+    const grantRows = await ctx.db
+      .query('coupling_trace_records')
+      .withIndex('by_grant_id', (q) => q.eq('grantId', args.grantId))
+      .collect();
+
+    const matchingRows = grantRows.filter(
+      (row) =>
+        row.authUserId === args.authUserId &&
+        row.machineFingerprintHash === machineFingerprintHash &&
+        row.projectIdHash === projectIdHash
+    );
+
+    if (matchingRows.length === 0) {
+      return {
+        success: false,
+        updatedCount: 0,
+        error: 'Protected materialization grant receipt did not match any issued traces',
+      };
+    }
+
+    const now = Date.now();
+    for (const row of matchingRows) {
+      await ctx.db.patch(row._id, {
+        grantIssuanceStatus: 'receipted',
+        grantReceiptedAt: now,
+      });
+    }
+
+    await ctx.db.insert('audit_events', {
+      authUserId: args.authUserId,
+      eventType: 'protected.materialization.grant.receipted',
+      actorType: 'system',
+      metadata: {
+        grantId: args.grantId,
+        packageId: matchingRows[0]?.packageId,
+        licenseSubject: matchingRows[0]?.licenseSubject,
+        assetCount: matchingRows.length,
+      },
+      correlationId: matchingRows[0]?.correlationId ?? crypto.randomUUID(),
+      createdAt: now,
+    });
+
+    return {
+      success: true,
+      updatedCount: matchingRows.length,
+    };
   },
 });
 
@@ -1099,6 +1196,9 @@ export const issueProtectedUnlock = internalAction({
     if (!packageReg || packageReg.yucpUserId !== protectedAsset.yucpUserId) {
       return { success: false, error: 'Protected asset owner mismatch' };
     }
+    if (!CONTENT_HASH_RE.test(protectedAsset.contentHash)) {
+      return { success: false, error: 'Protected asset content hash is invalid' };
+    }
 
     await ctx.runMutation(internal.yucpLicenses.recordProtectedUnlockIssuance, {
       packageId: args.packageId,
@@ -1130,12 +1230,466 @@ export const issueProtectedUnlock = internalAction({
           ? protectedAsset.wrappedContentKey
           : undefined,
       content_key_b64: protectedAsset.unlockMode === 'content_key_b64' ? contentKeyB64 : undefined,
+      content_hash: protectedAsset.contentHash,
       iat: nowSeconds,
       exp,
     };
 
     const unlockToken = await signProtectedUnlockJwt(claims, rootPrivateKey, keyId);
     return { success: true, unlockToken, expiresAt: exp };
+  },
+});
+
+type ProtectedMaterializationGrantIssueResult =
+  | {
+      success: true;
+      grant: string;
+      expiresAt: number;
+      error?: undefined;
+    }
+  | {
+      success: false;
+      grant?: undefined;
+      expiresAt?: undefined;
+      error: string;
+    };
+
+type ProtectedUnlockIssueResult =
+  {
+    success: boolean;
+    unlockToken?: string;
+    expiresAt?: number;
+    error?: string;
+  };
+
+type CouplingJobIssueResult =
+  {
+    success: boolean;
+    subject?: string;
+    jobs?: Array<{ assetPath: string; tokenHex: string }>;
+    skipReason?: string;
+    error?: string;
+  };
+
+export const issueProtectedMaterializationGrant = internalAction({
+  args: {
+    packageId: v.string(),
+    protectedAssetId: v.string(),
+    machineFingerprint: v.string(),
+    projectId: v.string(),
+    licenseToken: v.string(),
+    assetPaths: v.array(v.string()),
+    issuerBaseUrl: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    grant: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args): Promise<ProtectedMaterializationGrantIssueResult> => {
+    const grantId = crypto.randomUUID();
+    const packageReg = await ctx.runQuery(internal.packageRegistry.getRegistration, {
+      packageId: args.packageId,
+    });
+    if (!packageReg) {
+      console.log(
+        '[DELETE ME][yucpLicenses.issueProtectedMaterializationGrant] package-registration-missing',
+        JSON.stringify({
+          grantId,
+          packageId: args.packageId,
+          protectedAssetId: args.protectedAssetId,
+        })
+      );
+      return { success: false, error: 'Package registration not found' };
+    }
+    console.log(
+      '[DELETE ME][yucpLicenses.issueProtectedMaterializationGrant] request',
+      JSON.stringify({
+        grantId,
+        packageId: args.packageId,
+        protectedAssetId: args.protectedAssetId,
+        projectId: args.projectId,
+        assetCount: args.assetPaths.length,
+      })
+    );
+
+    const unlockResult: ProtectedUnlockIssueResult = await ctx.runAction(
+      internal.yucpLicenses.issueProtectedUnlock,
+      {
+        packageId: args.packageId,
+        protectedAssetId: args.protectedAssetId,
+        machineFingerprint: args.machineFingerprint,
+        projectId: args.projectId,
+        licenseToken: args.licenseToken,
+        issuerBaseUrl: args.issuerBaseUrl,
+      }
+    );
+
+    if (!unlockResult.success || !unlockResult.unlockToken || !unlockResult.expiresAt) {
+      console.log(
+        '[DELETE ME][yucpLicenses.issueProtectedMaterializationGrant] unlock-failed',
+        JSON.stringify({
+          grantId,
+          packageId: args.packageId,
+          protectedAssetId: args.protectedAssetId,
+          error: unlockResult.error ?? 'unknown',
+        })
+      );
+      return {
+        success: false,
+        error: unlockResult.error ?? 'Protected materialization grant could not authorize the asset',
+      };
+    }
+    console.log(
+      '[DELETE ME][yucpLicenses.issueProtectedMaterializationGrant] unlock-authorized',
+      JSON.stringify({
+        grantId,
+        packageId: args.packageId,
+        protectedAssetId: args.protectedAssetId,
+        expiresAt: unlockResult.expiresAt,
+      })
+    );
+
+    const couplingResult: CouplingJobIssueResult = await ctx.runAction(
+      internal.yucpLicenses.issueCouplingJob,
+      {
+        packageId: args.packageId,
+        machineFingerprint: args.machineFingerprint,
+        projectId: args.projectId,
+        licenseToken: args.licenseToken,
+        assetPaths: args.assetPaths,
+        grantId,
+        issuerBaseUrl: args.issuerBaseUrl,
+      }
+    );
+
+    if (!couplingResult.success) {
+      console.log(
+        '[DELETE ME][yucpLicenses.issueProtectedMaterializationGrant] coupling-failed',
+        JSON.stringify({
+          grantId,
+          packageId: args.packageId,
+          protectedAssetId: args.protectedAssetId,
+          error: couplingResult.error ?? 'unknown',
+        })
+      );
+      return {
+        success: false,
+        error: couplingResult.error ?? 'Protected materialization grant could not issue coupling jobs',
+      };
+    }
+    console.log(
+      '[DELETE ME][yucpLicenses.issueProtectedMaterializationGrant] coupling-issued',
+      JSON.stringify({
+        grantId,
+        packageId: args.packageId,
+        protectedAssetId: args.protectedAssetId,
+        couplingJobCount: couplingResult.jobs?.length ?? 0,
+        skipReason: couplingResult.skipReason ?? null,
+      })
+    );
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const grant = await sealProtectedMaterializationGrant({
+      schemaVersion: 1,
+      grantId,
+      creatorAuthUserId: packageReg.yucpUserId,
+      packageId: args.packageId,
+      protectedAssetId: args.protectedAssetId,
+      machineFingerprint: args.machineFingerprint,
+      projectId: args.projectId,
+      licenseSubject: couplingResult.subject ?? '',
+      issuedAt: nowSeconds,
+      expiresAt: unlockResult.expiresAt,
+      unlockToken: unlockResult.unlockToken,
+      unlockExpiresAt: unlockResult.expiresAt,
+      coupling: {
+        ...(couplingResult.subject ? { subject: couplingResult.subject } : {}),
+        ...(couplingResult.skipReason ? { skipReason: couplingResult.skipReason } : {}),
+        jobs: couplingResult.jobs ?? [],
+      },
+    });
+    console.log(
+      '[DELETE ME][yucpLicenses.issueProtectedMaterializationGrant] grant-sealed',
+      JSON.stringify({
+        grantId,
+        packageId: args.packageId,
+        protectedAssetId: args.protectedAssetId,
+        expiresAt: unlockResult.expiresAt,
+      })
+    );
+
+    return {
+      success: true,
+      grant,
+      expiresAt: unlockResult.expiresAt,
+    };
+  },
+});
+
+export const redeemProtectedMaterializationGrant = internalAction({
+  args: {
+    grant: v.string(),
+    issuerBaseUrl: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    grantId: v.optional(v.string()),
+    creatorAuthUserId: v.optional(v.string()),
+    packageId: v.optional(v.string()),
+    protectedAssetId: v.optional(v.string()),
+    machineFingerprint: v.optional(v.string()),
+    projectId: v.optional(v.string()),
+    licenseSubject: v.optional(v.string()),
+    contentKeyBase64: v.optional(v.string()),
+    contentHash: v.optional(v.string()),
+    couplingJobs: v.optional(
+      v.array(
+        v.object({
+          assetPath: v.string(),
+          tokenHex: v.string(),
+        })
+      )
+    ),
+    skipReason: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    if (!args.grant) {
+      return { success: false, error: 'grant is required' };
+    }
+
+    const rootPrivateKey = process.env.YUCP_ROOT_PRIVATE_KEY;
+    if (!rootPrivateKey) throw new Error('YUCP_ROOT_PRIVATE_KEY not configured');
+
+    const rootPublicKey =
+      process.env.YUCP_ROOT_PUBLIC_KEY ?? (await getPublicKeyFromPrivate(rootPrivateKey));
+    const issuer = buildPublicAuthIssuer(args.issuerBaseUrl);
+    const payload = await unsealProtectedMaterializationGrant(args.grant);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    console.log(
+      '[DELETE ME][yucpLicenses.redeemProtectedMaterializationGrant] request',
+      JSON.stringify({
+        grantId: payload.grantId,
+        packageId: payload.packageId,
+        protectedAssetId: payload.protectedAssetId,
+        projectId: payload.projectId,
+      })
+    );
+    if (payload.expiresAt <= nowSeconds) {
+      console.log(
+        '[DELETE ME][yucpLicenses.redeemProtectedMaterializationGrant] expired',
+        JSON.stringify({
+          grantId: payload.grantId,
+          packageId: payload.packageId,
+          protectedAssetId: payload.protectedAssetId,
+        })
+      );
+      return { success: false, error: 'Protected materialization grant is expired' };
+    }
+
+    const unlockClaims = await verifyProtectedUnlockJwt(payload.unlockToken, rootPublicKey, issuer);
+    if (!unlockClaims) {
+      console.log(
+        '[DELETE ME][yucpLicenses.redeemProtectedMaterializationGrant] invalid-unlock-token',
+        JSON.stringify({
+          grantId: payload.grantId,
+          packageId: payload.packageId,
+          protectedAssetId: payload.protectedAssetId,
+        })
+      );
+      return { success: false, error: 'Protected materialization grant unlock token is invalid' };
+    }
+
+    if (
+      unlockClaims.package_id !== payload.packageId ||
+      unlockClaims.protected_asset_id !== payload.protectedAssetId ||
+      unlockClaims.machine_fingerprint !== payload.machineFingerprint ||
+      unlockClaims.project_id !== payload.projectId ||
+      unlockClaims.sub !== payload.licenseSubject
+    ) {
+      console.log(
+        '[DELETE ME][yucpLicenses.redeemProtectedMaterializationGrant] claim-mismatch',
+        JSON.stringify({
+          grantId: payload.grantId,
+          packageId: payload.packageId,
+          protectedAssetId: payload.protectedAssetId,
+        })
+      );
+      return { success: false, error: 'Protected materialization grant claims did not match' };
+    }
+
+    if (unlockClaims.unlock_mode !== 'content_key_b64' || !unlockClaims.content_key_b64) {
+      console.log(
+        '[DELETE ME][yucpLicenses.redeemProtectedMaterializationGrant] unsupported-unlock-mode',
+        JSON.stringify({
+          grantId: payload.grantId,
+          packageId: payload.packageId,
+          protectedAssetId: payload.protectedAssetId,
+          unlockMode: unlockClaims.unlock_mode,
+        })
+      );
+      return {
+        success: false,
+        error: 'Protected materialization grant does not permit brokered content-key materialization',
+      };
+    }
+
+    await ctx.runMutation(internal.yucpLicenses.recordProtectedMaterializationGrantRedemption, {
+      authUserId: payload.creatorAuthUserId,
+      grantId: payload.grantId,
+      packageId: payload.packageId,
+      protectedAssetId: payload.protectedAssetId,
+      licenseSubject: payload.licenseSubject,
+      couplingJobCount: payload.coupling.jobs.length,
+    });
+    console.log(
+      '[DELETE ME][yucpLicenses.redeemProtectedMaterializationGrant] success',
+      JSON.stringify({
+        grantId: payload.grantId,
+        packageId: payload.packageId,
+        protectedAssetId: payload.protectedAssetId,
+        couplingJobCount: payload.coupling.jobs.length,
+      })
+    );
+
+    return {
+      success: true,
+      grantId: payload.grantId,
+      creatorAuthUserId: payload.creatorAuthUserId,
+      packageId: payload.packageId,
+      protectedAssetId: payload.protectedAssetId,
+      machineFingerprint: payload.machineFingerprint,
+      projectId: payload.projectId,
+      licenseSubject: payload.licenseSubject,
+      contentKeyBase64: unlockClaims.content_key_b64,
+      contentHash: unlockClaims.content_hash,
+      couplingJobs: payload.coupling.jobs,
+      skipReason: payload.coupling.skipReason,
+      expiresAt: payload.expiresAt,
+    };
+  },
+});
+
+export const receiptProtectedMaterializationGrant = internalMutation({
+  args: {
+    grant: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    updatedCount: v.number(),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    if (!args.grant) {
+      return { success: false, updatedCount: 0, error: 'grant is required' };
+    }
+
+    const payload = await unsealProtectedMaterializationGrant(args.grant);
+    console.log(
+      '[DELETE ME][yucpLicenses.receiptProtectedMaterializationGrant] request',
+      JSON.stringify({
+        grantId: payload.grantId,
+        packageId: payload.packageId,
+        protectedAssetId: payload.protectedAssetId,
+      })
+    );
+    const machineFingerprintHash = await sha256Hex(payload.machineFingerprint);
+    const projectIdHash = await sha256Hex(payload.projectId);
+    const grantRows = await ctx.db
+      .query('coupling_trace_records')
+      .withIndex('by_grant_id', (q) => q.eq('grantId', payload.grantId))
+      .collect();
+
+    const matchingRows = grantRows.filter(
+      (row) =>
+        row.authUserId === payload.creatorAuthUserId &&
+        row.machineFingerprintHash === machineFingerprintHash &&
+        row.projectIdHash === projectIdHash
+    );
+
+    if (matchingRows.length === 0) {
+      console.log(
+        '[DELETE ME][yucpLicenses.receiptProtectedMaterializationGrant] no-matching-traces',
+        JSON.stringify({
+          grantId: payload.grantId,
+          packageId: payload.packageId,
+          protectedAssetId: payload.protectedAssetId,
+        })
+      );
+      return {
+        success: false,
+        updatedCount: 0,
+        error: 'Protected materialization grant receipt did not match any issued traces',
+      };
+    }
+
+    const now = Date.now();
+    for (const row of matchingRows) {
+      await ctx.db.patch(row._id, {
+        grantIssuanceStatus: 'receipted',
+        grantReceiptedAt: now,
+      });
+    }
+
+    await ctx.db.insert('audit_events', {
+      authUserId: payload.creatorAuthUserId,
+      eventType: 'protected.materialization.grant.receipted',
+      actorType: 'system',
+      metadata: {
+        grantId: payload.grantId,
+        packageId: matchingRows[0]?.packageId,
+        licenseSubject: matchingRows[0]?.licenseSubject,
+        assetCount: matchingRows.length,
+      },
+      correlationId: matchingRows[0]?.correlationId ?? crypto.randomUUID(),
+      createdAt: now,
+    });
+    console.log(
+      '[DELETE ME][yucpLicenses.receiptProtectedMaterializationGrant] success',
+      JSON.stringify({
+        grantId: payload.grantId,
+        packageId: payload.packageId,
+        protectedAssetId: payload.protectedAssetId,
+        updatedCount: matchingRows.length,
+      })
+    );
+
+    return {
+      success: true,
+      updatedCount: matchingRows.length,
+    };
+  },
+});
+
+export const recordProtectedMaterializationGrantRedemption = internalMutation({
+  args: {
+    authUserId: v.string(),
+    grantId: v.string(),
+    packageId: v.string(),
+    protectedAssetId: v.string(),
+    licenseSubject: v.string(),
+    couplingJobCount: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.insert('audit_events', {
+      authUserId: args.authUserId,
+      eventType: 'protected.materialization.grant.redeemed',
+      actorType: 'system',
+      metadata: {
+        grantId: args.grantId,
+        packageId: args.packageId,
+        protectedAssetId: args.protectedAssetId,
+        licenseSubject: args.licenseSubject,
+        couplingJobCount: args.couplingJobCount,
+      },
+      correlationId: crypto.randomUUID(),
+      createdAt: Date.now(),
+    });
+    return null;
   },
 });
 
@@ -1146,6 +1700,7 @@ export const issueCouplingJob = internalAction({
     projectId: v.string(),
     licenseToken: v.string(),
     assetPaths: v.array(v.string()),
+    grantId: v.optional(v.string()),
     issuerBaseUrl: v.string(),
   },
   returns: v.object({
@@ -1271,6 +1826,7 @@ export const issueCouplingJob = internalAction({
       projectId: args.projectId,
       runtimeArtifactVersion: activeRuntimeArtifact.version,
       runtimePlaintextSha256: activeRuntimeArtifact.plaintextSha256,
+      grantId: args.grantId,
       correlationId,
       jobs,
     });

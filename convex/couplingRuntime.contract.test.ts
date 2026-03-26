@@ -13,7 +13,8 @@ describe('coupling runtime HTTP contract', () => {
 
   it('decrypts the stored runtime artifact before serving downloads', () => {
     expect(httpSource).toContain('decryptArtifactEnvelope(');
-    expect(httpSource).toContain('base64ToBytes(claims.envelope_key_b64)');
+    expect(httpSource).toContain('deriveCouplingRuntimeEnvelopeKeyBytes({');
+    expect(httpSource).not.toContain('envelope_key_b64:');
     expect(httpSource).toContain('X-YUCP-Runtime-Plaintext-Sha256');
   });
 

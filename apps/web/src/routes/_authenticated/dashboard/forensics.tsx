@@ -430,6 +430,12 @@ export default function DashboardForensics() {
               <dt className="account-kv-label">Matched assets</dt>
               <dd className="account-kv-value">{lookupResult ? matchedAssets : '-'}</dd>
             </div>
+            <div className="account-kv-row">
+              <dt className="account-kv-label">Status</dt>
+              <dd className="account-kv-value">
+                {lookupResult ? lookupResult.lookupStatus.replace(/_/g, ' ') : '-'}
+              </dd>
+            </div>
           </dl>
 
           {!lookupResult && !isLoading && (
