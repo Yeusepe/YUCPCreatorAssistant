@@ -81,9 +81,7 @@ describe('PayhipApiClient.fetchProductName', () => {
   });
 
   it('falls back to og:title when JSON-LD is malformed', async () => {
-    mockFetchWithHtml(
-      makeProductPage({ malformedLdJson: true, ogTitle: 'Product From OG Title' })
-    );
+    mockFetchWithHtml(makeProductPage({ malformedLdJson: true, ogTitle: 'Product From OG Title' }));
 
     const client = new PayhipApiClient();
     const name = await client.fetchProductName('KZFw0');
@@ -92,9 +90,7 @@ describe('PayhipApiClient.fetchProductName', () => {
   });
 
   it('prefers JSON-LD over og:title when both are present', async () => {
-    mockFetchWithHtml(
-      makeProductPage({ ldJsonName: 'From JSON-LD', ogTitle: 'From OG Title' })
-    );
+    mockFetchWithHtml(makeProductPage({ ldJsonName: 'From JSON-LD', ogTitle: 'From OG Title' }));
 
     const client = new PayhipApiClient();
     const name = await client.fetchProductName('KZFw0');

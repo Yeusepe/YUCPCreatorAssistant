@@ -28,12 +28,14 @@ mock.module('../../src/lib/posthog', () => ({
 import {
   handleProductAddInteractive,
   handleProductCancelAdd,
+  handleProductPayhipModal,
   handleProductTypeSelect,
 } from '../../src/commands/product';
 import type { MockFn } from '../helpers/mockInteraction';
 import {
   extractAllCustomIds,
   mockButton,
+  mockModalSubmit,
   mockSlashCommand,
   mockStringSelect,
 } from '../helpers/mockInteraction';
@@ -513,5 +515,135 @@ describe('product command', () => {
     expect(optionValues).toContain('vrchat');
     expect(optionValues).toContain('license');
     expect(optionValues).toContain('discord_role');
+  });
+});
+
+describe('handleProductPayhipModal — permalink normalization', () => {
+  /** Seed a product session so modal handlers can find it. */
+  async function seedPayhipSession(userId: string, authUserId: string, guildId: string) {
+    const slashInteraction = mockSlashCommand({
+      userId,
+      guildId,
+      commandName: 'creator-admin',
+      subcommandGroup: 'product',
+      subcommand: 'add',
+      isAdmin: true,
+    });
+    await handleProductAddInteractive(
+      slashInteraction as unknown as ChatInputCommandInteraction,
+      {
+        authUserId,
+        guildLinkId: 'link_payhip_test' as ProductCtx['guildLinkId'],
+        guildId,
+      },
+      ALL_CONNECTED,
+      TEST_API_SECRET
+    );
+  }
+
+  it('accepts a raw permalink and stores it as-is', async () => {
+    const userId = 'user_ph_raw';
+    const authUserId = 'auth_ph_raw';
+    const guildId = 'guild_ph_raw';
+    await seedPayhipSession(userId, authUserId, guildId);
+
+    const modal = mockModalSubmit({
+      userId,
+      guildId,
+      customId: `creator_product:payhip_modal:${userId}:${authUserId}`,
+      textInputValues: { permalink: 'RGsF', product_secret_key: 'secret123' },
+    });
+
+    await handleProductPayhipModal(
+      modal as unknown as import('discord.js').ModalSubmitInteraction,
+      userId,
+      authUserId
+    );
+
+    // Should advance to step 3 (role select), NOT show an error
+    expect(modal.reply.mock.calls).toHaveLength(1);
+    const replyPayload = modal.reply.mock.calls[0]?.[0];
+    expect(replyPayload?.content).toContain('Step 3 of 3');
+  });
+
+  it('accepts a full Payhip URL and normalizes it to the permalink', async () => {
+    const userId = 'user_ph_url';
+    const authUserId = 'auth_ph_url';
+    const guildId = 'guild_ph_url';
+    await seedPayhipSession(userId, authUserId, guildId);
+
+    const modal = mockModalSubmit({
+      userId,
+      guildId,
+      customId: `creator_product:payhip_modal:${userId}:${authUserId}`,
+      textInputValues: {
+        permalink: 'https://payhip.com/b/KZFw0',
+        product_secret_key: 'secret123',
+      },
+    });
+
+    await handleProductPayhipModal(
+      modal as unknown as import('discord.js').ModalSubmitInteraction,
+      userId,
+      authUserId
+    );
+
+    // Should advance to step 3 (role select) — URL was valid
+    expect(modal.reply.mock.calls).toHaveLength(1);
+    const replyPayload = modal.reply.mock.calls[0]?.[0];
+    expect(replyPayload?.content).toContain('Step 3 of 3');
+  });
+
+  it('rejects an input that is neither a valid URL nor a permalink', async () => {
+    const userId = 'user_ph_bad';
+    const authUserId = 'auth_ph_bad';
+    const guildId = 'guild_ph_bad';
+    await seedPayhipSession(userId, authUserId, guildId);
+
+    const modal = mockModalSubmit({
+      userId,
+      guildId,
+      customId: `creator_product:payhip_modal:${userId}:${authUserId}`,
+      textInputValues: {
+        permalink: 'not a valid url or permalink !!!',
+        product_secret_key: 'secret123',
+      },
+    });
+
+    await handleProductPayhipModal(
+      modal as unknown as import('discord.js').ModalSubmitInteraction,
+      userId,
+      authUserId
+    );
+
+    expect(modal.reply.mock.calls).toHaveLength(1);
+    const replyPayload = modal.reply.mock.calls[0]?.[0];
+    // Should show an error, not advance to step 3
+    expect(replyPayload?.content).not.toContain('Step 3 of 3');
+    expect(replyPayload?.content).toContain('permalink');
+  });
+
+  it('rejects an empty permalink', async () => {
+    const userId = 'user_ph_empty';
+    const authUserId = 'auth_ph_empty';
+    const guildId = 'guild_ph_empty';
+    await seedPayhipSession(userId, authUserId, guildId);
+
+    const modal = mockModalSubmit({
+      userId,
+      guildId,
+      customId: `creator_product:payhip_modal:${userId}:${authUserId}`,
+      textInputValues: { permalink: '', product_secret_key: 'secret123' },
+    });
+
+    await handleProductPayhipModal(
+      modal as unknown as import('discord.js').ModalSubmitInteraction,
+      userId,
+      authUserId
+    );
+
+    expect(modal.reply.mock.calls).toHaveLength(1);
+    const replyPayload = modal.reply.mock.calls[0]?.[0];
+    expect(replyPayload?.content).not.toContain('Step 3 of 3');
   });
 });
