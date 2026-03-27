@@ -1,5 +1,5 @@
 import { PayhipAdapter } from '@yucp/providers';
-import { createLogger } from '@yucp/shared';
+import { createLogger, parseProductId } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
 import type { LicenseVerificationPlugin, LicenseVerificationResult } from '../types';
@@ -62,9 +62,16 @@ export const verification: LicenseVerificationPlugin = {
       matchedPermalink: result.matchedProductPermalink,
     });
 
+    const rawPermalink = result.matchedProductPermalink;
+    let normalizedPermalink = rawPermalink;
+    if (rawPermalink) {
+      const parsed = parseProductId('payhip', rawPermalink);
+      normalizedPermalink = parsed.ok ? parsed.productId : rawPermalink;
+    }
+
     return {
       valid: result.valid,
-      providerProductId: result.matchedProductPermalink,
+      providerProductId: normalizedPermalink,
       error: result.error,
     };
   },

@@ -731,7 +731,7 @@ export async function handleProductPayhipModal(
   userId: string,
   authUserId: string
 ): Promise<void> {
-  const permalink = interaction.fields.getTextInputValue('permalink')?.trim();
+  const rawPermalink = interaction.fields.getTextInputValue('permalink')?.trim();
   const productSecretKey = interaction.fields.getTextInputValue('product_secret_key')?.trim();
   const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
@@ -744,7 +744,7 @@ export async function handleProductPayhipModal(
     return;
   }
 
-  if (!permalink || !productSecretKey) {
+  if (!rawPermalink || !productSecretKey) {
     await interaction.reply({
       content: `${E.X_} Both the Product Permalink and Product Secret Key are required.`,
       flags: MessageFlags.Ephemeral,
@@ -752,7 +752,16 @@ export async function handleProductPayhipModal(
     return;
   }
 
-  session.urlOrId = permalink;
+  const parsed = parseProductId('payhip', rawPermalink);
+  if (!parsed.ok) {
+    await interaction.reply({
+      content: `${E.X_} ${parsed.error} — enter either the permalink (e.g. \`RGsF\`) or the full product URL (e.g. \`https://payhip.com/b/RGsF\`).`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  session.urlOrId = parsed.productId;
   session.perProductCredentialKey = productSecretKey;
 
   const roleSelect = new RoleSelectMenuBuilder()
@@ -781,7 +790,7 @@ export async function handleProductPerCredentialModal(
   userId: string,
   authUserId: string
 ): Promise<void> {
-  const productId = interaction.fields.getTextInputValue('product_id')?.trim();
+  const rawProductId = interaction.fields.getTextInputValue('product_id')?.trim();
   const credentialKey = interaction.fields.getTextInputValue('credential_key')?.trim();
   const sessionKey = getSessionKey(userId, authUserId, interaction.guildId ?? '');
   const session = productSessions.get(sessionKey);
@@ -795,7 +804,7 @@ export async function handleProductPerCredentialModal(
   }
 
   const descriptor = getProviderDescriptor(provider);
-  if (!productId || !credentialKey) {
+  if (!rawProductId || !credentialKey) {
     const cred = descriptor?.perProductCredential;
     await interaction.reply({
       content: `${E.X_} Both the ${cred?.productIdLabel ?? 'Product ID'} and ${cred?.credentialLabel ?? 'credential key'} are required.`,
@@ -804,7 +813,9 @@ export async function handleProductPerCredentialModal(
     return;
   }
 
-  session.urlOrId = productId;
+  const parsed = parseProductId(provider, rawProductId);
+  const normalizedProductId = parsed.ok ? parsed.productId : rawProductId;
+  session.urlOrId = normalizedProductId;
   session.perProductCredentialKey = credentialKey;
 
   const roleSelect = new RoleSelectMenuBuilder()

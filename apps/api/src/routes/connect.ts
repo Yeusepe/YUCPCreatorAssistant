@@ -4573,6 +4573,23 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
         credentialKeyPrefix: descriptor.perProductCredential.credentialKeyPrefix,
         encryptedSecretKey,
       });
+
+      if (plugin.onProductCredentialAdded) {
+        const providerCtx = {
+          convex,
+          apiSecret: config.convexApiSecret,
+          authUserId: params.authUserId,
+          encryptionSecret: config.encryptionSecret,
+        };
+        plugin.onProductCredentialAdded(params.productId, providerCtx).catch((err) => {
+          logger.warn('onProductCredentialAdded hook failed (non-fatal)', {
+            providerKey: params.providerKey,
+            productId: params.productId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+
       return { success: true };
     } catch (err) {
       return {
