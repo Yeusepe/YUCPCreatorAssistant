@@ -1,11 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 import { cwd } from 'node:process';
+import { loadBotE2ESecrets } from '@yucp/shared/test/loadBotE2ESecrets';
 import { DiscordBotE2EHarness, safeCleanup } from './support';
 
 let harness: DiscordBotE2EHarness;
+const loadedBotE2ESecrets = await loadBotE2ESecrets();
+const describeBotE2E = loadedBotE2ESecrets.missing.length === 0 ? describe : describe.skip;
 
-describe('discord bot real-infrastructure e2e', () => {
+describeBotE2E('discord bot real-infrastructure e2e', () => {
   beforeAll(async () => {
     harness = await DiscordBotE2EHarness.start();
   });

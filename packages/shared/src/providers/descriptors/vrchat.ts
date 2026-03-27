@@ -19,6 +19,6 @@ export const vrchat = {
     label: 'VRChat Avatar ID or URL',
     description: 'VRChat Avatar ID (avtr_\u2026) or vrchat.com/home/avatar/avtr_\u2026 URL',
     placeholder: 'avtr_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
-    requiresConnection: true,
+    requiresConnection: false,
   },
 } as const satisfies ProviderDescriptorInput;

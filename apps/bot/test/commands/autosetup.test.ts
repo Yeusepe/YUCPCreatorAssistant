@@ -13,7 +13,11 @@
 
 import { describe, expect, it, mock } from 'bun:test';
 import type { ConvexHttpClient } from 'convex/browser';
-import type { ChatInputCommandInteraction, StringSelectMenuInteraction } from 'discord.js';
+import {
+  type ChatInputCommandInteraction,
+  Collection,
+  type StringSelectMenuInteraction,
+} from 'discord.js';
 
 // Controls what listProviderProducts returns for ALL providers in a test.
 // Changed between tests before the call to handleAutosetupModeSelect.
@@ -38,7 +42,11 @@ mock.module('../../src/lib/posthog', () => ({
 }));
 
 mock.module('../../src/lib/apiUrls', () => ({
-  getApiUrls: mock(() => ({ apiPublic: null, apiInternal: null })),
+  getApiUrls: mock(() => ({
+    apiPublic: process.env.API_BASE_URL,
+    apiInternal: process.env.API_INTERNAL_URL ?? process.env.API_BASE_URL,
+    webPublic: process.env.FRONTEND_URL ?? process.env.VERIFY_BASE_URL ?? process.env.API_BASE_URL,
+  })),
 }));
 
 import type { Id } from '../../../../convex/_generated/dataModel';
@@ -65,7 +73,7 @@ function mockStartInteraction(userId: string) {
     guild: {
       id: 'guild_autosetup_test',
       members: { me: { permissions: { has: () => true } } },
-      roles: { fetch: mock(async () => new Map()) },
+      roles: { fetch: mock(async () => new Collection()) },
     },
     deferReply: mock(async () => {}),
     editReply: mock(async () => {}),
@@ -82,7 +90,7 @@ function mockModeSelectInteraction(userId: string, mode: string) {
     guild: {
       id: 'guild_autosetup_test',
       members: { me: { permissions: { has: () => true } } },
-      roles: { fetch: mock(async () => new Map()) },
+      roles: { fetch: mock(async () => new Collection()) },
     },
     values: [mode],
     deferUpdate: mock(async () => {}),

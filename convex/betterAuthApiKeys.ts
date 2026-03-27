@@ -256,9 +256,12 @@ function isManagedPublicApiKeyForAuthUser(
 }
 
 export const listApiKeys = query({
-  args: {},
+  args: {
+    apiSecret: v.string(),
+  },
   returns: v.array(SerializedApiKey),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const auth = createAuth(ctx);
     const api = auth.api as unknown as BetterAuthServerApi;
     const result = await api.listApiKeys();
@@ -328,10 +331,12 @@ export const listApiKeysForAuthUser = query({
 
 export const getApiKey = query({
   args: {
+    apiSecret: v.string(),
     keyId: v.string(),
   },
   returns: v.union(SerializedApiKey, v.null()),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const auth = createAuth(ctx);
     const api = auth.api as unknown as BetterAuthServerApi;
     const result = await api.getApiKey({
@@ -518,11 +523,13 @@ export const verifyApiKey = mutation({
 
 export const updateApiKey = mutation({
   args: {
+    apiSecret: v.string(),
     keyId: v.string(),
     enabled: v.optional(v.boolean()),
   },
   returns: SerializedApiKey,
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const auth = createAuth(ctx);
     const api = auth.api as unknown as BetterAuthServerApi;
     const updated = await api.updateApiKey({

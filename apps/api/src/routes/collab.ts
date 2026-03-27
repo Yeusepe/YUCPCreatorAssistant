@@ -1167,10 +1167,7 @@ export function createCollabRoutes(config: CollabConfig) {
    */
   function listCollabProviders(): Response {
     const providers = (PROVIDER_REGISTRY as ReadonlyArray<(typeof PROVIDER_REGISTRY)[number]>)
-      .filter(
-        (p): p is Extract<(typeof PROVIDER_REGISTRY)[number], { supportsCollab: true }> =>
-          'supportsCollab' in p && p.supportsCollab === true
-      )
+      .filter((p) => p.supportsCollab === true)
       .map((p) => ({ key: p.providerKey, label: p.label }));
     return Response.json({ providers });
   }

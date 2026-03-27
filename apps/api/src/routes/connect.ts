@@ -1864,6 +1864,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     try {
       const convex = getConvexClientFromUrl(config.convexUrl);
       const existing = (await convex.query(api.betterAuthApiKeys.getApiKey, {
+        apiSecret: config.convexApiSecret,
         keyId,
       })) as BetterAuthApiKey | null;
 
@@ -1877,6 +1878,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       }
 
       await convex.mutation(api.betterAuthApiKeys.updateApiKey, {
+        apiSecret: config.convexApiSecret,
         keyId,
         enabled: false,
       });
@@ -1978,6 +1980,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       const scopes = normalizeOAuthScopes(body.scopes);
       const convex = getConvexClientFromUrl(config.convexUrl);
       const createdClient = (await convex.mutation(api.oauthClients.createOAuthClient, {
+        apiSecret: config.convexApiSecret,
         client_name: name,
         redirect_uris: redirectUris,
         scope: scopes.join(' '),
@@ -2012,6 +2015,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
         });
       } catch (mappingError) {
         await convex.mutation(api.oauthClients.deleteOAuthClient, {
+          apiSecret: config.convexApiSecret,
           clientId: createdClient.client_id,
         });
         throw mappingError;
@@ -2054,6 +2058,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       }
 
       const result = (await convex.mutation(api.oauthClients.rotateOAuthClientSecret, {
+        apiSecret: config.convexApiSecret,
         clientId: mapping.clientId,
       })) as BetterAuthOAuthClient;
 
@@ -2122,6 +2127,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       }
 
       await convex.mutation(api.oauthClients.updateOAuthClient, {
+        apiSecret: config.convexApiSecret,
         clientId: mapping.clientId,
         update: {
           ...(nextName !== undefined ? { client_name: nextName } : {}),
@@ -2178,6 +2184,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       }
 
       await convex.mutation(api.oauthClients.deleteOAuthClient, {
+        apiSecret: config.convexApiSecret,
         clientId: mapping.clientId,
       });
 
@@ -2224,6 +2231,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     try {
       const convex = getConvexClientFromUrl(config.convexUrl);
       const existing = (await convex.query(api.betterAuthApiKeys.getApiKey, {
+        apiSecret: config.convexApiSecret,
         keyId,
       })) as BetterAuthApiKey | null;
 
@@ -2270,6 +2278,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       }
 
       await convex.mutation(api.betterAuthApiKeys.updateApiKey, {
+        apiSecret: config.convexApiSecret,
         keyId,
         enabled: false,
       });
@@ -4211,6 +4220,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       await Promise.all(
         managedPublicApiKeys.map((key) =>
           convex.mutation(api.betterAuthApiKeys.updateApiKey, {
+            apiSecret: config.convexApiSecret,
             keyId: key.id,
             enabled: false,
           })

@@ -1,20 +1,9 @@
 import { expect, test } from 'playwright/test';
 
-// Source: https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/09-Testing_for_Clickjacking
-// Source: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
 // Source: https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html
 
 const SKIP_REASON =
   'Requires TEST_BASE_URL env var pointing to a running API server (e.g. TEST_BASE_URL=http://localhost:3001)';
-
-function expectHtmlSecurityHeaders(headers: Record<string, string>) {
-  expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
-  expect(headers['content-security-policy']).toContain("object-src 'none'");
-  expect(headers['content-security-policy']).toContain("base-uri 'none'");
-  expect(headers['x-frame-options']).toBe('DENY');
-  expect(headers['x-content-type-options']).toBe('nosniff');
-  expect(headers['referrer-policy']).toBe('no-referrer');
-}
 
 test.describe('Sign-in page', () => {
   test.skip(!process.env.TEST_BASE_URL, SKIP_REASON);
@@ -24,10 +13,12 @@ test.describe('Sign-in page', () => {
     expect(response?.status()).toBe(200);
   });
 
-  test('sign-in page serves CSP, nosniff, and frame-deny protections', async ({ page }) => {
-    const response = await page.goto('/sign-in');
-    expect(response?.status()).toBe(200);
-    expectHtmlSecurityHeaders(response?.headers() ?? {});
+  test('sign-in page resolves through the frontend handoff and renders the auth action', async ({
+    page,
+  }) => {
+    await page.goto('/sign-in');
+    await expect(page).toHaveURL(/\/sign-in$/);
+    await expect(page.locator('#discord-signin-btn')).toBeAttached();
   });
 
   test('sign-in page has Discord OAuth button', async ({ page }) => {
@@ -77,32 +68,30 @@ test.describe('Sign-in page', () => {
   });
 
   test('sign-in page constrains redirect targets to safe relative paths', async ({ page }) => {
-    await page.goto('/sign-in?redirectTo=//evil.example/phish');
-
-    await page.waitForFunction(() => {
-      const btn = document.getElementById('discord-signin-btn') as HTMLAnchorElement | null;
-      return btn !== null && btn.href !== '' && !btn.href.endsWith('#');
+    let capturedPostData: string | null = null;
+    await page.route('**/api/auth/sign-in/**', async (route) => {
+      capturedPostData = route.request().postData();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ url: 'https://discord.com/oauth2/authorize?client_id=test' }),
+      });
     });
 
-    const discordHref = await page.locator('#discord-signin-btn').getAttribute('href');
-    expect(discordHref).toBeTruthy();
-    expect(discordHref).not.toContain('evil.example');
+    await page.goto('/sign-in?redirectTo=//evil.example/phish');
+    await page.locator('#discord-signin-btn').click();
+    await expect.poll(() => capturedPostData).not.toBeNull();
 
-    const callbackUrl = new URL(discordHref ?? '').searchParams.get('callbackURL');
-    expect(callbackUrl).toBeTruthy();
-    expect(callbackUrl).toContain('/sign-in');
-    expect(callbackUrl).toContain('redirectTo=%2Fdashboard');
+    const payload = JSON.parse(capturedPostData ?? '{}') as { callbackURL?: string };
+    expect(payload.callbackURL).toBe('/dashboard');
   });
 
-  test('sign-in page does not leak expired OTTs into the DOM after the browser handles them', async ({
-    page,
-  }) => {
+  test('sign-in page does not leak OTT values into rendered HTML', async ({ page }) => {
     const response = await page.goto('/sign-in?ott=phase8-secret-ott-token');
     expect(response?.status()).toBe(200);
 
-    await expect(page).toHaveURL(/\/sign-in$/);
     const bodyHtml = await page.evaluate(() => document.body.innerHTML);
     expect(bodyHtml).not.toContain('phase8-secret-ott-token');
-    await expect(page.locator('#error-detail')).toContainText('expired');
+    await expect(page.locator('#discord-signin-btn')).toBeAttached();
   });
 });

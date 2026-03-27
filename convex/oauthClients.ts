@@ -220,9 +220,12 @@ function getOAuthApi(ctx: QueryCtx) {
 }
 
 export const listOAuthClients = query({
-  args: {},
+  args: {
+    apiSecret: v.string(),
+  },
   returns: v.array(OAuthClientValue),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const clients = (await getOAuthApi(ctx).getOAuthClients()) as OAuthClientResponse[] | null;
     return (clients ?? []).map((client) => normalizeOAuthClientRecord(client));
   },
@@ -230,10 +233,12 @@ export const listOAuthClients = query({
 
 export const getOAuthClient = query({
   args: {
+    apiSecret: v.string(),
     clientId: v.string(),
   },
   returns: v.union(v.null(), OAuthClientValue),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const client = (await getOAuthApi(ctx).getOAuthClient({
       query: { client_id: args.clientId },
     })) as OAuthClientResponse | null;
@@ -244,10 +249,12 @@ export const getOAuthClient = query({
 
 export const getOAuthClientPublic = query({
   args: {
+    apiSecret: v.string(),
     clientId: v.string(),
   },
   returns: v.union(v.null(), OAuthClientValue),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const client = (await getOAuthApi(ctx).getOAuthClientPublic({
       query: { client_id: args.clientId },
     })) as OAuthClientResponse | null;
@@ -258,6 +265,7 @@ export const getOAuthClientPublic = query({
 
 export const createOAuthClient = mutation({
   args: {
+    apiSecret: v.string(),
     client_name: v.optional(v.string()),
     client_uri: v.optional(v.string()),
     logo_uri: v.optional(v.string()),
@@ -283,9 +291,11 @@ export const createOAuthClient = mutation({
   },
   returns: OAuthClientValue,
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const { apiSecret: _apiSecret, ...clientArgs } = args;
     const response = (await getOAuthApi(ctx).createOAuthClient({
       body: {
-        ...args,
+        ...clientArgs,
       },
     })) as OAuthClientResponse;
 
@@ -295,6 +305,7 @@ export const createOAuthClient = mutation({
 
 export const updateOAuthClient = mutation({
   args: {
+    apiSecret: v.string(),
     clientId: v.string(),
     update: v.object({
       client_name: v.optional(v.string()),
@@ -323,6 +334,7 @@ export const updateOAuthClient = mutation({
   },
   returns: OAuthClientValue,
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const response = (await getOAuthApi(ctx).updateOAuthClient({
       body: {
         client_id: args.clientId,
@@ -336,10 +348,12 @@ export const updateOAuthClient = mutation({
 
 export const rotateOAuthClientSecret = mutation({
   args: {
+    apiSecret: v.string(),
     clientId: v.string(),
   },
   returns: OAuthClientValue,
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     const response = (await getOAuthApi(ctx).rotateClientSecret({
       body: {
         client_id: args.clientId,
@@ -352,10 +366,12 @@ export const rotateOAuthClientSecret = mutation({
 
 export const deleteOAuthClient = mutation({
   args: {
+    apiSecret: v.string(),
     clientId: v.string(),
   },
   returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
     await getOAuthApi(ctx).deleteOAuthClient({
       body: {
         client_id: args.clientId,

@@ -21,12 +21,16 @@ test.describe('Collab invite page', () => {
     page,
   }) => {
     await page.goto('/collab-invite', { waitUntil: 'load' });
-    await page.waitForTimeout(500);
-    const opacity = await page.evaluate(() => {
-      const content = document.getElementById('page-content');
-      return content ? window.getComputedStyle(content).opacity : '0';
-    });
-    expect(Number(opacity)).toBeGreaterThan(0.5);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const content = document.getElementById('page-content');
+            return Number(content ? window.getComputedStyle(content).opacity : '0');
+          }),
+        { timeout: 3000 }
+      )
+      .toBeGreaterThan(0.5);
   });
 
   test('page shows loading stage on first visit without a token', async ({ page }) => {
@@ -44,13 +48,9 @@ test.describe('Collab invite page', () => {
 
   test('page shows error stage when hash token is invalid', async ({ page }) => {
     await page.goto('/collab-invite#t=invalidtoken123', { waitUntil: 'load' });
-    // Should surface an error — not a blank screen
-    await page.waitForTimeout(2000);
-    const errorVisible = await page.evaluate(() => {
-      const el = document.getElementById('stage-error');
-      return el ? el.classList.contains('active') : false;
-    });
-    expect(errorVisible).toBe(true);
+    await expect(page).toHaveURL(/\/collab-invite\?t=invalidtoken123$/);
+    await expect(page.locator('body')).toContainText('Invite Not Found');
+    await expect(page.locator('body')).toContainText('invalid or has already been used');
   });
 
   test('page has no unresolved __API_BASE__ placeholders', async ({ page }) => {

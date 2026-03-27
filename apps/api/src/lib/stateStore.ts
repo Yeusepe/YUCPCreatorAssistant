@@ -99,11 +99,11 @@ export function getStateStore(): StateStore {
       // In production, an in-memory store loses all state on restart and does not
       // coordinate across replicas. This is a security and reliability risk.
       // Set DRAGONFLY_URI or REDIS_URL to a shared Redis-compatible instance.
-      logger.error(
-        'SECURITY: No distributed state store configured in production. ' +
-          'OAuth and setup-session state will be lost on restart and is not shared ' +
-          'across replicas. Set DRAGONFLY_URI or REDIS_URL immediately.'
-      );
+      const message =
+        'No distributed state store configured in production. ' +
+        'OAuth and setup-session state require DRAGONFLY_URI or REDIS_URL.';
+      logger.error(message);
+      throw new Error(message);
     }
     stateStoreInstance = new InMemoryStateStore();
     logger.info('Using in-memory state store (set DRAGONFLY_URI for production)');

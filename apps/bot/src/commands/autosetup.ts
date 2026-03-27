@@ -207,7 +207,7 @@ function formatRoleName(
 async function fetchAllProducts(
   authUserId: string,
   _apiSecret: string
-): Promise<AutosetupProduct[]> {
+): Promise<{ products: AutosetupProduct[]; error?: 'session_expired' }> {
   const results = await Promise.all(
     CATALOG_SYNC_PROVIDER_KEYS.map((providerKey) => listProviderProducts(providerKey, authUserId))
   );
@@ -221,12 +221,17 @@ async function fetchAllProducts(
   }
 
   const seen = new Set<string>();
-  return products.filter((p) => {
-    const key = `${p.provider}:${p.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return {
+    products: products.filter((p) => {
+      const key = `${p.provider}:${p.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }),
+    error: results.some((result) => result.error === 'session_expired')
+      ? 'session_expired'
+      : undefined,
+  };
 }
 
 /** Entry: /creator-admin autosetup */
@@ -620,7 +625,7 @@ async function handleRolesFlowStart(
     components: [loadingContainer('Loading products...')],
   });
 
-  const products = await fetchAllProducts(session.authUserId, apiSecret);
+  const { products, error } = await fetchAllProducts(session.authUserId, apiSecret);
 
   if (products.length === 0) {
     const { apiPublic } = getApiUrls();
@@ -628,11 +633,17 @@ async function handleRolesFlowStart(
     const container = new ContainerBuilder().setAccentColor(0xfaa61a);
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        `## ${E.Wrench} No products found\n\nConnect your Gumroad or Jinxxy account first to see your products.\n\n${
-          setupUrl
-            ? `Use \`/creator-admin setup start\` to get the link, or visit ${setupUrl}`
-            : 'Use `/creator-admin setup start` to connect your accounts.'
-        }`
+        error === 'session_expired'
+          ? `## ${E.Wrench} No products found\n\nYour connected provider session has expired. Please reconnect it, then try again.\n\n${
+              setupUrl
+                ? `Use \`/creator-admin setup start\` to get the link, or visit ${setupUrl}`
+                : 'Use `/creator-admin setup start` to reconnect your account.'
+            }`
+          : `## ${E.Wrench} No products found\n\nConnect your Gumroad or Jinxxy account first to see your products.\n\n${
+              setupUrl
+                ? `Use \`/creator-admin setup start\` to get the link, or visit ${setupUrl}`
+                : 'Use `/creator-admin setup start` to connect your accounts.'
+            }`
       )
     );
     await interaction.editReply({
@@ -1160,13 +1171,15 @@ async function handleMigrateFlowStart(
 ): Promise<void> {
   await interaction.deferUpdate();
 
-  const products = await fetchAllProducts(session.authUserId, apiSecret);
+  const { products, error } = await fetchAllProducts(session.authUserId, apiSecret);
 
   if (products.length === 0) {
     const container = new ContainerBuilder().setAccentColor(0xfaa61a);
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        `## ${E.Wrench} No products found\n\nConnect Gumroad or Jinxxy first. Use \`/creator-admin setup start\`.`
+        error === 'session_expired'
+          ? `## ${E.Wrench} No products found\n\nYour connected provider session has expired. Please reconnect it, then run \`/creator-admin setup start\` again.`
+          : `## ${E.Wrench} No products found\n\nConnect Gumroad or Jinxxy first. Use \`/creator-admin setup start\`.`
       )
     );
     await interaction.editReply({

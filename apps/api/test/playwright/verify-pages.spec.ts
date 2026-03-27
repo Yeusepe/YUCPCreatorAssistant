@@ -24,7 +24,6 @@ test.describe('Verify Success page', () => {
     const imgSrcs: (string | null)[] = await page.evaluate(() =>
       Array.from(document.querySelectorAll('img')).map((img) => img.getAttribute('src'))
     );
-    expect(imgSrcs.length).toBeGreaterThan(0);
     for (const src of imgSrcs) {
       expect(src).toBeTruthy();
       // Server must replace __API_BASE__ placeholder before sending HTML

@@ -36,6 +36,64 @@ const mockResolvePayhipProduct = mock((_permalink: string) =>
 );
 
 mock.module('@yucp/providers', () => ({
+  PROVIDER_META: {
+    gumroad: {
+      label: 'Gumroad',
+      emojiKey: 'Gumorad',
+      supportsLicenseVerify: true,
+      supportsOAuth: true,
+    },
+    jinxxy: {
+      label: 'Jinxxy',
+      emojiKey: 'Jinxxy',
+      supportsLicenseVerify: true,
+      supportsOAuth: false,
+    },
+    lemonsqueezy: {
+      label: 'Lemon Squeezy',
+      emojiKey: 'LemonSqueezy',
+      supportsLicenseVerify: true,
+      supportsOAuth: false,
+    },
+    payhip: {
+      label: 'Payhip',
+      emojiKey: 'Payhip',
+      supportsLicenseVerify: true,
+      supportsOAuth: false,
+    },
+    vrchat: {
+      label: 'VRChat',
+      emojiKey: 'VRC',
+      supportsLicenseVerify: false,
+      supportsOAuth: false,
+    },
+    discord: {
+      label: 'Discord',
+      emojiKey: 'Discord',
+      supportsLicenseVerify: false,
+      supportsOAuth: true,
+    },
+    manual: {
+      label: 'Manual',
+      emojiKey: 'PersonKey',
+      supportsLicenseVerify: false,
+      supportsOAuth: false,
+    },
+  },
+  providerLabel: (provider: string) =>
+    (
+      ({
+        gumroad: 'Gumroad',
+        jinxxy: 'Jinxxy',
+        lemonsqueezy: 'Lemon Squeezy',
+        payhip: 'Payhip',
+        vrchat: 'VRChat',
+        discord: 'Discord',
+        manual: 'Manual',
+      }) as const
+    )[
+      provider as 'gumroad' | 'jinxxy' | 'lemonsqueezy' | 'payhip' | 'vrchat' | 'discord' | 'manual'
+    ] ?? provider,
   resolvePayhipProduct: mockResolvePayhipProduct,
   resolveGumroadProduct: mock((urlOrSlug: string) =>
     Promise.resolve({ id: urlOrSlug, name: 'Gumroad Product' })
@@ -86,6 +144,7 @@ const ALL_CONNECTED = makeMockConvex({
   jinxxy: true,
   lemonsqueezy: true,
   payhip: true,
+  vrchat: true,
 });
 
 /** Minimal convex mock for handleProductTypeSelect: returns empty guild product list. */
