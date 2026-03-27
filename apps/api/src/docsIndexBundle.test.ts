@@ -28,8 +28,7 @@ describe('docs index bundle', () => {
     const styles = readFileSync(docsIndexStylesPath, 'utf8');
 
     expect(styles).toContain('.h-3\\.5');
-    expect(styles).toContain('.max-w-\\[45vw\\]');
-    expect(styles).toContain('.sm\\:max-w-\\[180px\\]');
+    expect(styles).toContain('.sm\\:h-4');
     expect(styles).toContain('.md\\:h-\\[18px\\]');
   });
 });
