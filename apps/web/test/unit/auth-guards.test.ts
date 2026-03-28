@@ -69,6 +69,11 @@ describe('Auth guards: protected layout routes', () => {
         expect(source).toContain('loadProtectedAuthState');
       });
 
+      it('uses the lightweight Better Auth session check for the shared protected gate', () => {
+        expect(source).toContain('getAuthSession');
+        expect(source).not.toContain('getAuthToken');
+      });
+
       it('redirects unauthenticated users to /sign-in', () => {
         expect(source).toContain('/sign-in');
         // Should use redirect() or throw redirect
@@ -200,10 +205,7 @@ describe('Auth configuration: root route SSR auth', () => {
   });
 
   it('moves SSR auth token setup into the protected layout', () => {
-    const handlesSsrAuthInline =
-      protectedSource.includes('serverHttpClient') && protectedSource.includes('setAuth');
-    const delegatesToSsrAuthHelper = protectedSource.includes('loadProtectedAuthState');
-    expect(handlesSsrAuthInline || delegatesToSsrAuthHelper).toBe(true);
+    expect(protectedSource).toContain('loadProtectedAuthState');
   });
 
   it('does not wrap the root tree with ConvexBetterAuthProvider', () => {

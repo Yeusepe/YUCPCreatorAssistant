@@ -1,7 +1,7 @@
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
 import { createFileRoute, Outlet, redirect, useRouteContext } from '@tanstack/react-router';
 import { authClient } from '@/lib/auth-client';
-import { getAuthToken } from '@/lib/server/auth';
+import { getAuthSession } from '@/lib/server/auth';
 import { loadProtectedAuthState, type ProtectedAuthState } from '@/lib/webDiagnostics';
 
 let clientProtectedAuthCache: ProtectedAuthState | null = null;
@@ -15,7 +15,7 @@ export const Route = createFileRoute('/_authenticated')({
     const state = await loadProtectedAuthState({
       convexQueryClient: ctx.context.convexQueryClient,
       location: ctx.location,
-      getAuthToken: () => getAuthToken(),
+      getAuthSession: () => getAuthSession(),
     });
 
     if (!state.isAuthenticated) {
@@ -41,7 +41,7 @@ function AuthenticatedLayout() {
     <ConvexBetterAuthProvider
       client={context.convexQueryClient.convexClient}
       authClient={authClient}
-      initialToken={context.token}
+      initialToken={context.token ?? undefined}
     >
       <Outlet />
     </ConvexBetterAuthProvider>

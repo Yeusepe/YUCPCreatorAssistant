@@ -39,6 +39,44 @@ describe('web diagnostics', () => {
     });
   });
 
+  it('treats an authenticated Better Auth session as sufficient for protected SSR bootstrap without forcing a token fetch', async () => {
+    const setAuth = vi.fn();
+    const getAuthToken = vi.fn(async () => {
+      throw new Error('token fetch should not run for session-only bootstrap');
+    });
+
+    const result = await loadProtectedAuthState({
+      convexQueryClient: {
+        serverHttpClient: {
+          setAuth,
+        },
+      },
+      getAuthSession: async () => ({
+        isAuthenticated: true,
+        userId: 'auth-user-1',
+        email: 'creator@example.com',
+        name: 'Creator',
+        image: null,
+      }),
+      getAuthToken,
+      location: {
+        pathname: '/dashboard',
+      },
+      env: {
+        NODE_ENV: 'test',
+        CONVEX_URL: 'https://rare-squid-409.convex.cloud',
+        CONVEX_SITE_URL: 'https://rare-squid-409.convex.site',
+      },
+    });
+
+    expect(result).toEqual({
+      isAuthenticated: true,
+      token: null,
+    });
+    expect(getAuthToken).not.toHaveBeenCalled();
+    expect(setAuth).not.toHaveBeenCalled();
+  });
+
   it('logs sanitized diagnostics and rethrows when protected auth bootstrap fails', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const error = new Error('Unable to connect. Is the computer able to access the url?');

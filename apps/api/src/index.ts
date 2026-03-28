@@ -150,15 +150,11 @@ function initializeAuth(webhookBaseUrl?: string) {
     getRequired('YUCP_COUPLING_SERVICE_BASE_URL');
     getRequired('YUCP_COUPLING_SERVICE_SHARED_SECRET');
   }
-  const configuredPolarKeys = [
-    env.POLAR_ACCESS_TOKEN,
-    env.POLAR_WEBHOOK_SECRET,
-    env.POLAR_CERT_PRODUCTS_JSON,
-  ].filter((value) => typeof value === 'string' && value.trim()).length;
-  if (configuredPolarKeys > 0 && configuredPolarKeys < 3) {
-    throw new Error(
-      'POLAR_ACCESS_TOKEN, POLAR_WEBHOOK_SECRET, and POLAR_CERT_PRODUCTS_JSON must be configured together'
-    );
+  const configuredPolarKeys = [env.POLAR_ACCESS_TOKEN, env.POLAR_WEBHOOK_SECRET].filter(
+    (value) => typeof value === 'string' && value.trim()
+  ).length;
+  if (configuredPolarKeys > 0 && configuredPolarKeys < 2) {
+    throw new Error('POLAR_ACCESS_TOKEN and POLAR_WEBHOOK_SECRET must be configured together');
   }
   const siteUrl = env.SITE_URL ?? 'http://localhost:3001';
   // Use a tunnel only for externally reachable webhook/install callbacks.
@@ -767,6 +763,12 @@ async function routeRequest(request: Request): Promise<Response> {
   if (pathname === '/api/connect/creator/certificates/portal' && connectRoutes) {
     if (request.method === 'GET') return connectRoutes.getCreatorCertificatePortal(request);
     return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+  if (pathname === '/api/connect/user/certificates/reconcile' && connectRoutes) {
+    return connectRoutes.reconcileUserCertificateBilling(request);
+  }
+  if (pathname === '/api/connect/creator/certificates/reconcile' && connectRoutes) {
+    return connectRoutes.reconcileCreatorCertificateBilling(request);
   }
   if (pathname === '/api/connect/user/certificates/revoke' && connectRoutes) {
     return connectRoutes.revokeUserCertificate(request);

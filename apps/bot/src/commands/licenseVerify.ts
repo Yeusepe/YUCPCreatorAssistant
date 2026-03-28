@@ -612,7 +612,7 @@ export async function handleLicenseKeyModal(
       productId: providerProductRef,
       provider,
       authUserId,
-      subjectId,
+      subjectId: subjectId ?? discordUserId,
       discordUserId,
     });
 

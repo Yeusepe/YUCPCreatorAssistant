@@ -191,6 +191,47 @@ describe('forensics routes', () => {
     });
   });
 
+  it('keeps proxied dashboard requests on the session auth path when no internal auth user header is present', async () => {
+    const previousInternalRpcSecret = process.env.INTERNAL_RPC_SHARED_SECRET;
+    process.env.INTERNAL_RPC_SHARED_SECRET = 'test-internal-secret';
+
+    try {
+      queryMock.mockImplementation(async (ref: unknown, args: unknown) => {
+        if (ref === apiMock.couplingForensics.listOwnedPackagesForAuthUser) {
+          expect(args).toEqual({
+            apiSecret: 'convex-secret',
+            authUserId: 'creator-user',
+          });
+          return {
+            packages: ['creator.package'],
+          };
+        }
+        throw new Error(`Unexpected query ${String(ref)}`);
+      });
+
+      const response = await routes.listPackages(
+        new Request('http://localhost:3001/api/forensics/packages', {
+          method: 'GET',
+          headers: {
+            'x-internal-service-secret': 'test-internal-secret',
+            cookie: 'yucp.session_token=session-cookie; yucp.session_data=session-data',
+          },
+        })
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        packages: ['creator.package'],
+      });
+    } finally {
+      if (previousInternalRpcSecret === undefined) {
+        delete process.env.INTERNAL_RPC_SHARED_SECRET;
+      } else {
+        process.env.INTERNAL_RPC_SHARED_SECRET = previousInternalRpcSecret;
+      }
+    }
+  });
+
   it('returns a tamper-suspected response when candidate assets have no decodable coupling signals', async () => {
     queryMock.mockImplementation(async () => {
       throw new Error('Trace lookup should not run without coupling findings');

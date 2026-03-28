@@ -15,6 +15,19 @@ export interface CertificateBillingCustomerState {
     cancelAtPeriodEnd: boolean;
     metadata?: Record<string, unknown>;
   }>;
+  grantedBenefits: Array<{
+    id: string;
+    benefitId: string;
+    benefitType: string;
+    benefitMetadata?: Record<string, unknown>;
+  }>;
+  activeMeters: Array<{
+    id: string;
+    meterId: string;
+    consumedUnits: number;
+    creditedUnits: number;
+    balance: number;
+  }>;
 }
 
 function createCertificateBillingPolarClient() {
@@ -27,6 +40,22 @@ function createCertificateBillingPolarClient() {
     accessToken: billingConfig.polarAccessToken,
     server: billingConfig.polarServer === 'sandbox' ? 'sandbox' : 'production',
   });
+}
+
+async function collectPageItems<T>(iterator: AsyncIterable<{ result: { items: T[] } }>) {
+  const items: T[] = [];
+  for await (const page of iterator) {
+    items.push(...page.result.items);
+  }
+  return items;
+}
+
+function isPolarResourceNotFound(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === 'ResourceNotFound' ||
+      ('statusCode' in error && typeof error.statusCode === 'number' && error.statusCode === 404))
+  );
 }
 
 export async function fetchCertificateBillingCustomerStateByExternalId(
@@ -54,16 +83,91 @@ export async function fetchCertificateBillingCustomerStateByExternalId(
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         metadata: subscription.metadata,
       })),
+      grantedBenefits: state.grantedBenefits.map((grant) => ({
+        id: grant.id,
+        benefitId: grant.benefitId,
+        benefitType: grant.benefitType,
+        benefitMetadata: grant.benefitMetadata,
+      })),
+      activeMeters: state.activeMeters.map((meter) => ({
+        id: meter.id,
+        meterId: meter.meterId,
+        consumedUnits: meter.consumedUnits,
+        creditedUnits: meter.creditedUnits,
+        balance: meter.balance,
+      })),
     };
   } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.name === 'ResourceNotFound' ||
-        ('statusCode' in error && typeof error.statusCode === 'number' && error.statusCode === 404))
-    ) {
+    if (isPolarResourceNotFound(error)) {
       return null;
     }
 
     throw error;
   }
+}
+
+export async function createCertificateBillingPortalSession(input: {
+  externalCustomerId: string;
+  customerEmail?: string | null;
+  customerName?: string | null;
+}): Promise<{ customerPortalUrl: string } | null> {
+  const polar = createCertificateBillingPolarClient();
+  if (!polar) {
+    return null;
+  }
+
+  let customerId: string | null = null;
+
+  try {
+    // Polar get-by-external-id reference:
+    // https://docs.polar.sh/api-reference/customers/get-external
+    const customer = await polar.customers.getExternal({
+      externalId: input.externalCustomerId,
+    });
+    customerId = customer.id;
+  } catch (error) {
+    if (!isPolarResourceNotFound(error)) {
+      throw error;
+    }
+  }
+
+  if (!customerId && input.customerEmail) {
+    // Polar list-customers reference:
+    // https://docs.polar.sh/api-reference/customers/list
+    const customers = await collectPageItems(
+      await polar.customers.list({
+        email: input.customerEmail,
+        limit: 1,
+      })
+    );
+    customerId = customers[0]?.id ?? null;
+  }
+
+  if (!customerId) {
+    if (!input.customerEmail) {
+      throw new Error('Polar customer portal requires a customer email');
+    }
+
+    // Polar create-customer reference:
+    // https://docs.polar.sh/api-reference/customers/create
+    const customer = await polar.customers.create({
+      email: input.customerEmail,
+      externalId: input.externalCustomerId,
+      ...(input.customerName ? { name: input.customerName } : {}),
+      metadata: {
+        certificate_billing: true,
+        yucp_user_id: input.externalCustomerId,
+      },
+    });
+    customerId = customer.id;
+  }
+
+  // Polar create-customer-session reference:
+  // https://docs.polar.sh/api-reference/customer-portal/sessions/create
+  const session = await polar.customerSessions.create({
+    customerId,
+  });
+  return {
+    customerPortalUrl: session.customerPortalUrl,
+  };
 }

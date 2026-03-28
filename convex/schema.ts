@@ -1648,6 +1648,7 @@ const creator_billing_accounts = defineTable({
   polarCustomerId: v.optional(v.string()),
   polarExternalId: v.optional(v.string()),
   planKey: v.optional(v.string()),
+  productId: v.optional(v.string()),
   status: CreatorBillingStatus,
   customerEmail: v.optional(v.string()),
   currentPeriodEnd: v.optional(v.number()),
@@ -1665,6 +1666,7 @@ const creator_billing_subscriptions = defineTable({
   polarSubscriptionId: v.string(),
   polarProductId: v.string(),
   planKey: v.string(),
+  productId: v.optional(v.string()),
   status: v.string(),
   recurringInterval: v.string(),
   currentPeriodStart: v.number(),
@@ -1683,6 +1685,7 @@ const creator_billing_entitlements = defineTable({
   authUserId: v.string(),
   creatorProfileId: v.optional(v.id('creator_profiles')),
   planKey: v.string(),
+  productId: v.optional(v.string()),
   status: CreatorBillingStatus,
   allowEnrollment: v.boolean(),
   allowSigning: v.boolean(),
@@ -1703,6 +1706,8 @@ const creator_billing_capabilities = defineTable({
   authUserId: v.string(),
   creatorProfileId: v.optional(v.id('creator_profiles')),
   planKey: v.string(),
+  productId: v.optional(v.string()),
+  benefitId: v.optional(v.string()),
   capabilityKey: v.string(),
   status: CreatorBillingStatus,
   currentPeriodEnd: v.optional(v.number()),
@@ -1725,6 +1730,89 @@ const creator_billing_usage_events = defineTable({
 })
   .index('by_workspace_created', ['workspaceKey', 'createdAt'])
   .index('by_auth_user_created', ['authUserId', 'createdAt']);
+
+const creator_billing_catalog_sync_state = defineTable({
+  domain: v.string(),
+  lastAttemptedAt: v.number(),
+  lastSyncedAt: v.optional(v.number()),
+  lastError: v.optional(v.string()),
+  productCount: v.number(),
+  benefitCount: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+}).index('by_domain', ['domain']);
+
+const creator_billing_catalog_products = defineTable({
+  productId: v.string(),
+  slug: v.string(),
+  displayName: v.string(),
+  description: v.optional(v.string()),
+  status: v.union(v.literal('active'), v.literal('archived')),
+  sortOrder: v.number(),
+  displayBadge: v.optional(v.string()),
+  recurringInterval: v.optional(v.string()),
+  recurringPriceIds: v.array(v.string()),
+  meteredPrices: v.array(
+    v.object({
+      priceId: v.string(),
+      meterId: v.string(),
+      meterName: v.string(),
+    })
+  ),
+  benefitIds: v.array(v.string()),
+  highlights: v.array(v.string()),
+  metadata: v.record(v.string(), v.union(v.string(), v.number(), v.boolean())),
+  syncedAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_product_id', ['productId'])
+  .index('by_sort_order', ['sortOrder']);
+
+const creator_billing_catalog_benefits = defineTable({
+  benefitId: v.string(),
+  type: v.string(),
+  description: v.optional(v.string()),
+  metadata: v.record(v.string(), v.union(v.string(), v.number(), v.boolean())),
+  capabilityKey: v.optional(v.string()),
+  deviceCap: v.optional(v.number()),
+  signQuotaPerPeriod: v.optional(v.number()),
+  auditRetentionDays: v.optional(v.number()),
+  supportTier: v.optional(v.string()),
+  tierRank: v.optional(v.number()),
+  syncedAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+}).index('by_benefit_id', ['benefitId']);
+
+const creator_billing_meters = defineTable({
+  workspaceKey: v.string(),
+  authUserId: v.string(),
+  creatorProfileId: v.optional(v.id('creator_profiles')),
+  meterId: v.string(),
+  meterName: v.optional(v.string()),
+  consumedUnits: v.number(),
+  creditedUnits: v.number(),
+  balance: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_workspace_key', ['workspaceKey'])
+  .index('by_auth_user', ['authUserId'])
+  .index('by_workspace_meter', ['workspaceKey', 'meterId']);
+
+const creator_billing_reconciliation_targets = defineTable({
+  authUserId: v.string(),
+  polarCustomerId: v.optional(v.string()),
+  nextRunAt: v.number(),
+  lastRequestedAt: v.number(),
+  lastSucceededAt: v.optional(v.number()),
+  lastError: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_auth_user', ['authUserId'])
+  .index('by_next_run_at', ['nextRunAt']);
 
 const signed_release_artifacts = defineTable({
   artifactKey: v.string(),
@@ -2047,6 +2135,11 @@ export default defineSchema({
   creator_billing_entitlements,
   creator_billing_capabilities,
   creator_billing_usage_events,
+  creator_billing_catalog_sync_state,
+  creator_billing_catalog_products,
+  creator_billing_catalog_benefits,
+  creator_billing_meters,
+  creator_billing_reconciliation_targets,
   signed_release_artifacts,
   coupling_trace_records,
   yucp_certificates,

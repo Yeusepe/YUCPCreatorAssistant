@@ -8,56 +8,11 @@
 
 export const CERTIFICATE_WORKSPACE_METADATA_KEY = 'workspace_key';
 
-export interface CertificateBillingPlanConfig {
-  planKey: string;
-  productId: string;
-  slug: string;
-  displayName: string;
-  description?: string;
-  highlights: string[];
-  priority: number;
-  deviceCap: number;
-  signQuotaPerPeriod: number | null;
-  auditRetentionDays: number;
-  supportTier: string;
-  billingGraceDays: number;
-  capabilities: string[];
-}
-
 export interface CertificateBillingConfig {
   enabled: boolean;
   polarAccessToken?: string;
   polarWebhookSecret?: string;
   polarServer?: 'sandbox';
-  products: CertificateBillingPlanConfig[];
-}
-
-interface RawPlanConfig {
-  planKey?: unknown;
-  productId?: unknown;
-  slug?: unknown;
-  displayName?: unknown;
-  description?: unknown;
-  highlights?: unknown;
-  priority?: unknown;
-  deviceCap?: unknown;
-  signQuotaPerPeriod?: unknown;
-  auditRetentionDays?: unknown;
-  supportTier?: unknown;
-  billingGraceDays?: unknown;
-  capabilities?: unknown;
-}
-
-function readNonNegativeInteger(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-    ? Math.floor(value)
-    : fallback;
-}
-
-function readPositiveInteger(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : fallback;
 }
 
 export function buildAuthUserWorkspaceKey(authUserId: string): string {
@@ -66,14 +21,6 @@ export function buildAuthUserWorkspaceKey(authUserId: string): string {
 
 export function buildCreatorProfileWorkspaceKey(creatorProfileId: string): string {
   return `creator-profile:${creatorProfileId}`;
-}
-
-function parsePlanCapabilities(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return [...new Set(value.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean))].sort();
 }
 
 export function resolveWorkspaceKeys(
@@ -97,102 +44,16 @@ export function extractWorkspaceKeyFromMetadata(
     : fallbackWorkspaceKey;
 }
 
-export function parseCertificateBillingProductsJson(
-  raw: string | undefined
-): CertificateBillingPlanConfig[] {
-  if (!raw?.trim() || raw.trim() === 'undefined' || raw.trim() === 'null') {
-    return [];
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(
-      `POLAR_CERT_PRODUCTS_JSON must be valid JSON: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-
-  if (!Array.isArray(parsed)) {
-    throw new Error('POLAR_CERT_PRODUCTS_JSON must be a JSON array');
-  }
-
-  return parsed.map((entry, index) => {
-    const value = entry as RawPlanConfig;
-    if (typeof value.planKey !== 'string' || !value.planKey.trim()) {
-      throw new Error(`POLAR_CERT_PRODUCTS_JSON[${index}].planKey must be a non-empty string`);
-    }
-    if (typeof value.productId !== 'string' || !value.productId.trim()) {
-      throw new Error(`POLAR_CERT_PRODUCTS_JSON[${index}].productId must be a non-empty string`);
-    }
-    if (typeof value.slug !== 'string' || !value.slug.trim()) {
-      throw new Error(`POLAR_CERT_PRODUCTS_JSON[${index}].slug must be a non-empty string`);
-    }
-    return {
-      planKey: value.planKey.trim(),
-      productId: value.productId.trim(),
-      slug: value.slug.trim(),
-      displayName:
-        typeof value.displayName === 'string' && value.displayName.trim()
-          ? value.displayName.trim()
-          : value.planKey.trim(),
-      description:
-        typeof value.description === 'string' && value.description.trim()
-          ? value.description.trim()
-          : undefined,
-      highlights: Array.isArray(value.highlights)
-        ? value.highlights
-            .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-            .filter(Boolean)
-        : [],
-      priority: readNonNegativeInteger(value.priority, index),
-      deviceCap: readPositiveInteger(value.deviceCap, 1),
-      signQuotaPerPeriod:
-        typeof value.signQuotaPerPeriod === 'number' &&
-        Number.isFinite(value.signQuotaPerPeriod) &&
-        value.signQuotaPerPeriod > 0
-          ? Math.floor(value.signQuotaPerPeriod)
-          : null,
-      auditRetentionDays: readPositiveInteger(value.auditRetentionDays, 30),
-      supportTier:
-        typeof value.supportTier === 'string' && value.supportTier.trim()
-          ? value.supportTier.trim()
-          : 'standard',
-      billingGraceDays: readNonNegativeInteger(value.billingGraceDays, 3),
-      capabilities: parsePlanCapabilities(value.capabilities),
-    };
-  });
-}
-
 export function getCertificateBillingConfig(): CertificateBillingConfig {
-  const products = parseCertificateBillingProductsJson(process.env.POLAR_CERT_PRODUCTS_JSON);
   const polarAccessToken = process.env.POLAR_ACCESS_TOKEN?.trim();
   const polarWebhookSecret = process.env.POLAR_WEBHOOK_SECRET?.trim();
   const polarServer =
     process.env.POLAR_SERVER?.trim().toLowerCase() === 'sandbox' ? 'sandbox' : undefined;
 
   return {
-    enabled: Boolean(polarAccessToken && polarWebhookSecret && products.length > 0),
+    enabled: Boolean(polarAccessToken && polarWebhookSecret),
     polarAccessToken,
     polarWebhookSecret,
     polarServer,
-    products,
   };
-}
-
-export function getPlanForProductId(
-  config: CertificateBillingConfig,
-  productId: string
-): CertificateBillingPlanConfig | null {
-  return config.products.find((plan) => plan.productId === productId) ?? null;
-}
-
-export function getPlanForPlanKey(
-  config: CertificateBillingConfig,
-  planKey: string | null | undefined
-): CertificateBillingPlanConfig | null {
-  if (!planKey) {
-    return null;
-  }
-  return config.products.find((plan) => plan.planKey === planKey) ?? null;
 }

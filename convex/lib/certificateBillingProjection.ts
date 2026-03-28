@@ -20,6 +20,36 @@ export interface CertificateBillingProjectionSubscription {
   metadata: Record<string, string | number | boolean>;
 }
 
+export interface CertificateBillingProjectionBenefitGrantSource {
+  id: string;
+  benefitId: string;
+  benefitType: string;
+  benefitMetadata?: Record<string, unknown> | null;
+}
+
+export interface CertificateBillingProjectionBenefitGrant {
+  grantId: string;
+  benefitId: string;
+  benefitType: string;
+  benefitMetadata: Record<string, string | number | boolean>;
+}
+
+export interface CertificateBillingProjectionMeterSource {
+  id: string;
+  meterId: string;
+  consumedUnits: number;
+  creditedUnits: number;
+  balance: number;
+}
+
+export interface CertificateBillingProjectionMeter {
+  customerMeterId: string;
+  meterId: string;
+  consumedUnits: number;
+  creditedUnits: number;
+  balance: number;
+}
+
 function toProjectionTimestamp(value: Date | number | string): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -66,5 +96,28 @@ export function toCertificateBillingProjectionSubscription(
     currentPeriodEnd: toProjectionTimestamp(subscription.currentPeriodEnd),
     cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
     metadata: normalizeCertificateBillingProjectionMetadata(subscription.metadata),
+  };
+}
+
+export function toCertificateBillingProjectionBenefitGrant(
+  grant: CertificateBillingProjectionBenefitGrantSource
+): CertificateBillingProjectionBenefitGrant {
+  return {
+    grantId: grant.id,
+    benefitId: grant.benefitId,
+    benefitType: grant.benefitType,
+    benefitMetadata: normalizeCertificateBillingProjectionMetadata(grant.benefitMetadata),
+  };
+}
+
+export function toCertificateBillingProjectionMeter(
+  meter: CertificateBillingProjectionMeterSource
+): CertificateBillingProjectionMeter {
+  return {
+    customerMeterId: meter.id,
+    meterId: meter.meterId,
+    consumedUnits: meter.consumedUnits,
+    creditedUnits: meter.creditedUnits,
+    balance: meter.balance,
   };
 }

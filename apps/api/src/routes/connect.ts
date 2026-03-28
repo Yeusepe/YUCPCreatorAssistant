@@ -18,8 +18,11 @@ import {
 } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
-import { getCertificateBillingConfig } from '../../../../convex/lib/certificateBillingConfig';
-import { toCertificateBillingProjectionSubscription } from '../../../../convex/lib/certificateBillingProjection';
+import {
+  toCertificateBillingProjectionBenefitGrant,
+  toCertificateBillingProjectionMeter,
+  toCertificateBillingProjectionSubscription,
+} from '../../../../convex/lib/certificateBillingProjection';
 import { type Auth, BetterAuthEndpointError } from '../auth';
 import {
   buildCookie,
@@ -155,6 +158,7 @@ interface CertificateOverview {
     allowEnrollment: boolean;
     allowSigning: boolean;
     planKey?: string;
+    productId?: string;
     deviceCap?: number;
     activeDeviceCount: number;
     signQuotaPerPeriod?: number;
@@ -163,6 +167,10 @@ interface CertificateOverview {
     currentPeriodEnd?: number;
     graceUntil?: number;
     reason?: string;
+    capabilities: Array<{
+      capabilityKey: string;
+      status: string;
+    }>;
   };
   devices: Array<{
     certNonce: string;
@@ -181,11 +189,25 @@ interface CertificateOverview {
     description?: string;
     highlights: string[];
     priority: number;
+    displayBadge?: string;
     deviceCap: number;
     signQuotaPerPeriod?: number;
     auditRetentionDays: number;
     supportTier: string;
     billingGraceDays: number;
+    capabilities: string[];
+    meteredPrices: Array<{
+      priceId: string;
+      meterId: string;
+      meterName: string;
+    }>;
+  }>;
+  meters: Array<{
+    meterId: string;
+    meterName?: string;
+    consumedUnits: number;
+    creditedUnits: number;
+    balance: number;
   }>;
 }
 
@@ -242,34 +264,6 @@ interface DashboardShellResponse {
   };
 }
 
-interface PolarProductResponse {
-  name?: string | null;
-  description?: string | null;
-  benefits?: Array<{
-    description?: string | null;
-  }> | null;
-}
-
-function getPolarApiBaseUrl(server: 'sandbox' | undefined) {
-  return server === 'sandbox' ? 'https://sandbox-api.polar.sh/v1' : 'https://api.polar.sh/v1';
-}
-
-function getPolarPlanHighlights(product: PolarProductResponse | null | undefined) {
-  if (!Array.isArray(product?.benefits)) {
-    return [];
-  }
-
-  return Array.from(
-    new Set(
-      product.benefits
-        .map((benefit) =>
-          typeof benefit.description === 'string' ? benefit.description.trim() : ''
-        )
-        .filter(Boolean)
-    )
-  );
-}
-
 function isPolarAccessTokenFailure(error: unknown): error is BetterAuthEndpointError {
   if (!(error instanceof BetterAuthEndpointError)) {
     return false;
@@ -300,138 +294,58 @@ function createPolarAccessTokenFailureResponse(): Response {
   );
 }
 
-async function enrichCertificateOverviewWithPolar(
-  overview: CertificateOverview,
-  timing?: RouteTimingCollector
-): Promise<CertificateOverview> {
-  const billingConfig = getCertificateBillingConfig();
-  if (!billingConfig.polarAccessToken || overview.availablePlans.length === 0) {
-    return overview;
-  }
-
-  const apiBaseUrl = getPolarApiBaseUrl(billingConfig.polarServer);
-  const loadProducts = () =>
-    Promise.all(
-      overview.availablePlans.map(async (plan) => {
-        try {
-          // Polar product metadata reference: https://www.polar.sh/docs/api-reference/products/get
-          const response = await fetch(
-            `${apiBaseUrl}/products/${encodeURIComponent(plan.productId)}`,
-            {
-              headers: {
-                Authorization: `Bearer ${billingConfig.polarAccessToken}`,
-              },
-            }
-          );
-
-          if (!response.ok) {
-            logger.warn('Failed to fetch Polar product metadata for certificate plan', {
-              productId: plan.productId,
-              status: response.status,
-              server: billingConfig.polarServer ?? 'production',
-              hint:
-                response.status === 401
-                  ? 'POLAR_ACCESS_TOKEN may be invalid, expired, or configured for the wrong Polar environment'
-                  : undefined,
-            });
-            return null;
-          }
-
-          const product = (await response.json()) as PolarProductResponse;
-          return [plan.productId, product] as const;
-        } catch (error) {
-          logger.warn('Failed to read Polar product metadata for certificate plan', {
-            productId: plan.productId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return null;
-        }
-      })
-    );
-  const products = timing
-    ? await timing.measure('provider_polar_products', loadProducts, 'fetch Polar product metadata')
-    : await loadProducts();
-
-  const productById = new Map(
-    products.filter((entry): entry is readonly [string, PolarProductResponse] => entry !== null)
-  );
-
-  return {
-    ...overview,
-    availablePlans: overview.availablePlans.map((plan) => {
-      const product = productById.get(plan.productId);
-      const polarHighlights = getPolarPlanHighlights(product);
-      return {
-        ...plan,
-        displayName:
-          typeof product?.name === 'string' && product.name.trim()
-            ? product.name.trim()
-            : plan.displayName,
-        description:
-          typeof product?.description === 'string' && product.description.trim()
-            ? product.description.trim()
-            : plan.description,
-        highlights: polarHighlights.length > 0 ? polarHighlights : plan.highlights,
-      };
-    }),
-  };
-}
-
-async function reconcileCertificateOverviewWithPolarState(
+async function ensureCertificateBillingCatalogFresh(
   convex: ReturnType<typeof getConvexClientFromUrl>,
-  convexApiSecret: string,
-  authUserId: string,
-  overview: CertificateOverview,
+  apiSecret: string,
   timing?: RouteTimingCollector
-): Promise<CertificateOverview> {
-  if (!overview.billing.billingEnabled || overview.billing.status === 'active') {
-    return overview;
-  }
-
-  const customerState = timing
-    ? await timing.measure(
-        'provider_polar_customer_state',
-        () => fetchCertificateBillingCustomerStateByExternalId(authUserId),
-        'fetch Polar customer state'
-      )
-    : await fetchCertificateBillingCustomerStateByExternalId(authUserId);
-  if (!customerState || customerState.activeSubscriptions.length === 0) {
-    return overview;
-  }
-
-  const projectCustomerState = () =>
-    convex.mutation(api.certificateBilling.projectCustomerStateForApi, {
-      apiSecret: convexApiSecret,
-      authUserId,
-      polarCustomerId: customerState.id,
-      customerEmail: customerState.email,
-      activeSubscriptions: customerState.activeSubscriptions.map(
-        toCertificateBillingProjectionSubscription
-      ),
+) {
+  const ensureCatalog = () =>
+    convex.action(api.certificateBillingSync.ensureCatalogFresh, {
+      apiSecret,
     });
+
   if (timing) {
     await timing.measure(
-      'convex_certificate_projection',
-      projectCustomerState,
-      'project Polar customer state'
+      'convex_certificate_catalog',
+      ensureCatalog,
+      'ensure Polar certificate catalog cache'
     );
-    return (await timing.measure(
-      'convex_certificate_overview_refresh',
-      () =>
-        convex.query(api.certificateBilling.getAccountOverview, {
-          apiSecret: convexApiSecret,
-          authUserId,
-        }),
-      'reload certificate overview'
-    )) as CertificateOverview;
+    return;
   }
 
-  await projectCustomerState();
+  await ensureCatalog();
+}
 
-  return (await convex.query(api.certificateBilling.getAccountOverview, {
-    apiSecret: convexApiSecret,
-    authUserId,
-  })) as CertificateOverview;
+function buildCertificateDashboardUrl(config: ConnectConfig): string {
+  return new URL(
+    '/dashboard/certificates',
+    `${config.frontendBaseUrl.replace(/\/$/, '')}/`
+  ).toString();
+}
+
+function getCertificateCheckoutEmbedOrigin(config: ConnectConfig): string {
+  return new URL(config.frontendBaseUrl).origin;
+}
+
+function resolveCertificatePlanSelection(
+  overview: CertificateOverview,
+  body: { productId?: string; planKey?: string }
+) {
+  const requestedProductId = body.productId?.trim();
+  if (requestedProductId) {
+    return overview.availablePlans.find((entry) => entry.productId === requestedProductId) ?? null;
+  }
+
+  const requestedPlanKey = body.planKey?.trim();
+  if (!requestedPlanKey) {
+    return null;
+  }
+
+  return (
+    overview.availablePlans.find(
+      (entry) => entry.productId === requestedPlanKey || entry.planKey === requestedPlanKey
+    ) ?? null
+  );
 }
 
 function toTimestamp(value: unknown): number | undefined {
@@ -3510,6 +3424,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     timing?: RouteTimingCollector
   ): Promise<CertificateOverview> {
     const convex = getConvexClientFromUrl(config.convexUrl);
+    await ensureCertificateBillingCatalogFresh(convex, config.convexApiSecret, timing);
     const overview = (
       timing
         ? await timing.measure(
@@ -3526,14 +3441,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
             authUserId,
           })
     ) as CertificateOverview;
-    const reconciledOverview = await reconcileCertificateOverviewWithPolarState(
-      convex,
-      config.convexApiSecret,
-      authUserId,
-      overview,
-      timing
-    );
-    return enrichCertificateOverviewWithPolar(reconciledOverview, timing);
+    return overview;
   }
 
   async function getUserCertificates(request: Request): Promise<Response> {
@@ -3632,7 +3540,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       );
     }
 
-    let body: { planKey?: string };
+    let body: { productId?: string; planKey?: string };
     try {
       body = (await request.json()) as typeof body;
     } catch {
@@ -3643,10 +3551,10 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       );
     }
 
-    if (!body.planKey?.trim()) {
+    if (!body.productId?.trim() && !body.planKey?.trim()) {
       return buildTimedResponse(
         timing,
-        () => Response.json({ error: 'planKey is required' }, { status: 400 }),
+        () => Response.json({ error: 'productId is required' }, { status: 400 }),
         'serialize certificate response'
       );
     }
@@ -3661,14 +3569,16 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
         );
       }
 
-      const plan = overview.availablePlans.find((entry) => entry.planKey === body.planKey?.trim());
+      const plan = resolveCertificatePlanSelection(overview, body);
       if (!plan) {
         return buildTimedResponse(
           timing,
-          () => Response.json({ error: 'Unknown certificate plan' }, { status: 404 }),
+          () => Response.json({ error: 'Unknown certificate product' }, { status: 404 }),
           'serialize certificate response'
         );
       }
+
+      const dashboardUrl = buildCertificateDashboardUrl(config);
 
       const checkout = await timing.measure(
         'provider_polar_checkout',
@@ -3676,11 +3586,16 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
           auth.createPolarCheckout(request, {
             products: [plan.productId],
             referenceId: overview.workspaceKey,
+            externalCustomerId: session.user.id,
+            embedOrigin: getCertificateCheckoutEmbedOrigin(config),
             metadata: {
               workspace_key: overview.workspaceKey,
+              product_id: plan.productId,
               plan_key: plan.planKey,
             },
             redirect: false,
+            successUrl: dashboardUrl,
+            returnUrl: dashboardUrl,
           }),
         'create Polar checkout'
       );
@@ -3704,6 +3619,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
             redirect: checkout.redirect,
             workspaceKey: overview.workspaceKey,
             planKey: plan.planKey,
+            productId: plan.productId,
           }),
         'serialize certificate response'
       );
@@ -3711,6 +3627,7 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
       if (isPolarAccessTokenFailure(err)) {
         logger.error('Polar credentials rejected certificate checkout request', {
           authUserId: session.user.id,
+          productId: body.productId,
           planKey: body.planKey,
           status: err.status,
           path: err.path,
@@ -3724,12 +3641,94 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
 
       logger.error('Failed to create certificate checkout', {
         authUserId: session.user.id,
+        productId: body.productId,
         planKey: body.planKey,
         error: err instanceof Error ? err.message : String(err),
       });
       return buildTimedResponse(
         timing,
         () => Response.json({ error: 'Failed to create certificate checkout' }, { status: 500 }),
+        'serialize certificate response'
+      );
+    }
+  }
+
+  async function reconcileUserCertificateBilling(request: Request): Promise<Response> {
+    const timing = new RouteTimingCollector();
+    if (request.method !== 'POST') {
+      return buildTimedResponse(
+        timing,
+        () => Response.json({ error: 'Method not allowed' }, { status: 405 }),
+        'serialize certificate response'
+      );
+    }
+
+    const session = await timing.measure(
+      'session',
+      () => auth.getSession(request),
+      'resolve account session'
+    );
+    if (!session) {
+      return buildTimedResponse(
+        timing,
+        () => Response.json({ error: 'Authentication required' }, { status: 401 }),
+        'serialize certificate response'
+      );
+    }
+
+    try {
+      const convex = getConvexClientFromUrl(config.convexUrl);
+      await ensureCertificateBillingCatalogFresh(convex, config.convexApiSecret, timing);
+
+      const state = await timing.measure(
+        'provider_polar_customer_state',
+        () => fetchCertificateBillingCustomerStateByExternalId(session.user.id),
+        'fetch Polar customer state'
+      );
+
+      if (state) {
+        await timing.measure(
+          'convex_certificate_project_customer_state',
+          () =>
+            convex.mutation(api.certificateBilling.projectCustomerStateForApi, {
+              apiSecret: config.convexApiSecret,
+              authUserId: session.user.id,
+              polarCustomerId: state.id,
+              customerEmail: state.email,
+              activeSubscriptions: state.activeSubscriptions.map(
+                toCertificateBillingProjectionSubscription
+              ),
+              grantedBenefits: state.grantedBenefits.map(
+                toCertificateBillingProjectionBenefitGrant
+              ),
+              activeMeters: state.activeMeters.map(toCertificateBillingProjectionMeter),
+            }),
+          'project Polar customer state'
+        );
+      }
+
+      const overview = await getUserCertificateOverviewForAuthUser(session.user.id, timing);
+      return buildTimedResponse(
+        timing,
+        () =>
+          Response.json({
+            reconciled: Boolean(state),
+            overview,
+          }),
+        'serialize certificate response'
+      );
+    } catch (err) {
+      logger.error('Failed to reconcile certificate billing state', {
+        authUserId: session.user.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return buildTimedResponse(
+        timing,
+        () =>
+          Response.json(
+            { error: 'Failed to reconcile certificate billing state' },
+            { status: 500 }
+          ),
         'serialize certificate response'
       );
     }
@@ -4531,6 +4530,8 @@ export function createConnectRoutes(auth: Auth, config: ConnectConfig) {
     createCreatorCertificateCheckout: createUserCertificateCheckout,
     getUserCertificatePortal,
     getCreatorCertificatePortal: getUserCertificatePortal,
+    reconcileUserCertificateBilling,
+    reconcileCreatorCertificateBilling: reconcileUserCertificateBilling,
     revokeUserCertificate,
     revokeCreatorCertificate: revokeUserCertificate,
     getUserLicenses,

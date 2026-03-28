@@ -30,4 +30,11 @@ crons.interval(
   internal.adminNotifications.cleanupExpired
 );
 
+crons.interval(
+  'reconcile certificate billing state',
+  { minutes: 15 },
+  internal.certificateBillingSync.reconcileDueCustomers,
+  {}
+);
+
 export default crons;

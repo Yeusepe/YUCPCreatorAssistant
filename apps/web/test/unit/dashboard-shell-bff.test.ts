@@ -12,6 +12,11 @@ describe('dashboard shell BFF wiring', () => {
     expect(dashboardServerSource).toContain('/api/connect/dashboard/shell');
   });
 
+  it('does not force a Convex token exchange before calling the dashboard-shell BFF route', () => {
+    expect(dashboardServerSource).not.toContain('const token = await requireDashboardToken();');
+    expect(dashboardServerSource).not.toContain('const baseViewer = decodeDashboardViewer(token);');
+  });
+
   it('stops stitching the shell from separate viewer and guild bootstrap calls', () => {
     expect(dashboardServerSource).not.toContain(
       'const [viewer, guilds] = await Promise.all([loadDashboardViewer(token), loadGuilds(token)])'

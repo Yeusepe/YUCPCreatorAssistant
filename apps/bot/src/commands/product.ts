@@ -108,6 +108,7 @@ async function enrichDiscordRoleNames<
     requiredRoleMatchMode?: 'any' | 'all';
     verifiedRoleId?: string;
     verifiedRoleIds?: string[];
+    enabled?: boolean;
   },
 >(client: Client, items: T[]): Promise<T[]> {
   const toResolve = items.filter(
@@ -1626,7 +1627,7 @@ export async function handleProductConfirmRemove(
 
   for (const productId of productIds) {
     const matching = rules.filter(
-      (r) => r.productId === productId && r.guildId === session.guildId
+      (r: (typeof rules)[number]) => r.productId === productId && r.guildId === session.guildId
     );
 
     if (matching.length === 0) {

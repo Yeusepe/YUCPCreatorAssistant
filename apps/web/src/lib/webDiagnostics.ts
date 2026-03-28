@@ -22,7 +22,8 @@ export interface ServerAuthClientLike {
 export interface LoadProtectedAuthStateOptions {
   convexQueryClient: ServerAuthClientLike;
   location?: LocationLike | null;
-  getAuthToken: () => Promise<string | null | undefined>;
+  getAuthSession?: () => Promise<{ isAuthenticated: boolean } | null | undefined>;
+  getAuthToken?: () => Promise<string | null | undefined>;
   env?: WebDiagnosticsEnv;
 }
 
@@ -153,11 +154,27 @@ export function logWebError(
 export async function loadProtectedAuthState({
   convexQueryClient,
   location,
+  getAuthSession,
   getAuthToken,
   env = getDefaultEnv(),
 }: LoadProtectedAuthStateOptions): Promise<ProtectedAuthState> {
   try {
-    const token = (await getAuthToken()) ?? null;
+    const session = getAuthSession ? await getAuthSession() : null;
+    if (session?.isAuthenticated) {
+      return {
+        isAuthenticated: true,
+        token: null,
+      };
+    }
+
+    if (session && !session.isAuthenticated) {
+      return {
+        isAuthenticated: false,
+        token: null,
+      };
+    }
+
+    const token = getAuthToken ? ((await getAuthToken()) ?? null) : null;
 
     if (token) {
       convexQueryClient.serverHttpClient?.setAuth(token);

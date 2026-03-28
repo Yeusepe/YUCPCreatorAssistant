@@ -14,7 +14,7 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 import type { GenericCtx } from '@convex-dev/better-auth';
 import { createClient } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
-import { checkout, polar, portal, webhooks } from '@polar-sh/better-auth';
+import { checkout, polar, portal, usage, webhooks } from '@polar-sh/better-auth';
 import { Polar } from '@polar-sh/sdk';
 import type { BetterAuthOptions } from 'better-auth';
 import { betterAuth } from 'better-auth';
@@ -25,7 +25,11 @@ import authConfig from './auth.config';
 import { createJwtJwksAdapter } from './betterAuth/jwtAdapter';
 import authSchema from './betterAuth/schema';
 import { getCertificateBillingConfig } from './lib/certificateBillingConfig';
-import { toCertificateBillingProjectionSubscription } from './lib/certificateBillingProjection';
+import {
+  toCertificateBillingProjectionBenefitGrant,
+  toCertificateBillingProjectionMeter,
+  toCertificateBillingProjectionSubscription,
+} from './lib/certificateBillingProjection';
 import { buildTrustedBrowserOrigins } from './lib/trustedOrigins';
 import { vrchat } from './plugins/vrchat';
 
@@ -76,6 +80,41 @@ function parseCachedTrustedClients(value: string | undefined): Set<string> | und
       `Failed to parse PUBLIC_OAUTH_TRUSTED_CLIENTS_JSON: ${error instanceof Error ? error.message : String(error)}`
     );
   }
+}
+
+function extractWebhookCustomerRef(payload: unknown): {
+  authUserId?: string;
+  polarCustomerId?: string;
+} {
+  if (!payload || typeof payload !== 'object') {
+    return {};
+  }
+
+  const record = payload as {
+    data?: {
+      customer?: { externalId?: string | null; id?: string | null };
+    };
+  };
+
+  const authUserId = record.data?.customer?.externalId?.trim() ?? undefined;
+  const polarCustomerId = record.data?.customer?.id?.trim() ?? undefined;
+  return { authUserId, polarCustomerId };
+}
+
+async function scheduleCustomerReconciliation(
+  ctx: GenericCtx<DataModel>,
+  payload: unknown
+) {
+  const { authUserId, polarCustomerId } = extractWebhookCustomerRef(payload);
+  if (!authUserId || !('runMutation' in ctx)) {
+    return;
+  }
+
+  await ctx.runMutation(internal.certificateBillingSync.scheduleReconciliationTarget, {
+    authUserId,
+    polarCustomerId,
+    delayMs: 0,
+  });
 }
 
 export const createAuthOptions = (ctx: GenericCtx<DataModel>): BetterAuthOptions => {
@@ -141,17 +180,14 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>): BetterAuthOptions
             }),
             use: [
               checkout({
-                products: certificateBillingConfig.products.map((product) => ({
-                  productId: product.productId,
-                  slug: product.slug,
-                })),
-                successUrl: `${siteUrl.replace(/\/$/, '')}/account?checkout_id={CHECKOUT_ID}`,
-                returnUrl: `${siteUrl.replace(/\/$/, '')}/account`,
+                successUrl: `${siteUrl.replace(/\/$/, '')}/dashboard/certificates?checkout_id={CHECKOUT_ID}`,
+                returnUrl: `${siteUrl.replace(/\/$/, '')}/dashboard/certificates`,
                 authenticatedUsersOnly: true,
               }),
               portal({
-                returnUrl: `${siteUrl.replace(/\/$/, '')}/account`,
+                returnUrl: `${siteUrl.replace(/\/$/, '')}/dashboard/certificates`,
               }),
+              usage(),
               webhooks({
                 secret: certificateBillingConfig.polarWebhookSecret ?? '',
                 onCustomerStateChanged: async (payload) => {
@@ -170,6 +206,45 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>): BetterAuthOptions
                     activeSubscriptions: payload.data.activeSubscriptions.map(
                       toCertificateBillingProjectionSubscription
                     ),
+                    grantedBenefits: payload.data.grantedBenefits.map(
+                      toCertificateBillingProjectionBenefitGrant
+                    ),
+                    activeMeters: payload.data.activeMeters.map(
+                      toCertificateBillingProjectionMeter
+                    ),
+                  });
+                },
+                onOrderPaid: async (payload) => scheduleCustomerReconciliation(ctx, payload),
+                onOrderRefunded: async (payload) => scheduleCustomerReconciliation(ctx, payload),
+                onRefundCreated: async (payload) => scheduleCustomerReconciliation(ctx, payload),
+                onSubscriptionCanceled: async (payload) =>
+                  scheduleCustomerReconciliation(ctx, payload),
+                onSubscriptionRevoked: async (payload) =>
+                  scheduleCustomerReconciliation(ctx, payload),
+                onSubscriptionUncanceled: async (payload) =>
+                  scheduleCustomerReconciliation(ctx, payload),
+                onBenefitGrantCreated: async (payload) =>
+                  scheduleCustomerReconciliation(ctx, payload),
+                onBenefitGrantUpdated: async (payload) =>
+                  scheduleCustomerReconciliation(ctx, payload),
+                onBenefitGrantRevoked: async (payload) =>
+                  scheduleCustomerReconciliation(ctx, payload),
+                onProductUpdated: async () => {
+                  if (!('runMutation' in ctx)) return;
+                  await ctx.runMutation(internal.certificateBillingSync.scheduleCatalogSync, {
+                    reason: 'product.updated',
+                  });
+                },
+                onBenefitCreated: async () => {
+                  if (!('runMutation' in ctx)) return;
+                  await ctx.runMutation(internal.certificateBillingSync.scheduleCatalogSync, {
+                    reason: 'benefit.created',
+                  });
+                },
+                onBenefitUpdated: async () => {
+                  if (!('runMutation' in ctx)) return;
+                  await ctx.runMutation(internal.certificateBillingSync.scheduleCatalogSync, {
+                    reason: 'benefit.updated',
                   });
                 },
               }),

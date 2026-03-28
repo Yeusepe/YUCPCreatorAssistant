@@ -70,9 +70,9 @@ export async function handleForensicsPackageAutocomplete(
   });
 
   const choices = result.packages
-    .filter((packageId) => !query || packageId.toLowerCase().includes(query))
+    .filter((packageId: string) => !query || packageId.toLowerCase().includes(query))
     .slice(0, 25)
-    .map((packageId) => ({
+    .map((packageId: string) => ({
       name: packageId.slice(0, 100),
       value: packageId.slice(0, 100),
     }));

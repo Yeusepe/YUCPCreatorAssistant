@@ -1,13 +1,14 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, apiClient } from '@/api/client';
 import { DashboardBodyPortal } from '@/components/dashboard/DashboardBodyPortal';
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
 import { useAuth } from '@/hooks/useAuth';
-import { DashboardSessionProvider } from '@/hooks/useDashboardSession';
+import { DashboardSessionProvider, useDashboardSession } from '@/hooks/useDashboardSession';
 import { useDashboardShell } from '@/hooks/useDashboardShell';
 import { ServerContextProvider } from '@/hooks/useServerContext';
+import { listCreatorCertificates } from '@/lib/certificates';
 import { normalizeDashboardIdentifier } from '@/lib/dashboard';
 import { dashboardShellQueryOptions } from '@/lib/dashboardQueryOptions';
 import { primeDashboardShellCaches } from '@/lib/dashboardShellCache';
@@ -15,6 +16,7 @@ import { type DashboardShellData, fetchDashboardShell, type Guild } from '@/lib/
 import '@/styles/dashboard.css';
 import '@/styles/dashboard-components.css';
 import { getServerIconUrl } from '@/lib/utils';
+import { BILLING_CAPABILITY_KEYS } from '../../../../../convex/lib/billingCapabilities';
 
 /**
  * Client-side cache for dashboard shell data, keyed by "guildId|tenantId".
@@ -450,6 +452,20 @@ function Sidebar({
 }) {
   const { guild_id } = Route.useSearch();
   const _isPersonalDashboard = !guild_id;
+  const { canRunPanelQueries } = useDashboardSession();
+
+  const certificatesQuery = useQuery({
+    queryKey: ['creator-certificates'],
+    queryFn: listCreatorCertificates,
+    enabled: canRunPanelQueries && _isPersonalDashboard,
+  });
+
+  const hasForensicsCapability =
+    certificatesQuery.data?.billing.capabilities.some(
+      (c) =>
+        c.capabilityKey === BILLING_CAPABILITY_KEYS.couplingTraceability &&
+        (c.status === 'active' || c.status === 'grace')
+    ) ?? false;
 
   return (
     <aside id="sidebar" className="sidebar" aria-label="Main navigation">
@@ -517,37 +533,39 @@ function Sidebar({
                 </svg>
                 Certificates &amp; Billing
               </Link>
-              <Link
-                id="tab-btn-forensics"
-                to="/dashboard/forensics"
-                search={(prev) => ({
-                  ...prev,
-                  guild_id: undefined,
-                  tenant_id: undefined,
-                })}
-                className="sidebar-nav-btn"
-                activeProps={{ className: 'sidebar-nav-btn is-active' }}
-                role="tab"
-                aria-selected={false}
-                aria-controls="tab-panel-forensics"
-              >
-                <svg
-                  className="sidebar-nav-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
+              {hasForensicsCapability && (
+                <Link
+                  id="tab-btn-forensics"
+                  to="/dashboard/forensics"
+                  search={(prev) => ({
+                    ...prev,
+                    guild_id: undefined,
+                    tenant_id: undefined,
+                  })}
+                  className="sidebar-nav-btn"
+                  activeProps={{ className: 'sidebar-nav-btn is-active' }}
+                  role="tab"
+                  aria-selected={false}
+                  aria-controls="tab-panel-forensics"
                 >
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M21 21l-4.35-4.35" />
-                  <path d="M11 8v6" />
-                  <path d="M8 11h6" />
-                </svg>
-                Coupling Forensics
-              </Link>
+                  <svg
+                    className="sidebar-nav-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M21 21l-4.35-4.35" />
+                    <path d="M11 8v6" />
+                    <path d="M8 11h6" />
+                  </svg>
+                  Coupling Forensics
+                </Link>
+              )}
               <Link
                 to="/dashboard/integrations"
                 search={(prev) => prev}

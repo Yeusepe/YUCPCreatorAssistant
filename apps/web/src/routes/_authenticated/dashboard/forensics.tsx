@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ApiError } from '@/api/client';
 import { AccountInlineError } from '@/components/account/AccountPage';
 import { DashboardAuthRequiredState } from '@/components/dashboard/AuthRequiredState';
 import { DashboardGridSkeleton } from '@/components/dashboard/DashboardSkeletons';
@@ -8,7 +9,6 @@ import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
 import { isDashboardAuthError, useDashboardSession } from '@/hooks/useDashboardSession';
-import { ApiError } from '@/api/client';
 import { listCreatorCertificates } from '@/lib/certificates';
 import {
   type CouplingForensicsLookupResponse,
@@ -32,6 +32,11 @@ export const Route = createFileRoute('/_authenticated/dashboard/forensics')({
   pendingComponent: DashboardForensicsPending,
   component: DashboardForensics,
 });
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function formatForensicsDate(timestamp: number) {
   return new Date(timestamp).toLocaleString(undefined, {
@@ -61,6 +66,34 @@ export default function DashboardForensics() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [lookupResult, setLookupResult] = useState<CouplingForensicsLookupResponse | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounterRef = useRef(0);
+
+  const handleFilePick = (file: File | null) => {
+    setSelectedFile(file);
+    setInlineError(null);
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current++;
+    if (dragCounterRef.current === 1) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0] ?? null;
+    if (file) handleFilePick(file);
+  };
 
   // certificatesQuery must come first — capabilityEnabled is derived from it before packagesQuery
   const certificatesQuery = useQuery({
@@ -151,8 +184,7 @@ export default function DashboardForensics() {
   });
 
   const isLoading =
-    !isAuthResolved ||
-    (canRunPanelQueries && isPersonalDashboard && certificatesQuery.isLoading);
+    !isAuthResolved || (canRunPanelQueries && isPersonalDashboard && certificatesQuery.isLoading);
   const hasQueryError =
     (packagesQuery.isError && !isDashboardAuthError(packagesQuery.error)) ||
     (certificatesQuery.isError && !isDashboardAuthError(certificatesQuery.error));
@@ -179,9 +211,14 @@ export default function DashboardForensics() {
           <section className="intg-card animate-in bento-col-12">
             <div className="intg-header">
               <div className="intg-icon">
-                <img src="/Icons/Shield.png" alt="" aria-hidden="true" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
+                <img
+                  src="/Icons/Shield.png"
+                  alt=""
+                  aria-hidden="true"
+                  style={{ width: '22px', height: '22px', objectFit: 'contain' }}
+                />
               </div>
-              <div className="intg-copy" style={{ flex: 1 }}>
+              <div className="intg-copy">
                 <h1 className="intg-title">Creator scope required</h1>
                 <p className="intg-desc">
                   Coupling forensics is scoped to your creator-owned package catalog. Open it from
@@ -234,13 +271,18 @@ export default function DashboardForensics() {
         <section className="intg-card animate-in bento-col-8">
           <div className="intg-header">
             <div className="intg-icon">
-              <img src="/Icons/Shield.png" alt="" aria-hidden="true" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
+              <img
+                src="/Icons/Shield.png"
+                alt=""
+                aria-hidden="true"
+                style={{ width: '22px', height: '22px', objectFit: 'contain' }}
+              />
             </div>
-            <div className="intg-copy" style={{ flex: 1 }}>
+            <div className="intg-copy">
               <h1 className="intg-title">Coupling Forensics</h1>
               <p className="intg-desc">
-                Upload a .unitypackage or .zip, restrict the lookup to one of your packages, and
-                resolve only authorized coupling matches.
+                Scan a .unitypackage or .zip against your owned packages to verify authorized
+                coupling records.
               </p>
             </div>
             <span className="account-badge account-badge--provider" style={{ flexShrink: 0 }}>
@@ -249,20 +291,20 @@ export default function DashboardForensics() {
           </div>
 
           {!capabilityEnabled ? (
-            <div className="account-empty">
-              <div className="account-empty-icon">
-                <img src="/Icons/BagPlus.png" alt="" aria-hidden="true" style={{ width: '20px', height: '20px', objectFit: 'contain', opacity: 0.5 }} />
+            <div className="forensics-upgrade-gate">
+              <div className="forensics-upgrade-gate-icon">
+                <img src="/Icons/BagPlus.png" alt="" aria-hidden="true" />
               </div>
-              <p className="account-empty-title">Creator Studio+ required</p>
-              <p className="account-empty-desc">
-                Coupling traceability is locked to Creator Studio+. Upgrade your billing plan to
-                inspect coupling matches for your packages.
+              <p className="forensics-upgrade-gate-title">Creator Studio+ required</p>
+              <p className="forensics-upgrade-gate-desc">
+                Coupling traceability is a Creator Studio+ feature. Upgrade your plan to inspect
+                coupling matches for your packages.
               </p>
               <Link
                 to="/dashboard/certificates"
                 search={(prev) => ({ ...prev, guild_id: undefined, tenant_id: undefined })}
                 className="account-btn account-btn--primary"
-                style={{ borderRadius: '999px', marginTop: '4px' }}
+                style={{ borderRadius: '999px' }}
               >
                 Upgrade billing
               </Link>
@@ -272,15 +314,13 @@ export default function DashboardForensics() {
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!selectedPackageId || !selectedFile) {
-                  setInlineError(
-                    'Choose one of your packages and upload a .unitypackage or .zip file.'
-                  );
+                  setInlineError('Choose a package and upload a .unitypackage or .zip file.');
                   return;
                 }
                 lookupMutation.mutate({ packageId: selectedPackageId, file: selectedFile });
               }}
             >
-              <div className="account-form-field-group">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div>
                   <label htmlFor="forensics-package" className="account-form-label">
                     Package scope
@@ -295,21 +335,108 @@ export default function DashboardForensics() {
                 </div>
 
                 <div>
-                  <label htmlFor="forensics-file" className="account-form-label">
-                    Upload package
-                  </label>
-                  <input
-                    id="forensics-file"
-                    type="file"
-                    accept=".unitypackage,.zip"
-                    className="account-file-input"
-                    disabled={lookupMutation.isPending}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0] ?? null;
-                      setSelectedFile(file);
-                      setInlineError(null);
-                    }}
-                  />
+                  <p className="account-form-label" style={{ marginBottom: '8px' }}>
+                    Upload file
+                  </p>
+                  {selectedFile ? (
+                    <div className="forensics-dropzone forensics-dropzone--selected">
+                      <div className="forensics-dropzone-file-icon">
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                      </div>
+                      <div className="forensics-dropzone-file-info">
+                        <p className="forensics-dropzone-file-name">{selectedFile.name}</p>
+                        <p className="forensics-dropzone-file-size">
+                          {formatFileSize(selectedFile.size)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="forensics-dropzone-clear"
+                        onClick={() => {
+                          handleFilePick(null);
+                          if (fileInputRef.current) fileInputRef.current.value = '';
+                        }}
+                        aria-label="Remove file"
+                      >
+                        <svg
+                          width="11"
+                          height="11"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          aria-hidden="true"
+                        >
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                      <input
+                        ref={fileInputRef}
+                        id="forensics-file"
+                        type="file"
+                        accept=".unitypackage,.zip"
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleFilePick(e.target.files?.[0] ?? null)}
+                      />
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="forensics-file"
+                      className={`forensics-dropzone${isDragOver ? ' is-dragover' : ''}${lookupMutation.isPending ? ' is-disabled' : ''}`}
+                      onDragEnter={handleDragEnter}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        id="forensics-file"
+                        type="file"
+                        accept=".unitypackage,.zip"
+                        className="forensics-dropzone-input"
+                        disabled={lookupMutation.isPending}
+                        onChange={(e) => handleFilePick(e.target.files?.[0] ?? null)}
+                      />
+                      <div className="forensics-dropzone-idle">
+                        <div className="forensics-dropzone-icon">
+                          <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                          </svg>
+                        </div>
+                        <p className="forensics-dropzone-label">
+                          {isDragOver ? 'Drop to upload' : 'Click to upload or drag & drop'}
+                        </p>
+                        <p className="forensics-dropzone-hint">.unitypackage or .zip</p>
+                      </div>
+                    </label>
+                  )}
                 </div>
               </div>
 
@@ -325,14 +452,11 @@ export default function DashboardForensics() {
                     packageOptions.length === 0
                   }
                 >
-                  {lookupMutation.isPending && <span className="btn-loading-spinner" aria-hidden="true" />}
+                  {lookupMutation.isPending && (
+                    <span className="btn-loading-spinner" aria-hidden="true" />
+                  )}
                   <span>{lookupMutation.isPending ? 'Scanning...' : 'Scan upload'}</span>
                 </button>
-                <span className="account-form-hint">
-                  {selectedFile
-                    ? `Selected: ${selectedFile.name}`
-                    : 'Supported: .unitypackage and .zip'}
-                </span>
               </div>
             </form>
           )}
@@ -342,58 +466,56 @@ export default function DashboardForensics() {
         <section className="intg-card animate-in animate-in-delay-1 bento-col-4">
           <div className="intg-header">
             <div className="intg-icon">
-              <img src="/Icons/Wrench.png" alt="" aria-hidden="true" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
+              <img
+                src="/Icons/Wrench.png"
+                alt=""
+                aria-hidden="true"
+                style={{ width: '22px', height: '22px', objectFit: 'contain' }}
+              />
             </div>
-            <div className="intg-copy" style={{ flex: 1 }}>
-              <h2 className="intg-title">Lookup Summary</h2>
-              <p className="intg-desc">Creator-scoped scan with redacted match output only.</p>
+            <div className="intg-copy">
+              <h2 className="intg-title">Scan Results</h2>
+              <p className="intg-desc">Stats from the most recent lookup.</p>
             </div>
           </div>
 
-          <dl className="account-kv-list">
-            <div className="account-kv-row">
-              <dt className="account-kv-label">Capability</dt>
-              <dd className="account-kv-value">
-                {capabilityEnabled ? (
-                  <span className="account-badge account-badge--active">Enabled</span>
-                ) : (
-                  <span className="account-badge account-badge--provider">Locked</span>
-                )}
-              </dd>
-            </div>
-            <div className="account-kv-row">
-              <dt className="account-kv-label">Owned packages</dt>
-              <dd className="account-kv-value">{packageOptions.length}</dd>
-            </div>
-            <div className="account-kv-row">
-              <dt className="account-kv-label">Candidates scanned</dt>
-              <dd className="account-kv-value">{lookupResult?.candidateAssetCount ?? '—'}</dd>
-            </div>
-            <div className="account-kv-row">
-              <dt className="account-kv-label">Decoded assets</dt>
-              <dd className="account-kv-value">{lookupResult?.decodedAssetCount ?? '—'}</dd>
-            </div>
-            <div className="account-kv-row">
-              <dt className="account-kv-label">Matched assets</dt>
-              <dd className="account-kv-value">{lookupResult ? matchedAssets : '—'}</dd>
-            </div>
-            <div className="account-kv-row">
-              <dt className="account-kv-label">Status</dt>
-              <dd className="account-kv-value">
-                {lookupResult ? lookupResult.lookupStatus.replace(/_/g, ' ') : '—'}
-              </dd>
-            </div>
-          </dl>
-
-          {!lookupResult && (
-            <div className="account-empty" style={{ marginTop: '18px' }}>
-              <div className="account-empty-icon">
-                <img src="/Icons/Wrench.png" alt="" aria-hidden="true" style={{ width: '20px', height: '20px', objectFit: 'contain', opacity: 0.45 }} />
+          {lookupResult ? (
+            <dl className="account-kv-list">
+              <div className="account-kv-row">
+                <dt className="account-kv-label">Candidates</dt>
+                <dd className="account-kv-value">{lookupResult.candidateAssetCount}</dd>
               </div>
-              <p className="account-empty-title">No lookup yet</p>
-              <p className="account-empty-desc">
-                Run a scan to see whether the upload resolves to an authorized coupling record.
-              </p>
+              <div className="account-kv-row">
+                <dt className="account-kv-label">Decoded</dt>
+                <dd className="account-kv-value">{lookupResult.decodedAssetCount}</dd>
+              </div>
+              <div className="account-kv-row">
+                <dt className="account-kv-label">Matched</dt>
+                <dd className="account-kv-value">
+                  <span
+                    className={`account-badge account-badge--${matchedAssets > 0 ? 'connected' : 'provider'}`}
+                  >
+                    {matchedAssets}
+                  </span>
+                </dd>
+              </div>
+              <div className="account-kv-row">
+                <dt className="account-kv-label">Status</dt>
+                <dd className="account-kv-value">{lookupResult.lookupStatus.replace(/_/g, ' ')}</dd>
+              </div>
+            </dl>
+          ) : (
+            <div className="account-empty">
+              <div className="account-empty-icon">
+                <img
+                  src="/Icons/Wrench.png"
+                  alt=""
+                  aria-hidden="true"
+                  style={{ width: '20px', height: '20px', objectFit: 'contain', opacity: 0.45 }}
+                />
+              </div>
+              <p className="account-empty-title">No scan yet</p>
+              <p className="account-empty-desc">Run a scan to see results here.</p>
             </div>
           )}
         </section>
@@ -403,10 +525,15 @@ export default function DashboardForensics() {
           <section className="intg-card animate-in animate-in-delay-2 bento-col-12">
             <div className="intg-header">
               <div className="intg-icon">
-                <img src="/Icons/Shield.png" alt="" aria-hidden="true" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
+                <img
+                  src="/Icons/Shield.png"
+                  alt=""
+                  aria-hidden="true"
+                  style={{ width: '22px', height: '22px', objectFit: 'contain' }}
+                />
               </div>
-              <div className="intg-copy" style={{ flex: 1 }}>
-                <h2 className="intg-title">Authorized Match Results</h2>
+              <div className="intg-copy">
+                <h2 className="intg-title">Match Results</h2>
                 <p className="intg-desc">{lookupResult.message}</p>
               </div>
               <span
@@ -423,14 +550,13 @@ export default function DashboardForensics() {
                   .filter((entry) => entry.matched)
                   .map((entry) => (
                     <div key={`${entry.assetPath}:${entry.assetType}`} className="account-list-row">
-                      <div className="account-list-row-icon">
-                        <span className={`account-asset-type-badge account-asset-type-badge--${entry.assetType}`}>
-                          {entry.assetType.toUpperCase()}
-                        </span>
-                      </div>
                       <div className="account-list-row-info">
-                        <p className="account-list-row-name">{entry.assetPath}</p>
-                        <div className="account-list-row-meta">
+                        <div className="account-list-row-meta" style={{ marginBottom: '4px' }}>
+                          <span
+                            className={`account-asset-type-badge account-asset-type-badge--${entry.assetType}`}
+                          >
+                            {entry.assetType.toUpperCase()}
+                          </span>
                           <span className="account-reference-chip">{entry.decoderKind}</span>
                           <span>{entry.tokenLength} hex chars</span>
                           <span aria-hidden="true">·</span>
@@ -438,7 +564,8 @@ export default function DashboardForensics() {
                             {entry.matches.length} record{entry.matches.length === 1 ? '' : 's'}
                           </span>
                         </div>
-                        <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+                        <p className="account-list-row-name">{entry.assetPath}</p>
+                        <div className="forensics-match-records">
                           {entry.matches.map((match) => (
                             <div
                               key={`${entry.assetPath}:${match.correlationId ?? match.licenseSubject}`}
@@ -453,7 +580,7 @@ export default function DashboardForensics() {
                                 </span>
                               </div>
                               <div className="account-match-record-meta">
-                                <span>Trace asset: {match.assetPath}</span>
+                                <span>Trace: {match.assetPath}</span>
                                 {match.correlationId && (
                                   <span>Correlation: {match.correlationId}</span>
                                 )}
@@ -471,11 +598,16 @@ export default function DashboardForensics() {
             ) : (
               <div className="account-empty">
                 <div className="account-empty-icon">
-                  <img src="/Icons/Wrench.png" alt="" aria-hidden="true" style={{ width: '20px', height: '20px', objectFit: 'contain', opacity: 0.45 }} />
+                  <img
+                    src="/Icons/Wrench.png"
+                    alt=""
+                    aria-hidden="true"
+                    style={{ width: '20px', height: '20px', objectFit: 'contain', opacity: 0.45 }}
+                  />
                 </div>
                 <p className="account-empty-title">No authorized match found</p>
                 <p className="account-empty-desc">
-                  The upload did not resolve to a coupling token under the package you selected.
+                  The upload did not resolve to a coupling token under the selected package.
                 </p>
               </div>
             )}

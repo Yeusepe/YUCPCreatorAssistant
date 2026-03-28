@@ -1,5 +1,6 @@
 import { ConvexError, v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
+import { internal } from './_generated/api';
 import {
   internalMutation,
   internalQuery,
@@ -10,17 +11,46 @@ import {
 } from './_generated/server';
 import { requireApiSecret } from './lib/apiAuth';
 import {
+  aggregateCertificateBillingBenefitEntitlements,
+  type CertificateBillingCatalogBenefit,
+  type CertificateBillingCatalogProduct,
+} from './lib/certificateBillingCatalog';
+import {
   buildAuthUserWorkspaceKey,
   extractWorkspaceKeyFromMetadata,
   getCertificateBillingConfig,
-  getPlanForPlanKey,
-  getPlanForProductId,
   resolveWorkspaceKeys,
 } from './lib/certificateBillingConfig';
 import { projectWorkspaceCapabilities } from './lib/certificateCapabilityProjection';
 import { summarizeActiveCertificatesByDevice } from './yucpCertificates';
 
 type BillingStatus = 'active' | 'grace' | 'inactive' | 'suspended';
+
+type ProjectionBenefitGrant = {
+  grantId: string;
+  benefitId: string;
+  benefitType: string;
+  benefitMetadata: Record<string, string | number | boolean>;
+};
+
+type ProjectionMeter = {
+  customerMeterId: string;
+  meterId: string;
+  consumedUnits: number;
+  creditedUnits: number;
+  balance: number;
+};
+
+type ProjectionSubscription = {
+  subscriptionId: string;
+  productId: string;
+  status: string;
+  recurringInterval: string;
+  currentPeriodStart: number;
+  currentPeriodEnd: number;
+  cancelAtPeriodEnd: boolean;
+  metadata: Record<string, string | number | boolean>;
+};
 
 const resolveForAuthUserReturnValidator = v.object({
   billingEnabled: v.boolean(),
@@ -29,6 +59,7 @@ const resolveForAuthUserReturnValidator = v.object({
   allowEnrollment: v.boolean(),
   allowSigning: v.boolean(),
   planKey: v.optional(v.string()),
+  productId: v.optional(v.string()),
   deviceCap: v.optional(v.number()),
   signQuotaPerPeriod: v.optional(v.number()),
   auditRetentionDays: v.optional(v.number()),
@@ -48,6 +79,14 @@ const billingCapabilityStateValidator = v.object({
   status: v.string(),
 });
 
+const billingMeterStateValidator = v.object({
+  meterId: v.string(),
+  meterName: v.optional(v.string()),
+  consumedUnits: v.number(),
+  creditedUnits: v.number(),
+  balance: v.number(),
+});
+
 const accountOverviewReturnValidator = v.object({
   workspaceKey: v.string(),
   creatorProfileId: v.optional(v.string()),
@@ -57,6 +96,7 @@ const accountOverviewReturnValidator = v.object({
     allowEnrollment: v.boolean(),
     allowSigning: v.boolean(),
     planKey: v.optional(v.string()),
+    productId: v.optional(v.string()),
     deviceCap: v.optional(v.number()),
     activeDeviceCount: v.number(),
     signQuotaPerPeriod: v.optional(v.number()),
@@ -87,14 +127,23 @@ const accountOverviewReturnValidator = v.object({
       description: v.optional(v.string()),
       highlights: v.array(v.string()),
       priority: v.number(),
+      displayBadge: v.optional(v.string()),
       deviceCap: v.number(),
       signQuotaPerPeriod: v.optional(v.number()),
       auditRetentionDays: v.number(),
       supportTier: v.string(),
       billingGraceDays: v.number(),
       capabilities: v.array(v.string()),
+      meteredPrices: v.array(
+        v.object({
+          priceId: v.string(),
+          meterId: v.string(),
+          meterName: v.string(),
+        })
+      ),
     })
   ),
+  meters: v.array(billingMeterStateValidator),
 });
 
 const customerStateProjectionSubscriptionValidator = v.object({
@@ -108,11 +157,28 @@ const customerStateProjectionSubscriptionValidator = v.object({
   metadata: v.record(v.string(), v.union(v.string(), v.number(), v.boolean())),
 });
 
+const customerStateProjectionBenefitGrantValidator = v.object({
+  grantId: v.string(),
+  benefitId: v.string(),
+  benefitType: v.string(),
+  benefitMetadata: v.record(v.string(), v.union(v.string(), v.number(), v.boolean())),
+});
+
+const customerStateProjectionMeterValidator = v.object({
+  customerMeterId: v.string(),
+  meterId: v.string(),
+  consumedUnits: v.number(),
+  creditedUnits: v.number(),
+  balance: v.number(),
+});
+
 const customerStateProjectionArgsValidator = {
   authUserId: v.string(),
   polarCustomerId: v.string(),
   customerEmail: v.string(),
   activeSubscriptions: v.array(customerStateProjectionSubscriptionValidator),
+  grantedBenefits: v.array(customerStateProjectionBenefitGrantValidator),
+  activeMeters: v.array(customerStateProjectionMeterValidator),
 } as const;
 
 const customerStateProjectionReturnValidator = v.object({
@@ -128,50 +194,6 @@ function compareBillingStatus(left: BillingStatus, right: BillingStatus): number
     suspended: 1,
   };
   return order[left] - order[right];
-}
-
-function selectWinningCertificateEntitlement<
-  T extends {
-    status: BillingStatus;
-    deviceCap?: number;
-    workspaceKey: string;
-    allowEnrollment: boolean;
-    allowSigning: boolean;
-    planKey?: string;
-    signQuotaPerPeriod?: number;
-    auditRetentionDays?: number;
-    supportTier?: string;
-    currentPeriodEnd?: number;
-    graceUntil?: number;
-  },
->(entitlements: T[]): T | null {
-  return (
-    entitlements.sort((left, right) => {
-      const statusDiff = compareBillingStatus(right.status, left.status);
-      if (statusDiff !== 0) return statusDiff;
-      return (right.deviceCap ?? 0) - (left.deviceCap ?? 0);
-    })[0] ?? null
-  );
-}
-
-function buildAvailablePlans(config: ReturnType<typeof getCertificateBillingConfig>) {
-  return [...config.products]
-    .sort((left, right) => right.priority - left.priority)
-    .map((plan) => ({
-      planKey: plan.planKey,
-      slug: plan.slug,
-      productId: plan.productId,
-      displayName: plan.displayName,
-      description: plan.description,
-      highlights: plan.highlights,
-      priority: plan.priority,
-      deviceCap: plan.deviceCap,
-      signQuotaPerPeriod: plan.signQuotaPerPeriod ?? undefined,
-      auditRetentionDays: plan.auditRetentionDays,
-      supportTier: plan.supportTier,
-      billingGraceDays: plan.billingGraceDays,
-      capabilities: [...plan.capabilities],
-    }));
 }
 
 async function listWorkspaceCapabilities(
@@ -190,6 +212,190 @@ async function listWorkspaceCapabilities(
     .sort((left, right) => left.capabilityKey.localeCompare(right.capabilityKey));
 }
 
+async function listWorkspaceMeters(
+  ctx: QueryCtx,
+  workspaceKey: string
+): Promise<
+  Array<{
+    meterId: string;
+    meterName?: string;
+    consumedUnits: number;
+    creditedUnits: number;
+    balance: number;
+  }>
+> {
+  const rows = await ctx.db
+    .query('creator_billing_meters')
+    .withIndex('by_workspace_key', (q) => q.eq('workspaceKey', workspaceKey))
+    .collect();
+  return rows
+    .map((row) => ({
+      meterId: row.meterId,
+      meterName: row.meterName,
+      consumedUnits: row.consumedUnits,
+      creditedUnits: row.creditedUnits,
+      balance: row.balance,
+    }))
+    .sort((left, right) => left.meterId.localeCompare(right.meterId));
+}
+
+async function loadCatalog(
+  ctx: QueryCtx | MutationCtx
+): Promise<{
+  products: CertificateBillingCatalogProduct[];
+  productsById: Map<string, CertificateBillingCatalogProduct>;
+  benefitsById: Map<string, CertificateBillingCatalogBenefit>;
+}> {
+  const [productRows, benefitRows] = await Promise.all([
+    ctx.db.query('creator_billing_catalog_products').collect(),
+    ctx.db.query('creator_billing_catalog_benefits').collect(),
+  ]);
+
+  const products = productRows
+    .map((row) => ({
+      productId: row.productId,
+      slug: row.slug,
+      displayName: row.displayName,
+      description: row.description,
+      status: row.status,
+      sortOrder: row.sortOrder,
+      displayBadge: row.displayBadge,
+      recurringInterval: row.recurringInterval,
+      recurringPriceIds: [...row.recurringPriceIds],
+      meteredPrices: row.meteredPrices.map((price) => ({ ...price })),
+      benefitIds: [...row.benefitIds],
+      highlights: [...row.highlights],
+      metadata: { ...row.metadata },
+    }))
+    .sort((left, right) => left.sortOrder - right.sortOrder);
+
+  const benefitsById = new Map<string, CertificateBillingCatalogBenefit>(
+    benefitRows.map((row) => [
+      row.benefitId,
+      {
+        benefitId: row.benefitId,
+        type: row.type,
+        description: row.description,
+        metadata: { ...row.metadata },
+        capabilityKey: row.capabilityKey,
+        deviceCap: row.deviceCap,
+        signQuotaPerPeriod: row.signQuotaPerPeriod,
+        auditRetentionDays: row.auditRetentionDays,
+        supportTier: row.supportTier,
+        tierRank: row.tierRank,
+      },
+    ])
+  );
+
+  return {
+    products,
+    productsById: new Map(products.map((product) => [product.productId, product])),
+    benefitsById,
+  };
+}
+
+function requireEntitlementMetadata(
+  workspaceKey: string,
+  productId: string,
+  entitlements: ReturnType<typeof aggregateCertificateBillingBenefitEntitlements>
+) {
+  if (entitlements.deviceCap === undefined) {
+    throw new ConvexError(
+      `Polar benefit metadata missing device_cap for workspace ${workspaceKey} and product ${productId}`
+    );
+  }
+  if (entitlements.auditRetentionDays === undefined) {
+    throw new ConvexError(
+      `Polar benefit metadata missing audit_retention_days for workspace ${workspaceKey} and product ${productId}`
+    );
+  }
+  if (!entitlements.supportTier) {
+    throw new ConvexError(
+      `Polar benefit metadata missing support_tier for workspace ${workspaceKey} and product ${productId}`
+    );
+  }
+
+  return {
+    deviceCap: entitlements.deviceCap,
+    auditRetentionDays: entitlements.auditRetentionDays,
+    supportTier: entitlements.supportTier,
+  };
+}
+
+function deriveCatalogBenefitsForProduct(
+  product: CertificateBillingCatalogProduct,
+  benefitsById: Map<string, CertificateBillingCatalogBenefit>,
+  activeGrantedBenefitIds?: Set<string>
+) {
+  return product.benefitIds
+    .filter((benefitId) => !activeGrantedBenefitIds || activeGrantedBenefitIds.has(benefitId))
+    .map((benefitId) => benefitsById.get(benefitId))
+    .filter(
+      (benefit): benefit is CertificateBillingCatalogBenefit => benefit !== undefined
+    );
+}
+
+function buildAvailablePlans(
+  products: CertificateBillingCatalogProduct[],
+  benefitsById: Map<string, CertificateBillingCatalogBenefit>
+) {
+  return products
+    .filter((product) => product.status === 'active')
+    .map((product) => {
+      const benefits = deriveCatalogBenefitsForProduct(product, benefitsById);
+      const entitlements = aggregateCertificateBillingBenefitEntitlements(benefits);
+      const required = requireEntitlementMetadata(
+        'catalog',
+        product.productId,
+        entitlements
+      );
+
+      return {
+        planKey: product.productId,
+        slug: product.slug,
+        productId: product.productId,
+        displayName: product.displayName,
+        description: product.description,
+        highlights: product.highlights,
+        priority: product.sortOrder,
+        displayBadge: product.displayBadge,
+        deviceCap: required.deviceCap,
+        signQuotaPerPeriod: entitlements.signQuotaPerPeriod,
+        auditRetentionDays: required.auditRetentionDays,
+        supportTier: required.supportTier,
+        billingGraceDays: 0,
+        capabilities: entitlements.capabilityKeys,
+        meteredPrices: product.meteredPrices,
+      };
+    })
+    .sort((left, right) => left.priority - right.priority);
+}
+
+function selectWinningCertificateEntitlement<
+  T extends {
+    status: BillingStatus;
+    deviceCap?: number;
+    workspaceKey: string;
+    allowEnrollment: boolean;
+    allowSigning: boolean;
+    planKey?: string;
+    productId?: string;
+    signQuotaPerPeriod?: number;
+    auditRetentionDays?: number;
+    supportTier?: string;
+    currentPeriodEnd?: number;
+    graceUntil?: number;
+  },
+>(entitlements: T[]): T | null {
+  return (
+    entitlements.sort((left, right) => {
+      const statusDiff = compareBillingStatus(right.status, left.status);
+      if (statusDiff !== 0) return statusDiff;
+      return (right.deviceCap ?? 0) - (left.deviceCap ?? 0);
+    })[0] ?? null
+  );
+}
+
 async function syncWorkspaceCapabilities(
   ctx: MutationCtx,
   args: {
@@ -197,6 +403,8 @@ async function syncWorkspaceCapabilities(
     authUserId: string;
     creatorProfileId?: Id<'creator_profiles'>;
     planKey: string;
+    productId?: string;
+    capabilityBenefitIds: Map<string, string>;
     capabilityKeys: string[];
     status: BillingStatus;
     currentPeriodEnd?: number;
@@ -227,6 +435,8 @@ async function syncWorkspaceCapabilities(
       authUserId: args.authUserId,
       creatorProfileId: args.creatorProfileId,
       planKey: args.planKey,
+      productId: args.productId,
+      benefitId: args.capabilityBenefitIds.get(row.capabilityKey),
       status: args.status,
       currentPeriodEnd: args.currentPeriodEnd,
       graceUntil: args.graceUntil,
@@ -241,10 +451,64 @@ async function syncWorkspaceCapabilities(
       authUserId: args.authUserId,
       creatorProfileId: args.creatorProfileId,
       planKey: args.planKey,
+      productId: args.productId,
+      benefitId: args.capabilityBenefitIds.get(capabilityKey),
       capabilityKey,
       status: args.status,
       currentPeriodEnd: args.currentPeriodEnd,
       graceUntil: args.graceUntil,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+async function syncWorkspaceMeters(
+  ctx: MutationCtx,
+  args: {
+    workspaceKey: string;
+    authUserId: string;
+    creatorProfileId?: Id<'creator_profiles'>;
+    meterNameById: Map<string, string>;
+    meters: ProjectionMeter[];
+  }
+) {
+  const now = Date.now();
+  const desired = new Map(args.meters.map((meter) => [meter.meterId, meter]));
+  const existing = await ctx.db
+    .query('creator_billing_meters')
+    .withIndex('by_workspace_key', (q) => q.eq('workspaceKey', args.workspaceKey))
+    .collect();
+
+  for (const row of existing) {
+    const next = desired.get(row.meterId);
+    if (!next) {
+      await ctx.db.delete(row._id);
+      continue;
+    }
+
+    await ctx.db.patch(row._id, {
+      authUserId: args.authUserId,
+      creatorProfileId: args.creatorProfileId,
+      meterName: args.meterNameById.get(row.meterId) ?? row.meterName,
+      consumedUnits: next.consumedUnits,
+      creditedUnits: next.creditedUnits,
+      balance: next.balance,
+      updatedAt: now,
+    });
+    desired.delete(row.meterId);
+  }
+
+  for (const meter of desired.values()) {
+    await ctx.db.insert('creator_billing_meters', {
+      workspaceKey: args.workspaceKey,
+      authUserId: args.authUserId,
+      creatorProfileId: args.creatorProfileId,
+      meterId: meter.meterId,
+      meterName: args.meterNameById.get(meter.meterId),
+      consumedUnits: meter.consumedUnits,
+      creditedUnits: meter.creditedUnits,
+      balance: meter.balance,
       createdAt: now,
       updatedAt: now,
     });
@@ -272,9 +536,17 @@ async function buildAccountOverview(ctx: QueryCtx, authUserId: string) {
   const devices = summarizeActiveCertificatesByDevice(certificates);
   const workspaceKey = certificateEntitlements?.workspaceKey ?? workspaceKeys[0];
   const storedCapabilities = await listWorkspaceCapabilities(ctx, workspaceKey);
-  const activePlan = getPlanForPlanKey(config, certificateEntitlements?.planKey);
+  const storedMeters = await listWorkspaceMeters(ctx, workspaceKey);
+  const { products, benefitsById } = await loadCatalog(ctx);
+  const activeProduct = certificateEntitlements?.productId
+    ? products.find((product) => product.productId === certificateEntitlements.productId) ?? null
+    : null;
+  const activeBenefits = activeProduct
+    ? deriveCatalogBenefitsForProduct(activeProduct, benefitsById)
+    : [];
+  const activeEntitlements = aggregateCertificateBillingBenefitEntitlements(activeBenefits);
   const capabilities = projectWorkspaceCapabilities({
-    includedCapabilityKeys: activePlan?.capabilities ?? [],
+    includedCapabilityKeys: activeEntitlements.capabilityKeys,
     entitlementStatus: certificateEntitlements?.status,
     storedCapabilities,
   });
@@ -290,6 +562,7 @@ async function buildAccountOverview(ctx: QueryCtx, authUserId: string) {
       allowEnrollment: certificateEntitlements?.allowEnrollment ?? !config.enabled,
       allowSigning: certificateEntitlements?.allowSigning ?? !config.enabled,
       planKey: certificateEntitlements?.planKey,
+      productId: certificateEntitlements?.productId,
       deviceCap: certificateEntitlements?.deviceCap,
       activeDeviceCount: devices.length,
       signQuotaPerPeriod: certificateEntitlements?.signQuotaPerPeriod,
@@ -298,13 +571,9 @@ async function buildAccountOverview(ctx: QueryCtx, authUserId: string) {
       currentPeriodEnd: certificateEntitlements?.currentPeriodEnd,
       graceUntil: certificateEntitlements?.graceUntil,
       reason:
-        certificateEntitlements?.status === 'grace'
-          ? 'Billing grace period active. Existing devices can continue signing, but new enrollment is blocked.'
-          : certificateEntitlements
-            ? undefined
-            : config.enabled
-              ? 'Certificate subscription required'
-              : undefined,
+        certificateEntitlements?.allowSigning || !config.enabled
+          ? undefined
+          : 'Certificate subscription required',
       capabilities,
     },
     devices: devices.map((device) => ({
@@ -316,7 +585,8 @@ async function buildAccountOverview(ctx: QueryCtx, authUserId: string) {
       expiresAt: device.expiresAt,
       status: device.status,
     })),
-    availablePlans: buildAvailablePlans(config),
+    availablePlans: buildAvailablePlans(products, benefitsById),
+    meters: storedMeters,
   };
 }
 
@@ -324,7 +594,6 @@ async function resolveProjectedCapabilitiesForAuthUser(
   ctx: QueryCtx,
   authUserId: string
 ): Promise<Array<{ capabilityKey: string; status: string }>> {
-  const config = getCertificateBillingConfig();
   const creatorProfile = await ctx.db
     .query('creator_profiles')
     .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
@@ -339,9 +608,17 @@ async function resolveProjectedCapabilitiesForAuthUser(
   );
   const workspaceKey = certificateEntitlement?.workspaceKey ?? workspaceKeys[0];
   const storedCapabilities = await listWorkspaceCapabilities(ctx, workspaceKey);
-  const activePlan = getPlanForPlanKey(config, certificateEntitlement?.planKey);
+  const { productsById, benefitsById } = await loadCatalog(ctx);
+  const activeProduct = certificateEntitlement?.productId
+    ? productsById.get(certificateEntitlement.productId) ?? null
+    : null;
+  const activeBenefits = activeProduct
+    ? deriveCatalogBenefitsForProduct(activeProduct, benefitsById)
+    : [];
+  const activeEntitlements = aggregateCertificateBillingBenefitEntitlements(activeBenefits);
+
   return projectWorkspaceCapabilities({
-    includedCapabilityKeys: activePlan?.capabilities ?? [],
+    includedCapabilityKeys: activeEntitlements.capabilityKeys,
     entitlementStatus: certificateEntitlement?.status,
     storedCapabilities,
   });
@@ -380,11 +657,16 @@ async function resolveCertificateBillingForAuthUser(ctx: QueryCtx, authUserId: s
     };
   }
 
-  const winner = matches.sort((left, right) => {
-    const statusDiff = compareBillingStatus(right.status, left.status);
-    if (statusDiff !== 0) return statusDiff;
-    return (right.deviceCap ?? 0) - (left.deviceCap ?? 0);
-  })[0];
+  const winner = selectWinningCertificateEntitlement(matches);
+  if (!winner) {
+    return {
+      billingEnabled: true,
+      status: 'inactive',
+      allowEnrollment: false,
+      allowSigning: false,
+      reason: 'Certificate subscription required',
+    };
+  }
 
   return {
     billingEnabled: true,
@@ -393,18 +675,14 @@ async function resolveCertificateBillingForAuthUser(ctx: QueryCtx, authUserId: s
     allowEnrollment: winner.allowEnrollment,
     allowSigning: winner.allowSigning,
     planKey: winner.planKey,
+    productId: winner.productId,
     deviceCap: winner.deviceCap,
     signQuotaPerPeriod: winner.signQuotaPerPeriod ?? undefined,
     auditRetentionDays: winner.auditRetentionDays,
     supportTier: winner.supportTier,
     currentPeriodEnd: winner.currentPeriodEnd ?? undefined,
     graceUntil: winner.graceUntil ?? undefined,
-    reason:
-      winner.status === 'grace'
-        ? 'Billing grace period active. Existing devices can continue signing, but new enrollment is blocked.'
-        : winner.allowSigning
-          ? undefined
-          : 'Certificate subscription required',
+    reason: winner.allowSigning ? undefined : 'Certificate subscription required',
   };
 }
 
@@ -414,16 +692,9 @@ async function projectCustomerStateIntoBilling(
     authUserId: string;
     polarCustomerId: string;
     customerEmail: string;
-    activeSubscriptions: Array<{
-      subscriptionId: string;
-      productId: string;
-      status: string;
-      recurringInterval: string;
-      currentPeriodStart: number;
-      currentPeriodEnd: number;
-      cancelAtPeriodEnd: boolean;
-      metadata: Record<string, string | number | boolean>;
-    }>;
+    activeSubscriptions: ProjectionSubscription[];
+    grantedBenefits: ProjectionBenefitGrant[];
+    activeMeters: ProjectionMeter[];
   }
 ) {
   const config = getCertificateBillingConfig();
@@ -439,24 +710,24 @@ async function projectCustomerStateIntoBilling(
   const defaultWorkspaceKey = creatorProfile?._id
     ? `creator-profile:${creatorProfile._id}`
     : buildAuthUserWorkspaceKey(args.authUserId);
+  const { productsById, benefitsById } = await loadCatalog(ctx);
+  const activeGrantedBenefitIds = new Set(args.grantedBenefits.map((grant) => grant.benefitId));
+  const meterNameById = new Map<string, string>();
 
-  const activeByWorkspace = new Map<
-    string,
-    Array<{
-      subscriptionId: string;
-      productId: string;
-      status: string;
-      recurringInterval: string;
-      currentPeriodStart: number;
-      currentPeriodEnd: number;
-      cancelAtPeriodEnd: boolean;
-      metadata: Record<string, string | number | boolean>;
-    }>
-  >();
+  for (const product of productsById.values()) {
+    for (const price of product.meteredPrices) {
+      if (!meterNameById.has(price.meterId)) {
+        meterNameById.set(price.meterId, price.meterName);
+      }
+    }
+  }
 
+  const activeByWorkspace = new Map<string, ProjectionSubscription[]>();
   for (const subscription of args.activeSubscriptions) {
-    const plan = getPlanForProductId(config, subscription.productId);
-    if (!plan) continue;
+    if (!productsById.has(subscription.productId)) {
+      continue;
+    }
+
     const workspaceKey = extractWorkspaceKeyFromMetadata(
       subscription.metadata,
       defaultWorkspaceKey
@@ -473,29 +744,74 @@ async function projectCustomerStateIntoBilling(
   const existingByWorkspace = new Map(existingAccounts.map((entry) => [entry.workspaceKey, entry]));
 
   for (const [workspaceKey, subscriptions] of activeByWorkspace.entries()) {
-    const matchingPlans = subscriptions
-      .map((subscription) => ({
-        subscription,
-        plan: getPlanForProductId(config, subscription.productId),
-      }))
+    const perProduct = subscriptions
+      .map((subscription) => {
+        const product = productsById.get(subscription.productId);
+        if (!product) {
+          return null;
+        }
+
+        const benefits = deriveCatalogBenefitsForProduct(
+          product,
+          benefitsById,
+          activeGrantedBenefitIds.size > 0 ? activeGrantedBenefitIds : undefined
+        );
+        const entitlements = aggregateCertificateBillingBenefitEntitlements(benefits);
+        const required = requireEntitlementMetadata(workspaceKey, product.productId, entitlements);
+
+        return {
+          subscription,
+          product,
+          benefits,
+          entitlements,
+          required,
+        };
+      })
       .filter(
         (
           entry
         ): entry is {
-          subscription: (typeof subscriptions)[number];
-          plan: NonNullable<ReturnType<typeof getPlanForProductId>>;
-        } => entry.plan !== null
+          subscription: ProjectionSubscription;
+          product: CertificateBillingCatalogProduct;
+          benefits: CertificateBillingCatalogBenefit[];
+          entitlements: ReturnType<typeof aggregateCertificateBillingBenefitEntitlements>;
+          required: {
+            deviceCap: number;
+            auditRetentionDays: number;
+            supportTier: string;
+          };
+        } => entry !== null
       )
-      .sort((left, right) => right.plan.priority - left.plan.priority);
+      .sort((left, right) => {
+        const leftRank = left.entitlements.tierRank ?? 0;
+        const rightRank = right.entitlements.tierRank ?? 0;
+        if (rightRank !== leftRank) {
+          return rightRank - leftRank;
+        }
 
-    const winningPlan = matchingPlans[0]?.plan;
-    if (!winningPlan) continue;
+        if (right.required.deviceCap !== left.required.deviceCap) {
+          return right.required.deviceCap - left.required.deviceCap;
+        }
 
-    const account = existingByWorkspace.get(workspaceKey);
+        return left.product.sortOrder - right.product.sortOrder;
+      });
+
+    const winning = perProduct[0];
+    if (!winning) {
+      continue;
+    }
+
     const currentPeriodEnd = Math.max(
       ...subscriptions.map((subscription) => subscription.currentPeriodEnd)
     );
-    const graceUntil = currentPeriodEnd + winningPlan.billingGraceDays * 24 * 60 * 60 * 1000;
+    const account = existingByWorkspace.get(workspaceKey);
+    const planKey = winning.product.productId;
+    const capabilityBenefitIds = new Map<string, string>();
+    for (const benefit of winning.benefits) {
+      if (benefit.capabilityKey) {
+        capabilityBenefitIds.set(benefit.capabilityKey, benefit.benefitId);
+      }
+    }
 
     if (account) {
       await ctx.db.patch(account._id, {
@@ -503,11 +819,12 @@ async function projectCustomerStateIntoBilling(
         polarCustomerId: args.polarCustomerId,
         polarExternalId: args.authUserId,
         workspaceKey,
-        planKey: winningPlan.planKey,
+        planKey,
+        productId: winning.product.productId,
         status: 'active',
         customerEmail: args.customerEmail,
         currentPeriodEnd,
-        graceUntil,
+        graceUntil: undefined,
         updatedAt: now,
       });
     } else {
@@ -517,11 +834,11 @@ async function projectCustomerStateIntoBilling(
         creatorProfileId: creatorProfile?._id,
         polarCustomerId: args.polarCustomerId,
         polarExternalId: args.authUserId,
-        planKey: winningPlan.planKey,
+        planKey,
+        productId: winning.product.productId,
         status: 'active',
         customerEmail: args.customerEmail,
         currentPeriodEnd,
-        graceUntil,
         createdAt: now,
         updatedAt: now,
       });
@@ -536,16 +853,17 @@ async function projectCustomerStateIntoBilling(
       authUserId: args.authUserId,
       creatorProfileId: creatorProfile?._id,
       workspaceKey,
-      planKey: winningPlan.planKey,
+      planKey,
+      productId: winning.product.productId,
       status: 'active' as BillingStatus,
       allowEnrollment: true,
       allowSigning: true,
-      deviceCap: winningPlan.deviceCap,
-      signQuotaPerPeriod: winningPlan.signQuotaPerPeriod ?? undefined,
-      auditRetentionDays: winningPlan.auditRetentionDays,
-      supportTier: winningPlan.supportTier,
+      deviceCap: winning.required.deviceCap,
+      signQuotaPerPeriod: winning.entitlements.signQuotaPerPeriod ?? undefined,
+      auditRetentionDays: winning.required.auditRetentionDays,
+      supportTier: winning.required.supportTier,
       currentPeriodEnd,
-      graceUntil,
+      graceUntil: undefined,
       updatedAt: now,
     };
 
@@ -562,11 +880,20 @@ async function projectCustomerStateIntoBilling(
       workspaceKey,
       authUserId: args.authUserId,
       creatorProfileId: creatorProfile?._id,
-      planKey: winningPlan.planKey,
-      capabilityKeys: winningPlan.capabilities,
+      planKey,
+      productId: winning.product.productId,
+      capabilityBenefitIds,
+      capabilityKeys: winning.entitlements.capabilityKeys,
       status: 'active',
       currentPeriodEnd,
-      graceUntil,
+    });
+
+    await syncWorkspaceMeters(ctx, {
+      workspaceKey,
+      authUserId: args.authUserId,
+      creatorProfileId: creatorProfile?._id,
+      meterNameById,
+      meters: args.activeMeters,
     });
 
     const existingSubscriptions = await ctx.db
@@ -582,7 +909,8 @@ async function projectCustomerStateIntoBilling(
         creatorProfileId: creatorProfile?._id,
         polarSubscriptionId: subscription.subscriptionId,
         polarProductId: subscription.productId,
-        planKey: winningPlan.planKey,
+        planKey,
+        productId: subscription.productId,
         status: subscription.status,
         recurringInterval: subscription.recurringInterval,
         currentPeriodStart: subscription.currentPeriodStart,
@@ -596,18 +924,13 @@ async function projectCustomerStateIntoBilling(
   }
 
   for (const existing of existingAccounts) {
-    if (activeByWorkspace.has(existing.workspaceKey)) continue;
-
-    const graceDays = existing.planKey
-      ? (config.products.find((plan) => plan.planKey === existing.planKey)?.billingGraceDays ?? 3)
-      : 3;
-    const graceUntil =
-      Math.max(existing.currentPeriodEnd ?? now, now) + graceDays * 24 * 60 * 60 * 1000;
-    const nextStatus: BillingStatus = graceUntil > now ? 'grace' : 'suspended';
+    if (activeByWorkspace.has(existing.workspaceKey)) {
+      continue;
+    }
 
     await ctx.db.patch(existing._id, {
-      status: nextStatus,
-      graceUntil,
+      status: 'inactive',
+      graceUntil: undefined,
       updatedAt: now,
     });
 
@@ -615,30 +938,39 @@ async function projectCustomerStateIntoBilling(
       .query('creator_billing_entitlements')
       .withIndex('by_workspace_key', (q) => q.eq('workspaceKey', existing.workspaceKey))
       .first();
-
     if (entitlement) {
       await ctx.db.patch(entitlement._id, {
-        status: nextStatus,
+        status: 'inactive',
         allowEnrollment: false,
-        allowSigning: nextStatus === 'grace',
-        graceUntil,
+        allowSigning: false,
+        graceUntil: undefined,
         updatedAt: now,
       });
     }
 
-    const plan = getPlanForPlanKey(config, existing.planKey);
-    if (plan) {
-      await syncWorkspaceCapabilities(ctx, {
-        workspaceKey: existing.workspaceKey,
-        authUserId: existing.authUserId,
-        creatorProfileId: existing.creatorProfileId ?? undefined,
-        planKey: plan.planKey,
-        capabilityKeys: plan.capabilities,
-        status: nextStatus,
-        currentPeriodEnd: existing.currentPeriodEnd ?? undefined,
-        graceUntil,
-      });
-    }
+    await syncWorkspaceCapabilities(ctx, {
+      workspaceKey: existing.workspaceKey,
+      authUserId: existing.authUserId,
+      creatorProfileId: existing.creatorProfileId ?? undefined,
+      planKey: existing.planKey ?? existing.productId ?? 'inactive',
+      productId: existing.productId ?? undefined,
+      capabilityBenefitIds: new Map(),
+      capabilityKeys: [],
+      status: 'inactive',
+      currentPeriodEnd: existing.currentPeriodEnd ?? undefined,
+    });
+
+    const staleMeters = await ctx.db
+      .query('creator_billing_meters')
+      .withIndex('by_workspace_key', (q) => q.eq('workspaceKey', existing.workspaceKey))
+      .collect();
+    await Promise.all(staleMeters.map((row) => ctx.db.delete(row._id)));
+
+    const staleSubscriptions = await ctx.db
+      .query('creator_billing_subscriptions')
+      .withIndex('by_workspace_key', (q) => q.eq('workspaceKey', existing.workspaceKey))
+      .collect();
+    await Promise.all(staleSubscriptions.map((row) => ctx.db.delete(row._id)));
   }
 
   return { updated: true, workspaceCount: activeByWorkspace.size };
@@ -750,7 +1082,13 @@ export const projectCustomerStateChanged = internalMutation({
   args: customerStateProjectionArgsValidator,
   returns: customerStateProjectionReturnValidator,
   handler: async (ctx, args) => {
-    return await projectCustomerStateIntoBilling(ctx, args);
+    const projected = await projectCustomerStateIntoBilling(ctx, args);
+    await ctx.scheduler.runAfter(0, internal.certificateBillingSync.scheduleReconciliationTarget, {
+      authUserId: args.authUserId,
+      polarCustomerId: args.polarCustomerId,
+      delayMs: 5 * 60 * 1000,
+    });
+    return projected;
   },
 });
 
@@ -769,5 +1107,7 @@ export const recordSigningUsage = internalMutation({
       certNonce: args.certNonce,
       createdAt: Date.now(),
     });
+
+    await ctx.scheduler.runAfter(0, internal.certificateBillingSync.ingestUsageEvent, args);
   },
 });

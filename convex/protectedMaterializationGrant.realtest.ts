@@ -305,4 +305,58 @@ describe('protected materialization grant issuance', () => {
     );
     expect(grantReceiptedEvents).toHaveLength(1);
   });
+
+  it('treats receipt as a no-op when no coupling traces were issued', async () => {
+    const t = makeTestConvex();
+    await seedPackageRegistration(t);
+    await seedProtectedAsset(t);
+    await publishRuntimeArtifact(t);
+    const licenseToken = await mintLicenseToken();
+
+    const result = await t.action(internal.yucpLicenses.issueProtectedMaterializationGrant, {
+      packageId,
+      protectedAssetId,
+      machineFingerprint,
+      projectId,
+      licenseToken,
+      assetPaths: ['Assets/Protected/Model.fbx'],
+      issuerBaseUrl,
+    });
+
+    expect(result).toMatchObject({ success: true, grant: expect.any(String), expiresAt: expect.any(Number) });
+
+    const payload = await unsealProtectedMaterializationGrant(result.grant ?? '');
+    expect(payload.coupling).toMatchObject({
+      jobs: [],
+      skipReason: 'capability_disabled',
+    });
+
+    const redeemed = await t.action(internal.yucpLicenses.redeemProtectedMaterializationGrant, {
+      grant: result.grant ?? '',
+      issuerBaseUrl,
+    });
+
+    expect(redeemed).toMatchObject({
+      success: true,
+      creatorAuthUserId,
+      packageId,
+      protectedAssetId,
+      machineFingerprint,
+      projectId,
+      licenseSubject: 'license-subject-protected-grant',
+      contentKeyBase64,
+      contentHash,
+      couplingJobs: [],
+      skipReason: 'capability_disabled',
+    });
+
+    const receiptResult = await t.mutation(internal.yucpLicenses.receiptProtectedMaterializationGrant, {
+      grant: result.grant ?? '',
+    });
+
+    expect(receiptResult).toMatchObject({
+      success: true,
+      updatedCount: 0,
+    });
+  });
 });

@@ -12,12 +12,20 @@ import type { ConnectConfig } from './connect';
 
 let queryImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
 let mutationImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
+let actionImpl: (...args: unknown[]) => Promise<unknown> = async () => ({
+  synced: false,
+  productCount: 0,
+  benefitCount: 0,
+});
 let polarCustomerStateImpl: (externalId: string) => Promise<unknown> = async () => null;
 
 const apiMock = {
   betterAuthApiKeys: {
     backfillApiKeyReferenceIds: 'betterAuthApiKeys.backfillApiKeyReferenceIds',
     listApiKeysForAuthUser: 'betterAuthApiKeys.listApiKeysForAuthUser',
+  },
+  certificateBillingSync: {
+    ensureCatalogFresh: 'certificateBillingSync.ensureCatalogFresh',
   },
   certificateBilling: {
     getAccountOverview: 'certificateBilling.getAccountOverview',
@@ -78,10 +86,12 @@ mock.module('../lib/convex', () => ({
   getConvexClient: () => ({
     query: (...args: unknown[]) => queryImpl(...args),
     mutation: (...args: unknown[]) => mutationImpl(...args),
+    action: (...args: unknown[]) => actionImpl(...args),
   }),
   getConvexClientFromUrl: () => ({
     query: (...args: unknown[]) => queryImpl(...args),
     mutation: (...args: unknown[]) => mutationImpl(...args),
+    action: (...args: unknown[]) => actionImpl(...args),
   }),
 }));
 
@@ -119,6 +129,11 @@ const routes = createConnectRoutes(auth, testConfig);
 afterEach(() => {
   queryImpl = async () => null;
   mutationImpl = async () => null;
+  actionImpl = async () => ({
+    synced: false,
+    productCount: 0,
+    benefitCount: 0,
+  });
   polarCustomerStateImpl = async () => null;
   testStore.clear();
 });
@@ -669,12 +684,11 @@ describe('GET /api/connect/user/certificates', () => {
     expect(body.devices[0]?.certNonce).toBe('cert_nonce_1');
   });
 
-  it('reconciles stale inactive billing from authoritative Polar customer state', async () => {
-    let overviewCalls = 0;
+  it('reconciles certificate billing through the explicit Polar recovery endpoint', async () => {
+    let projected = false;
     queryImpl = async (reference: unknown) => {
       if (reference === apiMock.certificateBilling.getAccountOverview) {
-        overviewCalls += 1;
-        if (overviewCalls === 1) {
+        if (!projected) {
           return {
             workspaceKey: 'creator-profile:sync-1',
             creatorProfileId: 'sync-1',
@@ -699,8 +713,11 @@ describe('GET /api/connect/user/certificates', () => {
                 auditRetentionDays: 30,
                 supportTier: 'standard',
                 billingGraceDays: 3,
+                capabilities: ['protected_exports'],
+                meteredPrices: [],
               },
             ],
+            meters: [],
           };
         }
 
@@ -718,6 +735,12 @@ describe('GET /api/connect/user/certificates', () => {
             auditRetentionDays: 30,
             supportTier: 'standard',
             currentPeriodEnd: 1_742_850_400_000,
+            capabilities: [
+              {
+                capabilityKey: 'protected_exports',
+                status: 'granted',
+              },
+            ],
           },
           devices: [],
           availablePlans: [
@@ -733,8 +756,11 @@ describe('GET /api/connect/user/certificates', () => {
               auditRetentionDays: 30,
               supportTier: 'standard',
               billingGraceDays: 3,
+              capabilities: ['protected_exports'],
+              meteredPrices: [],
             },
           ],
+          meters: [],
         };
       }
       return null;
@@ -760,6 +786,8 @@ describe('GET /api/connect/user/certificates', () => {
             },
           },
         ],
+        grantedBenefits: [],
+        activeMeters: [],
       };
     };
 
@@ -782,7 +810,10 @@ describe('GET /api/connect/user/certificates', () => {
             },
           },
         ],
+        grantedBenefits: [],
+        activeMeters: [],
       });
+      projected = true;
       return { updated: true, workspaceCount: 1 };
     };
 
@@ -797,17 +828,25 @@ describe('GET /api/connect/user/certificates', () => {
     } as unknown as Auth;
 
     const isolatedRoutes = createConnectRoutes(fakeAuth, testConfig);
-    const req = new Request('http://localhost:3001/api/connect/user/certificates');
-    const res = await isolatedRoutes.getUserCertificates(req);
+    const req = new Request('http://localhost:3001/api/connect/user/certificates/reconcile', {
+      method: 'POST',
+    });
+    const res = await isolatedRoutes.reconcileUserCertificateBilling(req);
 
     expect(res.status).toBe(200);
+    expect(res.headers.get('Server-Timing')).toMatch(
+      /session;dur=.*convex_certificate_catalog;dur=.*provider_polar_customer_state;dur=.*convex_certificate_project_customer_state;dur=.*convex_certificate_overview;dur=.*serialize;dur=.*total;dur=/
+    );
     const body = (await res.json()) as {
-      billing: { status: string; planKey?: string; allowSigning: boolean };
+      reconciled: boolean;
+      overview: {
+        billing: { status: string; planKey?: string; allowSigning: boolean };
+      };
     };
-    expect(body.billing.status).toBe('active');
-    expect(body.billing.planKey).toBe('starter');
-    expect(body.billing.allowSigning).toBe(true);
-    expect(overviewCalls).toBe(2);
+    expect(body.reconciled).toBe(true);
+    expect(body.overview.billing.status).toBe('active');
+    expect(body.overview.billing.planKey).toBe('starter');
+    expect(body.overview.billing.allowSigning).toBe(true);
   });
 });
 
@@ -908,7 +947,7 @@ describe('GET /api/connect/public-api/keys', () => {
 });
 
 describe('POST /api/connect/user/certificates/checkout', () => {
-  it('passes the workspace key to Polar checkout as referenceId and metadata', async () => {
+  it('passes the workspace key, product, and embed settings to Polar checkout', async () => {
     queryImpl = async (reference: unknown) => {
       if (reference === apiMock.certificateBilling.getAccountOverview) {
         return {
@@ -935,8 +974,11 @@ describe('POST /api/connect/user/certificates/checkout', () => {
               auditRetentionDays: 30,
               supportTier: 'standard',
               billingGraceDays: 3,
+              capabilities: ['protected_exports'],
+              meteredPrices: [],
             },
           ],
+          meters: [],
         };
       }
       return null;
@@ -974,8 +1016,13 @@ describe('POST /api/connect/user/certificates/checkout', () => {
     expect(checkoutPayload).toMatchObject({
       products: ['prod_starter'],
       referenceId: 'creator-profile:checkout-1',
+      externalCustomerId: 'session-user-2',
+      embedOrigin: 'http://localhost:3000',
+      successUrl: 'http://localhost:3000/dashboard/certificates',
+      returnUrl: 'http://localhost:3000/dashboard/certificates',
       metadata: {
         workspace_key: 'creator-profile:checkout-1',
+        product_id: 'prod_starter',
         plan_key: 'starter',
       },
     });
@@ -1008,8 +1055,11 @@ describe('POST /api/connect/user/certificates/checkout', () => {
               auditRetentionDays: 30,
               supportTier: 'standard',
               billingGraceDays: 3,
+              capabilities: ['protected_exports'],
+              meteredPrices: [],
             },
           ],
+          meters: [],
         };
       }
       return null;
@@ -1065,8 +1115,11 @@ describe('POST /api/connect/user/certificates/checkout', () => {
               auditRetentionDays: 30,
               supportTier: 'standard',
               billingGraceDays: 3,
+              capabilities: ['protected_exports'],
+              meteredPrices: [],
             },
           ],
+          meters: [],
         };
       }
       return null;
@@ -1095,7 +1148,7 @@ describe('POST /api/connect/user/certificates/checkout', () => {
 
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain('Unknown certificate plan');
+    expect(body.error).toContain('Unknown certificate product');
   });
 
   it('returns 503 when certificate billing is not configured', async () => {
@@ -1113,6 +1166,7 @@ describe('POST /api/connect/user/certificates/checkout', () => {
           },
           devices: [],
           availablePlans: [],
+          meters: [],
         };
       }
       return null;
@@ -1171,8 +1225,11 @@ describe('POST /api/connect/user/certificates/checkout', () => {
               auditRetentionDays: 30,
               supportTier: 'standard',
               billingGraceDays: 3,
+              capabilities: ['protected_exports'],
+              meteredPrices: [],
             },
           ],
+          meters: [],
         };
       }
       return null;

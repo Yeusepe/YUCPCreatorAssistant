@@ -1376,7 +1376,7 @@
 }
 
 .account-plan-card .account-plan-feature-list li::before {
-  content: '✓';
+  content: "✓";
   position: absolute;
   left: 0;
   font-weight: 700;
@@ -1417,6 +1417,10 @@
   flex-shrink: 0;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   Certificates & Forensics redesign
+   ═══════════════════════════════════════════════════════════════════════ */
+
 /* ── Certificate feature grid (no-subscription state) ───────────────── */
 .cert-features-grid {
   display: grid;
@@ -1446,15 +1450,39 @@
   justify-content: center;
   flex-shrink: 0;
   border-radius: 10px;
-  background: rgba(14, 165, 233, 0.09);
-}
-.dark .cert-feature-icon {
-  background: rgba(14, 165, 233, 0.14);
+  background: rgba(14, 165, 233, 0.1);
 }
 .cert-feature-icon img {
   width: 18px;
   height: 18px;
   object-fit: contain;
+}
+
+/* Per-feature color tints */
+.cert-feature-icon--blue {
+  background: rgba(14, 165, 233, 0.12);
+}
+.cert-feature-icon--green {
+  background: rgba(16, 185, 129, 0.12);
+}
+.cert-feature-icon--amber {
+  background: rgba(245, 158, 11, 0.12);
+}
+.cert-feature-icon--purple {
+  background: rgba(139, 92, 246, 0.12);
+}
+
+.dark .cert-feature-icon--blue {
+  background: rgba(14, 165, 233, 0.16);
+}
+.dark .cert-feature-icon--green {
+  background: rgba(16, 185, 129, 0.16);
+}
+.dark .cert-feature-icon--amber {
+  background: rgba(245, 158, 11, 0.16);
+}
+.dark .cert-feature-icon--purple {
+  background: rgba(139, 92, 246, 0.16);
 }
 
 .cert-feature-copy {
@@ -1485,6 +1513,295 @@
   color: #94a3b8;
 }
 
+/* ── Certificate subscription stat row ───────────────────────────────── */
+.cert-stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.cert-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(14, 165, 233, 0.04);
+  border: 1px solid rgba(14, 165, 233, 0.1);
+}
+.dark .cert-stat-item {
+  background: rgba(14, 165, 233, 0.07);
+  border-color: rgba(14, 165, 233, 0.15);
+}
+
+.cert-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.cert-stat-value {
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1;
+}
+.dark .cert-stat-value {
+  color: #f8fafc;
+}
+
+/* ── Forensics file dropzone ─────────────────────────────────────────── */
+.forensics-dropzone {
+  display: block;
+  position: relative;
+  width: 100%;
+  border: 2px dashed rgba(148, 163, 184, 0.38);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.6);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+.dark .forensics-dropzone {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+.forensics-dropzone:hover,
+.forensics-dropzone:focus-within {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(239, 246, 255, 0.5);
+}
+.dark .forensics-dropzone:hover,
+.dark .forensics-dropzone:focus-within {
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.05);
+}
+.forensics-dropzone.is-dragover {
+  border-color: #3b82f6;
+  background: rgba(239, 246, 255, 0.8);
+}
+.dark .forensics-dropzone.is-dragover {
+  border-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+}
+.forensics-dropzone.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.forensics-dropzone-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.forensics-dropzone-input:disabled {
+  cursor: not-allowed;
+}
+
+.forensics-dropzone-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 28px 20px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.forensics-dropzone-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  margin-bottom: 6px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.dark .forensics-dropzone-icon {
+  background: rgba(255, 255, 255, 0.07);
+  color: #64748b;
+}
+.forensics-dropzone.is-dragover .forensics-dropzone-icon {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+}
+
+.forensics-dropzone-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+.dark .forensics-dropzone-label {
+  color: #cbd5e1;
+}
+
+.forensics-dropzone-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* Selected state */
+.forensics-dropzone--selected {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-style: solid;
+  border-color: rgba(59, 130, 246, 0.28);
+  background: rgba(239, 246, 255, 0.5);
+  cursor: default;
+}
+.dark .forensics-dropzone--selected {
+  border-color: rgba(96, 165, 250, 0.22);
+  background: rgba(96, 165, 250, 0.06);
+}
+
+.forensics-dropzone-file-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  flex-shrink: 0;
+}
+.dark .forensics-dropzone-file-icon {
+  background: rgba(96, 165, 250, 0.14);
+  color: #60a5fa;
+}
+
+.forensics-dropzone-file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.forensics-dropzone-file-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dark .forensics-dropzone-file-name {
+  color: #f8fafc;
+}
+
+.forensics-dropzone-file-size {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #64748b;
+}
+.dark .forensics-dropzone-file-size {
+  color: #94a3b8;
+}
+
+.forensics-dropzone-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(255, 255, 255, 0.8);
+  color: #64748b;
+  cursor: pointer;
+  transition:
+    background 0.1s ease,
+    border-color 0.1s ease,
+    color 0.1s ease;
+}
+.dark .forensics-dropzone-clear {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+}
+.forensics-dropzone-clear:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+/* ── Forensics upgrade gate ───────────────────────────────────────────── */
+.forensics-upgrade-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 36px 24px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.8);
+  border: 1px solid rgba(139, 92, 246, 0.18);
+  text-align: center;
+}
+.dark .forensics-upgrade-gate {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(139, 92, 246, 0.24);
+}
+
+.forensics-upgrade-gate-icon {
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(139, 92, 246, 0.14);
+}
+.dark .forensics-upgrade-gate-icon {
+  background: rgba(139, 92, 246, 0.2);
+}
+.forensics-upgrade-gate-icon img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+.forensics-upgrade-gate-title {
+  margin: 0;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.dark .forensics-upgrade-gate-title {
+  color: #f8fafc;
+}
+
+.forensics-upgrade-gate-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #64748b;
+  max-width: 300px;
+}
+.dark .forensics-upgrade-gate-desc {
+  color: #94a3b8;
+}
+
 /* ── Forensics match records ─────────────────────────────────────────── */
 .forensics-match-records {
   display: flex;
@@ -1496,6 +1813,9 @@
 @media (max-width: 479px) {
   .cert-features-grid {
     grid-template-columns: 1fr;
+  }
+  .cert-stat-row {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 

@@ -3,86 +3,27 @@ import {
   buildAuthUserWorkspaceKey,
   extractWorkspaceKeyFromMetadata,
   getCertificateBillingConfig,
-  parseCertificateBillingProductsJson,
   resolveWorkspaceKeys,
 } from './certificateBillingConfig';
 
 describe('certificateBillingConfig', () => {
   const originalPolarAccessToken = process.env.POLAR_ACCESS_TOKEN;
   const originalPolarWebhookSecret = process.env.POLAR_WEBHOOK_SECRET;
-  const originalPolarProductsJson = process.env.POLAR_CERT_PRODUCTS_JSON;
 
   afterEach(() => {
     process.env.POLAR_ACCESS_TOKEN = originalPolarAccessToken;
     process.env.POLAR_WEBHOOK_SECRET = originalPolarWebhookSecret;
-    process.env.POLAR_CERT_PRODUCTS_JSON = originalPolarProductsJson;
   });
 
-  it('parses product configuration with defaults and display metadata', () => {
-    const plans = parseCertificateBillingProductsJson(
-      JSON.stringify([
-        {
-          planKey: 'starter',
-          productId: 'prod_starter',
-          slug: 'starter',
-          displayName: 'Starter Creator',
-          highlights: ['2 signing devices', 'Email support'],
-          deviceCap: 2,
-        },
-      ])
-    );
-
-    expect(plans).toEqual([
-      {
-        planKey: 'starter',
-        productId: 'prod_starter',
-        slug: 'starter',
-        displayName: 'Starter Creator',
-        description: undefined,
-        highlights: ['2 signing devices', 'Email support'],
-        priority: 0,
-        deviceCap: 2,
-        signQuotaPerPeriod: null,
-        auditRetentionDays: 30,
-        supportTier: 'standard',
-        billingGraceDays: 3,
-        capabilities: [],
-      },
-    ]);
-  });
-
-  it('parses sorted unique plan capabilities', () => {
-    const plans = parseCertificateBillingProductsJson(
-      JSON.stringify([
-        {
-          planKey: 'creator-suite-plus',
-          productId: 'prod_plus',
-          slug: 'creator-suite-plus',
-          deviceCap: 5,
-          capabilities: ['coupling_traceability', 'protected_exports', 'coupling_traceability'],
-        },
-      ])
-    );
-
-    expect(plans[0]?.capabilities).toEqual(['coupling_traceability', 'protected_exports']);
-  });
-
-  it('enables billing only when Polar credentials and products are configured', () => {
+  it('enables billing when Polar credentials are configured', () => {
     process.env.POLAR_ACCESS_TOKEN = 'polar-token';
     process.env.POLAR_WEBHOOK_SECRET = 'webhook-secret';
-    process.env.POLAR_CERT_PRODUCTS_JSON = JSON.stringify([
-      {
-        planKey: 'pro',
-        productId: 'prod_pro',
-        slug: 'pro',
-        deviceCap: 5,
-      },
-    ]);
 
     const config = getCertificateBillingConfig();
 
     expect(config.enabled).toBe(true);
-    expect(config.products).toHaveLength(1);
+    expect(config.polarAccessToken).toBe('polar-token');
+    expect(config.polarWebhookSecret).toBe('webhook-secret');
   });
 
   it('resolves workspace key metadata with creator-profile preference', () => {

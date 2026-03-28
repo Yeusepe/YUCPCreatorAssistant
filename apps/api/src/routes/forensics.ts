@@ -108,15 +108,14 @@ async function resolveViewer(
   const internalSecrets = getAllowedInternalSecrets();
   const headerSecret = request.headers.get('x-internal-service-secret')?.trim() || '';
   const authHeader = request.headers.get('authorization')?.trim() || '';
+  const internalAuthUserId = request.headers.get('x-yucp-auth-user-id')?.trim() || '';
   if (headerSecret) {
     if (!internalSecrets.some((secret) => timingSafeStringEqual(headerSecret, secret))) {
       return jsonResponse({ error: 'Forbidden' }, 403);
     }
-    const authUserId = request.headers.get('x-yucp-auth-user-id')?.trim() || '';
-    if (!authUserId) {
-      return jsonResponse({ error: 'Missing x-yucp-auth-user-id header' }, 400);
+    if (internalAuthUserId) {
+      return { authUserId: internalAuthUserId, source: 'discord' };
     }
-    return { authUserId, source: 'discord' };
   }
   if (
     internalSecrets.length > 0 &&
@@ -128,11 +127,10 @@ async function resolveViewer(
     }
   }
   if (internalSecrets.length > 0 && authHeader.startsWith('Bearer ')) {
-    const authUserId = request.headers.get('x-yucp-auth-user-id')?.trim() || '';
-    if (!authUserId) {
+    if (!internalAuthUserId) {
       return jsonResponse({ error: 'Missing x-yucp-auth-user-id header' }, 400);
     }
-    return { authUserId, source: 'discord' };
+    return { authUserId: internalAuthUserId, source: 'discord' };
   }
 
   const csrfBlock = rejectCrossSiteRequest(request, getAllowedOrigins(config));

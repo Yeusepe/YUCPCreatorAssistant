@@ -6,6 +6,7 @@ export interface CreatorCertificateBillingSummary {
   allowEnrollment: boolean;
   allowSigning: boolean;
   planKey: string | null;
+  productId: string | null;
   deviceCap: number | null;
   activeDeviceCount: number;
   signQuotaPerPeriod: number | null;
@@ -40,11 +41,18 @@ export interface CreatorCertificatePlan {
   description?: string;
   highlights: string[];
   priority: number;
+  displayBadge?: string;
   deviceCap: number;
   signQuotaPerPeriod: number | null;
   auditRetentionDays: number;
   supportTier: string;
   billingGraceDays: number;
+  capabilities: string[];
+  meteredPrices: Array<{
+    priceId: string;
+    meterId: string;
+    meterName: string;
+  }>;
 }
 
 export interface CreatorCertificateWorkspace {
@@ -53,6 +61,13 @@ export interface CreatorCertificateWorkspace {
   billing: CreatorCertificateBillingSummary;
   devices: CreatorCertificateDevice[];
   availablePlans: CreatorCertificatePlan[];
+  meters: Array<{
+    meterId: string;
+    meterName?: string;
+    consumedUnits: number;
+    creditedUnits: number;
+    balance: number;
+  }>;
 }
 
 function padTwoDigits(value: number) {
@@ -90,6 +105,7 @@ export async function listCreatorCertificates() {
     billing: {
       ...data.billing,
       planKey: data.billing.planKey ?? null,
+      productId: data.billing.productId ?? null,
       deviceCap: data.billing.deviceCap ?? null,
       signQuotaPerPeriod: data.billing.signQuotaPerPeriod ?? null,
       auditRetentionDays: data.billing.auditRetentionDays ?? null,
@@ -102,25 +118,40 @@ export async function listCreatorCertificates() {
     availablePlans: data.availablePlans.map((plan) => ({
       ...plan,
       description: plan.description?.trim() || undefined,
+      displayBadge: plan.displayBadge?.trim() || undefined,
       highlights: Array.isArray(plan.highlights) ? plan.highlights.filter(Boolean) : [],
       signQuotaPerPeriod: plan.signQuotaPerPeriod ?? null,
+      capabilities: Array.isArray(plan.capabilities) ? plan.capabilities.filter(Boolean) : [],
+      meteredPrices: Array.isArray(plan.meteredPrices) ? plan.meteredPrices : [],
     })),
+    meters: Array.isArray(data.meters) ? data.meters : [],
   } satisfies CreatorCertificateWorkspace;
 }
 
-export async function createCreatorCertificateCheckout(planKey: string) {
+export async function createCreatorCertificateCheckout(input: {
+  productId?: string;
+  planKey?: string;
+}) {
   return apiClient.post<{
     url: string;
     redirect: boolean;
     workspaceKey: string;
     planKey: string;
-  }>('/api/connect/creator/certificates/checkout', { planKey });
+    productId: string;
+  }>('/api/connect/creator/certificates/checkout', input);
 }
 
 export async function getCreatorCertificatePortal() {
   return apiClient.get<{ url: string; redirect: boolean }>(
     '/api/connect/creator/certificates/portal'
   );
+}
+
+export async function reconcileCreatorCertificateBilling() {
+  return apiClient.post<{
+    reconciled: boolean;
+    overview: CreatorCertificateWorkspace;
+  }>('/api/connect/creator/certificates/reconcile', {});
 }
 
 export async function revokeCreatorCertificate(certNonce: string) {

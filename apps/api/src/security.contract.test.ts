@@ -18,6 +18,10 @@ const vrchatPluginSource = readFileSync(
   resolve(import.meta.dir, '../../../convex/plugins/vrchat.ts'),
   'utf8'
 );
+const certificateBillingSyncSource = readFileSync(
+  resolve(import.meta.dir, '../../../convex/certificateBillingSync.ts'),
+  'utf8'
+);
 const vrchatClientSource = readFileSync(
   resolve(import.meta.dir, '../../../packages/providers/src/vrchat/client.ts'),
   'utf8'
@@ -36,6 +40,13 @@ function expectInternalApiSecretGuard(
   exportName: string,
   kind: 'query' | 'mutation'
 ): void {
+  const block = getExportBlock(source, exportName);
+  expect(block).toContain(`${kind}({`);
+  expect(block).toContain('apiSecret: v.string()');
+  expect(block).toContain('requireApiSecret(args.apiSecret);');
+}
+
+function expectPublicApiSecretGuard(source: string, exportName: string, kind: 'action'): void {
   const block = getExportBlock(source, exportName);
   expect(block).toContain(`${kind}({`);
   expect(block).toContain('apiSecret: v.string()');
@@ -61,6 +72,10 @@ describe('security contracts', () => {
     expectInternalApiSecretGuard(apiKeysSource, 'backfillApiKeyReferenceIds', 'mutation');
     expectInternalApiSecretGuard(apiKeysSource, 'verifyApiKey', 'mutation');
     expectInternalApiSecretGuard(apiKeysSource, 'updateApiKey', 'mutation');
+  });
+
+  it('keeps external certificate billing catalog sync behind apiSecret checks', () => {
+    expectPublicApiSecretGuard(certificateBillingSyncSource, 'ensureCatalogFresh', 'action');
   });
 
   it('routes auth-sensitive logs through the shared logger instead of raw console calls', () => {

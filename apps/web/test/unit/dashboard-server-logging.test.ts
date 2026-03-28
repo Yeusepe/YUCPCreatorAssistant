@@ -8,16 +8,16 @@ const dashboardServerSource = readFileSync(
 );
 
 describe('dashboard server logging', () => {
-  it('logs the dashboard token, viewer, guild, and shell failure phases', () => {
-    expect(dashboardServerSource).toContain('dashboard-require-token');
+  it('logs the dashboard viewer, guild, and shell failure phases', () => {
     expect(dashboardServerSource).toContain('dashboard-load-viewer');
     expect(dashboardServerSource).toContain('dashboard-load-guilds');
     expect(dashboardServerSource).toContain('dashboard-load-shell');
     expect(dashboardServerSource).toContain('logWebError');
   });
 
-  it('degrades viewer profile fields instead of crashing the whole dashboard when the Convex viewer query fails', () => {
-    expect(dashboardServerSource).toContain('Dashboard viewer load degraded');
-    expect(dashboardServerSource).toContain('return baseViewer;');
+  it('fails closed when the authenticated viewer is missing from the shell response', () => {
+    expect(dashboardServerSource).toContain(
+      'Dashboard shell response is missing the authenticated viewer'
+    );
   });
 });

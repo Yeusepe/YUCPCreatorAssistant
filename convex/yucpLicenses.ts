@@ -1611,6 +1611,27 @@ export const receiptProtectedMaterializationGrant = internalMutation({
     );
 
     if (matchingRows.length === 0) {
+      if (payload.coupling.jobs.length === 0) {
+        await ctx.db.insert('audit_events', {
+          authUserId: payload.creatorAuthUserId,
+          eventType: 'protected.materialization.grant.receipted',
+          actorType: 'system',
+          metadata: {
+            grantId: payload.grantId,
+            packageId: payload.packageId,
+            licenseSubject: payload.licenseSubject,
+            assetCount: 0,
+          },
+          correlationId: crypto.randomUUID(),
+          createdAt: Date.now(),
+        });
+
+        return {
+          success: true,
+          updatedCount: 0,
+        };
+      }
+
       console.log(
         '[DELETE ME][yucpLicenses.receiptProtectedMaterializationGrant] no-matching-traces',
         JSON.stringify({

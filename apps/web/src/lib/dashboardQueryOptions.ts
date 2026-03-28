@@ -47,13 +47,11 @@ export function dashboardQueryOptions<
  * Uses staleTime: Infinity so ensureQueryData only fetches when the cache is
  * completely empty (first visit). Once data is in cache the loader never blocks
  * navigation again. The component-level useQuery with dashboardQueryOptions
- * (staleTime: 60s) triggers background refetches using a browser-direct queryFn
- * (1 hop, session cookie) rather than a server function (2 hops via RPC).
+ * (staleTime: 60s) triggers background refetches using browser-direct queryFns.
  *
- * This split is intentional: server functions call getToken() which works in
- * TanStack Router loader context but is unreliable in React Query background
- * refetch context. Browser-direct fns always work from the component because
- * they use the session cookie automatically.
+ * This split is intentional: the first SSR shell load goes through the web
+ * server's BFF path with forwarded Better Auth session cookies, while component
+ * refetches run directly in the browser with the same session cookies.
  */
 export function dashboardShellQueryOptions<
   TQueryFnData,

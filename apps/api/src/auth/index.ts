@@ -2,6 +2,7 @@ import { createHash, createHmac } from 'node:crypto';
 import { createLogger } from '@yucp/shared';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
+import { createCertificateBillingPortalSession } from '../lib/polar';
 import { loadRequestScoped, requestScopeKey } from '../lib/requestScope';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
@@ -92,6 +93,8 @@ interface PolarCheckoutRequest {
   slug?: string;
   referenceId?: string;
   metadata?: Record<string, string | number | boolean>;
+  externalCustomerId?: string;
+  embedOrigin?: string;
   redirect?: boolean;
   successUrl?: string;
   returnUrl?: string;
@@ -510,7 +513,41 @@ export function createAuth(config: AuthConfig) {
       request: Request,
       payload?: PolarPortalRequest
     ): Promise<PolarCheckoutResponse | null> {
-      return postBetterAuthJson<PolarCheckoutResponse>(request, '/customer/portal', payload ?? {});
+      const session = await resolveViewer(request);
+      const authSession =
+        session !== null
+          ? {
+              user: {
+                id: session.authUserId,
+                email: session.email ?? null,
+                name: session.name ?? null,
+                image: session.image ?? null,
+              },
+            }
+          : await resolveSessionFromBetterAuthCookie(request);
+
+      if (!authSession) {
+        return null;
+      }
+
+      try {
+        const portalSession = await createCertificateBillingPortalSession({
+          externalCustomerId: authSession.user.id,
+          customerEmail: authSession.user.email ?? null,
+          customerName: authSession.user.name ?? null,
+        });
+        if (!portalSession) {
+          return null;
+        }
+
+        return {
+          url: portalSession.customerPortalUrl,
+          redirect: payload?.redirect ?? true,
+        };
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new BetterAuthEndpointError('/customer/portal', 500, { error: detail }, detail);
+      }
     },
 
     async persistVrchatSession(
