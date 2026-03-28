@@ -278,14 +278,6 @@ export default function DashboardForensics() {
         {/* Scan Form */}
         <section className="intg-card animate-in bento-col-8">
           <div className="intg-header">
-            <div className="intg-icon">
-              <img
-                src="/Icons/Shield.png"
-                alt=""
-                aria-hidden="true"
-                style={{ width: '22px', height: '22px', objectFit: 'contain' }}
-              />
-            </div>
             <div className="intg-copy">
               <h1 className="intg-title">Coupling Forensics</h1>
               <p className="intg-desc">
@@ -296,6 +288,14 @@ export default function DashboardForensics() {
             <span className="account-badge account-badge--provider" style={{ flexShrink: 0 }}>
               Creator-only
             </span>
+            <div className="intg-icon" style={{ flexShrink: 0 }}>
+              <img
+                src="/Icons/Shield.png"
+                alt=""
+                aria-hidden="true"
+                style={{ width: '22px', height: '22px', objectFit: 'contain' }}
+              />
+            </div>
           </div>
 
           {hasCapabilityQueryError ? (

@@ -51,11 +51,16 @@ const STAT_DEFINITIONS = [
 export function StatsOverviewPanel() {
   const stats = useConvexQuery(api.dashboardViews.getMyDashboardStats);
   const isLoading = stats === undefined;
+  const sectionClassName = [
+    'stats-overview-panel',
+    'animate-in',
+    isLoading ? 'stats-overview-panel--loading' : 'intg-card intg-card--flush',
+  ].join(' ');
 
   return (
     <section
       id="stats-overview-section"
-      className="intg-card intg-card--flush animate-in"
+      className={sectionClassName}
       aria-label="Dashboard statistics overview"
     >
       <div className="stat-grid">

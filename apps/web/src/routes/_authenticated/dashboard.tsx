@@ -366,7 +366,7 @@ function DashboardLayout() {
             <SidebarOverlay />
             <ServerDropdownBackdrop />
             <Sidebar hasBootstrapPending={hasBootstrapPending} pendingGuild={pendingGuild} />
-            {hasBootstrapPending ? (
+            {bootstrapState.status === 'bootstrapping' ? (
               <DashboardBootstrapState pendingGuild={displayGuild} />
             ) : (
               <MainContent pendingGuild={pendingGuild} />

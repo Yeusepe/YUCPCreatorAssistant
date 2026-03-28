@@ -139,16 +139,25 @@ export async function runCouplingForensicsScan(
     throw new CouplingServiceConfigurationError('Coupling service shared secret is not configured');
   }
 
-  const response = await fetch(buildCouplingScanUrl(config.baseUrl), {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${sharedSecret}`,
-      'Cache-Control': 'no-store',
-      'Content-Type': 'application/json',
-    },
-    body: await buildRequestBody(assets),
-  });
+  let response: Response;
+  try {
+    response = await fetch(buildCouplingScanUrl(config.baseUrl), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${sharedSecret}`,
+        'Cache-Control': 'no-store',
+        'Content-Type': 'application/json',
+      },
+      body: await buildRequestBody(assets),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new CouplingServiceRequestError(
+      `Coupling service is unreachable: ${message}`,
+      503
+    );
+  }
 
   const responseText = await response.text();
   const payload = parseResponsePayload(responseText);

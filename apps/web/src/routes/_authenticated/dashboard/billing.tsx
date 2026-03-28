@@ -328,13 +328,16 @@ export default function DashboardBilling() {
         <section className="billing-page-header bento-col-12">
           <div className="billing-page-header-top">
             <div className="billing-page-header-main">
-              <div>
+              <div style={{ flex: 1 }}>
                 <h1 className="billing-page-title">Plans &amp; Billing</h1>
                 <p className="billing-page-subtitle">
                   {hasPolarAccess
                     ? 'Manage your active Polar subscription, inspect entitlements, and access invoices.'
                     : 'Subscribe to Creator Suite via Polar to unlock exports, certificate signing, and more.'}
                 </p>
+              </div>
+              <div className="billing-page-header-icon">
+                <img src="/Icons/CreditCard.png" alt="" aria-hidden="true" />
               </div>
             </div>
 

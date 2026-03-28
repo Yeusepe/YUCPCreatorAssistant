@@ -1266,7 +1266,7 @@ type ProtectedUnlockIssueResult = {
 type CouplingJobIssueResult = {
   success: boolean;
   subject?: string;
-  jobs?: Array<{ assetPath: string; tokenHex: string }>;
+  jobs?: Array<{ assetPath: string; tokenHex: string; materializationNonce: string }>;
   skipReason?: string;
   error?: string;
 };
@@ -1387,6 +1387,7 @@ export const redeemProtectedMaterializationGrant = internalAction({
         v.object({
           assetPath: v.string(),
           tokenHex: v.string(),
+          materializationNonce: v.optional(v.string()),
         })
       )
     ),
@@ -1595,6 +1596,7 @@ export const issueCouplingJob = internalAction({
         v.object({
           assetPath: v.string(),
           tokenHex: v.string(),
+          materializationNonce: v.string(),
         })
       )
     ),

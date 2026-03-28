@@ -143,6 +143,13 @@ export default function DashboardCertificates() {
 
         <section className="intg-card animate-in bento-col-8">
           <div className="intg-header">
+            <div className="intg-copy">
+              <h1 className="intg-title">Code Signing Certificates</h1>
+              <p className="intg-desc">
+                Certificate lifecycle stays here. Billing, plan changes, and checkout now live on
+                the dedicated Polar billing page.
+              </p>
+            </div>
             <div className="intg-icon">
               <img
                 src="/Icons/Shield.png"
@@ -150,13 +157,6 @@ export default function DashboardCertificates() {
                 aria-hidden="true"
                 style={{ width: '22px', height: '22px', objectFit: 'contain' }}
               />
-            </div>
-            <div className="intg-copy">
-              <h1 className="intg-title">Code Signing Certificates</h1>
-              <p className="intg-desc">
-                Certificate lifecycle stays here. Billing, plan changes, and checkout now live on
-                the dedicated Polar billing page.
-              </p>
             </div>
           </div>
 

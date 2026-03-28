@@ -451,6 +451,50 @@
   border: none;
 }
 
+.stats-overview-panel {
+  position: relative;
+}
+
+.stats-overview-panel--loading {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.stats-overview-panel--loading .stat-grid {
+  gap: 16px;
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.stats-overview-panel--loading .stat-cell {
+  padding: 0;
+  min-height: 48px;
+  background: transparent;
+}
+
+.stats-overview-panel--loading .stat-cell-skeleton-val {
+  width: 48px;
+}
+
+.stats-overview-panel--loading .stat-cell-skeleton-label {
+  width: 68px;
+}
+
+.dark .stats-overview-panel--loading {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.dark .stats-overview-panel--loading .stat-grid,
+.dark .stats-overview-panel--loading .stat-cell {
+  background: transparent;
+}
+
 .intg-header {
   display: flex;
   align-items: flex-start;

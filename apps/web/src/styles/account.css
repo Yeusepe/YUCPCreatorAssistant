@@ -2281,8 +2281,30 @@
 .billing-page-header-main {
   display: flex;
   align-items: flex-start;
+  gap: 14px;
   flex: 1;
   min-width: 0;
+}
+
+.billing-page-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.billing-page-header-icon img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.dark .billing-page-header-icon {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .billing-page-title,

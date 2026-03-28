@@ -10,6 +10,7 @@
  */
 
 import { cpSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -138,6 +139,38 @@ async function runConvexForString(options: PublishOptions, functionName: string)
   return value;
 }
 
+/**
+ * Generate a valid XGQW1-format pixelseal pack file and return its bytes.
+ *
+ * Format:
+ *   [0..7]   magic XGQW1\0\0\0
+ *   [8..11]  version u32 LE = 1
+ *   [12..15] blob_len u32 LE
+ *   [16..47] 32 reserved zero bytes
+ *   [48..]   CSPRNG blob
+ *
+ * The SHA-256 of the full file becomes the carrier PRNG seed in xg_0117.
+ * A fresh pack is generated per publish so carrier positions rotate with
+ * each release. The pack SHA-256 is recorded in coupling_trace_records
+ * (packVersion field) to allow forensic recovery.
+ */
+function generatePackFileBytes(blobSize = 4096): Buffer {
+  if (blobSize < 16 || blobSize > 32 * 1024 * 1024) {
+    throw new Error(`Pack blob size must be 16..33554432, got ${blobSize}`);
+  }
+  const total = 48 + blobSize;
+  const buf = Buffer.alloc(total, 0);
+
+  buf.write('XGQW1', 0, 'ascii'); // magic [0..4]; [5..7] = 0
+  buf.writeUInt32LE(1, 8);        // version
+  buf.writeUInt32LE(blobSize, 12); // blob_len
+  // [16..47] = 0 (reserved)
+  const blob = randomBytes(blobSize);
+  blob.copy(buf, 48);
+  blob.fill(0); // zero after use
+  return buf;
+}
+
 function buildRuntimePackageZip(): string {
   const buildPath = getDefaultRuntimeBuildPath();
   const installerPath = getDefaultRuntimeInstallerPath();
@@ -155,6 +188,14 @@ function buildRuntimePackageZip(): string {
   const zipPath = join(tempRoot, DEFAULT_COUPLING_RUNTIME_PACKAGE_DELIVERY_NAME);
 
   cpSync(buildPath, buildStage, { recursive: true });
+
+  // Generate a fresh pack file for this release; goes alongside yucp_coupling.dll
+  // so xw_pack_scan can locate it. A new file is generated per publish to rotate
+  // the carrier PRNG seed across releases.
+  const packBytes = generatePackFileBytes();
+  writeFileSync(join(buildStage, 'xg_0300.dat'), packBytes);
+  packBytes.fill(0); // zero after use
+
   cpSync(installerPath, installerStage, {
     recursive: true,
     filter: (source) => {
@@ -181,16 +222,22 @@ function buildRuntimePackageZip(): string {
     )
   );
 
+  // Use ZipFile::CreateFromDirectory rather than Compress-Archive. Compress-Archive with
+  // wildcards produces incomplete archives when stdout/stderr are piped (missing entries
+  // beyond the first top-level directory). ZipFile is deterministic regardless of console state.
   const escapedStage = stageRoot.replace(/'/g, "''");
   const escapedZip = zipPath.replace(/'/g, "''");
-  const command = `Compress-Archive -Path '${escapedStage}\\*' -DestinationPath '${escapedZip}' -Force`;
+  const command = [
+    "Add-Type -AssemblyName System.IO.Compression.FileSystem",
+    `[System.IO.Compression.ZipFile]::CreateFromDirectory('${escapedStage}', '${escapedZip}', [System.IO.Compression.CompressionLevel]::Optimal, $false)`,
+  ].join('; ');
   const proc = Bun.spawnSync(['powershell', '-NoProfile', '-NonInteractive', '-Command', command], {
     stdout: 'pipe',
     stderr: 'pipe',
   });
   if (proc.exitCode !== 0) {
     throw new Error(
-      `Compress-Archive failed: ${
+      `ZIP creation failed: ${
         Buffer.from(proc.stderr).toString('utf8').trim() || `exit ${proc.exitCode}`
       }`
     );
