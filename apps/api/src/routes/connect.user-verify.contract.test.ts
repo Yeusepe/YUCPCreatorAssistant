@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const connectRouteSource = readFileSync(resolve(import.meta.dir, './connect.ts'), 'utf8');
+const connectUserVerificationSource = readFileSync(
+  resolve(import.meta.dir, './connectUserVerification.ts'),
+  'utf8'
+);
 const providerDisplaySource = readFileSync(
   resolve(import.meta.dir, '../providers/display.ts'),
   'utf8'
@@ -14,15 +18,30 @@ const sessionManagerSource = readFileSync(
 
 describe('connect user-verify contracts', () => {
   it('supports OAuth-capable buyer-link providers through the shared verification begin route', () => {
-    expect(connectRouteSource).toContain('listUserLinkProviderDisplays()');
+    expect(connectRouteSource).toContain('createConnectUserVerificationRoutes({');
+    expect(connectUserVerificationSource).toContain('listUserLinkProviderDisplays()');
     expect(providerDisplaySource).toContain('getVerificationConfig(provider.id) !== null');
-    expect(connectRouteSource).toContain("const beginUrl = new URL('/api/verification/begin'");
-    expect(connectRouteSource).toContain("beginUrl.searchParams.set('mode', providerKey);");
-    expect(connectRouteSource).toContain(
+    expect(connectUserVerificationSource).toContain(
+      "const beginUrl = new URL('/api/verification/begin'"
+    );
+    expect(connectUserVerificationSource).toContain(
+      "beginUrl.searchParams.set('mode', providerKey);"
+    );
+    expect(connectUserVerificationSource).toContain(
       "beginUrl.searchParams.set('verificationMethod', 'account_link');"
     );
-    expect(connectRouteSource).toContain(
+    expect(connectUserVerificationSource).toContain(
       "beginUrl.searchParams.set('redirectUri', frontendReturnUrl);"
+    );
+  });
+
+  it('preserves buyer account response shaping in the extracted route module', () => {
+    expect(connectUserVerificationSource).toContain("connectionType: 'verification'");
+    expect(connectUserVerificationSource).toContain(
+      'providerDisplay: getConnectedAccountProviderDisplay(link.provider)'
+    );
+    expect(connectUserVerificationSource).toContain(
+      'verificationMethod: link.verificationMethod ?? null'
     );
   });
 

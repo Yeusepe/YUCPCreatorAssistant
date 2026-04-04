@@ -12,12 +12,11 @@
  * - Replay protection via session status checks
  */
 
-import { type TwoFactorAuthType, VrchatApiClient, type VrchatCurrentUser } from '@yucp/providers';
-import type { VrchatSessionTokens } from '@yucp/providers/vrchat';
+import { VrchatApiClient } from '@yucp/providers';
 import { createLogger, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
-import { createAuth, type VrchatOwnershipPayload, type VrchatSessionTokensPayload } from '../auth';
+import { createAuth, type VrchatOwnershipPayload } from '../auth';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { decrypt, encrypt } from '../lib/encrypt';
 import { getStateStore } from '../lib/stateStore';
@@ -38,6 +37,14 @@ import {
   createPendingVrchatState,
   readPendingVrchatState,
 } from './vrchatPending';
+import {
+  clearStoredVrchatSession,
+  ensureVrchatSubjectId,
+  getOwnershipFromSession,
+  getStoredVrchatSession,
+  parseTwoFactorType,
+  persistVrchatSession,
+} from './vrchatSession';
 
 export {
   computeCodeChallenge,
@@ -1510,205 +1517,6 @@ export function createVerificationRoutes(config: VerificationConfig) {
     );
   }
 
-  type BetterAuthVrchatSessionResult =
-    | {
-        success: true;
-        browserSetCookies: string[];
-        betterAuthCookieHeader: string;
-      }
-    | {
-        success: false;
-        error: string;
-        status: number;
-        browserSetCookies: string[];
-        betterAuthCookieHeader: string;
-      };
-
-  type StoredVrchatSessionResult =
-    | {
-        success: true;
-        session: VrchatSessionTokensPayload;
-      }
-    | {
-        success: false;
-        error: string;
-        status: number;
-        needsCredentials?: boolean;
-      };
-
-  function parseTwoFactorType(type: string | undefined): TwoFactorAuthType | undefined {
-    if (type === 'totp' || type === 'emailOtp' || type === 'otp') {
-      return type;
-    }
-    return undefined;
-  }
-
-  function buildSessionFromAuthResult(result: {
-    browserSetCookies: string[];
-    betterAuthCookieHeader: string;
-  }): BetterAuthVrchatSessionResult {
-    const { browserSetCookies, betterAuthCookieHeader } = result;
-    if (!betterAuthCookieHeader) {
-      return {
-        success: false,
-        status: 500,
-        error: 'Verification succeeded, but the account session could not be established.',
-        browserSetCookies,
-        betterAuthCookieHeader,
-      };
-    }
-
-    return {
-      success: true,
-      browserSetCookies,
-      betterAuthCookieHeader,
-    };
-  }
-
-  async function persistVrchatSession(
-    betterAuth: ReturnType<typeof createAuth>,
-    requestCookieHeader: string,
-    vrchatUser: VrchatCurrentUser,
-    session: VrchatSessionTokens
-  ): Promise<BetterAuthVrchatSessionResult> {
-    const persistResult = await betterAuth.persistVrchatSession(
-      {
-        id: vrchatUser.id,
-        displayName: vrchatUser.displayName,
-        username: vrchatUser.username,
-      },
-      {
-        authToken: session.authToken,
-        twoFactorAuthToken: session.twoFactorAuthToken,
-      },
-      requestCookieHeader
-    );
-    if (!persistResult.response.ok) {
-      const persistBody = await persistResult.response
-        .clone()
-        .text()
-        .catch(() => '');
-      logger.warn('VRChat verify: persist session failed', {
-        status: persistResult.response.status,
-        bodyPreview: persistBody.slice(0, 500),
-        setCookieCount: persistResult.browserSetCookies.length,
-      });
-      return {
-        success: false,
-        status: persistResult.response.status,
-        error: 'Verification succeeded, but the account session could not be established.',
-        browserSetCookies: persistResult.browserSetCookies,
-        betterAuthCookieHeader: persistResult.betterAuthCookieHeader,
-      };
-    }
-
-    return buildSessionFromAuthResult(persistResult);
-  }
-
-  async function getStoredVrchatSession(
-    betterAuth: ReturnType<typeof createAuth>,
-    requestCookieHeader: string,
-    betterAuthCookieHeader: string
-  ): Promise<StoredVrchatSessionResult> {
-    const { response } = await betterAuth.getVrchatSessionTokens(
-      betterAuthCookieHeader,
-      requestCookieHeader
-    );
-    const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-
-    if (response.ok) {
-      if (typeof payload.authToken === 'string' && payload.authToken) {
-        return {
-          success: true,
-          session: {
-            authToken: payload.authToken,
-            twoFactorAuthToken:
-              typeof payload.twoFactorAuthToken === 'string' && payload.twoFactorAuthToken
-                ? payload.twoFactorAuthToken
-                : undefined,
-          },
-        };
-      }
-
-      return {
-        success: false,
-        status: 500,
-        error: 'Stored VRChat session is invalid.',
-      };
-    }
-
-    if (response.status === 404 && payload.needsLink) {
-      return {
-        success: false,
-        status: 404,
-        needsCredentials: true,
-        error: 'Please enter your VRChat username and password to verify.',
-      };
-    }
-
-    if (response.status === 401) {
-      return {
-        success: false,
-        status: 401,
-        needsCredentials: true,
-        error: 'Please enter your VRChat username and password to verify.',
-      };
-    }
-
-    return {
-      success: false,
-      status: response.status,
-      error: 'Verification failed. Please try again.',
-    };
-  }
-
-  async function clearStoredVrchatSession(
-    betterAuth: ReturnType<typeof createAuth>,
-    requestCookieHeader: string,
-    betterAuthCookieHeader: string
-  ): Promise<void> {
-    try {
-      await betterAuth.clearVrchatSession(betterAuthCookieHeader, requestCookieHeader);
-    } catch {
-      // Best-effort cleanup only.
-    }
-  }
-
-  async function getOwnershipFromSession(
-    client: VrchatApiClient,
-    session: VrchatSessionTokens
-  ): Promise<VrchatOwnershipPayload | null> {
-    let ownership = null;
-    try {
-      ownership = await client.getOwnershipFromSession(session);
-    } catch {
-      return null;
-    }
-    if (!ownership) {
-      return null;
-    }
-
-    return {
-      vrchatUserId: ownership.vrchatUserId,
-      displayName: ownership.displayName,
-      ownedAvatarIds: ownership.ownedAvatarIds,
-    };
-  }
-
-  async function ensureVrchatSubjectId(
-    _authUserId: string,
-    discordUserId: string
-  ): Promise<string> {
-    const convex = getConvexClientFromUrl(config.convexUrl);
-    const ensureResult = await convex.mutation(api.subjects.ensureSubjectForDiscord, {
-      apiSecret: config.convexApiSecret,
-      discordUserId,
-      displayName: undefined,
-      avatarUrl: undefined,
-    });
-    return ensureResult.subjectId;
-  }
-
   /**
    * POST /api/verification/vrchat-verify
    * Token-based VRChat verification for the vrchat-verify webpage.
@@ -1831,7 +1639,10 @@ export function createVerificationRoutes(config: VerificationConfig) {
       ): Promise<Response> {
         let subjectId: string;
         try {
-          subjectId = await ensureVrchatSubjectId(authUserId, discordUserId);
+          subjectId = await ensureVrchatSubjectId(discordUserId, {
+            convexUrl: config.convexUrl,
+            convexApiSecret: config.convexApiSecret,
+          });
         } catch (err) {
           logger.error('VRChat verify: ensureSubjectForDiscord failed', {
             error: err instanceof Error ? err.message : String(err),
