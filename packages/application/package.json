@@ -18,6 +18,7 @@
     "test:ci": "bun test ./src ./test --coverage"
   },
   "dependencies": {
+    "@yucp/providers": "workspace:*",
     "@yucp/shared": "workspace:*"
   },
   "devDependencies": {

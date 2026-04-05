@@ -1,11 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { LemonSqueezyApiClient } from '@yucp/providers';
-import { createLogger, getProviderDescriptor, timingSafeStringEqual } from '@yucp/shared';
+import { getProviderDescriptor } from '@yucp/providers/providerMetadata';
+import { timingSafeStringEqual } from '@yucp/shared';
 import { normalizeEmail, sha256Hex } from '@yucp/shared/crypto';
 import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { decrypt, encrypt } from '../lib/encrypt';
+import { logger } from '../lib/logger';
 import { loadRequestScoped, requestScopeKey } from '../lib/requestScope';
 import {
   isWebhookContentLengthTooLarge,
@@ -17,7 +19,6 @@ import { PURPOSES as LEMONSQUEEZY } from '../providers/lemonsqueezy/index';
 
 const PROVIDER_PLATFORM_CREDENTIAL_PURPOSE = 'provider-platform-credential' as const;
 
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 const IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 const idempotencyCache = new Map<
   string,

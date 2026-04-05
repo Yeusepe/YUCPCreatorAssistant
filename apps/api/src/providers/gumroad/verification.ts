@@ -1,10 +1,8 @@
 import { GumroadAdapter } from '@yucp/providers';
-import { createLogger } from '@yucp/shared';
 import { sha256Hex } from '@yucp/shared/crypto';
+import { logger } from '../../lib/logger';
 import { getGumroadProviderRuntimeConfig } from '../runtimeConfig';
 import type { LicenseVerificationPlugin, LicenseVerificationResult } from '../types';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 export const verification: LicenseVerificationPlugin = {
   async verifyLicense(

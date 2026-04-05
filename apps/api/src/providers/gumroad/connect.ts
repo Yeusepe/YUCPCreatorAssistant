@@ -6,15 +6,13 @@
  *   GET  /api/connect/gumroad/callback  — exchanges the code, stores tokens + registers webhooks
  */
 
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { encrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import { getStateStore } from '../../lib/stateStore';
 import type { ConnectContext, ConnectPlugin, ConnectRoute } from '../types';
 import { generateSecureRandom } from '../types';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 // HKDF purpose strings — inlined to avoid circular imports with index.ts
 const CREDENTIAL_PURPOSE = 'gumroad-oauth-access-token' as const;

@@ -46,6 +46,7 @@
       "@yucp/application": ["./packages/application/src"],
       "@yucp/application/*": ["./packages/application/src/*"],
       "@yucp/providers": ["./packages/providers/src"],
+      "@yucp/providers/providerMetadata": ["./packages/providers/src/providerMetadata.ts"],
       "@yucp/providers/*": ["./packages/providers/src/*"],
       "@yucp/policy": ["./packages/policy/src"],
       "@yucp/policy/*": ["./packages/policy/src/*"],

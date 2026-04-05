@@ -1,14 +1,12 @@
 import { LemonSqueezyApiClient } from '@yucp/providers';
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import type {
   LicenseVerificationPlugin,
   LicenseVerificationResult,
   ProviderContext,
 } from '../types';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 // HKDF purpose string — inlined to avoid circular imports with index.ts
 const CREDENTIAL_PURPOSE = 'lemonsqueezy-api-token' as const;

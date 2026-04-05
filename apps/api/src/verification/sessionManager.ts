@@ -13,7 +13,7 @@
  */
 
 import { VrchatApiClient } from '@yucp/providers';
-import { createLogger, timingSafeStringEqual } from '@yucp/shared';
+import { timingSafeStringEqual } from '@yucp/shared';
 import { sha256Hex } from '@yucp/shared/crypto';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
@@ -55,7 +55,7 @@ export {
   SESSION_EXPIRY_MS,
 } from './verificationSessionPrimitives';
 
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
+import { logger } from '../lib/logger';
 
 const VRCHAT_VERIFY_ATTEMPTS = new Map<string, { count: number; resetAt: number }>();
 const VERIFY_PANEL_PREFIX = 'verify_panel:';

@@ -18,7 +18,8 @@
     "incremental": true,
     "baseUrl": ".",
     "paths": {
-      "_generated/*": ["./_generated/*"]
+      "_generated/*": ["./_generated/*"],
+      "@yucp/providers/providerMetadata": ["../packages/providers/src/providerMetadata.ts"]
     }
   },
   "include": ["./**/*.ts"],

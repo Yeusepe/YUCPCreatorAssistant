@@ -7,11 +7,9 @@
  * Adding a new provider with webhook support requires zero changes here.
  */
 
-import { createLogger } from '@yucp/shared';
 import { getConvexClientFromUrl } from '../lib/convex';
+import { logger } from '../lib/logger';
 import { PROVIDERS } from '../providers/index';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 export interface WebhookConfig {
   convexUrl: string;

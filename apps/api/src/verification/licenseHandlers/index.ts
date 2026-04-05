@@ -9,16 +9,14 @@
  * and register the plugin in providers/index.ts. Nothing here changes.
  */
 
-import { createLogger } from '@yucp/shared';
 import { sha256Hex } from '@yucp/shared/crypto';
 import { api } from '../../../../../convex/_generated/api';
 import type { ConvexServerClient } from '../../lib/convex';
+import { logger } from '../../lib/logger';
 import { sanitizePublicErrorMessage } from '../../lib/userFacingErrors';
 import { getProvider } from '../../providers/index';
 import type { CompleteLicenseInput, CompleteLicenseResult } from '../completeLicense';
 import type { VerificationConfig } from '../sessionManager';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 export interface LicenseVerificationHandler {
   verify(

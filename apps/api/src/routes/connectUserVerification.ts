@@ -1,8 +1,9 @@
-import { createLogger, getProviderDescriptor, getSafeRelativeRedirectTarget } from '@yucp/shared';
+import { getProviderDescriptor, getSafeRelativeRedirectTarget } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import type { Auth } from '../auth';
 import { getConvexClientFromUrl } from '../lib/convex';
+import { logger } from '../lib/logger';
 import {
   getConnectedAccountProviderDisplay,
   listUserLinkProviderDisplays,
@@ -15,8 +16,6 @@ import {
   verifyHostedManualLicenseIntent,
 } from '../verification/hostedIntents';
 import { getVerificationConfig } from '../verification/sessionManager';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 interface CreateConnectUserVerificationRoutesOptions {
   auth: Auth;

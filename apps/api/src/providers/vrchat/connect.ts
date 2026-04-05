@@ -12,10 +12,10 @@
  */
 
 import { VrchatApiClient } from '@yucp/providers/vrchat';
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { encrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import { getStateStore } from '../../lib/stateStore';
 import type { ConnectContext, ConnectPlugin, ConnectRoute } from '../types';
 import {
@@ -24,8 +24,6 @@ import {
   createConnectPendingState,
   readConnectPendingState,
 } from './pending';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const CONNECT_TOKEN_PREFIX = 'vrchat_connect:';
 const CONNECT_TOKEN_TTL_MS = 15 * 60 * 1000;

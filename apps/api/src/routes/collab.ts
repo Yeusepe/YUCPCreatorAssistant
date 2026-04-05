@@ -28,7 +28,7 @@
  * DELETE /api/collab/connections/:id                 – Remove connection (setup session auth)
  */
 
-import { createLogger, getProviderDescriptor, PROVIDER_REGISTRY } from '@yucp/shared';
+import { getProviderDescriptor, PROVIDER_REGISTRY } from '@yucp/providers/providerMetadata';
 import { base64UrlEncode, sha256Hex } from '@yucp/shared/crypto';
 import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
@@ -40,6 +40,7 @@ import {
 } from '../lib/browserSessions';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { encrypt } from '../lib/encrypt';
+import { logger } from '../lib/logger';
 import { loadRequestScoped, requestScopeKey } from '../lib/requestScope';
 import { buildTimedResponse, RouteTimingCollector } from '../lib/requestTiming';
 import { resolveSetupSession } from '../lib/setupSession';
@@ -48,8 +49,6 @@ import { PROVIDERS } from '../providers/index';
 
 // Collab webhook secrets are scoped to collab connections, not shared with per-provider webhooks
 const COLLAB_WEBHOOK_SECRET_PURPOSE = 'collab-webhook-signing-secret' as const;
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const COLLAB_TEST_PREFIX = 'collab_test:';

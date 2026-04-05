@@ -3,10 +3,8 @@ import {
   withProviderRateLimitRetries,
 } from '@yucp/providers/core/rateLimit';
 import { JinxxyApiClient } from '@yucp/providers/jinxxy';
-import { createLogger } from '@yucp/shared';
+import { logger } from '../../lib/logger';
 import type { BackfillPlugin, BackfillRecord } from '../types';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const MAX_RATE_LIMIT_RETRIES = 10;
 

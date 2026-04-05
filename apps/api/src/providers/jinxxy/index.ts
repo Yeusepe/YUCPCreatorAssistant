@@ -6,8 +6,8 @@
  */
 
 import { JinxxyApiClient } from '@yucp/providers/jinxxy';
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
+import { logger } from '../../lib/logger';
 import { getJinxxyProviderRuntimeConfig } from '../runtimeConfig';
 import type { ProductRecord, ProviderContext, ProviderPlugin, ProviderPurposes } from '../types';
 import { backfill } from './backfill';
@@ -20,8 +20,6 @@ import {
 } from './credentials';
 import { verification } from './verification';
 import { webhook } from './webhook';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 export const PURPOSES = {
   credential: JINXXY_API_KEY_PURPOSE,

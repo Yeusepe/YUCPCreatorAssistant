@@ -11,14 +11,12 @@ import {
   withProviderRateLimitRetries,
 } from '@yucp/providers/core/rateLimit';
 import { LemonSqueezyApiClient } from '@yucp/providers/lemonsqueezy';
-import { createLogger } from '@yucp/shared';
 import { normalizeEmail, sha256Hex } from '@yucp/shared/crypto';
 import { encrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import type { BackfillPlugin, BackfillRecord } from '../types';
 
 const PURCHASE_BUYER_EMAIL_PURPOSE = 'purchase-buyer-email';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const MAX_RATE_LIMIT_RETRIES = 10;
 

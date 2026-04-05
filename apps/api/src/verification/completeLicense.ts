@@ -10,13 +10,11 @@
  */
 
 import { detectLicenseFormat } from '@yucp/providers';
-import { createLogger } from '@yucp/shared';
 import { getConvexClientFromUrl } from '../lib/convex';
+import { logger } from '../lib/logger';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 import { getHandler } from './licenseHandlers/index';
 import type { VerificationConfig } from './sessionManager';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 export interface CompleteLicenseInput {
   /** License key to verify */

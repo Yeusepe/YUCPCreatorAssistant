@@ -14,7 +14,7 @@ import {
   DashboardShellService,
   GuildDirectoryService,
 } from '@yucp/application/services';
-import { createLogger, getProviderDescriptor, timingSafeStringEqual } from '@yucp/shared';
+import { getProviderDescriptor, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { type Auth } from '../auth';
@@ -45,7 +45,8 @@ import { createConnectUserVerificationRoutes } from './connectUserVerification';
 // Re-exported for backwards compatibility — ConnectConfig is defined in providers/types.ts
 export type { ConnectConfig } from '../providers/types';
 
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
+import { logger } from '../lib/logger';
+
 type CreatorProfileRecord = { authUserId: string; policy?: Record<string, unknown> } | null;
 
 const TOKEN_MAX_LEN = 256;

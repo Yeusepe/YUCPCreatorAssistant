@@ -15,6 +15,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
+      "@yucp/providers": ["../../packages/providers/src"],
+      "@yucp/providers/providerMetadata": ["../../packages/providers/src/providerMetadata.ts"],
+      "@yucp/providers/*": ["../../packages/providers/src/*"],
       "@yucp/shared": ["../../packages/shared/src"],
       "@yucp/shared/*": ["../../packages/shared/src/*"]
     }

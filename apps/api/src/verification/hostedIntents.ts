@@ -5,7 +5,7 @@ import {
   type StoredVerificationIntentRequirement,
   type VerificationIntentRequirementInput,
 } from '@yucp/application/services';
-import { getProviderDescriptor } from '@yucp/shared';
+import { getProviderDescriptor } from '@yucp/providers/providerMetadata';
 import { api, internal } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import type { ConvexServerClient } from '../lib/convex';

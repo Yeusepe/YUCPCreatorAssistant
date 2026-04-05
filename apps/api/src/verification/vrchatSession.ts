@@ -7,7 +7,6 @@
 
 import { type TwoFactorAuthType, type VrchatCurrentUser } from '@yucp/providers';
 import type { VrchatSessionTokens } from '@yucp/providers/vrchat';
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type {
   VrchatInternalResponse,
@@ -16,8 +15,7 @@ import type {
   VrchatSessionUserPayload,
 } from '../auth';
 import { getConvexClientFromUrl } from '../lib/convex';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
+import { logger } from '../lib/logger';
 
 export type BetterAuthVrchatSessionResult =
   | {

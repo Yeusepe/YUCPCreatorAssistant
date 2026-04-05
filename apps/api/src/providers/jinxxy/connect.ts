@@ -7,11 +7,10 @@
  *   POST     /api/connect/jinxxy-store           — store API key + pending webhook secret
  */
 
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
-
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { encrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import { getStateStore } from '../../lib/stateStore';
 import type { ConnectContext, ConnectPlugin, ConnectRoute } from '../types';
 import {
@@ -20,8 +19,6 @@ import {
   getPendingJinxxyWebhookTokenStoreKey,
   JINXXY_PENDING_WEBHOOK_TTL_MS,
 } from './pendingWebhookState';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 // HKDF purpose strings — inlined to avoid circular imports with index.ts
 const CREDENTIAL_PURPOSE = 'jinxxy-api-key' as const;

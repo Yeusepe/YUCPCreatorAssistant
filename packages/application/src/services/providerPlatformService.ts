@@ -1,4 +1,4 @@
-import { getProviderDescriptor, PROVIDER_KEYS } from '@yucp/shared';
+import { getProviderDescriptor, PROVIDER_KEYS } from '@yucp/providers/providerMetadata';
 import type {
   ProviderLinkFallbackDisplay,
   ProviderPlatformPort,

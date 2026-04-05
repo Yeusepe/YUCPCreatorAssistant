@@ -1,4 +1,4 @@
-import { createLogger, timingSafeStringEqual } from '@yucp/shared';
+import { timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 
 import type { getConvexClientFromUrl } from '../../lib/convex';
@@ -18,7 +18,7 @@ import {
 
 type ConvexClient = ReturnType<typeof getConvexClientFromUrl>;
 
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
+import { logger } from '../../lib/logger';
 
 // HKDF purpose strings — inlined to avoid circular imports with index.ts
 const WEBHOOK_SECRET_PURPOSE = 'jinxxy-webhook-signing-secret' as const;

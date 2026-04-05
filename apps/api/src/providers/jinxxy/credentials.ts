@@ -1,9 +1,7 @@
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import type { ProviderContext } from '../types';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 export const JINXXY_API_KEY_PURPOSE = 'jinxxy-api-key' as const;
 

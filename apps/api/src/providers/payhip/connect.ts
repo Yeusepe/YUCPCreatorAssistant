@@ -10,14 +10,12 @@
  * because they are shared infrastructure, not provider-specific flows.
  */
 
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { encrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import { getStateStore } from '../../lib/stateStore';
 import type { ConnectContext, ConnectPlugin, ConnectRoute } from '../types';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 // HKDF purpose strings — inlined to avoid circular imports with index.ts
 const CREDENTIAL_PURPOSE = 'payhip-api-key' as const;

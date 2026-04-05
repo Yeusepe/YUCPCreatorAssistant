@@ -6,13 +6,11 @@
  */
 
 import { LemonSqueezyApiClient } from '@yucp/providers';
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { encrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import type { ConnectContext, ConnectPlugin, ConnectRoute } from '../types';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 // HKDF purpose strings — inlined to avoid circular imports with index.ts
 const CREDENTIAL_PURPOSE = 'lemonsqueezy-api-token' as const;

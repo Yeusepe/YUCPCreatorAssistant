@@ -17,14 +17,12 @@
  * 6. Redirect to dashboard with success
  */
 
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
 import { getConvexApiSecret, getConvexClient } from '../lib/convex';
 import { rejectCrossSiteRequest } from '../lib/csrf';
+import { logger } from '../lib/logger';
 import { getStateStore } from '../lib/stateStore';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const INSTALL_STATE_PREFIX = 'install:';
 

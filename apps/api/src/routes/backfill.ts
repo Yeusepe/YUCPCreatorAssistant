@@ -14,17 +14,16 @@ import {
   BackfillProviderNotSupportedError,
   BackfillService,
 } from '@yucp/application/services';
-import { createLogger, timingSafeStringEqual } from '@yucp/shared';
+import { timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { loadEnv } from '../lib/env';
+import { logger } from '../lib/logger';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 import { getProvider } from '../providers/index';
 import type { BackfillRecord } from '../providers/types';
 
 export type { BackfillRecord };
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const BATCH_SIZE = 100;
 

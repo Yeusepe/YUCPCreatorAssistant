@@ -3,12 +3,10 @@ import {
   parseRetryAfterMs,
   withProviderRateLimitRetries,
 } from '@yucp/providers/core/rateLimit';
-import { createLogger } from '@yucp/shared';
 import { normalizeEmail, sha256Hex } from '@yucp/shared/crypto';
 import { encrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import type { BackfillPlugin, BackfillRecord } from '../types';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 const GUMROAD_API_BASE = 'https://api.gumroad.com/v2';
 const MAX_RATE_LIMIT_RETRIES = 10;

@@ -12,14 +12,12 @@
 import { extractVrchatAvatarId } from '@yucp/providers';
 import { VrchatApiClient } from '@yucp/providers/vrchat';
 import { VrchatSessionExpiredError } from '@yucp/providers/vrchat/types';
-import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import type { ProductRecord, ProviderContext, ProviderPlugin, ProviderPurposes } from '../types';
 import { CredentialExpiredError } from '../types';
 import { vrchatConnect } from './connect';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 /**
  * HKDF purpose for the VRChat creator session.

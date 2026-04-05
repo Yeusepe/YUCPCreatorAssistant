@@ -1,10 +1,9 @@
 import { PayhipAdapter } from '@yucp/providers';
-import { createLogger, parseProductId } from '@yucp/shared';
+import { parseProductId } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import type { LicenseVerificationPlugin, LicenseVerificationResult } from '../types';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 // HKDF purpose string — must match the purpose used when storing product secret keys
 const PRODUCT_SECRET_PURPOSE = 'payhip-product-secret' as const;

@@ -2,9 +2,8 @@
 // Fetches secrets from Infisical when INFISICAL_PROJECT_ID + machine identity are set
 
 import type { EnvConfig } from '@yucp/shared';
-import { createLogger, resolveConvexSiteUrl as resolveSharedConvexSiteUrl } from '@yucp/shared';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
+import { resolveConvexSiteUrl as resolveSharedConvexSiteUrl } from '@yucp/shared';
+import { logger } from './logger';
 
 export interface LocalEnv {
   NODE_ENV: 'development' | 'production' | 'test';

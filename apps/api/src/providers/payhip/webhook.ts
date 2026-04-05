@@ -1,7 +1,8 @@
-import { createLogger, timingSafeStringEqual } from '@yucp/shared';
+import { timingSafeStringEqual } from '@yucp/shared';
 import { sha256Hex } from '@yucp/shared/crypto';
 import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
+import { logger } from '../../lib/logger';
 import { getStateStore } from '../../lib/stateStore';
 import {
   isWebhookContentLengthTooLarge,
@@ -9,8 +10,6 @@ import {
   readWebhookTextBody,
 } from '../../lib/webhookBody';
 import type { WebhookPlugin } from '../types';
-
-const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 // HKDF purpose string — inlined to avoid circular imports with index.ts
 const CREDENTIAL_PURPOSE = 'payhip-api-key' as const;
