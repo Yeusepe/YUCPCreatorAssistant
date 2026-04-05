@@ -16,7 +16,7 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ALL_PROVIDERS } from './index';
+import { ALL_PROVIDERS, PROVIDERS } from './index';
 import type { ConnectDisplayMeta } from './types';
 
 const ICONS_DIR = join(import.meta.dir, '../../public/Icons');
@@ -80,6 +80,12 @@ describe('provider plugin registry', () => {
     const ids = ALL_PROVIDERS.map((p) => p.id);
     const unique = new Set(ids);
     expect(unique.size).toBe(ids.length);
+  });
+
+  it('keeps provider registry keys aligned with provider ids', () => {
+    const providerIds = [...ALL_PROVIDERS.map((provider) => provider.id)].sort();
+    const registryKeys = [...PROVIDERS.keys()].sort();
+    expect(registryKeys).toEqual(providerIds);
   });
 
   it('routes VRChat account linking through the connect-mode setup flow', () => {

@@ -14,7 +14,7 @@
  */
 
 import type { Verification } from '@yucp/shared';
-import type { ProviderAdapter, ProviderConfig, PurchaseRecord } from '../index';
+import type { ProviderAdapter, ProviderConfig, PurchaseRecord } from '../legacyAdapter';
 import { GumroadApiError, GumroadOAuthClient } from './oauth';
 import type {
   AuthorizationUrlResult,

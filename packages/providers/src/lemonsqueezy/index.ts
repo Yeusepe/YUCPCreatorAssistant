@@ -1,5 +1,5 @@
 import type { Verification } from '@yucp/shared';
-import type { ProviderAdapter, ProviderConfig, PurchaseRecord } from '../index';
+import type { ProviderAdapter, ProviderConfig, PurchaseRecord } from '../legacyAdapter';
 import { LemonSqueezyApiClient } from './client';
 import type {
   LemonSqueezyAdapterConfig,
