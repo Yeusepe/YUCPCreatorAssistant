@@ -1,17 +1,9 @@
 import { GumroadAdapter } from '@yucp/providers';
 import { createLogger } from '@yucp/shared';
+import { sha256Hex } from '@yucp/shared/cryptoPrimitives';
 import type { LicenseVerificationPlugin, LicenseVerificationResult } from '../types';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
-
-async function sha256Hex(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
 
 export const verification: LicenseVerificationPlugin = {
   async verifyLicense(

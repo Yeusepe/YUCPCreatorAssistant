@@ -29,9 +29,15 @@
  */
 
 import { createLogger, getProviderDescriptor, PROVIDER_REGISTRY } from '@yucp/shared';
+import { base64UrlEncode, sha256Hex } from '@yucp/shared/cryptoPrimitives';
 import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
-import { SETUP_SESSION_COOKIE } from '../lib/browserSessions';
+import {
+  buildCookie,
+  clearCookie,
+  getCookieValue,
+  SETUP_SESSION_COOKIE,
+} from '../lib/browserSessions';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { encrypt } from '../lib/encrypt';
 import { loadRequestScoped, requestScopeKey } from '../lib/requestScope';
@@ -71,43 +77,7 @@ export interface CollabConfig {
 function generateToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  const base64 = btoa(String.fromCharCode(...bytes));
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function getCookieValue(request: Request, name: string): string | null {
-  const cookieHeader = request.headers.get('cookie');
-  if (!cookieHeader) return null;
-  for (const part of cookieHeader.split(';')) {
-    const [rawName, ...rest] = part.trim().split('=');
-    if (rawName === name) return rest.join('=');
-  }
-  return null;
-}
-
-function buildCookie(
-  name: string,
-  value: string,
-  request: Request,
-  maxAgeSeconds?: number
-): string {
-  const isSecure = new URL(request.url).protocol === 'https:';
-  const parts = [`${name}=${value}`, 'Path=/', 'HttpOnly', 'SameSite=Lax'];
-  if (isSecure) parts.push('Secure');
-  if (typeof maxAgeSeconds === 'number') parts.push(`Max-Age=${maxAgeSeconds}`);
-  return parts.join('; ');
-}
-
-function clearCookie(name: string, request: Request): string {
-  return buildCookie(name, '', request, 0);
+  return base64UrlEncode(bytes);
 }
 
 async function resolveSetupToken(

@@ -7,6 +7,7 @@
  */
 
 import { createLogger, timingSafeStringEqual } from '@yucp/shared';
+import { base64UrlEncode } from '@yucp/shared/cryptoPrimitives';
 import { getStateStore } from './stateStore';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
@@ -29,9 +30,7 @@ export interface SetupSessionData {
 function generateToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  // base64url encode (URL-safe, no padding)
-  const base64 = btoa(String.fromCharCode(...bytes));
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return base64UrlEncode(bytes);
 }
 
 /**
@@ -47,9 +46,7 @@ async function hmacSign(token: string, secret: string): Promise<string> {
     ['sign']
   );
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(token));
-  const sigBytes = new Uint8Array(signature);
-  const base64 = btoa(String.fromCharCode(...sigBytes));
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return base64UrlEncode(new Uint8Array(signature));
 }
 
 /**

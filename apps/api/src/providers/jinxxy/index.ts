@@ -8,18 +8,22 @@
 import { JinxxyApiClient } from '@yucp/providers/jinxxy';
 import { createLogger } from '@yucp/shared';
 import { api } from '../../../../../convex/_generated/api';
-import { decrypt } from '../../lib/encrypt';
 import type { ProductRecord, ProviderContext, ProviderPlugin, ProviderPurposes } from '../types';
 import { backfill } from './backfill';
 import { buyerVerification } from './buyerVerification';
 import { connect } from './connect';
+import {
+  decryptJinxxyApiKey,
+  JINXXY_API_KEY_PURPOSE,
+  resolveJinxxyCreatorApiKey,
+} from './credentials';
 import { verification } from './verification';
 import { webhook } from './webhook';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
 export const PURPOSES = {
-  credential: 'jinxxy-api-key',
+  credential: JINXXY_API_KEY_PURPOSE,
   webhookSecret: 'jinxxy-webhook-signing-secret',
 } as const satisfies ProviderPurposes;
 
@@ -32,16 +36,7 @@ const jinxxyProvider: ProviderPlugin = {
   purposes: PURPOSES,
 
   async getCredential(ctx: ProviderContext) {
-    const data = await ctx.convex.query(api.providerConnections.getConnectionForBackfill, {
-      apiSecret: ctx.apiSecret,
-      authUserId: ctx.authUserId,
-      provider: 'jinxxy',
-    });
-    const encryptedKey = data?.credentials.api_key;
-    if (encryptedKey) {
-      return decrypt(encryptedKey, ctx.encryptionSecret, PURPOSES.credential);
-    }
-    return null;
+    return resolveJinxxyCreatorApiKey(ctx, ctx.authUserId);
   },
 
   async fetchProducts(credential, ctx) {
@@ -85,7 +80,7 @@ const jinxxyProvider: ProviderPlugin = {
         const encryptedKey = collab.credentialEncrypted;
         if (!encryptedKey) continue;
         try {
-          const collabKey = await decrypt(encryptedKey, ctx.encryptionSecret, PURPOSES.credential);
+          const collabKey = await decryptJinxxyApiKey(encryptedKey, ctx.encryptionSecret);
           const collabClient = new JinxxyApiClient({
             apiKey: collabKey,
             apiBaseUrl: process.env.JINXXY_API_BASE_URL,

@@ -1,0 +1,42 @@
+import { createLogger } from '@yucp/shared';
+import { api } from '../../../../../convex/_generated/api';
+import { decrypt } from '../../lib/encrypt';
+import type { ProviderContext } from '../types';
+
+const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
+
+export const JINXXY_API_KEY_PURPOSE = 'jinxxy-api-key' as const;
+
+type JinxxyCredentialContext = Pick<ProviderContext, 'convex' | 'apiSecret' | 'encryptionSecret'>;
+
+export async function decryptJinxxyApiKey(
+  encryptedApiKey: string,
+  encryptionSecret: string
+): Promise<string> {
+  return decrypt(encryptedApiKey, encryptionSecret, JINXXY_API_KEY_PURPOSE);
+}
+
+export async function resolveJinxxyCreatorApiKey(
+  ctx: JinxxyCredentialContext,
+  authUserId: string
+): Promise<string | null> {
+  const data = await ctx.convex.query(api.providerConnections.getConnectionForBackfill, {
+    apiSecret: ctx.apiSecret,
+    authUserId,
+    provider: 'jinxxy',
+  });
+  const encryptedApiKey = data?.credentials.api_key;
+  if (!encryptedApiKey) {
+    return null;
+  }
+
+  try {
+    return await decryptJinxxyApiKey(encryptedApiKey, ctx.encryptionSecret);
+  } catch (err) {
+    logger.error('Failed to decrypt Jinxxy API key', {
+      authUserId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}

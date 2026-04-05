@@ -10,6 +10,7 @@
  */
 
 import { createLogger } from '@yucp/shared';
+import { sha256Hex } from '@yucp/shared/cryptoPrimitives';
 import { api } from '../../../../../convex/_generated/api';
 import type { ConvexServerClient } from '../../lib/convex';
 import { sanitizePublicErrorMessage } from '../../lib/userFacingErrors';
@@ -19,15 +20,6 @@ import type { VerificationConfig } from '../sessionManager';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 
-async function sha256Hex(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
 export interface LicenseVerificationHandler {
   verify(
     input: CompleteLicenseInput,
@@ -36,7 +28,7 @@ export interface LicenseVerificationHandler {
   ): Promise<CompleteLicenseResult>;
 }
 
-export async function getHandler(provider: string): Promise<LicenseVerificationHandler | null> {
+export function getHandler(provider: string): LicenseVerificationHandler | null {
   const plugin = getProvider(provider)?.verification;
   if (!plugin) return null;
 

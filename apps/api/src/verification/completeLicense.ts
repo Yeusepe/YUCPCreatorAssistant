@@ -3,10 +3,10 @@
  *
  * API handler for POST /api/verification/complete-license
  *
- * Dispatches to the appropriate provider handler via the HANDLERS registry.
+ * Dispatches to the appropriate provider plugin via the licenseHandlers registry adapter.
  * Adding support for a new provider requires only:
- *   1. Creating apps/api/src/verification/licenseHandlers/{provider}.ts
- *   2. Adding a case to getHandler() in licenseHandlers/index.ts
+ *   1. Implementing providers/{provider}/verification.ts
+ *   2. Registering the provider plugin in providers/index.ts
  */
 
 import { detectLicenseFormat } from '@yucp/providers';
@@ -64,7 +64,7 @@ export async function handleCompleteLicense(
     providerKey = detected;
   }
 
-  const handler = await getHandler(providerKey);
+  const handler = getHandler(providerKey);
   if (!handler) {
     return { success: false, error: `Unsupported provider: ${providerKey}` };
   }

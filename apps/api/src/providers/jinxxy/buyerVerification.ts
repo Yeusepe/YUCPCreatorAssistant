@@ -1,13 +1,11 @@
 import { JinxxyApiClient } from '@yucp/providers';
 import { api } from '../../../../../convex/_generated/api';
-import { decrypt } from '../../lib/encrypt';
 import {
   createManualLicenseCapability,
   resolveBuyerVerificationStoreContext,
 } from '../../verification/buyerVerificationHelpers';
 import type { BuyerVerificationAdapter } from '../types';
-
-const CREDENTIAL_PURPOSE = 'jinxxy-api-key' as const;
+import { decryptJinxxyApiKey, resolveJinxxyCreatorApiKey } from './credentials';
 
 async function verifyWithApiKey(
   apiKey: string,
@@ -70,15 +68,8 @@ export const buyerVerification: BuyerVerificationAdapter = {
       return storeContext.result;
     }
 
-    const connection = await ctx.convex.query(api.providerConnections.getConnectionForBackfill, {
-      apiSecret: ctx.apiSecret,
-      authUserId: storeContext.creatorAuthUserId,
-      provider: 'jinxxy',
-    });
-
-    const encryptedApiKey = connection?.credentials.api_key;
-    if (encryptedApiKey) {
-      const apiKey = await decrypt(encryptedApiKey, ctx.encryptionSecret, CREDENTIAL_PURPOSE);
+    const apiKey = await resolveJinxxyCreatorApiKey(ctx, storeContext.creatorAuthUserId);
+    if (apiKey) {
       const result = await verifyWithApiKey(apiKey, input.licenseKey, input.providerProductRef);
       if (result.success) {
         return { success: true };
@@ -98,10 +89,9 @@ export const buyerVerification: BuyerVerificationAdapter = {
         continue;
       }
 
-      const apiKey = await decrypt(
+      const apiKey = await decryptJinxxyApiKey(
         collaborator.credentialEncrypted,
-        ctx.encryptionSecret,
-        CREDENTIAL_PURPOSE
+        ctx.encryptionSecret
       );
       const result = await verifyWithApiKey(apiKey, input.licenseKey, input.providerProductRef);
       if (result.success) {

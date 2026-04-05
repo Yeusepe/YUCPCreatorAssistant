@@ -2,29 +2,13 @@
  * Shared PKCE, state, and redirect primitives for verification OAuth sessions.
  */
 
+import { base64UrlEncode, bytesToHex, sha256Bytes } from '@yucp/shared/cryptoPrimitives';
+
 export const SESSION_EXPIRY_MS = 15 * 60 * 1000;
 export const PKCE_CODE_CHALLENGE_METHOD = 'S256';
 
 const GUMROAD_VERIFICATION_STATE_PREFIX = 'verify_gumroad';
 const PKCE_VERIFIER_PREFIX = 'pkce_verifier:';
-
-function encodeHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-function encodeBase64Url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-}
-
-async function sha256Bytes(input: string): Promise<Uint8Array> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return new Uint8Array(digest);
-}
 
 /**
  * Generates a cryptographically secure random string.
@@ -32,7 +16,7 @@ async function sha256Bytes(input: string): Promise<Uint8Array> {
 export function generateSecureRandom(length: number): string {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
-  return encodeHex(bytes);
+  return bytesToHex(bytes);
 }
 
 /**
@@ -55,7 +39,7 @@ export function generateCodeVerifier(): string {
  * code_challenge = BASE64URL(SHA256(code_verifier))
  */
 export async function computeCodeChallenge(verifier: string): Promise<string> {
-  return encodeBase64Url(await sha256Bytes(verifier));
+  return base64UrlEncode(await sha256Bytes(verifier));
 }
 
 /**
@@ -63,7 +47,7 @@ export async function computeCodeChallenge(verifier: string): Promise<string> {
  * We store the hash, not the plaintext verifier.
  */
 export async function hashVerifier(verifier: string): Promise<string> {
-  return encodeHex(await sha256Bytes(verifier));
+  return bytesToHex(await sha256Bytes(verifier));
 }
 
 export interface VerificationPkceBundle {

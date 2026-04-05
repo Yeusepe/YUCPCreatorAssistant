@@ -1,4 +1,5 @@
 import { createLogger } from '@yucp/shared';
+import { normalizeEmail, sha256Hex } from '@yucp/shared/cryptoPrimitives';
 import { encrypt } from '../../lib/encrypt';
 import type { BackfillPlugin, BackfillRecord } from '../types';
 
@@ -7,19 +8,6 @@ const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
 const GUMROAD_API_BASE = 'https://api.gumroad.com/v2';
 const MAX_RATE_LIMIT_RETRIES = 10;
 const PURCHASE_BUYER_EMAIL_PURPOSE = 'purchase-buyer-email';
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
 
 export const backfill: BackfillPlugin = {
   pageDelayMs: 1500,

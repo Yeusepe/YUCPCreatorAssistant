@@ -7,14 +7,19 @@
  * by public queries.
  */
 
+import { redactForLogging } from '@yucp/shared/logging/redaction';
 import { v } from 'convex/values';
 import { internalQuery, mutation, query } from './_generated/server';
 import { requireApiSecret } from './lib/apiAuth';
 
 /** Strip signingSecretEnc from a subscription doc before returning it publicly. */
-function redactSubscription(doc: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeWebhookSubscriptionForPublicRead(
+  doc: Record<string, unknown>
+): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(doc).filter(([k]) => k !== 'signingSecretEnc')
+    Object.entries(doc)
+      .filter(([key]) => key !== 'signingSecretEnc')
+      .map(([key, value]) => [key, redactForLogging(value)] as const)
   );
 }
 
@@ -51,22 +56,20 @@ export const list = query({
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
 
-    let docs;
-    if (args.enabled !== undefined) {
-      docs = await ctx.db
-        .query('webhook_subscriptions')
-        .withIndex('by_auth_user_enabled', q =>
-          q.eq('authUserId', args.authUserId).eq('enabled', args.enabled!)
-        )
-        .collect();
-    } else {
-      docs = await ctx.db
-        .query('webhook_subscriptions')
-        .withIndex('by_auth_user', q => q.eq('authUserId', args.authUserId))
-        .collect();
-    }
+    const docs =
+      typeof args.enabled === 'boolean'
+        ? await ctx.db
+            .query('webhook_subscriptions')
+            .withIndex('by_auth_user_enabled', (q) =>
+              q.eq('authUserId', args.authUserId).eq('enabled', args.enabled)
+            )
+            .collect()
+        : await ctx.db
+            .query('webhook_subscriptions')
+            .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
+            .collect();
 
-    return docs.map(d => redactSubscription(d as unknown as Record<string, unknown>));
+    return docs.map((d) => sanitizeWebhookSubscriptionForPublicRead(d as Record<string, unknown>));
   },
 });
 
@@ -85,7 +88,7 @@ export const getById = query({
     requireApiSecret(args.apiSecret);
     const doc = await ctx.db.get(args.subscriptionId);
     if (!doc || doc.authUserId !== args.authUserId) return null;
-    return redactSubscription(doc as unknown as Record<string, unknown>);
+    return sanitizeWebhookSubscriptionForPublicRead(doc as Record<string, unknown>);
   },
 });
 
@@ -164,7 +167,7 @@ export const update = mutation({
 
     const updated = await ctx.db.get(args.subscriptionId);
     if (!updated) throw new Error('Subscription not found after update');
-    return redactSubscription(updated as unknown as Record<string, unknown>);
+    return sanitizeWebhookSubscriptionForPublicRead(updated as Record<string, unknown>);
   },
 });
 
@@ -188,7 +191,7 @@ export const deleteSubscription = mutation({
 
     const deliveries = await ctx.db
       .query('webhook_deliveries')
-      .withIndex('by_subscription', q => q.eq('subscriptionId', args.subscriptionId))
+      .withIndex('by_subscription', (q) => q.eq('subscriptionId', args.subscriptionId))
       .collect();
 
     for (const delivery of deliveries) {
@@ -229,6 +232,6 @@ export const rotateSecret = mutation({
 
     const updated = await ctx.db.get(args.subscriptionId);
     if (!updated) throw new Error('Subscription not found after rotate');
-    return redactSubscription(updated as unknown as Record<string, unknown>);
+    return sanitizeWebhookSubscriptionForPublicRead(updated as Record<string, unknown>);
   },
 });

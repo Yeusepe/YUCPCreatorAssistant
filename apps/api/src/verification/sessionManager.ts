@@ -14,6 +14,7 @@
 
 import { VrchatApiClient } from '@yucp/providers';
 import { createLogger, timingSafeStringEqual } from '@yucp/shared';
+import { sha256Hex } from '@yucp/shared/cryptoPrimitives';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { createAuth, type VrchatOwnershipPayload } from '../auth';
@@ -60,15 +61,6 @@ const VRCHAT_VERIFY_ATTEMPTS = new Map<string, { count: number; resetAt: number 
 const VERIFY_PANEL_PREFIX = 'verify_panel:';
 const VERIFY_PANEL_TTL_MS = 15 * 60 * 1000;
 const INTERACTION_TOKEN_PURPOSE = 'verify-panel-interaction-token';
-
-async function sha256Hex(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
 
 // ============================================================================
 // VERIFICATION MODE CONFIGURATIONS

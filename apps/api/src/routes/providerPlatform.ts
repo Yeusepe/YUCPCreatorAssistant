@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { LemonSqueezyApiClient } from '@yucp/providers';
 import { createLogger, getProviderDescriptor, timingSafeStringEqual } from '@yucp/shared';
+import { normalizeEmail, sha256Hex } from '@yucp/shared/cryptoPrimitives';
 import { api } from '../../../../convex/_generated/api';
 import type { Auth } from '../auth';
 import { getConvexClientFromUrl } from '../lib/convex';
@@ -137,18 +138,6 @@ function storeIdempotentResponse(cacheKey: string | null, response: Response, bo
 
 async function jsonFromRequest<T>(request: Request): Promise<T> {
   return (await request.json()) as T;
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
 }
 
 function parseIsoTimestamp(value: string | null | undefined): number | undefined {
