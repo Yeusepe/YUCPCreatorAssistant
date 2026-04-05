@@ -3,7 +3,7 @@
  */
 
 export { requireApiSecret } from '../apiAuth';
-export { sha256Hex } from '../../../packages/shared/src/cryptoPrimitives.ts';
+export { sha256Hex } from '@yucp/shared/crypto';
 
 export function normalizeProductUrl(url: string): string {
   try {

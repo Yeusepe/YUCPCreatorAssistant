@@ -16,7 +16,7 @@
  */
 
 import * as ed from '@noble/ed25519';
-import { sha256Hex } from '../../packages/shared/src/cryptoPrimitives.ts';
+import { sha256Hex } from '@yucp/shared/crypto';
 import { base64ToBytes, bytesToBase64 } from './yucpCrypto';
 
 // ─────────────────────────────────────────────────────────────────────────────
