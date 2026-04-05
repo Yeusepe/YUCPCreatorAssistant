@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/shared" },
+    { "path": "./packages/application" },
     { "path": "./packages/providers" },
     { "path": "./packages/policy" },
     { "path": "./packages/private-rpc" }

@@ -1,15 +1,11 @@
-import { getProviderDescriptor, PROVIDER_KEYS } from '@yucp/shared';
+import { createApplicationServices } from '@yucp/application';
+import type {
+  ProviderLinkFallbackDisplay,
+  ProviderRuntimeConnectSurface,
+} from '@yucp/application/ports';
 import { getVerificationConfig } from '../verification/sessionManager';
-import { ALL_PROVIDERS, getProvider } from './index';
-import type { ConnectDisplayMeta, ProviderPlugin } from './types';
-
-type ProviderKey = (typeof PROVIDER_KEYS)[number];
-
-interface VerificationOnlyProviderDisplay {
-  readonly icon: string | null;
-  readonly color: string | null;
-  readonly description?: string | null;
-}
+import { ALL_PROVIDERS } from './index';
+import type { ConnectDisplayMeta } from './types';
 
 export interface ProviderDisplaySummary {
   readonly id: string;
@@ -31,86 +27,52 @@ export interface DashboardProviderSummary {
   readonly connectParamStyle: ConnectDisplayMeta['dashboardConnectParamStyle'];
 }
 
-const VERIFICATION_ONLY_PROVIDER_DISPLAY: Partial<
-  Record<ProviderKey, VerificationOnlyProviderDisplay>
-> = {
+const VERIFICATION_ONLY_PROVIDER_DISPLAY: Readonly<Record<string, ProviderLinkFallbackDisplay>> = {
   discord: { icon: 'Discord.png', color: '#5865F2' },
 };
 
-function buildProviderDisplaySummary(
-  providerKey: string,
-  displayMeta?: ConnectDisplayMeta,
-  fallbackDisplay?: VerificationOnlyProviderDisplay
-): ProviderDisplaySummary {
-  const descriptor = getProviderDescriptor(providerKey);
-
-  return {
-    id: providerKey,
-    label: displayMeta?.label ?? descriptor?.label ?? providerKey,
-    icon: displayMeta?.icon ?? fallbackDisplay?.icon ?? null,
-    color: displayMeta?.color ?? fallbackDisplay?.color ?? null,
-    description: displayMeta?.description ?? fallbackDisplay?.description ?? null,
-  };
-}
-
-function buildDashboardProviderSummary(provider: ProviderPlugin): DashboardProviderSummary | null {
+function buildRuntimeConnectSurface(provider: { id: string; displayMeta?: ConnectDisplayMeta }) {
   const displayMeta = provider.displayMeta;
-  if (!displayMeta?.dashboardConnectPath) return null;
+  if (!displayMeta) return undefined;
 
   return {
-    key: provider.id,
+    providerKey: provider.id,
     label: displayMeta.label,
     icon: displayMeta.icon,
-    iconBg: displayMeta.dashboardIconBg,
-    quickStartBg: displayMeta.dashboardQuickStartBg,
-    quickStartBorder: displayMeta.dashboardQuickStartBorder,
-    serverTileHint: displayMeta.dashboardServerTileHint,
-    connectPath: displayMeta.dashboardConnectPath,
-    connectParamStyle: displayMeta.dashboardConnectParamStyle,
+    color: displayMeta.color,
+    description: displayMeta.description,
+    dashboardConnectPath: displayMeta.dashboardConnectPath,
+    dashboardConnectParamStyle: displayMeta.dashboardConnectParamStyle,
+    dashboardIconBg: displayMeta.dashboardIconBg,
+    dashboardQuickStartBg: displayMeta.dashboardQuickStartBg,
+    dashboardQuickStartBorder: displayMeta.dashboardQuickStartBorder,
+    dashboardServerTileHint: displayMeta.dashboardServerTileHint,
   };
 }
 
+const runtimeConnectSurfaces = ALL_PROVIDERS.flatMap((provider) => {
+  const runtimeSurface = buildRuntimeConnectSurface(provider);
+  return runtimeSurface ? [runtimeSurface] : [];
+});
+
+const providerPlatformService = createApplicationServices({
+  providerPlatform: {
+    listRuntimeConnectSurfaces: () => runtimeConnectSurfaces,
+    getRuntimeConnectSurface: (providerKey) =>
+      runtimeConnectSurfaces.find((runtimeSurface) => runtimeSurface.providerKey === providerKey),
+    isVerificationAvailable: (providerKey) => getVerificationConfig(providerKey) !== null,
+    getVerificationOnlyDisplay: (providerKey) => VERIFICATION_ONLY_PROVIDER_DISPLAY[providerKey],
+  },
+}).providerPlatform;
+
 export function getConnectedAccountProviderDisplay(providerKey: string): ProviderDisplaySummary {
-  return buildProviderDisplaySummary(providerKey, getProvider(providerKey)?.displayMeta);
+  return providerPlatformService.getConnectedAccountProviderDisplay(providerKey);
 }
 
 export function listUserLinkProviderDisplays(): ProviderDisplaySummary[] {
-  const seenIds = new Set<string>();
-  const providers: ProviderDisplaySummary[] = [];
-
-  for (const provider of ALL_PROVIDERS) {
-    const descriptor = getProviderDescriptor(provider.id);
-    const supportsOAuthLink =
-      descriptor?.supportsOAuth === true && getVerificationConfig(provider.id) !== null;
-    if (!provider.displayMeta || !supportsOAuthLink) continue;
-
-    seenIds.add(provider.id);
-    providers.push(buildProviderDisplaySummary(provider.id, provider.displayMeta));
-  }
-
-  for (const providerKey of PROVIDER_KEYS) {
-    if (seenIds.has(providerKey)) continue;
-    if (getVerificationConfig(providerKey) === null) continue;
-
-    const descriptor = getProviderDescriptor(providerKey);
-    if (!descriptor?.supportsOAuth) continue;
-
-    seenIds.add(providerKey);
-    providers.push(
-      buildProviderDisplaySummary(
-        providerKey,
-        undefined,
-        VERIFICATION_ONLY_PROVIDER_DISPLAY[providerKey]
-      )
-    );
-  }
-
-  return providers;
+  return providerPlatformService.listUserLinkProviderDisplays();
 }
 
 export function listDashboardProviderDisplays(): DashboardProviderSummary[] {
-  return ALL_PROVIDERS.flatMap((provider) => {
-    const summary = buildDashboardProviderSummary(provider);
-    return summary ? [summary] : [];
-  });
+  return providerPlatformService.listDashboardProviderDisplays();
 }

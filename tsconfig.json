@@ -42,6 +42,8 @@
     "paths": {
       "@yucp/shared": ["./packages/shared/src"],
       "@yucp/shared/*": ["./packages/shared/src/*"],
+      "@yucp/application": ["./packages/application/src"],
+      "@yucp/application/*": ["./packages/application/src/*"],
       "@yucp/providers": ["./packages/providers/src"],
       "@yucp/providers/*": ["./packages/providers/src/*"],
       "@yucp/policy": ["./packages/policy/src"],

@@ -20,7 +20,10 @@ describe('connect user-verify contracts', () => {
   it('supports OAuth-capable buyer-link providers through the shared verification begin route', () => {
     expect(connectRouteSource).toContain('createConnectUserVerificationRoutes({');
     expect(connectUserVerificationSource).toContain('listUserLinkProviderDisplays()');
-    expect(providerDisplaySource).toContain('getVerificationConfig(provider.id) !== null');
+    expect(providerDisplaySource).toContain('createApplicationServices({');
+    expect(providerDisplaySource).toContain(
+      'isVerificationAvailable: (providerKey) => getVerificationConfig(providerKey) !== null'
+    );
     expect(connectUserVerificationSource).toContain(
       "const beginUrl = new URL('/api/verification/begin'"
     );

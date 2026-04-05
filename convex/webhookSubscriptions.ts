@@ -56,12 +56,13 @@ export const list = query({
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
 
+    const enabled = args.enabled;
     const docs =
-      typeof args.enabled === 'boolean'
+      typeof enabled === 'boolean'
         ? await ctx.db
             .query('webhook_subscriptions')
             .withIndex('by_auth_user_enabled', (q) =>
-              q.eq('authUserId', args.authUserId).eq('enabled', args.enabled)
+              q.eq('authUserId', args.authUserId).eq('enabled', enabled)
             )
             .collect()
         : await ctx.db

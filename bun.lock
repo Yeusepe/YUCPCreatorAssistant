@@ -54,6 +54,7 @@
         "@react-three/fiber": "^9.4.0",
         "@tempojs/cloudflare-worker-router": "^0.0.12",
         "@tempojs/common": "^0.0.12",
+        "@yucp/application": "workspace:*",
         "@yucp/private-rpc": "workspace:*",
         "@yucp/providers": "workspace:*",
         "@yucp/shared": "workspace:*",
@@ -149,6 +150,17 @@
         "vite": "^7.1.3",
         "vite-tsconfig-paths": "^5.1.4",
         "vitest": "^4.1.0",
+      },
+    },
+    "packages/application": {
+      "name": "@yucp/application",
+      "version": "0.1.0",
+      "dependencies": {
+        "@yucp/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.1.0",
+        "bun-types": "^1.1.0",
       },
     },
     "packages/policy": {
@@ -995,6 +1007,8 @@
     "@webgpu/types": ["@webgpu/types@0.1.69", "", {}, "sha512-RPmm6kgRbI8e98zSD3RVACvnuktIja5+yLgDAkTmxLr90BEwdTXRQWNLF3ETTTyH/8mKhznZuN5AveXYFEsMGQ=="],
 
     "@yucp/api": ["@yucp/api@workspace:apps/api"],
+
+    "@yucp/application": ["@yucp/application@workspace:packages/application"],
 
     "@yucp/bot": ["@yucp/bot@workspace:apps/bot"],
 
