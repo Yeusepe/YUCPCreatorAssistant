@@ -28,11 +28,16 @@ export async function sha256Hex(input: Sha256Input): Promise<string> {
 
 export function base64UrlEncode(data: Uint8Array | string): string {
   const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
-  return bytesToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  const base = bytesToBase64(bytes);
+  let trimmed = base;
+  while (trimmed.endsWith('=')) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  return trimmed.replaceAll('+', '-').replaceAll('/', '_');
 }
 
 export function base64UrlDecodeToBytes(input: string): Uint8Array {
-  const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
+  const normalized = input.replaceAll('-', '+').replaceAll('_', '/');
   const padLength = (4 - (normalized.length % 4 || 4)) % 4;
   return base64ToBytes(`${normalized}${'='.repeat(padLength)}`);
 }

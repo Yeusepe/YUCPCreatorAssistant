@@ -34,10 +34,24 @@ function getUrlParams(): {
 } {
   if (typeof window === 'undefined') return { tenantId: '', guildId: '', apiBase: '' };
   const params = new URLSearchParams(window.location.search);
+  const normalizeId = (value: string | null) =>
+    value && /^[a-zA-Z0-9_-]{1,128}$/.test(value) ? value : '';
+  const resolveApiBase = (raw: string | null) => {
+    if (typeof window === 'undefined') return '';
+    const fallbackOrigin = window.location.origin;
+    if (!raw) return fallbackOrigin;
+    try {
+      const parsed = new URL(raw, fallbackOrigin);
+      const isHttp = parsed.protocol === 'https:' || parsed.protocol === 'http:';
+      return isHttp && parsed.host === window.location.host ? parsed.origin : fallbackOrigin;
+    } catch {
+      return fallbackOrigin;
+    }
+  };
   return {
-    tenantId: params.get('tenant_id') ?? '',
-    guildId: params.get('guild_id') ?? '',
-    apiBase: params.get('api_base') ?? '',
+    tenantId: normalizeId(params.get('tenant_id')),
+    guildId: normalizeId(params.get('guild_id')),
+    apiBase: resolveApiBase(params.get('api_base')),
   };
 }
 
