@@ -4,6 +4,7 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { ApiError, apiClient } from '@/api/client';
 import { DashboardBodyPortal } from '@/components/dashboard/DashboardBodyPortal';
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
+import { CloudBackground } from '@/components/three/CloudBackground';
 import { useAuth } from '@/hooks/useAuth';
 import { DashboardSessionProvider, useDashboardSession } from '@/hooks/useDashboardSession';
 import { useDashboardShell } from '@/hooks/useDashboardShell';
@@ -289,6 +290,7 @@ function DashboardLayout() {
     <ServerContextProvider guildId={resolvedGuildId} tenantId={resolvedTenantId}>
       <DashboardSessionProvider>
         <div className="dashboard-page">
+          <CloudBackground variant="default" />
           <div className="app-shell">
             <SidebarOverlay />
             <ServerDropdownBackdrop />

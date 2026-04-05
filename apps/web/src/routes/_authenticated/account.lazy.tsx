@@ -1,5 +1,6 @@
 import { createLazyFileRoute, Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
+import { CloudBackground } from '@/components/three/CloudBackground';
 import { useAccountShell } from '@/hooks/useAccountShell';
 import '@/styles/dashboard.css';
 import '@/styles/dashboard-components.css';
@@ -180,6 +181,7 @@ function AccountLayout() {
 
   return (
     <div className="dashboard-page">
+      <CloudBackground variant="default" />
       <div className="app-shell">
         <div
           id="sidebar-overlay"

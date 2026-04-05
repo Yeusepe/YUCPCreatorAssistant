@@ -2,7 +2,8 @@ import { createFileRoute, redirect } from '@tanstack/react-router';
 import { normalizeAuthRedirectTarget } from '@yucp/shared/authRedirects';
 import { useCallback, useEffect, useState } from 'react';
 import { PageLoadingOverlay } from '@/components/page/PageLoadingOverlay';
-import { useCloudReady } from '@/hooks/useCloudReady';
+import { CloudBackground } from '@/components/three/CloudBackground';
+import { CloudReadyContext, useCloudReady } from '@/hooks/useCloudReady';
 import { usePageLoadingTransition } from '@/hooks/usePageLoadingTransition';
 import { authClient } from '@/lib/auth-client';
 import { routeStyleHrefs, routeStylesheetLinks } from '@/lib/routeStyles';
@@ -36,6 +37,16 @@ function SignInRouteComponent() {
 }
 
 export function SignInPage({ redirectTo }: Readonly<{ redirectTo?: string | null }>) {
+  const [bgReady, setBgReady] = useState(false);
+  return (
+    <CloudReadyContext.Provider value={bgReady}>
+      <CloudBackground variant="default" onReady={() => setBgReady(true)} />
+      <SignInPageContent redirectTo={redirectTo} />
+    </CloudReadyContext.Provider>
+  );
+}
+
+function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null }>) {
   const [currentState, setCurrentState] = useState<PageState>('state-signin');
   const [isVisible, setIsVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState('Something went wrong. Please try again.');

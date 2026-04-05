@@ -100,22 +100,24 @@ const SetupVrchatRoute = SetupVrchatRouteImport.update({
   id: '/setup/vrchat',
   path: '/setup/vrchat',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./routes/setup/vrchat.lazy').then((d) => d.Route))
 const SetupPayhipRoute = SetupPayhipRouteImport.update({
   id: '/setup/payhip',
   path: '/setup/payhip',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./routes/setup/payhip.lazy').then((d) => d.Route))
 const SetupLemonsqueezyRoute = SetupLemonsqueezyRouteImport.update({
   id: '/setup/lemonsqueezy',
   path: '/setup/lemonsqueezy',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() =>
+  import('./routes/setup/lemonsqueezy.lazy').then((d) => d.Route),
+)
 const SetupJinxxyRoute = SetupJinxxyRouteImport.update({
   id: '/setup/jinxxy',
   path: '/setup/jinxxy',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./routes/setup/jinxxy.lazy').then((d) => d.Route))
 const SetupDiscordRoleRoute = SetupDiscordRoleRouteImport.update({
   id: '/setup/discord-role',
   path: '/setup/discord-role',
@@ -135,7 +137,7 @@ const OauthConsentRoute = OauthConsentRouteImport.update({
   id: '/oauth/consent',
   path: '/oauth/consent',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./routes/oauth/consent.lazy').then((d) => d.Route))
 const LegalTermsOfServiceRoute = LegalTermsOfServiceRouteImport.update({
   id: '/legal/terms-of-service',
   path: '/legal/terms-of-service',
@@ -150,12 +152,14 @@ const InstallSuccessRoute = InstallSuccessRouteImport.update({
   id: '/install/success',
   path: '/install/success',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() =>
+  import('./routes/install/success.lazy').then((d) => d.Route),
+)
 const InstallErrorRoute = InstallErrorRouteImport.update({
   id: '/install/error',
   path: '/install/error',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./routes/install/error.lazy').then((d) => d.Route))
 const ApiSplatRoute = ApiSplatRouteImport.update({
   id: '/api/$',
   path: '/api/$',
@@ -197,7 +201,9 @@ const AuthenticatedVerifyPurchaseRoute =
     id: '/verify/purchase',
     path: '/verify/purchase',
     getParentRoute: () => AuthenticatedRoute,
-  } as any)
+  } as any).lazy(() =>
+    import('./routes/_authenticated/verify/purchase.lazy').then((d) => d.Route),
+  )
 const AuthenticatedDashboardServerRulesRoute =
   AuthenticatedDashboardServerRulesRouteImport.update({
     id: '/server-rules',
