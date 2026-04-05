@@ -11,7 +11,7 @@ const dashboardLazyRouteSource = readFileSync(
   'utf8'
 );
 const dashboardIndexRouteSource = readFileSync(
-  resolve(__dirname, '../../src/routes/_authenticated/dashboard/index.tsx'),
+  resolve(__dirname, '../../src/routes/_authenticated/dashboard/index.lazy.tsx'),
   'utf8'
 );
 
