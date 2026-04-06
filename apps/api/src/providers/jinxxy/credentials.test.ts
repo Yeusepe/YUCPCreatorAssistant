@@ -8,6 +8,8 @@ const apiMock = {
 
 mock.module('../../../../../convex/_generated/api', () => ({
   api: apiMock,
+  internal: apiMock,
+  components: {},
 }));
 
 const { encrypt } = await import('../../lib/encrypt');

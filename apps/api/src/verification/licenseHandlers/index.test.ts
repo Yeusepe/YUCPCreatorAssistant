@@ -32,6 +32,8 @@ mock.module('../../../../../convex/_generated/api', () => ({
       completeLicenseVerification: 'licenseVerification.completeLicenseVerification',
     },
   },
+  internal: {},
+  components: {},
 }));
 
 mock.module('../../providers/index', () => ({

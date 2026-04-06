@@ -48,6 +48,8 @@ const resolveSetupSessionMock = mock(async () => null);
 
 mock.module('../../../../convex/_generated/api', () => ({
   api: apiMock,
+  internal: apiMock,
+  components: {},
 }));
 
 mock.module('../lib/convex', () => ({

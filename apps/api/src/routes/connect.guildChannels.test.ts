@@ -58,6 +58,8 @@ const testStore = new Map<string, { value: string; expiresAt?: number }>();
 
 mock.module('../../../../convex/_generated/api', () => ({
   api: apiMock,
+  internal: apiMock,
+  components: {},
 }));
 
 mock.module('../lib/stateStore', () => ({
