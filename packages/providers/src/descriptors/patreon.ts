@@ -14,4 +14,5 @@ export const patreon = {
   setupRequirements: ['oauth_client'],
   verificationMethods: ['oauth'],
   supportsCredentialLogin: false,
+  supportsBuyerOAuthLink: true,
 } as const satisfies ProviderDescriptorInput;

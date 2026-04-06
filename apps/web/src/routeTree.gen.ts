@@ -22,6 +22,7 @@ import { Route as SetupVrchatRouteImport } from './routes/setup/vrchat'
 import { Route as SetupPayhipRouteImport } from './routes/setup/payhip'
 import { Route as SetupLemonsqueezyRouteImport } from './routes/setup/lemonsqueezy'
 import { Route as SetupJinxxyRouteImport } from './routes/setup/jinxxy'
+import { Route as SetupItchioRouteImport } from './routes/setup/itchio'
 import { Route as SetupDiscordRoleRouteImport } from './routes/setup/discord-role'
 import { Route as OauthLoginRouteImport } from './routes/oauth/login'
 import { Route as OauthErrorRouteImport } from './routes/oauth/error'
@@ -118,6 +119,11 @@ const SetupJinxxyRoute = SetupJinxxyRouteImport.update({
   path: '/setup/jinxxy',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/setup/jinxxy.lazy').then((d) => d.Route))
+const SetupItchioRoute = SetupItchioRouteImport.update({
+  id: '/setup/itchio',
+  path: '/setup/itchio',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/setup/itchio.lazy').then((d) => d.Route))
 const SetupDiscordRoleRoute = SetupDiscordRoleRouteImport.update({
   id: '/setup/discord-role',
   path: '/setup/discord-role',
@@ -363,6 +369,7 @@ export interface FileRoutesByFullPath {
   '/oauth/error': typeof OauthErrorRoute
   '/oauth/login': typeof OauthLoginRoute
   '/setup/discord-role': typeof SetupDiscordRoleRoute
+  '/setup/itchio': typeof SetupItchioRoute
   '/setup/jinxxy': typeof SetupJinxxyRoute
   '/setup/lemonsqueezy': typeof SetupLemonsqueezyRoute
   '/setup/payhip': typeof SetupPayhipRoute
@@ -404,6 +411,7 @@ export interface FileRoutesByTo {
   '/oauth/error': typeof OauthErrorRoute
   '/oauth/login': typeof OauthLoginRoute
   '/setup/discord-role': typeof SetupDiscordRoleRoute
+  '/setup/itchio': typeof SetupItchioRoute
   '/setup/jinxxy': typeof SetupJinxxyRoute
   '/setup/lemonsqueezy': typeof SetupLemonsqueezyRoute
   '/setup/payhip': typeof SetupPayhipRoute
@@ -449,6 +457,7 @@ export interface FileRoutesById {
   '/oauth/error': typeof OauthErrorRoute
   '/oauth/login': typeof OauthLoginRoute
   '/setup/discord-role': typeof SetupDiscordRoleRoute
+  '/setup/itchio': typeof SetupItchioRoute
   '/setup/jinxxy': typeof SetupJinxxyRoute
   '/setup/lemonsqueezy': typeof SetupLemonsqueezyRoute
   '/setup/payhip': typeof SetupPayhipRoute
@@ -494,6 +503,7 @@ export interface FileRouteTypes {
     | '/oauth/error'
     | '/oauth/login'
     | '/setup/discord-role'
+    | '/setup/itchio'
     | '/setup/jinxxy'
     | '/setup/lemonsqueezy'
     | '/setup/payhip'
@@ -535,6 +545,7 @@ export interface FileRouteTypes {
     | '/oauth/error'
     | '/oauth/login'
     | '/setup/discord-role'
+    | '/setup/itchio'
     | '/setup/jinxxy'
     | '/setup/lemonsqueezy'
     | '/setup/payhip'
@@ -579,6 +590,7 @@ export interface FileRouteTypes {
     | '/oauth/error'
     | '/oauth/login'
     | '/setup/discord-role'
+    | '/setup/itchio'
     | '/setup/jinxxy'
     | '/setup/lemonsqueezy'
     | '/setup/payhip'
@@ -622,6 +634,7 @@ export interface RootRouteChildren {
   OauthErrorRoute: typeof OauthErrorRoute
   OauthLoginRoute: typeof OauthLoginRoute
   SetupDiscordRoleRoute: typeof SetupDiscordRoleRoute
+  SetupItchioRoute: typeof SetupItchioRoute
   SetupJinxxyRoute: typeof SetupJinxxyRoute
   SetupLemonsqueezyRoute: typeof SetupLemonsqueezyRoute
   SetupPayhipRoute: typeof SetupPayhipRoute
@@ -722,6 +735,13 @@ declare module '@tanstack/react-router' {
       path: '/setup/jinxxy'
       fullPath: '/setup/jinxxy'
       preLoaderRoute: typeof SetupJinxxyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup/itchio': {
+      id: '/setup/itchio'
+      path: '/setup/itchio'
+      fullPath: '/setup/itchio'
+      preLoaderRoute: typeof SetupItchioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/setup/discord-role': {
@@ -1021,6 +1041,7 @@ const rootRouteChildren: RootRouteChildren = {
   OauthErrorRoute: OauthErrorRoute,
   OauthLoginRoute: OauthLoginRoute,
   SetupDiscordRoleRoute: SetupDiscordRoleRoute,
+  SetupItchioRoute: SetupItchioRoute,
   SetupJinxxyRoute: SetupJinxxyRoute,
   SetupLemonsqueezyRoute: SetupLemonsqueezyRoute,
   SetupPayhipRoute: SetupPayhipRoute,

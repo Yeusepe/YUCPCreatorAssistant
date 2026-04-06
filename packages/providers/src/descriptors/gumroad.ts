@@ -22,6 +22,7 @@ export const gumroad = {
   setupRequirements: ['oauth_client', 'webhook_secret'],
   verificationMethods: ['license_key', 'oauth'],
   supportsCredentialLogin: false,
+  supportsBuyerOAuthLink: true,
   supportsAutoDiscovery: true,
   catalogProductUrlTemplate: 'https://gumroad.com/l/{ref}',
   productInput: {

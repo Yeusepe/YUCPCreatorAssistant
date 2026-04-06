@@ -52,7 +52,7 @@ export async function handleLink(
   }
 
   const descriptor = getProviderDescriptor(provider);
-  if (descriptor?.supportsOAuth) {
+  if (descriptor?.supportsBuyerOAuthLink) {
     const redirectUri = apiBaseUrl
       ? `${apiBaseUrl}/verify-success?returnTo=${encodeURIComponent(`https://discord.com/channels/${ctx.guildId}`)}`
       : '';

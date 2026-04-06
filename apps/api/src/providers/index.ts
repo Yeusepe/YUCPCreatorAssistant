@@ -10,6 +10,7 @@
 
 import type { RuntimeProviderKey } from '@yucp/providers/types';
 import gumroad from './gumroad/index';
+import itchio from './itchio/index';
 import jinxxy from './jinxxy/index';
 import lemonsqueezy from './lemonsqueezy/index';
 import payhip from './payhip/index';
@@ -37,6 +38,7 @@ function defineProviderRegistry<TRegistry extends Record<RuntimeProviderKey, Api
 
 const PROVIDER_ENTRIES = defineProviderRegistry({
   gumroad,
+  itchio,
   jinxxy,
   lemonsqueezy,
   payhip,

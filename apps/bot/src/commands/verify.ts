@@ -547,7 +547,7 @@ function buildStatusContainer(
     for (const provider of enabledSet) {
       if (provider === 'discord' || provider === 'vrchat') continue;
       const meta = PROVIDER_META[provider as keyof typeof PROVIDER_META];
-      if (!meta?.supportsOAuth) continue;
+      if (!meta?.supportsBuyerOAuthLink) continue;
       const url = buildBeginUrl(provider);
       if (!url) continue;
       const emoji = meta.emojiKey ? Emoji[meta.emojiKey as keyof typeof Emoji] : undefined;
@@ -626,7 +626,7 @@ function buildStatusContainer(
     for (const provider of enabledSet) {
       if (provider === 'discord' || provider === 'vrchat') continue;
       const meta = PROVIDER_META[provider as keyof typeof PROVIDER_META];
-      if (!meta?.supportsOAuth) continue;
+      if (!meta?.supportsBuyerOAuthLink) continue;
       if (connectedProviders.has(provider)) continue; // already connected
       const url = buildBeginUrl(provider);
       if (!url) continue;

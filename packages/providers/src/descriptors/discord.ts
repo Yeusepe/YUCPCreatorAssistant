@@ -14,4 +14,5 @@ export const discord = {
   setupRequirements: [],
   verificationMethods: ['account_link', 'discord_role'],
   supportsCredentialLogin: false,
+  supportsBuyerOAuthLink: true,
 } as const satisfies ProviderDescriptorInput;

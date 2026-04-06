@@ -25,7 +25,7 @@ function resolveHostedVerificationProvider(
     label: descriptor.label,
     buyerVerificationMethods: descriptor.buyerVerificationMethods,
     supportsHostedBuyerAccountLink: Boolean(
-      descriptor.supportsOAuth && getVerificationConfig(providerKey)
+      descriptor.supportsBuyerOAuthLink && getVerificationConfig(providerKey)
     ),
     describeManualLicenseCapability: () =>
       getProviderRuntime(providerKey)?.buyerVerification?.describeCapability('manual_license') ??

@@ -171,7 +171,7 @@ export function createConnectUserVerificationRoutes({
       const frontendReturnUrl = `${config.frontendBaseUrl.replace(/\/$/, '')}${safeReturnUrl}`;
       const descriptor = getProviderDescriptor(providerKey);
       const oauthConfig =
-        descriptor?.supportsOAuth === true ? getVerificationConfig(providerKey) : null;
+        descriptor?.supportsBuyerOAuthLink === true ? getVerificationConfig(providerKey) : null;
       if (!oauthConfig) {
         return Response.json(
           { error: `Provider '${providerKey}' does not support user identity linking` },

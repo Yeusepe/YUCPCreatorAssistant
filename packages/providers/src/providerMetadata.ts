@@ -5,6 +5,7 @@ function buildDescriptor(input: ProviderDescriptorInput): ProviderDescriptor {
   return {
     ...input,
     supportsOAuth: input.creatorAuthModes.includes('oauth'),
+    supportsBuyerOAuthLink: input.supportsBuyerOAuthLink ?? false,
     supportsDisconnect: input.creatorAuthModes.some((mode) => mode !== 'none'),
     supportsWebhook: input.capabilities.includes('webhooks'),
     supportsLicenseVerify: input.capabilities.includes('license_verification'),

@@ -234,6 +234,7 @@ function initializeAuth(webhookBaseUrl?: string) {
     convexUrl,
     gumroadClientId: env.GUMROAD_CLIENT_ID ?? env.GUMROAD_API_KEY,
     gumroadClientSecret: env.GUMROAD_CLIENT_SECRET ?? env.GUMROAD_SECRET_KEY,
+    itchioClientId: env.ITCHIO_CLIENT_ID,
     encryptionSecret,
   } satisfies Parameters<typeof createConnectRoutes>[1];
   connectRoutes = createConnectRoutes(auth, connectConfig);
