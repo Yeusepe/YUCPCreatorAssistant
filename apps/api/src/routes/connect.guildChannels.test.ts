@@ -666,6 +666,15 @@ describe('discord role setup routes', () => {
       })
     );
     const { token } = (await createRes.json()) as { token: string };
+    const sessionEntry = testStore.get(`discord_role_setup:${token}`);
+    if (!sessionEntry) {
+      throw new Error('Discord role setup session was not stored');
+    }
+    const session = JSON.parse(sessionEntry.value) as {
+      guilds?: Array<{ id: string; name: string }>;
+    };
+    session.guilds = [{ id: 'source-guild-1', name: 'Source Guild' }];
+    testStore.set(`discord_role_setup:${token}`, { value: JSON.stringify(session) });
 
     const saveRes = await routes.saveDiscordRoleSelection(
       new Request('http://localhost:3001/api/setup/discord-role-save', {
