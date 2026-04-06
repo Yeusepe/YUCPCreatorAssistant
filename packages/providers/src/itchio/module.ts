@@ -22,7 +22,7 @@ export const ITCHIO_DISPLAY_META = {
   connectedColor: '#d94b4b',
   confettiColors: ['#fa5c5c', '#d94b4b', '#ffd5d5', '#ffffff'],
   description: 'Marketplace',
-  dashboardConnectPath: '/setup/itchio',
+  dashboardConnectPath: '/api/connect/itchio/begin',
   dashboardConnectParamStyle: 'snakeCase',
   dashboardIconBg: '#fa5c5c',
   dashboardQuickStartBg: 'rgba(250,92,92,0.12)',
