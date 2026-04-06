@@ -24,7 +24,11 @@ interface DashboardSearch {
 export const Route = createFileRoute('/_authenticated/dashboard')({
   ssr: 'data-only',
   head: () => ({
-    links: routeStylesheetLinks(routeStyleHrefs.dashboard, routeStyleHrefs.dashboardComponents, routeStyleHrefs.account),
+    links: routeStylesheetLinks(
+      routeStyleHrefs.dashboard,
+      routeStyleHrefs.dashboardComponents,
+      routeStyleHrefs.account
+    ),
   }),
   validateSearch: (search: Record<string, unknown>): DashboardSearch => ({
     guild_id: normalizeDashboardIdentifier(search.guild_id as string | undefined),
