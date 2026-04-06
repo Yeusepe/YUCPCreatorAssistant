@@ -25,6 +25,7 @@ export const Route = createLazyFileRoute('/_authenticated/account/')({
 function AccountProfile() {
   const { guilds, viewer } = useAccountShell();
   const { signOut } = useAuth();
+  const isCreator = guilds.length > 0;
   const sessionQuery = useQuery({
     queryKey: ['better-auth-session'],
     queryFn: async () => {
@@ -48,13 +49,13 @@ function AccountProfile() {
   const certificatesQuery = useQuery({
     queryKey: ['creator-certificates'],
     queryFn: listCreatorCertificates,
+    enabled: isCreator,
   });
   const grantsQuery = useQuery({
     queryKey: ['user-oauth-grants'],
     queryFn: listUserOAuthGrants,
   });
 
-  const isCreator = guilds.length > 0;
   const sessionUser = sessionQuery.data?.user;
   const displayName =
     sessionUser?.name ?? viewer.name ?? sessionUser?.email ?? viewer.email ?? 'Discord account';
@@ -70,8 +71,17 @@ function AccountProfile() {
   const authorizedApps = grantsQuery.data;
   const availableProviders = providersQuery.data;
   const connectedLabels = accounts
-    .map((connection) => connection.label || connection.provider)
-    .filter(Boolean)
+    .map((connection, index) => {
+      const label = connection.label || connection.provider;
+      if (!label) {
+        return null;
+      }
+      return {
+        key: connection.id || `${connection.provider}-${index}`,
+        label,
+      };
+    })
+    .filter((entry): entry is { key: string; label: string } => entry !== null)
     .slice(0, 3);
   const workspaceHref = '/api/install/bot';
 
@@ -121,8 +131,8 @@ function AccountProfile() {
           <span className="account-badge account-badge--provider">
             {isCreator ? 'Creator account' : 'Personal account'}
           </span>
-          {connectedLabels.map((label) => (
-            <span key={label} className="account-badge account-badge--provider">
+          {connectedLabels.map(({ key, label }) => (
+            <span key={key} className="account-badge account-badge--provider">
               {label}
             </span>
           ))}
@@ -250,9 +260,9 @@ function AccountProfile() {
         </p>
 
         {isCreator ? (
-          <a href="/dashboard" className="account-btn account-btn--primary">
+          <Link to="/dashboard" className="account-btn account-btn--primary">
             Open creator dashboard
-          </a>
+          </Link>
         ) : workspaceHref ? (
           <a href={workspaceHref} className="account-btn account-btn--primary">
             Add bot to a server

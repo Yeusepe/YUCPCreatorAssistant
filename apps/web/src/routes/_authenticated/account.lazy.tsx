@@ -137,6 +137,13 @@ const ACCOUNT_HEADER_TITLES: Record<string, string> = {
   '/account/verify': 'Verify Purchase',
 };
 
+function normalizeAccountPath(currentPath: string): string {
+  if (currentPath === '/') {
+    return currentPath;
+  }
+  return currentPath.replace(/\/+$/u, '') || '/';
+}
+
 function isNavItemActive(item: (typeof NAV_GROUPS)[number]['items'][number], currentPath: string) {
   return item.exact
     ? currentPath === item.to || currentPath === `${item.to}/`
@@ -156,12 +163,23 @@ function findActiveNavItem(currentPath: string) {
 }
 
 function getAccountHeaderTitle(currentPath: string): string {
-  const activeItem = findActiveNavItem(currentPath);
-  if (activeItem.to === '/account' && currentPath !== '/account' && currentPath !== '/account/') {
-    return ACCOUNT_HEADER_TITLES[currentPath] ?? activeItem.headerTitle;
+  const normalizedPath = normalizeAccountPath(currentPath);
+  const activeItem = findActiveNavItem(normalizedPath);
+  if (activeItem.to === '/account' && normalizedPath !== '/account') {
+    return ACCOUNT_HEADER_TITLES[normalizedPath] ?? activeItem.headerTitle;
   }
 
   return activeItem.headerTitle;
+}
+
+function closeAccountSidebar() {
+  if (typeof document === 'undefined') return;
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (sidebar && overlay) {
+    sidebar.classList.remove('is-open');
+    overlay.classList.remove('is-visible');
+  }
 }
 
 function toggleAccountSidebar() {
@@ -173,7 +191,7 @@ function toggleAccountSidebar() {
     if (isOpen) {
       overlay.classList.add('is-visible');
     } else {
-      overlay.classList.remove('is-visible');
+      closeAccountSidebar();
     }
   }
 }
@@ -194,7 +212,7 @@ function AccountLayout() {
           id="sidebar-overlay"
           className="sidebar-overlay"
           aria-hidden="true"
-          onClick={toggleAccountSidebar}
+          onClick={closeAccountSidebar}
         />
 
         <aside id="sidebar" className="sidebar" aria-label="Account navigation">
@@ -213,6 +231,7 @@ function AccountLayout() {
                     <Link
                       key={item.to}
                       to={item.to}
+                      onClick={closeAccountSidebar}
                       className={`sidebar-nav-btn${isNavItemActive(item, currentPath) ? ' is-active' : ''}`}
                     >
                       <span className="sidebar-nav-icon">{item.icon}</span>

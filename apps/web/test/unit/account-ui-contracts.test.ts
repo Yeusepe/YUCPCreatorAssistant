@@ -62,6 +62,8 @@ describe('account UI contracts', () => {
     expect(accountRouteSource).toContain('routeStyleHrefs.dashboardComponents');
     expect(accountRouteSource).toContain('routeStyleHrefs.account');
     expect(accountLazyRouteSource).toContain('DashboardHeader');
+    expect(accountLazyRouteSource).toContain('normalizeAccountPath(');
+    expect(accountLazyRouteSource).toContain('onClick={closeAccountSidebar}');
   });
 
   it('uses the shared account page scaffold for the redesigned account landing page', () => {
@@ -76,6 +78,14 @@ describe('account UI contracts', () => {
     expect(accountIndexRouteSource).toContain('authClient.getSession()');
     expect(accountIndexRouteSource).not.toContain('useConvexQuery(api.authViewer.getViewer)');
     expect(accountIndexRouteSource).not.toContain("'Your Account'");
+    expect(accountIndexRouteSource).toContain('enabled: isCreator');
+    expect(accountIndexRouteSource).toContain(
+      '<Link to="/dashboard" className="account-btn account-btn--primary">'
+    );
+    expect(accountIndexRouteSource).not.toContain(
+      '<a href="/dashboard" className="account-btn account-btn--primary">'
+    );
+    expect(accountIndexRouteSource).not.toContain('key={label}');
   });
 
   it('announces inline account errors to assistive technology', () => {

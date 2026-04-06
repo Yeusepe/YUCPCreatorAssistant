@@ -89,7 +89,6 @@ export async function storeInstallState(state: string, authUserId: string): Prom
   };
   const store = getStateStore();
   await store.set(`${INSTALL_STATE_PREFIX}${state}`, JSON.stringify(data), STATE_EXPIRY_MS);
-  logger.debug('Install state stored', { statePrefix: `${state.slice(0, 8)}...`, authUserId });
 }
 
 /**
@@ -119,7 +118,6 @@ export async function validateInstallState(state: string): Promise<InstallState 
     return null;
   }
 
-  logger.debug('Install state validated', { statePrefix: `${state.slice(0, 8)}...` });
   return stored;
 }
 
@@ -201,7 +199,7 @@ export function createInstallRoutes(auth: Auth, config: InstallConfig) {
     if (requestedAuthUserId && session.user.id !== authUserId) {
       logger.warn('authUserId mismatch in bot install', {
         sessionUserId: session.user.id,
-        requestedAuthUserId: authUserId,
+        requestedAuthUserId,
       });
       return Response.json(
         { error: 'Forbidden: authUserId does not match session' },

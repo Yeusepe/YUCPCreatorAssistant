@@ -191,12 +191,12 @@ function resolveCertificatePlanSelection(
   overview: CertificateOverview,
   body: { productId?: string; planKey?: string }
 ) {
-  const requestedProductId = body.productId?.trim();
+  const requestedProductId = body.productId;
   if (requestedProductId) {
     return overview.availablePlans.find((entry) => entry.productId === requestedProductId) ?? null;
   }
 
-  const requestedPlanKey = body.planKey?.trim();
+  const requestedPlanKey = body.planKey;
   if (!requestedPlanKey) {
     return null;
   }
@@ -311,27 +311,49 @@ export function createConnectCertificateRoutes(options: ConnectCertificateRoutes
   }
 
   async function getViewerBranding(request: Request): Promise<Response> {
-    const session = await auth.getSession(request);
+    const timing = new RouteTimingCollector();
+    const session = await timing.measure(
+      'session',
+      () => auth.getSession(request),
+      'resolve account session'
+    );
     if (!session) {
-      return Response.json({ error: 'Authentication required' }, { status: 401 });
+      return buildTimedResponse(
+        timing,
+        () => Response.json({ error: 'Authentication required' }, { status: 401 }),
+        'serialize certificate response'
+      );
     }
 
     try {
-      const branding = await getConvexClientFromUrl(config.convexUrl).query(
-        api.certificateBilling.getShellBrandingForAuthUser,
-        {
-          apiSecret: config.convexApiSecret,
-          authUserId: session.user.id,
-        }
+      const branding = await timing.measure(
+        'convex_certificate_shell_branding',
+        () =>
+          getConvexClientFromUrl(config.convexUrl).query(
+            api.certificateBilling.getShellBrandingForAuthUser,
+            {
+              apiSecret: config.convexApiSecret,
+              authUserId: session.user.id,
+            }
+          ),
+        'load certificate shell branding'
       );
 
-      return Response.json(branding);
+      return buildTimedResponse(
+        timing,
+        () => Response.json(branding),
+        'serialize certificate response'
+      );
     } catch (err) {
       logger.error('Failed to get viewer branding', {
         authUserId: session.user.id,
         error: err instanceof Error ? err.message : String(err),
       });
-      return Response.json({ error: 'Failed to fetch viewer branding' }, { status: 500 });
+      return buildTimedResponse(
+        timing,
+        () => Response.json({ error: 'Failed to fetch viewer branding' }, { status: 500 }),
+        'serialize certificate response'
+      );
     }
   }
 

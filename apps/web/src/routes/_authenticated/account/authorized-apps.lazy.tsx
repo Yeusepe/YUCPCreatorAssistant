@@ -30,6 +30,8 @@ export const Route = createLazyFileRoute('/_authenticated/account/authorized-app
   component: AccountAuthorizedApps,
 });
 
+const USER_OAUTH_GRANTS_QUERY_KEY = ['user-oauth-grants'] as const;
+
 function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
   const [confirming, setConfirming] = useState(false);
   const queryClient = useQueryClient();
@@ -38,7 +40,7 @@ function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
   const revokeMut = useMutation({
     mutationFn: () => revokeUserOAuthGrant(grant.consentId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-oauth-grants'] });
+      queryClient.invalidateQueries({ queryKey: USER_OAUTH_GRANTS_QUERY_KEY });
       setConfirming(false);
       toast.success('App access revoked', {
         description: `${grant.appName} must be authorized again before it can use your account.`,
@@ -79,7 +81,10 @@ function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
         {grant.scopes.length > 0 ? (
           <div className="account-pill-row account-pill-row--compact">
             {grant.scopes.map((scope) => (
-              <span key={scope} className="account-badge account-badge--scope">
+              <span
+                key={`${grant.consentId}:${scope}`}
+                className="account-badge account-badge--scope"
+              >
                 {scope}
               </span>
             ))}
@@ -137,7 +142,7 @@ function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
 
 function AccountAuthorizedApps() {
   const grantsQuery = useQuery({
-    queryKey: ['user-oauth-grants'],
+    queryKey: USER_OAUTH_GRANTS_QUERY_KEY,
     queryFn: listUserOAuthGrants,
   });
 

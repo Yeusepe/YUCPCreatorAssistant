@@ -24,6 +24,7 @@ import {
   getStoredVrchatSession,
   parseTwoFactorType,
   persistVrchatSession,
+  type VrchatSessionAuthClient,
 } from './vrchatSession';
 
 const VRCHAT_TOKEN_PREFIX = 'vrchat_verify:';
@@ -36,6 +37,10 @@ const VRCHAT_GENERIC_FAILURE = 'Verification failed. Please check your credentia
 interface CreateVrchatVerificationRouteHandlersOptions {
   config: VerificationConfig;
   logger: StructuredLogger;
+  deps?: Partial<{
+    createAuth: (config: Parameters<typeof createAuth>[0]) => VrchatSessionAuthClient;
+    getStateStore: typeof getStateStore;
+  }>;
 }
 
 interface BeginVrchatVerificationInput {
@@ -186,7 +191,7 @@ async function finalizeVrchatOwnership({
 }
 
 interface SharedVrchatVerificationContext {
-  betterAuth: ReturnType<typeof createAuth>;
+  betterAuth: VrchatSessionAuthClient;
   betterAuthCookieHeader: string;
   client: VrchatApiClient;
   config: VerificationConfig;
@@ -547,7 +552,14 @@ async function handleStoredVrchatSessionStep(
 export function createVrchatVerificationRouteHandlers({
   config,
   logger,
+  deps: injectedDeps,
 }: CreateVrchatVerificationRouteHandlersOptions) {
+  const deps = {
+    createAuth,
+    getStateStore,
+    ...injectedDeps,
+  };
+
   async function beginVrchatVerification({
     authUserId,
     discordUserId,
@@ -561,7 +573,7 @@ export function createVrchatVerificationRouteHandlers({
     }
 
     const token = generateSecureRandom(32);
-    const store = getStateStore();
+    const store = deps.getStateStore();
     await store.set(
       `${VRCHAT_TOKEN_PREFIX}${token}`,
       JSON.stringify({
@@ -618,6 +630,16 @@ export function createVrchatVerificationRouteHandlers({
       );
     }
 
+    if ((username && !password) || (!username && password)) {
+      return jsonNoStore(
+        {
+          success: false,
+          error: 'Please provide both your VRChat username and password.',
+        },
+        { status: 400 }
+      );
+    }
+
     if ((username && password) || twoFactorCode) {
       if (isVrchatRateLimited(token, request)) {
         return jsonNoStore(
@@ -630,7 +652,7 @@ export function createVrchatVerificationRouteHandlers({
       }
     }
 
-    const store = getStateStore();
+    const store = deps.getStateStore();
     const payloadResult = await loadVrchatVerificationPayload(store, token);
     if (!payloadResult.success) {
       return payloadResult.response;
@@ -644,7 +666,7 @@ export function createVrchatVerificationRouteHandlers({
     const requestCookieHeader = request.headers.get('cookie') ?? '';
     const betterAuthCookieHeader =
       request.headers.get('better-auth-cookie')?.trim() || requestCookieHeader;
-    const betterAuth = createAuth({
+    const betterAuth = deps.createAuth({
       baseUrl: config.baseUrl,
       convexSiteUrl,
       convexUrl: config.convexUrl,
@@ -693,14 +715,20 @@ export function createVrchatVerificationRouteHandlers({
           );
         }
 
-        return handleVrchatTwoFactorStep(context, twoFactorCode, twoFactorType);
+        return await handleVrchatTwoFactorStep(context, twoFactorCode, twoFactorType);
       }
 
       if (username && password) {
-        return handleVrchatPasswordStep(context, username, password, twoFactorCode, twoFactorType);
+        return await handleVrchatPasswordStep(
+          context,
+          username,
+          password,
+          twoFactorCode,
+          twoFactorType
+        );
       }
 
-      return handleStoredVrchatSessionStep(context);
+      return await handleStoredVrchatSessionStep(context);
     } catch (err) {
       logger.error('VRChat verify failed', {
         error: err instanceof Error ? err.message : String(err),
@@ -713,24 +741,12 @@ export function createVrchatVerificationRouteHandlers({
               ? 'password'
               : 'auto',
       });
-      if (!username && !password && !twoFactorCode) {
-        return jsonNoStore(
-          {
-            success: false,
-            error: 'Please enter your VRChat username and password to verify.',
-            needsCredentials: true,
-            sessionExpired: true,
-          },
-          { status: 401 }
-        );
-      }
-
       return jsonNoStore(
         {
           success: false,
-          error: VRCHAT_GENERIC_FAILURE,
+          error: 'Verification failed. Please try again.',
         },
-        { status: 401 }
+        { status: 500 }
       );
     }
   }

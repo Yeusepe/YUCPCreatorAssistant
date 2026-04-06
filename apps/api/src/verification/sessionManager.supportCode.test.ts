@@ -79,4 +79,58 @@ describe('verification support codes in api routes', () => {
       .find((meta) => meta?.supportCode)?.supportCode;
     expect(loggedSupportCode).toBe(data.supportCode);
   });
+
+  it('returns and logs a support code when verify panel refresh throws before Discord responds', async () => {
+    const warnMock = mock(() => {});
+    console.warn = warnMock as typeof console.warn;
+    globalThis.fetch = mock(async () => {
+      throw new Error('discord timeout');
+    }) as unknown as typeof fetch;
+
+    const routes = createVerificationRoutes(testConfig);
+
+    await routes.bindVerifyPanel(
+      new Request('https://api.example.com/api/verification/panel/bind', {
+        body: JSON.stringify({
+          apiSecret: 'api-secret',
+          applicationId: 'app_456',
+          discordUserId: 'user_456',
+          guildId: 'guild_456',
+          interactionToken: 'token_456',
+          messageId: 'message_456',
+          panelToken: 'panel_456',
+          authUserId: 'user_test456',
+        }),
+        headers: {
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      })
+    );
+
+    const response = await routes.refreshVerifyPanel(
+      new Request('https://api.example.com/api/verification/panel/refresh', {
+        body: JSON.stringify({
+          panelToken: 'panel_456',
+        }),
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://api.example.com',
+        },
+        method: 'POST',
+      })
+    );
+
+    expect(response.status).toBe(502);
+    const data = (await response.json()) as { success: boolean; supportCode?: string };
+    expect(data.success).toBe(false);
+    expect(data.supportCode).toMatch(/^VFY1-/);
+
+    const loggedSupportCode = (
+      warnMock.mock.calls as unknown as Array<[string, Record<string, unknown>?]>
+    )
+      .map((call) => call[1] as Record<string, unknown> | undefined)
+      .find((meta) => meta?.supportCode)?.supportCode;
+    expect(loggedSupportCode).toBe(data.supportCode);
+  });
 });

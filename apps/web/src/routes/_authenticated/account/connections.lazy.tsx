@@ -31,6 +31,14 @@ interface ProviderCardModel extends UserProviderDisplay {
   canConnect: boolean;
 }
 
+function getSafeRedirectUrl(redirectUrl: string): string {
+  const parsed = new URL(redirectUrl, window.location.origin);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Unsupported redirect protocol');
+  }
+  return parsed.toString();
+}
+
 function buildProviderCardModel(connection: UserAccountConnection): ProviderCardModel {
   const display = connection.providerDisplay;
 
@@ -114,7 +122,7 @@ function ProviderCard({
 
     try {
       const { redirectUrl } = await startUserVerify(provider.id);
-      window.location.href = redirectUrl;
+      window.location.href = getSafeRedirectUrl(redirectUrl);
     } catch {
       setConnecting(false);
       toast.error('Could not start connection', {
@@ -265,6 +273,7 @@ function AccountConnections() {
   });
 
   const isLoading = providersQuery.isLoading || accountsQuery.isLoading;
+  const hasLoadError = providersQuery.isError || accountsQuery.isError;
   const connectableProviders = providersQuery.data ?? [];
   const connections = accountsQuery.data ?? [];
   const providers = buildProviderCards(connectableProviders, connections);
@@ -294,7 +303,7 @@ function AccountConnections() {
             <div className="account-skeleton-row" style={{ width: '82%' }} />
             <div className="account-skeleton-row" style={{ width: '68%' }} />
           </div>
-        ) : providers.length === 0 ? (
+        ) : !hasLoadError && providers.length === 0 ? (
           <AccountEmptyState
             icon={
               <svg
@@ -328,9 +337,7 @@ function AccountConnections() {
           </div>
         )}
 
-        {!providersQuery.isLoading &&
-        !accountsQuery.isLoading &&
-        (providersQuery.isError || accountsQuery.isError) ? (
+        {!providersQuery.isLoading && !accountsQuery.isLoading && hasLoadError ? (
           <AccountInlineError message="Failed to load account connections. Refresh to try again." />
         ) : null}
       </AccountSectionCard>

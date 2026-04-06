@@ -34,6 +34,53 @@ interface ConnectDiscordRoleRoutesOptions {
   readonly generateSecureRandom: (length: number) => string;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function getOptionalTrimmedString(
+  record: Record<string, unknown>,
+  key: string
+): string | undefined {
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function getOptionalStringArray(
+  record: Record<string, unknown>,
+  key: string
+): string[] | undefined {
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const trimmed: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string') {
+      return undefined;
+    }
+    const next = entry.trim();
+    if (next) {
+      trimmed.push(next);
+    }
+  }
+  return trimmed;
+}
+
 export function createConnectDiscordRoleRoutes(options: ConnectDiscordRoleRoutesOptions) {
   const { config, logger, hasValidApiSecret, generateToken, generateSecureRandom } = options;
 
@@ -68,21 +115,25 @@ export function createConnectDiscordRoleRoutes(options: ConnectDiscordRoleRoutes
     if (request.method !== 'POST') {
       return Response.json({ error: 'Method not allowed' }, { status: 405 });
     }
-    let body: {
-      authUserId: string;
-      guildId: string;
-      adminDiscordUserId: string;
-      apiSecret: string;
-    };
+    let bodyRecord: Record<string, unknown> | null;
     try {
-      body = (await request.json()) as typeof body;
+      bodyRecord = asRecord(await request.json());
     } catch {
       return Response.json({ error: 'Invalid JSON' }, { status: 400 });
     }
-    if (!hasValidApiSecret(body.apiSecret)) {
+    if (!bodyRecord) {
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+
+    const authUserId = getOptionalTrimmedString(bodyRecord, 'authUserId');
+    const guildId = getOptionalTrimmedString(bodyRecord, 'guildId');
+    const adminDiscordUserId = getOptionalTrimmedString(bodyRecord, 'adminDiscordUserId');
+    const apiSecret = getOptionalTrimmedString(bodyRecord, 'apiSecret');
+
+    if (!hasValidApiSecret(apiSecret)) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (!body.authUserId || !body.guildId || !body.adminDiscordUserId) {
+    if (!authUserId || !guildId || !adminDiscordUserId) {
       return Response.json(
         { error: 'authUserId, guildId, and adminDiscordUserId are required' },
         { status: 400 }
@@ -91,9 +142,9 @@ export function createConnectDiscordRoleRoutes(options: ConnectDiscordRoleRoutes
 
     const token = generateToken();
     const session: DiscordRoleSetupSession = {
-      authUserId: body.authUserId,
-      guildId: body.guildId,
-      adminDiscordUserId: body.adminDiscordUserId,
+      authUserId,
+      guildId,
+      adminDiscordUserId,
       completed: false,
     };
     const store = getStateStore();
@@ -112,7 +163,7 @@ export function createConnectDiscordRoleRoutes(options: ConnectDiscordRoleRoutes
     const { sessionToken: token } = binding;
     const store = getStateStore();
 
-    const state = `${token}:${generateSecureRandom(16)}`;
+    const state = generateSecureRandom(16);
     await store.set(`${DISCORD_ROLE_OAUTH_STATE_PREFIX}${state}`, token, DISCORD_ROLE_SETUP_TTL_MS);
 
     const authUrl = new URL('https://discord.com/api/oauth2/authorize');
@@ -175,6 +226,7 @@ export function createConnectDiscordRoleRoutes(options: ConnectDiscordRoleRoutes
           redirect_uri: `${config.apiBaseUrl}/api/setup/discord-role-oauth/callback`,
           grant_type: 'authorization_code',
         }).toString(),
+        signal: AbortSignal.timeout(10_000),
       });
 
       if (!tokenRes.ok) {
@@ -196,6 +248,7 @@ export function createConnectDiscordRoleRoutes(options: ConnectDiscordRoleRoutes
       const accessToken = tokens.access_token;
       const userRes = await fetch('https://discord.com/api/users/@me', {
         headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(10_000),
       });
       if (!userRes.ok) {
         logger.error('Discord role OAuth user fetch failed', { status: userRes.status });
@@ -209,6 +262,7 @@ export function createConnectDiscordRoleRoutes(options: ConnectDiscordRoleRoutes
 
       const guildsRes = await fetch('https://discord.com/api/users/@me/guilds', {
         headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(10_000),
       });
 
       if (!guildsRes.ok) {
@@ -278,22 +332,35 @@ export function createConnectDiscordRoleRoutes(options: ConnectDiscordRoleRoutes
     if (request.method !== 'POST') {
       return Response.json({ error: 'Method not allowed' }, { status: 405 });
     }
-    let body: {
-      sourceGuildId: string;
-      sourceGuildName?: string;
-      sourceRoleId?: string;
-      sourceRoleIds?: string[];
-      requiredRoleMatchMode?: 'any' | 'all';
-    };
+    let bodyRecord: Record<string, unknown> | null;
     try {
-      body = (await request.json()) as typeof body;
+      bodyRecord = asRecord(await request.json());
     } catch {
       return Response.json({ error: 'Invalid JSON' }, { status: 400 });
     }
-    const { sourceGuildId, sourceGuildName, sourceRoleId, sourceRoleIds, requiredRoleMatchMode } =
-      body;
+    if (!bodyRecord) {
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+
+    const sourceGuildId = getOptionalTrimmedString(bodyRecord, 'sourceGuildId');
+    const sourceRoleId = getOptionalTrimmedString(bodyRecord, 'sourceRoleId');
+    const sourceRoleIds = getOptionalStringArray(bodyRecord, 'sourceRoleIds');
+    const requiredRoleMatchMode = getOptionalTrimmedString(bodyRecord, 'requiredRoleMatchMode');
     if (!sourceGuildId) {
       return Response.json({ error: 'sourceGuildId is required' }, { status: 400 });
+    }
+    if (bodyRecord.sourceRoleIds !== undefined && !sourceRoleIds) {
+      return Response.json({ error: 'sourceRoleIds must be an array of strings' }, { status: 400 });
+    }
+    if (
+      requiredRoleMatchMode !== undefined &&
+      requiredRoleMatchMode !== 'any' &&
+      requiredRoleMatchMode !== 'all'
+    ) {
+      return Response.json(
+        { error: 'requiredRoleMatchMode must be "any" or "all"' },
+        { status: 400 }
+      );
     }
     const roleIds = sourceRoleIds ?? (sourceRoleId ? [sourceRoleId] : []);
     if (roleIds.length === 0) {
@@ -317,8 +384,15 @@ export function createConnectDiscordRoleRoutes(options: ConnectDiscordRoleRoutes
 
     const store = getStateStore();
     const session = binding.roleSession;
+    const verifiedGuild = session.guilds?.find((guild) => guild.id === sourceGuildId);
+    if (!verifiedGuild) {
+      return Response.json(
+        { error: 'Select a guild from the verified Discord OAuth session before continuing.' },
+        { status: 400 }
+      );
+    }
     session.sourceGuildId = sourceGuildId;
-    session.sourceGuildName = sourceGuildName;
+    session.sourceGuildName = verifiedGuild.name;
     session.sourceRoleId = roleIds.length === 1 ? roleIds[0] : undefined;
     session.sourceRoleIds = roleIds.length > 1 ? roleIds : undefined;
     session.requiredRoleMatchMode =
@@ -364,14 +438,17 @@ export function createConnectDiscordRoleRoutes(options: ConnectDiscordRoleRoutes
       return Response.json({ error: 'Method not allowed' }, { status: 405 });
     }
 
-    let body: { token?: string };
+    let bodyRecord: Record<string, unknown> | null;
     try {
-      body = (await request.json()) as typeof body;
+      bodyRecord = asRecord(await request.json());
     } catch {
       return Response.json({ error: 'Invalid JSON' }, { status: 400 });
     }
+    if (!bodyRecord) {
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
 
-    const token = body.token?.trim();
+    const token = getOptionalTrimmedString(bodyRecord, 'token');
     if (!token) return Response.json({ error: 'Missing token' }, { status: 400 });
 
     const store = getStateStore();

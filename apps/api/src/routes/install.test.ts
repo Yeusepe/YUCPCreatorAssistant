@@ -116,6 +116,10 @@ describe('Install Routes', () => {
       const location = response.headers.get('location');
       expect(location).toContain('https://discord.com/api/oauth2/authorize');
       expect(location).not.toContain('authUserId=');
+      const state = new URL(location as string).searchParams.get('state');
+      expect(state).toBeTruthy();
+      const installState = await validateInstallState(state as string);
+      expect(installState?.authUserId).toBe('user-456');
     });
   });
 

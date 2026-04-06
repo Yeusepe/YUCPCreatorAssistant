@@ -153,15 +153,40 @@ export function createVerificationPanelRouteHandlers({
       return jsonNoStore({ success: false, error: 'Invalid panel token' }, { status: 400 });
     }
 
-    const discordResponse = await fetch(
-      `https://discord.com/api/v10/webhooks/${panel.applicationId}/${interactionToken}/messages/${panel.messageId}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildVerifyPanelRefreshReply()),
-        signal: AbortSignal.timeout(10_000),
-      }
-    );
+    let discordResponse: Response;
+    try {
+      discordResponse = await fetch(
+        `https://discord.com/api/v10/webhooks/${panel.applicationId}/${interactionToken}/messages/${panel.messageId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildVerifyPanelRefreshReply()),
+          signal: AbortSignal.timeout(10_000),
+        }
+      );
+    } catch (error) {
+      const support = await createApiVerificationSupportError(logger, {
+        discordUserId: panel.discordUserId,
+        error: error instanceof Error ? error : new Error(String(error)),
+        guildId: panel.guildId,
+        stage: 'refresh_verify_panel_discord',
+        authUserId: panel.authUserId,
+      });
+      logger.warn('Failed to refresh verify panel from success page', {
+        guildId: panel.guildId,
+        supportCode: support.supportCode,
+        supportCodeMode: support.supportCodeMode,
+        userId: panel.discordUserId,
+      });
+      return jsonNoStore(
+        {
+          success: false,
+          error: 'Failed to update Discord panel',
+          supportCode: support.supportCode,
+        },
+        { status: 502 }
+      );
+    }
 
     if (!discordResponse.ok) {
       const errorBody = await discordResponse.text().catch(() => '');
