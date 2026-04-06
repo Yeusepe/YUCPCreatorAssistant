@@ -610,5 +610,17 @@ describe('provider platform routes', () => {
       expect(vrchat?.connectPath).toBe('/setup/vrchat?mode=connect');
       expect(vrchat?.connectParamStyle).toBe('snakeCase');
     });
+
+    it('routes itch.io dashboard connects straight to the OAuth begin endpoint', async () => {
+      const response = await routes.handleRequest(
+        new Request('http://localhost:3001/api/providers', { method: 'GET' })
+      );
+      const body = (await response?.json()) as Array<Record<string, unknown>>;
+      const itchio = body.find((provider) => provider.key === 'itchio');
+
+      expect(itchio).toBeDefined();
+      expect(itchio?.connectPath).toBe('/api/connect/itchio/begin');
+      expect(itchio?.connectParamStyle).toBe('snakeCase');
+    });
   });
 });

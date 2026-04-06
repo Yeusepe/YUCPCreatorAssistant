@@ -15,6 +15,7 @@ export type ProviderKey = (typeof PROVIDER_KEYS)[number];
 
 export const RUNTIME_PROVIDER_KEYS = [
   'gumroad',
+  'itchio',
   'jinxxy',
   'lemonsqueezy',
   'payhip',
@@ -104,6 +105,7 @@ export interface ProviderDescriptorInput {
   setupRequirements: readonly SetupRequirementKey[];
   verificationMethods: readonly VerificationMethodKey[];
   supportsCredentialLogin: boolean;
+  supportsBuyerOAuthLink?: boolean;
   perProductCredential?: PerProductCredentialDescriptor;
   supportsCollab?: boolean;
   collabCredential?: {
@@ -126,6 +128,7 @@ export interface ProviderDescriptorInput {
 
 export interface ProviderDescriptor extends ProviderDescriptorInput {
   supportsOAuth: boolean;
+  supportsBuyerOAuthLink: boolean;
   supportsWebhook: boolean;
   supportsLicenseVerify: boolean;
   supportsTestMode: boolean;

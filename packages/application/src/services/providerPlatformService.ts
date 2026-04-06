@@ -84,7 +84,7 @@ export class ProviderPlatformService {
 
     for (const runtimeSurface of this.providerPlatformPort.listRuntimeConnectSurfaces()) {
       const descriptor = getProviderDescriptor(runtimeSurface.providerKey);
-      if (!descriptor?.supportsOAuth) continue;
+      if (!descriptor?.supportsBuyerOAuthLink) continue;
       if (!this.providerPlatformPort.isVerificationAvailable(runtimeSurface.providerKey)) continue;
 
       seenProviderKeys.add(runtimeSurface.providerKey);
@@ -96,7 +96,7 @@ export class ProviderPlatformService {
     for (const providerKey of PROVIDER_KEYS) {
       if (seenProviderKeys.has(providerKey)) continue;
       const descriptor = getProviderDescriptor(providerKey);
-      if (!descriptor?.supportsOAuth) continue;
+      if (!descriptor?.supportsBuyerOAuthLink) continue;
       if (!this.providerPlatformPort.isVerificationAvailable(providerKey)) continue;
 
       seenProviderKeys.add(providerKey);

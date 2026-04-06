@@ -14,6 +14,7 @@ export interface ProviderMeta {
   supportsLicenseVerify: boolean;
   supportsWebhook: boolean;
   supportsOAuth: boolean;
+  supportsBuyerOAuthLink: boolean;
   supportsCredentialLogin: boolean;
   supportsDisconnect: boolean;
   docsUrl: string;
@@ -36,6 +37,7 @@ export const PROVIDER_META = Object.fromEntries(
       supportsLicenseVerify: provider.supportsLicenseVerify,
       supportsWebhook: provider.supportsWebhook,
       supportsOAuth: provider.supportsOAuth,
+      supportsBuyerOAuthLink: provider.supportsBuyerOAuthLink,
       supportsCredentialLogin: provider.supportsCredentialLogin,
       supportsDisconnect: provider.supportsDisconnect,
       docsUrl: provider.docsUrl,

@@ -177,7 +177,7 @@ function buildProviderInstructionLines(
 ): string[] {
   const enabledProviders = getEnabledProviderDescriptors(enabledSet);
   const commerceOauthProviders = enabledProviders.filter(
-    (provider) => provider.supportsOAuth && provider.category === 'commerce'
+    (provider) => provider.supportsBuyerOAuthLink && provider.category === 'commerce'
   );
   const licenseProviders = enabledProviders.filter((provider) => provider.supportsLicenseVerify);
   const lines: string[] = [];
@@ -287,8 +287,10 @@ function buildSpawnButtonText(enabledSet: Set<string>): string {
     if (provider) {
       if (provider.providerKey === 'discord') return 'Check server access';
       if (provider.providerKey === 'vrchat') return 'Verify with VRChat';
-      if (provider.supportsLicenseVerify && !provider.supportsOAuth) return 'Enter license key';
-      if (provider.supportsOAuth && !provider.supportsLicenseVerify) {
+      if (provider.supportsLicenseVerify && !provider.supportsBuyerOAuthLink) {
+        return 'Enter license key';
+      }
+      if (provider.supportsBuyerOAuthLink && !provider.supportsLicenseVerify) {
         return `Connect ${provider.label}`;
       }
       return `Verify ${provider.label}`;

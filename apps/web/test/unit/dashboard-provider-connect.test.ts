@@ -31,4 +31,19 @@ describe('buildProviderConnectUrl', () => {
       })
     ).toBe('/setup/vrchat?mode=connect&tenant_id=tenant_123&guild_id=guild_456');
   });
+
+  it('appends dashboard identifiers to direct API begin routes', () => {
+    const provider: DashboardProvider = {
+      key: 'itchio',
+      connectPath: '/api/connect/itchio/begin',
+      connectParamStyle: 'snakeCase',
+    };
+
+    expect(
+      buildProviderConnectUrl(provider, {
+        authUserId: 'tenant_123',
+        guildId: 'guild_456',
+      })
+    ).toBe('/api/connect/itchio/begin?tenant_id=tenant_123&guild_id=guild_456');
+  });
 });

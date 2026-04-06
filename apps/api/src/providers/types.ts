@@ -130,6 +130,7 @@ export interface ConnectConfig {
   convexUrl: string;
   gumroadClientId?: string;
   gumroadClientSecret?: string;
+  itchioClientId?: string;
   encryptionSecret: string;
 }
 
