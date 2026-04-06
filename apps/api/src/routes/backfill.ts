@@ -209,7 +209,7 @@ export function createBackfillProductHandler(
       });
       return new Response(
         JSON.stringify({
-          error: sanitizePublicErrorMessage(msg, 'Backfill failed. Try again in a moment.'),
+          error: sanitizePublicErrorMessage(null, 'Backfill failed. Try again in a moment.'),
         }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
