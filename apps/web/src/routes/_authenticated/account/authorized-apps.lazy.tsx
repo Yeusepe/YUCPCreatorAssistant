@@ -10,6 +10,7 @@ import {
 } from '@/components/account/AccountPage';
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import {
   formatAccountDate,
   listUserOAuthGrants,
@@ -94,13 +95,9 @@ function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
 
       <div className="account-list-row-actions">
         {!confirming ? (
-          <button
-            type="button"
-            className="account-btn account-btn--danger"
-            onClick={() => setConfirming(true)}
-          >
+          <YucpButton yucp="danger" onClick={() => setConfirming(true)}>
             Revoke
-          </button>
+          </YucpButton>
         ) : null}
         {confirming ? (
           <AccountModal title={`Revoke ${grant.appName}?`} onClose={() => setConfirming(false)}>
@@ -109,29 +106,21 @@ function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
               account. Any existing access tokens must be reissued after a new consent flow.
             </p>
             <div className="account-modal-actions">
-              <button
-                type="button"
-                className="account-btn account-btn--secondary"
+              <YucpButton
+                yucp="secondary"
                 onClick={() => setConfirming(false)}
-                disabled={revokeMut.isPending}
+                isDisabled={revokeMut.isPending}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                className={`account-btn account-btn--danger${revokeMut.isPending ? ' btn-loading' : ''}`}
+              </YucpButton>
+              <YucpButton
+                yucp="danger"
+                isLoading={revokeMut.isPending}
+                isDisabled={revokeMut.isPending}
                 onClick={() => revokeMut.mutate()}
-                disabled={revokeMut.isPending}
               >
-                {revokeMut.isPending ? (
-                  <>
-                    <span className="btn-loading-spinner" aria-hidden="true" />
-                    Revoking...
-                  </>
-                ) : (
-                  'Revoke access'
-                )}
-              </button>
+                {revokeMut.isPending ? 'Revoking...' : 'Revoke access'}
+              </YucpButton>
             </div>
           </AccountModal>
         ) : null}

@@ -10,6 +10,7 @@ import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons
 import { ProviderChip } from '@/components/ui/ProviderChip';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import { YucpInput } from '@/components/ui/YucpInput';
 import {
   formatAccountDateTime,
@@ -175,61 +176,51 @@ function MethodCard({
 
       <div className="account-list-row-actions">
         {method.kind === 'existing_entitlement' ? (
-          <button
-            type="button"
-            className={`account-btn account-btn--connect${entitlementMut.isPending ? ' btn-loading' : ''}`}
+          <YucpButton
+            yucp="primary"
+            pill
+            isLoading={entitlementMut.isPending}
+            isDisabled={entitlementMut.isPending || isVerifiedMethod}
             onClick={() => entitlementMut.mutate()}
-            disabled={entitlementMut.isPending || isVerifiedMethod}
           >
-            {entitlementMut.isPending ? (
-              <>
-                <span className="btn-loading-spinner" aria-hidden="true" />
-                Checking...
-              </>
-            ) : isVerifiedMethod ? (
-              'Verified'
-            ) : (
-              capability.actionLabel
-            )}
-          </button>
+            {entitlementMut.isPending
+              ? 'Checking...'
+              : isVerifiedMethod
+                ? 'Verified'
+                : capability.actionLabel}
+          </YucpButton>
         ) : method.kind === 'buyer_provider_link' ? (
           <>
             {activeLink ? (
-              <button
-                type="button"
-                className={`account-btn account-btn--connect${providerLinkMut.isPending ? ' btn-loading' : ''}`}
+              <YucpButton
+                yucp="primary"
+                pill
+                isLoading={providerLinkMut.isPending}
+                isDisabled={providerLinkMut.isPending || isVerifiedMethod}
                 onClick={() => providerLinkMut.mutate()}
-                disabled={providerLinkMut.isPending || isVerifiedMethod}
               >
-                {providerLinkMut.isPending ? (
-                  <>
-                    <span className="btn-loading-spinner" aria-hidden="true" />
-                    Checking...
-                  </>
-                ) : isVerifiedMethod ? (
-                  'Verified'
-                ) : (
-                  capability.actionLabel
-                )}
-              </button>
+                {providerLinkMut.isPending
+                  ? 'Checking...'
+                  : isVerifiedMethod
+                    ? 'Verified'
+                    : capability.actionLabel}
+              </YucpButton>
             ) : provider ? (
-              <button
-                type="button"
-                className={`account-btn account-btn--connect${connectProviderMut.isPending ? ' btn-loading' : ''}`}
+              <YucpButton
+                yucp="primary"
+                pill
+                isLoading={connectProviderMut.isPending}
+                isDisabled={connectProviderMut.isPending}
                 onClick={() => connectProviderMut.mutate()}
-                disabled={connectProviderMut.isPending}
               >
-                {connectProviderMut.isPending ? (
-                  <>
-                    <span className="btn-loading-spinner" aria-hidden="true" />
-                    {expiredLink ? 'Reconnecting...' : 'Connecting...'}
-                  </>
-                ) : expiredLink ? (
-                  `Reconnect ${method.providerLabel}`
-                ) : (
-                  `Connect ${method.providerLabel}`
-                )}
-              </button>
+                {connectProviderMut.isPending
+                  ? expiredLink
+                    ? 'Reconnecting...'
+                    : 'Connecting...'
+                  : expiredLink
+                    ? `Reconnect ${method.providerLabel}`
+                    : `Connect ${method.providerLabel}`}
+              </YucpButton>
             ) : null}
             <a href="/account/connections" className="account-btn account-btn--secondary">
               {activeLink ? 'Manage links' : 'Open connections'}
@@ -247,23 +238,19 @@ function MethodCard({
               autoComplete="off"
               spellCheck={false}
             />
-            <button
-              type="button"
-              className={`account-btn account-btn--connect${manualMut.isPending ? ' btn-loading' : ''}`}
+            <YucpButton
+              yucp="primary"
+              pill
+              isLoading={manualMut.isPending}
+              isDisabled={manualMut.isPending || isVerifiedMethod || licenseKey.trim().length === 0}
               onClick={() => manualMut.mutate()}
-              disabled={manualMut.isPending || isVerifiedMethod || licenseKey.trim().length === 0}
             >
-              {manualMut.isPending ? (
-                <>
-                  <span className="btn-loading-spinner" aria-hidden="true" />
-                  Verifying...
-                </>
-              ) : isVerifiedMethod ? (
-                'Verified'
-              ) : (
-                (inputConfig?.submitLabel ?? capability.actionLabel)
-              )}
-            </button>
+              {manualMut.isPending
+                ? 'Verifying...'
+                : isVerifiedMethod
+                  ? 'Verified'
+                  : (inputConfig?.submitLabel ?? capability.actionLabel)}
+            </YucpButton>
           </>
         )}
       </div>

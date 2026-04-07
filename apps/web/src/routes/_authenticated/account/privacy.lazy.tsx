@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/api/client';
 import { AccountModal, AccountPage, AccountSectionCard } from '@/components/account/AccountPage';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import { YucpInput } from '@/components/ui/YucpInput';
 import { downloadUserDataExport } from '@/lib/account';
 
@@ -100,21 +101,14 @@ function AccountPrivacy() {
         title="Download your data"
         description="Includes profile, verified purchases, authorized apps, and provider connections. Credential values are never included."
         actions={
-          <button
-            type="button"
-            className={`account-btn account-btn--secondary${exportLoading ? ' btn-loading' : ''}`}
+          <YucpButton
+            yucp="secondary"
+            isLoading={exportLoading}
+            isDisabled={exportLoading}
             onClick={handleExport}
-            disabled={exportLoading}
           >
-            {exportLoading ? (
-              <>
-                <span className="btn-loading-spinner" aria-hidden="true" />
-                Preparing export...
-              </>
-            ) : (
-              'Download export'
-            )}
-          </button>
+            {exportLoading ? 'Preparing export...' : 'Download export'}
+          </YucpButton>
         }
       >
         <p className="account-feature-copy">
@@ -180,9 +174,8 @@ function AccountPrivacy() {
             Discord roles granted by this system will be revoked, and the request will be processed
             within the GDPR deletion window. This action cannot be undone.
           </p>
-          <button
-            type="button"
-            className="account-btn account-btn--danger"
+          <YucpButton
+            yucp="danger"
             onClick={() => {
               setDeleteConfirm(true);
               setDeleteInput('');
@@ -190,7 +183,7 @@ function AccountPrivacy() {
             }}
           >
             Request account deletion
-          </button>
+          </YucpButton>
         </div>
       </AccountSectionCard>
 
@@ -212,29 +205,21 @@ function AccountPrivacy() {
           />
           {deleteError ? <p className="account-inline-error">{deleteError}</p> : null}
           <div className="account-modal-actions">
-            <button
-              type="button"
-              className="account-btn account-btn--secondary"
+            <YucpButton
+              yucp="secondary"
               onClick={() => setDeleteConfirm(false)}
-              disabled={deleteMut.isPending}
+              isDisabled={deleteMut.isPending}
             >
               Cancel
-            </button>
-            <button
-              type="button"
-              className={`account-btn account-btn--danger${deleteMut.isPending ? ' btn-loading' : ''}`}
+            </YucpButton>
+            <YucpButton
+              yucp="danger"
+              isLoading={deleteMut.isPending}
+              isDisabled={!canDelete || deleteMut.isPending}
               onClick={() => deleteMut.mutate()}
-              disabled={!canDelete || deleteMut.isPending}
             >
-              {deleteMut.isPending ? (
-                <>
-                  <span className="btn-loading-spinner" aria-hidden="true" />
-                  Submitting...
-                </>
-              ) : (
-                'Delete my account'
-              )}
-            </button>
+              {deleteMut.isPending ? 'Submitting...' : 'Delete my account'}
+            </YucpButton>
           </div>
         </AccountModal>
       ) : null}

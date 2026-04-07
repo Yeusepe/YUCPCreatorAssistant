@@ -12,6 +12,7 @@ import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons
 import { ProviderChip } from '@/components/ui/ProviderChip';
 import { type BadgeStatus, StatusChip } from '@/components/ui/StatusChip';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import {
   formatAccountDate,
   getAccountProviderIconPath,
@@ -108,13 +109,9 @@ function EntitlementRow({ entitlement }: Readonly<{ entitlement: UserLicenseEnti
           />
         )}
         {entitlement.status === 'active' && !confirming ? (
-          <button
-            type="button"
-            className="account-btn account-btn--danger"
-            onClick={() => setConfirming(true)}
-          >
+          <YucpButton yucp="danger" onClick={() => setConfirming(true)}>
             Deactivate
-          </button>
+          </YucpButton>
         ) : null}
         {confirming ? (
           <AccountModal title="Deactivate license?" onClose={() => setConfirming(false)}>
@@ -123,29 +120,21 @@ function EntitlementRow({ entitlement }: Readonly<{ entitlement: UserLicenseEnti
               Re-verification requires the full provider flow again.
             </p>
             <div className="account-modal-actions">
-              <button
-                type="button"
-                className="account-btn account-btn--secondary"
+              <YucpButton
+                yucp="secondary"
                 onClick={() => setConfirming(false)}
-                disabled={revokeMut.isPending}
+                isDisabled={revokeMut.isPending}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                className={`account-btn account-btn--danger${revokeMut.isPending ? ' btn-loading' : ''}`}
+              </YucpButton>
+              <YucpButton
+                yucp="danger"
+                isLoading={revokeMut.isPending}
+                isDisabled={revokeMut.isPending}
                 onClick={() => revokeMut.mutate()}
-                disabled={revokeMut.isPending}
               >
-                {revokeMut.isPending ? (
-                  <>
-                    <span className="btn-loading-spinner" aria-hidden="true" />
-                    Deactivating...
-                  </>
-                ) : (
-                  'Deactivate'
-                )}
-              </button>
+                {revokeMut.isPending ? 'Deactivating...' : 'Deactivate'}
+              </YucpButton>
             </div>
           </AccountModal>
         ) : null}
