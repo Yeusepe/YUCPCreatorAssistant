@@ -252,7 +252,7 @@ export function DangerZonePanel({ guildId }: DangerZonePanelProps) {
           isPending={uninstallMutation.isPending}
           isFinalStep={disconnectStep === 3}
           onAdvance={() => setDisconnectStep((current) => Math.min(3, current + 1))}
-          onBack={() => setDisconnectStep(0)}
+          onBack={() => setDisconnectStep((current) => Math.max(0, current - 1))}
           onConfirm={() => uninstallMutation.mutate()}
         />
       ) : null}

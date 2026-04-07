@@ -1,8 +1,12 @@
 @import "tailwindcss";
+@import "@heroui/styles";
+@import "./heroui-theme.css";
 
 /* Scan route and component files for Tailwind utility classes */
 @source "../routes";
 @source "../components";
+@source "../../node_modules/@heroui/react/dist";
+@source "../../node_modules/@heroui/styles/dist";
 
 /* ── Airbnb Cereal display font ── */
 @font-face {

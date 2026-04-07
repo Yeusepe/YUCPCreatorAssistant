@@ -31,7 +31,7 @@ function requireAuthUserId(authUserId: string | undefined) {
 
 type ProviderStatus = 'active' | 'degraded' | 'disconnected';
 
-function StoreRow({
+export function StoreRow({
   provider,
   account,
   authUserId,
@@ -48,7 +48,7 @@ function StoreRow({
   const label = provider.label ?? provider.key;
 
   const statusLabel =
-    status === 'active' ? 'Connected' : status === 'degraded' ? 'Needs attention' : 'Connected';
+    status === 'active' ? 'Connected' : status === 'degraded' ? 'Needs attention' : 'Not connected';
 
   return (
     <div className="store-row">
