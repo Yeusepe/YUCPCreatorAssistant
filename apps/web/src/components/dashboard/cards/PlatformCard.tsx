@@ -13,7 +13,6 @@ export interface PlatformCardProps {
   isAlwaysActive?: boolean;
 }
 
-
 export function PlatformCard({
   label,
   iconPath,
@@ -67,11 +66,7 @@ export function PlatformCard({
             {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
           </YucpButton>
         ) : (
-          <YucpButton
-            yucp="primary"
-            onPress={onConnect}
-            className="platform-row-btn"
-          >
+          <YucpButton yucp="primary" onPress={onConnect} className="platform-row-btn">
             Connect
           </YucpButton>
         )}

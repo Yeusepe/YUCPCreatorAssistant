@@ -20,20 +20,20 @@
   --accent-foreground: oklch(0.98 0 0);
 
   /* Success — mapped from --accent-green-dark #00e676 */
-  --success: oklch(0.75 0.20 155);
+  --success: oklch(0.75 0.2 155);
   --success-foreground: oklch(0.15 0.05 155);
 
   /* Warning — mapped from --accent-mustard #ffeb3b */
-  --warning: oklch(0.90 0.18 100);
-  --warning-foreground: oklch(0.20 0.05 100);
+  --warning: oklch(0.9 0.18 100);
+  --warning-foreground: oklch(0.2 0.05 100);
 
   /* Danger — mapped from --accent-red #c53030 */
-  --danger: oklch(0.52 0.20 25);
+  --danger: oklch(0.52 0.2 25);
   --danger-foreground: oklch(0.98 0 0);
 
   /* Default / Secondary */
   --default: oklch(0.92 0.01 220);
-  --default-foreground: oklch(0.30 0.02 240);
+  --default-foreground: oklch(0.3 0.02 240);
 
   /* Content tiers */
   --content1: oklch(0.98 0.005 220);
@@ -63,7 +63,7 @@
 .dark,
 [data-theme="dark"] {
   /* Backgrounds */
-  --background: oklch(0.20 0.04 240);
+  --background: oklch(0.2 0.04 240);
   --foreground: oklch(0.95 0.005 220);
 
   /* Surface */
@@ -79,7 +79,7 @@
   --accent-foreground: oklch(0.98 0 0);
 
   /* Success */
-  --success: oklch(0.72 0.20 155);
+  --success: oklch(0.72 0.2 155);
   --success-foreground: oklch(0.98 0 0);
 
   /* Warning */
@@ -87,18 +87,18 @@
   --warning-foreground: oklch(0.15 0.05 100);
 
   /* Danger */
-  --danger: oklch(0.60 0.20 25);
+  --danger: oklch(0.6 0.2 25);
   --danger-foreground: oklch(0.98 0 0);
 
   /* Default / Secondary */
-  --default: oklch(0.30 0.03 240);
+  --default: oklch(0.3 0.03 240);
   --default-foreground: oklch(0.85 0.01 220);
 
   /* Content tiers */
   --content1: oklch(0.28 0.04 240);
   --content2: oklch(0.32 0.04 240);
   --content3: oklch(0.36 0.04 240);
-  --content4: oklch(0.40 0.04 240);
+  --content4: oklch(0.4 0.04 240);
 
   /* Divider */
   --divider: oklch(0.35 0.03 240);
@@ -107,7 +107,7 @@
   --focus: oklch(0.68 0.17 225);
 
   /* Overlay */
-  --overlay: oklch(0.10 0.02 240);
+  --overlay: oklch(0.1 0.02 240);
 }
 
 /* Expose our brand tokens via Tailwind @theme inline

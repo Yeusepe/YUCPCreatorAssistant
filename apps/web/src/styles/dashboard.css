@@ -1262,6 +1262,14 @@ img.collab-avatar {
   animation: fadeInUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .animate-in {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
 .animate-in-delay-1 {
   animation-delay: 0.08s;
 }

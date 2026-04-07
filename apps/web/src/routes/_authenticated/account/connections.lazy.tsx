@@ -8,8 +8,8 @@ import {
   AccountSectionCard,
 } from '@/components/account/AccountPage';
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
-import { YucpButton } from '@/components/ui/YucpButton';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import {
   disconnectUserAccount,
   listUserAccounts,
@@ -213,10 +213,7 @@ function ProviderCard({
                         </YucpButton>
                       </div>
                     ) : (
-                      <YucpButton
-                        yucp="danger"
-                        onClick={() => setConfirmingId(connection.id)}
-                      >
+                      <YucpButton yucp="danger" onClick={() => setConfirmingId(connection.id)}>
                         Disconnect
                       </YucpButton>
                     )}

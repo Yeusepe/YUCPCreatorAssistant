@@ -100,7 +100,17 @@ export function AccountModal({
 
   useEffect(() => {
     dialogRef.current?.focus();
-  }, []);
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   return (
     <div className="account-modal-backdrop" role="presentation">

@@ -192,7 +192,7 @@
   color: var(--text-primary);
   border: 1px solid rgba(255, 255, 255, 0.18);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base);
   font-family: var(--font-display), sans-serif;
   margin-top: auto;
   align-self: flex-start;
@@ -219,6 +219,11 @@
   background: rgba(239, 68, 68, 0.15);
   border-color: rgba(239, 68, 68, 0.4);
   color: var(--accent-red);
+}
+
+.card-action-btn:focus-visible {
+  box-shadow: var(--focus-ring);
+  outline: none;
 }
 
 .dark .card-action-btn {
@@ -829,7 +834,7 @@
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base);
 }
 
 .intg-card .scope-toggle:hover .scope-toggle-card {
@@ -855,7 +860,7 @@
   align-items: center;
   justify-content: center;
   margin-top: 1px;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base);
 }
 
 .intg-card .scope-toggle input:checked + .scope-toggle-card .scope-toggle-check {
@@ -983,7 +988,7 @@
   border: 1px solid #e2e8f0;
   border-radius: 16px;
   margin-bottom: 8px;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base);
 }
 
 .collab-row:last-child {
@@ -1064,7 +1069,7 @@
   border-radius: 20px;
   margin-bottom: 16px;
   overflow: hidden;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base);
 }
 
 .oauth-app-card:last-child {
@@ -1538,7 +1543,7 @@
   border-radius: 16px;
   padding: 16px;
   margin-bottom: 12px;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base);
 }
 
 .api-key-row:last-child {
@@ -1783,7 +1788,7 @@
   border: 2px dashed rgba(255, 255, 255, 0.2);
   border-radius: 20px;
   margin-top: 12px;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base);
 }
 
 .empty-state:hover {
@@ -2794,6 +2799,11 @@
   pointer-events: none;
 }
 
+.platform-row-btn:focus-visible {
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
 .dark .platform-row {
   background: rgba(15, 23, 42, 0.45);
   border-color: rgba(255, 255, 255, 0.07);
@@ -3449,7 +3459,7 @@
   color: #fff;
   border: none;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
   font-family: var(--font-display), sans-serif;
 }
 
@@ -3473,7 +3483,7 @@
   color: #94a3b8;
   border: 1px solid rgba(0, 0, 0, 0.07);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
   font-family: var(--font-display), sans-serif;
 }
 

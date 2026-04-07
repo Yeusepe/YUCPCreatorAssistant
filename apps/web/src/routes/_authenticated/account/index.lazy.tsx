@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { listUserLicenses, listUserOAuthGrants } from '@/lib/account';
 import { authClient } from '@/lib/auth-client';
 import { listCreatorCertificates } from '@/lib/certificates';
-import { listUserAccounts, listUserProviders } from '@/lib/dashboard';
+import { listUserAccounts } from '@/lib/dashboard';
 
 function AccountProfilePending() {
   return (
@@ -34,10 +34,6 @@ function AccountProfile() {
     },
     staleTime: 60_000,
   });
-  const providersQuery = useQuery({
-    queryKey: ['user-providers'],
-    queryFn: listUserProviders,
-  });
   const accountsQuery = useQuery({
     queryKey: ['user-accounts'],
     queryFn: listUserAccounts,
@@ -46,7 +42,7 @@ function AccountProfile() {
     queryKey: ['user-licenses'],
     queryFn: listUserLicenses,
   });
-  const certificatesQuery = useQuery({
+  useQuery({
     queryKey: ['creator-certificates'],
     queryFn: listCreatorCertificates,
     enabled: isCreator,
@@ -67,9 +63,7 @@ function AccountProfile() {
   const activeLicenses = entitlements.filter(
     (entitlement) => entitlement.status === 'active'
   ).length;
-  const certificateWorkspace = certificatesQuery.data;
   const authorizedApps = grantsQuery.data;
-  const availableProviders = providersQuery.data;
   const connectedLabels = accounts
     .map((connection, index) => {
       const label = connection.label || connection.provider;
@@ -175,21 +169,6 @@ function AccountProfile() {
             <span className="account-kv-label">Active licenses</span>
             <span className="account-kv-value">
               {renderMetricValue(licensesQuery, activeLicenses)}
-            </span>
-          </div>
-          <div className="account-kv-row">
-            <span className="account-kv-label">Signing devices</span>
-            <span className="account-kv-value">
-              {renderMetricValue(
-                certificatesQuery,
-                certificateWorkspace?.billing.activeDeviceCount ?? 0
-              )}
-            </span>
-          </div>
-          <div className="account-kv-row">
-            <span className="account-kv-label">Available providers</span>
-            <span className="account-kv-value">
-              {renderMetricValue(providersQuery, availableProviders?.length ?? 0)}
             </span>
           </div>
         </div>

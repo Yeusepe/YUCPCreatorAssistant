@@ -43,9 +43,6 @@ describe('OnboardingProgressPanel — HeroUI ProgressBar', () => {
 
   it('carries an accessible label with step counts', () => {
     render(<OnboardingProgressPanel steps={makeSteps(4, 1)} />);
-    expect(screen.getByRole('progressbar')).toHaveAttribute(
-      'aria-label',
-      '1 of 4 steps complete'
-    );
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-label', '1 of 4 steps complete');
   });
 });

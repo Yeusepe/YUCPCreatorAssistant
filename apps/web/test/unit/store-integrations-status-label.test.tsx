@@ -40,8 +40,8 @@ vi.mock('@/lib/dashboard', () => ({
   ),
 }));
 
-import type { UserAccountConnection } from '@/lib/dashboard';
 import { StoreRow } from '@/components/dashboard/panels/StoreIntegrationsPanel';
+import type { UserAccountConnection } from '@/lib/dashboard';
 
 function makeAccount(status: string): UserAccountConnection {
   return {

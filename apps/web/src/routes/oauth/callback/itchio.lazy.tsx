@@ -152,9 +152,7 @@ function ItchioSetupPage() {
       if (!cancelled) {
         setPhase('error');
         setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : 'Could not finish itch.io callback.'
+          caughtError instanceof Error ? caughtError.message : 'Could not finish itch.io callback.'
         );
       }
     });
