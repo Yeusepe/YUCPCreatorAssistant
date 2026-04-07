@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/api/client';
 import { AccountModal, AccountPage, AccountSectionCard } from '@/components/account/AccountPage';
 import { useToast } from '@/components/ui/Toast';
+import { YucpInput } from '@/components/ui/YucpInput';
 import { downloadUserDataExport } from '@/lib/account';
 
 export const Route = createLazyFileRoute('/_authenticated/account/privacy')({
@@ -199,14 +200,15 @@ function AccountPrivacy() {
             This revokes licenses, removes Discord roles, and schedules your data for deletion. Type{' '}
             <strong>DELETE</strong> to confirm.
           </p>
-          <input
-            ref={deleteInputRef}
+          <YucpInput
+            inputRef={deleteInputRef}
             type="text"
-            className="account-modal-input"
+            mono
             placeholder="DELETE"
             value={deleteInput}
-            onChange={(event) => setDeleteInput(event.target.value)}
-            disabled={deleteMut.isPending}
+            onValueChange={setDeleteInput}
+            isDisabled={deleteMut.isPending}
+            aria-label="Type DELETE to confirm account deletion"
           />
           {deleteError ? <p className="account-inline-error">{deleteError}</p> : null}
           <div className="account-modal-actions">

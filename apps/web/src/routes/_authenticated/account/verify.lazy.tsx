@@ -8,6 +8,7 @@ import {
 } from '@/components/account/AccountPage';
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { useToast } from '@/components/ui/Toast';
+import { YucpInput } from '@/components/ui/YucpInput';
 import {
   formatAccountDateTime,
   getUserVerificationIntent,
@@ -236,11 +237,11 @@ function MethodCard({
           </>
         ) : (
           <>
-            <input
+            <YucpInput
               type={inputConfig?.masked === false ? 'text' : 'password'}
-              className="account-modal-input"
+              mono
               value={licenseKey}
-              onChange={(event) => setLicenseKey(event.target.value)}
+              onValueChange={setLicenseKey}
               placeholder={inputConfig?.placeholder ?? 'Enter your license key'}
               aria-label={inputConfig?.label ?? 'License Key'}
               autoComplete="off"

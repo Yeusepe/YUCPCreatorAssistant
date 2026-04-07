@@ -115,14 +115,15 @@ export function AccountModal({
   // Focus trap: keep keyboard focus within the dialog while open
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (!dialog) return;
+    if (dialog == null) return;
+    const safeDialog: HTMLElement = dialog;
 
     const FOCUSABLE =
       'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
     function handleTab(e: KeyboardEvent) {
       if (e.key !== 'Tab') return;
-      const focusable = Array.from(dialog?.querySelectorAll<HTMLElement>(FOCUSABLE));
+      const focusable = Array.from(safeDialog.querySelectorAll<HTMLElement>(FOCUSABLE));
       if (focusable.length === 0) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -135,8 +136,8 @@ export function AccountModal({
       }
     }
 
-    dialog.addEventListener('keydown', handleTab);
-    return () => dialog.removeEventListener('keydown', handleTab);
+    safeDialog.addEventListener('keydown', handleTab);
+    return () => safeDialog.removeEventListener('keydown', handleTab);
   }, []);
 
   return (
