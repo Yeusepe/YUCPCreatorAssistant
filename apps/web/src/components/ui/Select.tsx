@@ -108,15 +108,22 @@ export function Select({ id, value, options, onChange, disabled, className }: Se
         {options.map((opt) => {
           const isSelected = opt.value === value;
           return (
-            <button
+            <div
               key={opt.value}
-              type="button"
               role="option"
+              tabIndex={-1}
               aria-selected={isSelected}
               className={`ui-select-option${isSelected ? ' selected' : ''}`}
               onClick={() => {
                 onChange(opt.value);
                 close();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onChange(opt.value);
+                  close();
+                }
               }}
             >
               <span className="ui-select-option-indicator" aria-hidden="true">
@@ -139,7 +146,7 @@ export function Select({ id, value, options, onChange, disabled, className }: Se
                 )}
               </span>
               {opt.label}
-            </button>
+            </div>
           );
         })}
       </div>
