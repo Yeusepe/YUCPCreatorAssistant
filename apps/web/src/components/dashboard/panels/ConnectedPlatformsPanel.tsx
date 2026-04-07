@@ -29,6 +29,7 @@ export function ConnectedPlatformsPanel({ onCountsChange }: ConnectedPlatformsPa
   const queryClient = useQueryClient();
 
   const [pendingDisconnect, setPendingDisconnect] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const providersQuery = useQuery(
     dashboardPanelQueryOptions<DashboardProvider[]>({
@@ -81,6 +82,18 @@ export function ConnectedPlatformsPanel({ onCountsChange }: ConnectedPlatformsPa
     () => providers.filter((p) => p.key !== 'discord' && p.connectPath),
     [providers]
   );
+
+  const connectedProviders = useMemo(
+    () => platformProviders.filter((p) => accountsByProvider.has(p.key)),
+    [platformProviders, accountsByProvider]
+  );
+
+  const unconnectedProviders = useMemo(
+    () => platformProviders.filter((p) => !accountsByProvider.has(p.key)),
+    [platformProviders, accountsByProvider]
+  );
+
+  const visibleProviders = showAll ? platformProviders : connectedProviders;
 
   const connectedCount = useMemo(
     () => 1 + platformProviders.filter((p) => accountsByProvider.has(p.key)).length,
@@ -182,7 +195,7 @@ export function ConnectedPlatformsPanel({ onCountsChange }: ConnectedPlatformsPa
           />
 
           {/* Dynamic providers */}
-          {platformProviders.map((provider) => {
+          {visibleProviders.map((provider) => {
             const account = accountsByProvider.get(provider.key);
             const isConnected = Boolean(account);
             const isThisDisconnecting =
@@ -248,6 +261,18 @@ export function ConnectedPlatformsPanel({ onCountsChange }: ConnectedPlatformsPa
               </div>
             );
           })}
+
+          {!showAll && unconnectedProviders.length > 0 && (
+            <button className="btn-show-more" type="button" onClick={() => setShowAll(true)}>
+              Show {unconnectedProviders.length} more
+            </button>
+          )}
+
+          {showAll && unconnectedProviders.length > 0 && (
+            <button className="btn-show-more" type="button" onClick={() => setShowAll(false)}>
+              Show less
+            </button>
+          )}
         </div>
       </DashboardSkeletonSwap>
     </section>

@@ -1,5 +1,6 @@
 import { useQuery as useConvexQuery } from 'convex/react';
 import { ActivityItem } from '@/components/dashboard/cards/ActivityItem';
+import { SkeletonCircle, SkeletonLine } from '@/components/ui/YucpSkeleton';
 import { api } from '../../../../../../convex/_generated/api';
 
 interface ActivityEvent {
@@ -40,35 +41,10 @@ function describeEvent(event: ActivityEvent): string {
 function ActivitySkeleton() {
   return (
     <div className="flex items-start gap-3 py-3" aria-hidden="true">
-      <div
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: '50%',
-          background: '#f1f5f9',
-          flexShrink: 0,
-          animation: 'pulse 1.4s ease-in-out infinite',
-        }}
-      />
+      <SkeletonCircle size="24px" />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div
-          style={{
-            height: 14,
-            width: 180,
-            borderRadius: 4,
-            background: '#f1f5f9',
-            animation: 'pulse 1.4s ease-in-out infinite',
-          }}
-        />
-        <div
-          style={{
-            height: 11,
-            width: 60,
-            borderRadius: 4,
-            background: '#f8fafc',
-            animation: 'pulse 1.4s ease-in-out infinite',
-          }}
-        />
+        <SkeletonLine width="180px" style={{ height: '14px' }} />
+        <SkeletonLine width="60px" style={{ height: '11px' }} />
       </div>
     </div>
   );

@@ -111,12 +111,7 @@ describe('StoreRow status label', () => {
 
   it('shows "Not connected" when no account exists (undefined), not "Connected"', () => {
     render(
-      <StoreRow
-        provider={provider}
-        account={undefined}
-        authUserId="user-1"
-        guildId="guild-1"
-      />,
+      <StoreRow provider={provider} account={undefined} authUserId="user-1" guildId="guild-1" />,
       { wrapper: createWrapper() }
     );
     expect(screen.getByText('Not connected')).toBeInTheDocument();

@@ -1874,6 +1874,9 @@
   font-size: 11px;
   color: #94a3b8;
 }
+.dark .forensics-dropzone-hint {
+  color: rgba(148, 163, 184, 0.65);
+}
 
 /* Selected state */
 .forensics-dropzone--selected {
@@ -2250,6 +2253,9 @@
   margin-top: 2px;
   color: #10b981;
 }
+.dark .suite-plan-feature-icon {
+  color: #34d399;
+}
 
 .suite-plan-feature-text {
   flex: 1;
@@ -2264,6 +2270,10 @@
   border-radius: 999px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+.dark .suite-plan-current-badge {
+  background: #38bdf8;
+  color: #0c4a6e;
 }
 
 /* ============================================================================
@@ -2692,6 +2702,10 @@
   background: rgba(148, 163, 184, 0.1);
   border: 1px solid rgba(148, 163, 184, 0.14);
 }
+.dark .billing-feature-icon-wrap {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+}
 
 .billing-feature-title {
   margin: 0 0 3px;
@@ -2979,6 +2993,10 @@
   justify-content: center;
   color: #94a3b8;
   margin-bottom: 14px;
+}
+.dark .billing-empty-icon {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(148, 163, 184, 0.72);
 }
 
 .billing-empty-title {

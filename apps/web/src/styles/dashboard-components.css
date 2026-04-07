@@ -3607,3 +3607,29 @@
   flex-shrink: 0;
   opacity: 0.7;
 }
+
+.btn-show-more {
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.7);
+  cursor: pointer;
+  transition: background var(--transition-base);
+}
+
+.btn-show-more:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.dark .btn-show-more {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.dark .btn-show-more:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
