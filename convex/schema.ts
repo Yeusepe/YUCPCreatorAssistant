@@ -1259,6 +1259,10 @@ const external_accounts = defineTable({
       rawDataEncrypted: v.optional(v.string()),
     })
   ),
+  // Generic encrypted OAuth credentials for linked buyer accounts
+  oauthAccessTokenEncrypted: v.optional(v.string()),
+  oauthRefreshTokenEncrypted: v.optional(v.string()),
+  oauthTokenExpiresAt: v.optional(v.number()),
   // Encrypted Discord OAuth2 access token (for proactive guild member checks)
   discordAccessTokenEncrypted: v.optional(v.string()),
   // Token expiry timestamp (Discord tokens expire after ~7 days)

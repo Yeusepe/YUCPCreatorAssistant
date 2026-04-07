@@ -72,6 +72,8 @@ interface ProductSession {
   discordRoleSetupToken?: string;
   /** provider key -> (product id -> display name) for catalog-selected products */
   productNames?: Record<string, Record<string, string>>;
+  /** provider key -> (product id -> provider-supplied canonical product URL) */
+  productUrls?: Record<string, Record<string, string>>;
   /** provider key -> (product id -> source/collaborator name) */
   productSources?: Record<string, Record<string, string>>;
   removeProductIds?: string[];
@@ -177,6 +179,18 @@ async function enrichDiscordRoleNames<
 
 function getSessionKey(userId: string, authUserId: string, guildId: string): string {
   return `${userId}:${authUserId}:${guildId}`;
+}
+
+function resolveCatalogProductUrl(
+  session: ProductSession,
+  provider: string,
+  productId: string
+): string | null {
+  const providerProductUrl = session.productUrls?.[provider]?.[productId]?.trim();
+  if (providerProductUrl) {
+    return providerProductUrl;
+  }
+  return buildCatalogProductUrl(provider, productId);
 }
 
 function cleanExpiredSessions(): void {
@@ -454,8 +468,12 @@ export async function handleProductTypeSelect(
         return;
       }
 
-      const products: Array<{ collaboratorName?: string; id: string; name: string }> =
-        data.products ?? [];
+      const products: Array<{
+        collaboratorName?: string;
+        id: string;
+        name: string;
+        productUrl?: string;
+      }> = data.products ?? [];
       if (products.length === 0) {
         await interaction.editReply({
           content: `${E.X_} No ${label} products found. Add products in your ${label} store first, then try again.`,
@@ -476,6 +494,12 @@ export async function handleProductTypeSelect(
         ...session.productNames,
         [selectedType]: Object.fromEntries(products.map((p) => [p.id, p.name])),
       };
+      const productUrls = Object.fromEntries(
+        products.flatMap((p) => (p.productUrl ? [[p.id, p.productUrl]] : []))
+      );
+      if (Object.keys(productUrls).length > 0) {
+        session.productUrls = { ...session.productUrls, [selectedType]: productUrls };
+      }
       const sourcesMap: Record<string, string> = Object.fromEntries(
         products.flatMap((p) => (p.collaboratorName ? [[p.id, p.collaboratorName]] : []))
       );
@@ -1209,8 +1233,8 @@ export async function handleProductConfirmAdd(
           ? `${productName} (via ${collabSource})`
           : productName
         : undefined;
-      const canonicalUrl = buildCatalogProductUrl(type, productIdFromApi);
-      if (!canonicalUrl) throw new Error(`No URL template configured for provider: ${type}`);
+      const canonicalUrl = resolveCatalogProductUrl(session, type, productIdFromApi);
+      if (!canonicalUrl) throw new Error(`No product URL available for provider: ${type}`);
       const result = await convex.mutation(api.role_rules.addCatalogProduct, {
         apiSecret,
         authUserId,

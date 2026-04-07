@@ -126,12 +126,15 @@ export async function getDiscordRoleSetupResult(token: string): Promise<
 }
 
 function normalizeProducts(
-  products: Array<{ collaboratorName?: string; id?: string; name?: string }> | undefined
-): Array<{ collaboratorName?: string; id: string; name: string }> {
+  products:
+    | Array<{ collaboratorName?: string; id?: string; name?: string; productUrl?: string }>
+    | undefined
+): Array<{ collaboratorName?: string; id: string; name: string; productUrl?: string }> {
   return (products ?? []).map((product) => ({
     id: product.id ?? '',
     name: product.name ?? product.id ?? 'Unknown product',
     collaboratorName: product.collaboratorName,
+    productUrl: product.productUrl,
   }));
 }
 
@@ -141,7 +144,7 @@ export async function listProviderProducts(
   authUserId: string
 ): Promise<{
   error?: string;
-  products: Array<{ collaboratorName?: string; id: string; name: string }>;
+  products: Array<{ collaboratorName?: string; id: string; name: string; productUrl?: string }>;
 }> {
   const response = await (await getClients()).catalog.listProviderProducts({
     provider,

@@ -52,6 +52,10 @@ async function bootstrapSetupSession(apiBase: string): Promise<boolean> {
 
 type Phase = 'redirecting' | 'processing' | 'error';
 
+function isCreatorSetupCallback(state: string | null, tenantId: string, guildId: string) {
+  return state?.startsWith('connect_itchio:') === true || Boolean(tenantId || guildId);
+}
+
 function ItchioSetupPage() {
   const { tenantId, guildId, apiBase } = getUrlParams();
   const [phase, setPhase] = useState<Phase>('redirecting');
@@ -85,6 +89,7 @@ function ItchioSetupPage() {
       const state = hash.get('state');
       const oauthError = hash.get('error');
       const oauthErrorDescription = hash.get('error_description');
+      const creatorSetupCallback = isCreatorSetupCallback(state, tenantId, guildId);
 
       if (oauthError) {
         window.history.replaceState({}, '', window.location.pathname + window.location.search);
@@ -96,8 +101,13 @@ function ItchioSetupPage() {
       }
 
       if (!accessToken || !state) {
-        setPhase('redirecting');
-        window.location.replace(beginUrl);
+        if (creatorSetupCallback) {
+          setPhase('redirecting');
+          window.location.replace(beginUrl);
+          return;
+        }
+        setPhase('error');
+        setError('Missing itch.io authorization response.');
         return;
       }
 
@@ -105,7 +115,10 @@ function ItchioSetupPage() {
       setError(null);
       window.history.replaceState({}, '', window.location.pathname + window.location.search);
 
-      const response = await fetch(`${apiBase}/api/connect/itchio/finish`, {
+      const finishPath = creatorSetupCallback
+        ? '/api/connect/itchio/finish'
+        : '/api/verification/finish/itchio';
+      const response = await fetch(`${apiBase}${finishPath}`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -121,7 +134,12 @@ function ItchioSetupPage() {
       if (!response.ok || !data.success || !data.redirectUrl) {
         if (!cancelled) {
           setPhase('error');
-          setError(data.error ?? 'Could not finish itch.io setup.');
+          setError(
+            data.error ??
+              (creatorSetupCallback
+                ? 'Could not finish itch.io setup.'
+                : 'Could not finish itch.io verification.')
+          );
         }
         return;
       }
@@ -134,7 +152,9 @@ function ItchioSetupPage() {
       if (!cancelled) {
         setPhase('error');
         setError(
-          caughtError instanceof Error ? caughtError.message : 'Could not finish itch.io setup.'
+          caughtError instanceof Error
+            ? caughtError.message
+            : 'Could not finish itch.io callback.'
         );
       }
     });

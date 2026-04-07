@@ -27,7 +27,7 @@ import { generateSecureRandom } from '../types';
 const CREDENTIAL_PURPOSE = ITCHIO_PURPOSES.credential;
 const ITCHIO_STATE_PREFIX = 'connect_itchio:';
 const ITCHIO_STATE_EXPIRY_MS = 10 * 60 * 1000;
-const REQUIRED_ITCHIO_SCOPES = ['profile:me', 'profile:games', 'game:view:purchases'] as const;
+const REQUIRED_ITCHIO_SCOPES = ['profile:me', 'profile:games'] as const;
 
 function buildDashboardRedirect(
   frontendBaseUrl: string,
@@ -202,21 +202,6 @@ async function itchioFinish(request: Request, ctx: ConnectContext): Promise<Resp
       capabilities: [
         {
           capabilityKey: 'catalog_sync',
-          status: 'active',
-          requiredCredentialKeys: ['oauth_access_token'],
-        },
-        {
-          capabilityKey: 'license_verification',
-          status: 'active',
-          requiredCredentialKeys: ['oauth_access_token'],
-        },
-        {
-          capabilityKey: 'orders',
-          status: 'active',
-          requiredCredentialKeys: ['oauth_access_token'],
-        },
-        {
-          capabilityKey: 'reconciliation',
           status: 'active',
           requiredCredentialKeys: ['oauth_access_token'],
         },

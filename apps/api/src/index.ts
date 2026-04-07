@@ -219,6 +219,9 @@ function initializeAuth(webhookBaseUrl?: string) {
     jinxxyClientId: env.JINXXY_API_KEY,
     jinxxyClientSecret: env.JINXXY_SECRET_KEY,
     encryptionSecret,
+    providerClientIds: {
+      itchio: env.ITCHIO_CLIENT_ID ?? '',
+    },
   };
   verificationHandlers = createVerificationRoutes(verificationConfig);
   verificationRoutes = mountVerificationRouteHandlers(verificationHandlers);
@@ -852,21 +855,6 @@ async function routeRequest(request: Request): Promise<Response> {
   }
   if (pathname === '/api/connect/user/gdpr-delete' && connectRoutes) {
     return connectRoutes.requestUserAccountDeletion(request);
-  }
-  // Pre-intercept: Gumroad callback is dual-purpose — may be a verification flow, not a connect flow
-  if (pathname === '/api/connect/gumroad/callback') {
-    const url = new URL(request.url);
-    const state = url.searchParams.get('state');
-    if (state?.startsWith('verify_gumroad:')) {
-      const handler = verificationRoutes?.get('/api/verification/callback/gumroad');
-      if (handler) {
-        // Rewrite the URL so handleVerificationCallback extracts the correct mode 'gumroad'
-        const verifyUrl = new URL(request.url);
-        verifyUrl.pathname = '/api/verification/callback/gumroad';
-        const verifyRequest = new Request(verifyUrl.toString(), request);
-        return handler(verifyRequest);
-      }
-    }
   }
   // Dispatch to provider connect plugins (gumroad, jinxxy, lemonsqueezy, payhip, ...)
   // Adding a new provider: add it to apps/api/src/providers/connect/index.ts only

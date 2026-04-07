@@ -9,7 +9,12 @@ import type {
 // Mock internalRpc BEFORE importing the command (bun:test hoists mock.module)
 const mockListProducts = mock(() =>
   Promise.resolve({
-    products: [] as Array<{ id: string; name: string; collaboratorName?: string }>,
+    products: [] as Array<{
+      id: string;
+      name: string;
+      collaboratorName?: string;
+      productUrl?: string;
+    }>,
   })
 );
 const mockCreateDiscordRoleSetupSessionToken = mock(() =>
@@ -103,6 +108,7 @@ mock.module('@yucp/providers', () => ({
 import {
   handleProductAddInteractive,
   handleProductCancelAdd,
+  handleProductCatalogSelect,
   handleProductConfirmAdd,
   handleProductDiscordRoleDone,
   handleProductList,
@@ -1028,5 +1034,114 @@ describe('handleProductConfirmAdd — Payhip displayName', () => {
     expect(addProductArgs?.provider).toBe('payhip');
     expect(addProductArgs?.productId).toBe('KZFw0');
     expect(addProductArgs?.displayName).toBe('This is a test');
+  });
+});
+
+describe('handleProductConfirmAdd — catalog product URLs', () => {
+  it('uses the provider-supplied product URL when the descriptor has no URL template', async () => {
+    const userId = 'user_itch_catalog';
+    const authUserId = 'auth_itch_catalog';
+    const guildId = 'guild_itch_catalog';
+
+    mockListProducts.mockImplementation(() =>
+      Promise.resolve({
+        products: [
+          {
+            id: '11',
+            name: 'Game One',
+            productUrl: 'https://creator.itch.io/game-one',
+          },
+        ],
+      })
+    );
+
+    const slashInteraction = mockSlashCommand({
+      userId,
+      guildId,
+      commandName: 'creator-admin',
+      subcommandGroup: 'product',
+      subcommand: 'add',
+      isAdmin: true,
+    });
+    await handleProductAddInteractive(
+      slashInteraction as unknown as ChatInputCommandInteraction,
+      {
+        authUserId,
+        guildLinkId: 'link_itch_catalog' as ProductCtx['guildLinkId'],
+        guildId,
+      },
+      makeMockConvex({ itchio: true }),
+      TEST_API_SECRET
+    );
+
+    const typeSelectInteraction = mockStringSelect({
+      userId,
+      guildId,
+      customId: `creator_product:type_select:${authUserId}`,
+      values: ['itchio'],
+    });
+    typeSelectInteraction.deferUpdate = mock(() => Promise.resolve(undefined)) as unknown as MockFn;
+    await handleProductTypeSelect(
+      typeSelectInteraction as unknown as StringSelectMenuInteraction,
+      authUserId,
+      TYPE_SELECT_CONVEX,
+      TEST_API_SECRET
+    );
+
+    const catalogSelectInteraction = mockStringSelect({
+      userId,
+      guildId,
+      customId: `creator_product:catalog_select:itchio:${userId}:${authUserId}`,
+      values: ['11'],
+    });
+    await handleProductCatalogSelect(
+      catalogSelectInteraction as unknown as StringSelectMenuInteraction,
+      'itchio',
+      userId,
+      authUserId
+    );
+
+    const roleSelectInteraction = {
+      user: { id: userId },
+      guildId,
+      guild: null,
+      values: ['role_itch_catalog'],
+      editReply: mock(() => Promise.resolve({ id: 'mock_msg_id' })),
+    } as unknown as RoleSelectMenuInteraction;
+    await handleProductRoleSelect(roleSelectInteraction, userId, authUserId);
+
+    let callCount = 0;
+    const mutationArgs: unknown[][] = [];
+    const mockConvex = {
+      mutation: mock((...args: unknown[]) => {
+        mutationArgs.push(args);
+        callCount += 1;
+        if (callCount === 1) {
+          return Promise.resolve({ productId: '11', catalogProductId: 'cat_itch_catalog' });
+        }
+        return Promise.resolve({ ruleId: 'rule_itch_catalog' });
+      }),
+      query: mock(() => Promise.resolve(undefined)),
+      action: mock(() => Promise.resolve(undefined)),
+    } as unknown as import('convex/browser').ConvexHttpClient;
+
+    const confirmInteraction = mockButton({
+      userId,
+      guildId,
+      customId: `creator_product:confirm_add:${userId}:${authUserId}`,
+    });
+    await handleProductConfirmAdd(
+      confirmInteraction as unknown as ButtonInteraction,
+      mockConvex,
+      TEST_API_SECRET,
+      userId,
+      authUserId
+    );
+
+    expect(mutationArgs.length).toBeGreaterThanOrEqual(1);
+    const addProductArgs = mutationArgs[0]?.[1] as Record<string, unknown>;
+    expect(addProductArgs?.provider).toBe('itchio');
+    expect(addProductArgs?.productId).toBe('11');
+    expect(addProductArgs?.canonicalUrl).toBe('https://creator.itch.io/game-one');
   });
 });

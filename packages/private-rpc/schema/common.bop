@@ -15,6 +15,7 @@ message ProductRecord {
   1 -> string id;
   2 -> string name;
   3 -> string collaboratorName;
+  4 -> string productUrl;
 }
 
 message ProductsResponse {

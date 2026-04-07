@@ -652,6 +652,59 @@ export const storeDiscordToken = mutation({
     return { success: true };
   },
 });
+
+export const storeExternalAccountOAuthCredentials = internalMutation({
+  args: {
+    apiSecret: v.string(),
+    externalAccountId: v.id('external_accounts'),
+    oauthAccessTokenEncrypted: v.string(),
+    oauthRefreshTokenEncrypted: v.optional(v.string()),
+    oauthTokenExpiresAt: v.optional(v.number()),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const account = await ctx.db.get(args.externalAccountId);
+    if (!account) {
+      throw new Error(`External account not found: ${args.externalAccountId}`);
+    }
+
+    await ctx.db.patch(args.externalAccountId, {
+      oauthAccessTokenEncrypted: args.oauthAccessTokenEncrypted,
+      oauthRefreshTokenEncrypted: args.oauthRefreshTokenEncrypted,
+      oauthTokenExpiresAt: args.oauthTokenExpiresAt,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+export const getExternalAccountOAuthCredentials = internalQuery({
+  args: {
+    externalAccountId: v.id('external_accounts'),
+  },
+  returns: v.union(
+    v.object({
+      oauthAccessTokenEncrypted: v.optional(v.string()),
+      oauthRefreshTokenEncrypted: v.optional(v.string()),
+      oauthTokenExpiresAt: v.optional(v.number()),
+    }),
+    v.null()
+  ),
+  handler: async (ctx, args) => {
+    const account = await ctx.db.get(args.externalAccountId);
+    if (!account) {
+      return null;
+    }
+
+    return {
+      oauthAccessTokenEncrypted: account.oauthAccessTokenEncrypted,
+      oauthRefreshTokenEncrypted: account.oauthRefreshTokenEncrypted,
+      oauthTokenExpiresAt: account.oauthTokenExpiresAt,
+    };
+  },
+});
 /**
  * Update subject status.
  * Used for account suspension, quarantine, or deletion.

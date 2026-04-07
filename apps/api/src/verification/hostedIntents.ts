@@ -10,6 +10,7 @@ import { api, internal } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import type { ConvexServerClient } from '../lib/convex';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
+import { getProviderHooks } from '../providers';
 import { getProviderRuntime } from '../providers';
 import { getVerificationConfig } from './verificationConfig';
 
@@ -168,10 +169,36 @@ export async function verifyHostedManualLicenseIntent(input: {
 export async function verifyHostedBuyerProviderLinkIntent(input: {
   convex: ConvexServerClient;
   apiSecret: string;
+  encryptionSecret: string;
   authUserId: string;
   intentId: Id<'verification_intents'>;
   methodKey: string;
 }): Promise<{ success: boolean; errorCode?: string; errorMessage?: string }> {
+  const intent = (await input.convex.query(api.verificationIntents.getIntentRecord, {
+    apiSecret: input.apiSecret,
+    authUserId: input.authUserId,
+    intentId: input.intentId,
+  })) as HostedVerificationIntentRecord | null;
+
+  const requirement = intent?.requirements.find(
+    (entry) => entry.methodKey === input.methodKey && entry.kind === 'buyer_provider_link'
+  );
+  const hook = requirement ? getProviderHooks(requirement.providerKey)?.buyerLink : undefined;
+  if (hook?.verifyHostedIntent) {
+    return await hook.verifyHostedIntent(
+      {
+        authUserId: input.authUserId,
+        intentId: input.intentId,
+        methodKey: input.methodKey,
+      },
+      {
+        convex: input.convex,
+        apiSecret: input.apiSecret,
+        encryptionSecret: input.encryptionSecret,
+      }
+    );
+  }
+
   return input.convex.action(api.verificationIntents.verifyIntentWithBuyerProviderLink, {
     apiSecret: input.apiSecret,
     authUserId: input.authUserId,

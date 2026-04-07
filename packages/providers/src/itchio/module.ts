@@ -11,6 +11,7 @@ import {
 
 export const ITCHIO_PURPOSES = {
   credential: 'itchio-oauth-access-token',
+  buyerCredential: 'itchio-oauth-buyer-access-token',
 } as const satisfies ProviderPurposes;
 
 export const ITCHIO_DISPLAY_META = {
@@ -31,6 +32,7 @@ export const ITCHIO_DISPLAY_META = {
 } as const;
 
 const ITCHIO_SERVER_API_BASE = 'https://itch.io/api/1/key';
+const ITCHIO_OAUTH_API_BASE = 'https://api.itch.io';
 
 type ItchioRuntimeLogger = Pick<StructuredLogger, 'warn'>;
 type ItchioFetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -47,6 +49,14 @@ export interface ItchioCurrentUser {
   profileUrl?: string;
 }
 
+export interface ItchioOwnedKeyRecord {
+  ownedKeyId: string;
+  gameId: string;
+  purchaseId?: string;
+  gameTitle?: string;
+  gameUrl?: string;
+}
+
 export interface ItchioRuntimePorts<TClient extends ProviderRuntimeClient = ProviderRuntimeClient> {
   readonly logger: ItchioRuntimeLogger;
   getEncryptedCredential(authUserId: string, ctx: ProviderContext<TClient>): Promise<string | null>;
@@ -58,6 +68,13 @@ export type ItchioProviderRuntime<TClient extends ProviderRuntimeClient = Provid
   Omit<ProviderRuntimeModule<never, TClient>, 'backfill' | 'buyerVerification'> & {
     readonly buyerVerification?: undefined;
   };
+
+type ItchioGameRecord = {
+  id?: number;
+  title?: string;
+  url?: string;
+  published?: boolean;
+};
 
 function getFetch(ports: Pick<ItchioRuntimePorts, 'fetchImpl'>): ItchioFetchLike {
   return ports.fetchImpl ?? fetch;
@@ -73,6 +90,18 @@ function buildItchioApiUrl(path: string, searchParams?: Record<string, string>):
 
 function extractItchioError(data: { errors?: string[] }, status: number): string {
   return data.errors?.[0] ?? `itch.io API error: HTTP ${status}`;
+}
+
+function normalizeItchioGames(games: unknown): ItchioGameRecord[] {
+  if (Array.isArray(games)) {
+    return games;
+  }
+  if (games && typeof games === 'object') {
+    return Object.values(games).filter((game): game is ItchioGameRecord =>
+      Boolean(game && typeof game === 'object')
+    );
+  }
+  return [];
 }
 
 async function readItchioJson<T extends { errors?: string[] }>(
@@ -154,6 +183,64 @@ export async function fetchItchioCurrentUser(
   };
 }
 
+export async function fetchItchioOwnedKeys(
+  accessToken: string,
+  ports: Pick<ItchioRuntimePorts, 'fetchImpl'> = {}
+): Promise<ItchioOwnedKeyRecord[]> {
+  const ownedKeys: ItchioOwnedKeyRecord[] = [];
+
+  for (let page = 1; page <= 100; page += 1) {
+    // itch.io OAuth docs:
+    // https://itch.io/docs/api/oauth
+    // Community pagination/reference shape:
+    // https://github.com/ericlewis/playdate-itchio-sync/blob/main/src/itchio.ts
+    const url = new URL(`${ITCHIO_OAUTH_API_BASE}/profile/owned-keys`);
+    url.searchParams.set('page', String(page));
+
+    const response = await getFetch(ports)(url.toString(), {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    const data = await readItchioJson<{
+      errors?: string[];
+      owned_keys?: Array<{
+        id?: number;
+        game_id?: number;
+        purchase_id?: number;
+        game?: {
+          id?: number;
+          title?: string;
+          url?: string;
+        };
+      }>;
+    }>(response, { treatUnauthorizedAsExpired: true });
+
+    const pageRecords = (data.owned_keys ?? [])
+      .filter(
+        (ownedKey): ownedKey is NonNullable<typeof ownedKey> & { id: number; game_id: number } =>
+          ownedKey?.id != null && ownedKey.game_id != null
+      )
+      .map((ownedKey) => ({
+        ownedKeyId: String(ownedKey.id),
+        gameId: String(ownedKey.game_id),
+        purchaseId: ownedKey.purchase_id != null ? String(ownedKey.purchase_id) : undefined,
+        gameTitle: ownedKey.game?.title,
+        gameUrl: ownedKey.game?.url,
+      }));
+
+    if (pageRecords.length === 0) {
+      break;
+    }
+
+    ownedKeys.push(...pageRecords);
+  }
+
+  return ownedKeys;
+}
+
 async function listItchioGames(
   accessToken: string,
   ports: Pick<ItchioRuntimePorts, 'fetchImpl'>
@@ -169,15 +256,10 @@ async function listItchioGames(
 
   const data = await readItchioJson<{
     errors?: string[];
-    games?: Array<{
-      id?: number;
-      title?: string;
-      url?: string;
-      published?: boolean;
-    }>;
+    games?: ItchioGameRecord[] | Record<string, ItchioGameRecord>;
   }>(response, { treatUnauthorizedAsExpired: true });
 
-  return (data.games ?? [])
+  return normalizeItchioGames(data.games)
     .filter((game): game is NonNullable<typeof game> & { id: number } => game?.id != null)
     .map((game) => ({
       id: String(game.id),

@@ -13,21 +13,16 @@
  */
 
 import { timingSafeStringEqual } from '@yucp/shared';
-import { sha256Hex } from '@yucp/shared/crypto';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { createAuth } from '../auth';
 import { getConvexClientFromUrl } from '../lib/convex';
-import { encrypt } from '../lib/encrypt';
 import { logger } from '../lib/logger';
 import { getStateStore } from '../lib/stateStore';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 import { createApiVerificationSupportError } from '../lib/verificationSupport';
-import {
-  getVerificationConfig,
-  modeToProvider,
-  type VerificationConfig,
-} from './verificationConfig';
+import { getBuyerLinkPluginByMode, listBuyerLinkPlugins } from '../providers';
+import { getVerificationConfig, type VerificationConfig } from './verificationConfig';
 import { createVerificationPanelRouteHandlers } from './verificationPanelRoutes';
 import {
   buildVerificationCallbackUri,
@@ -152,6 +147,15 @@ export interface VerificationSessionManager {
   handleCallback: (mode: string, code: string, state: string) => Promise<CallbackResult>;
 
   /**
+   * Handle implicit OAuth callback that returns an access token in the browser.
+   */
+  handleImplicitCallback: (
+    mode: string,
+    accessToken: string,
+    state: string
+  ) => Promise<CallbackResult>;
+
+  /**
    * Complete verification session
    * Links subject to session and marks as completed
    */
@@ -193,26 +197,30 @@ export function createVerificationSessionManager(
         };
       }
 
-      const { codeVerifier, codeChallenge, verifierHash } = await createPkceBundle();
       const state = createVerificationState(input.authUserId, input.mode);
+      const usesPkce = modeConfig.usesPkce ?? true;
+      const pkceBundle = usesPkce ? await createPkceBundle() : null;
 
       // Build OAuth URL
       const authUrl = new URL(modeConfig.authUrl);
-      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('response_type', modeConfig.responseType ?? 'code');
       authUrl.searchParams.set('state', state);
-      authUrl.searchParams.set('code_challenge', codeChallenge);
-      authUrl.searchParams.set('code_challenge_method', PKCE_CODE_CHALLENGE_METHOD);
+      if (pkceBundle) {
+        authUrl.searchParams.set('code_challenge', pkceBundle.codeChallenge);
+        authUrl.searchParams.set('code_challenge_method', PKCE_CODE_CHALLENGE_METHOD);
+      }
 
       const redirectUri = buildVerificationCallbackUri(
         config.baseUrl,
-        input.mode,
-        modeConfig.callbackPath
+        modeConfig.callbackPath,
+        config.frontendUrl,
+        modeConfig.callbackOrigin
       );
       authUrl.searchParams.set('redirect_uri', redirectUri);
 
       // Derive client ID from mode config (falls back to generic providerClientIds)
       const clientId = modeConfig.clientIdKey
-        ? (config[modeConfig.clientIdKey] as string | undefined)
+        ? (config[modeConfig.clientIdKey as keyof VerificationConfig] as string | undefined)
         : config.providerClientIds?.[input.mode];
       // Merge per-mode extra OAuth params with runtime overrides
       const extraOAuthParams = {
@@ -247,7 +255,13 @@ export function createVerificationSessionManager(
           const convex = getConvexClientFromUrl(config.convexUrl);
           // Store the plaintext PKCE verifier in the ephemeral state store (never in Convex)
           const store = getStateStore();
-          await store.set(getPkceVerifierStoreKey(state), codeVerifier, SESSION_EXPIRY_MS);
+          if (pkceBundle) {
+            await store.set(
+              getPkceVerifierStoreKey(state),
+              pkceBundle.codeVerifier,
+              SESSION_EXPIRY_MS
+            );
+          }
           // redirectUri = user's destination after verification (e.g. /verify-success?returnTo=...)
           // OAuth redirect_uri for token exchange is always baseUrl + callbackPath
           const result = await convex.mutation(api.verificationSessions.createVerificationSession, {
@@ -256,7 +270,7 @@ export function createVerificationSessionManager(
             mode: input.mode,
             verificationMethod: input.verificationMethod,
             state,
-            pkceVerifierHash: verifierHash,
+            pkceVerifierHash: pkceBundle?.verifierHash,
             redirectUri: input.redirectUri,
             successRedirectUri: input.redirectUri,
             discordUserId: input.discordUserId,
@@ -268,8 +282,8 @@ export function createVerificationSessionManager(
             success: true,
             sessionId: result.sessionId,
             state,
-            codeVerifier,
-            codeChallenge,
+            codeVerifier: pkceBundle?.codeVerifier,
+            codeChallenge: pkceBundle?.codeChallenge,
             authUrl: authUrl.toString(),
             expiresAt: result.expiresAt,
           };
@@ -291,8 +305,8 @@ export function createVerificationSessionManager(
       return {
         success: true,
         state,
-        codeVerifier,
-        codeChallenge,
+        codeVerifier: pkceBundle?.codeVerifier,
+        codeChallenge: pkceBundle?.codeChallenge,
         authUrl: authUrl.toString(),
         expiresAt,
       };
@@ -310,6 +324,133 @@ export function createVerificationSessionManager(
     }
   }
 
+  async function completeBuyerLinkSession(input: {
+    buyerLinkHook: NonNullable<ReturnType<typeof getBuyerLinkPluginByMode>>;
+    session: {
+      _id: Id<'verification_sessions'>;
+      mode: string;
+      verificationMethod?: string;
+      discordUserId?: string | null;
+    };
+    authUserId: string;
+    convex: ReturnType<typeof getConvexClientFromUrl>;
+    apiSecret: string;
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt?: number;
+    grantedScopes?: readonly string[];
+  }): Promise<CallbackResult> {
+    const {
+      buyerLinkHook,
+      session,
+      authUserId,
+      convex,
+      apiSecret,
+      accessToken,
+      refreshToken,
+      expiresAt,
+      grantedScopes,
+    } = input;
+    const providerId = buyerLinkHook.oauth.providerId;
+
+    const identity = await buyerLinkHook.fetchIdentity(accessToken, {
+      convex,
+      apiSecret,
+      encryptionSecret: config.encryptionSecret ?? '',
+    });
+
+    const resolvedExpiresAt = identity.expiresAt ?? expiresAt;
+    const syncResult = await convex.mutation(api.identitySync.syncUserFromProvider, {
+      apiSecret,
+      provider: providerId,
+      providerUserId: identity.providerUserId,
+      username: identity.username,
+      email: identity.email,
+      avatarUrl: identity.avatarUrl,
+      profileUrl: identity.profileUrl,
+      discordUserId: session.discordUserId ?? undefined,
+    });
+
+    await convex.mutation(api.bindings.activateBinding, {
+      apiSecret,
+      authUserId,
+      subjectId: syncResult.subjectId,
+      externalAccountId: syncResult.externalAccountId,
+      bindingType: 'verification',
+    });
+
+    await convex.mutation(api.subjects.upsertBuyerProviderLink, {
+      apiSecret,
+      subjectId: syncResult.subjectId,
+      provider: providerId,
+      externalAccountId: syncResult.externalAccountId,
+      verificationMethod: session.verificationMethod ?? session.mode,
+      verificationSessionId: session._id,
+      expiresAt: resolvedExpiresAt,
+    });
+
+    if (buyerLinkHook.storeCredential) {
+      await buyerLinkHook.storeCredential(
+        {
+          externalAccountId: syncResult.externalAccountId,
+          accessToken,
+          refreshToken,
+          expiresAt: resolvedExpiresAt,
+          grantedScopes,
+        },
+        {
+          convex,
+          apiSecret,
+          encryptionSecret: config.encryptionSecret ?? '',
+        }
+      );
+    }
+
+    if (buyerLinkHook.afterLink) {
+      await buyerLinkHook.afterLink(
+        {
+          authUserId,
+          sessionId: session._id,
+          sessionMode: session.mode,
+          verificationMethod: session.verificationMethod,
+          discordUserId: session.discordUserId ?? undefined,
+          accessToken,
+          refreshToken,
+          expiresAt: resolvedExpiresAt,
+          grantedScopes,
+          identity,
+          subjectId: syncResult.subjectId,
+          externalAccountId: syncResult.externalAccountId,
+        },
+        {
+          convex,
+          apiSecret,
+          encryptionSecret: config.encryptionSecret ?? '',
+        }
+      );
+    }
+
+    const completeResult = await convex.mutation(
+      api.verificationSessions.completeVerificationSession,
+      {
+        apiSecret,
+        sessionId: session._id,
+        subjectId: syncResult.subjectId,
+      }
+    );
+
+    logger.info('[verification] Session completed, redirecting user', {
+      sessionId: String(session._id),
+      subjectId: syncResult.subjectId,
+      redirectUri: completeResult.redirectUri,
+    });
+
+    return {
+      success: true,
+      redirectUri: completeResult.redirectUri,
+    };
+  }
+
   /**
    * Handle OAuth callback
    */
@@ -319,8 +460,8 @@ export function createVerificationSessionManager(
     state: string
   ): Promise<CallbackResult> {
     try {
-      const modeConfig = getVerificationConfig(mode);
-      if (!modeConfig) {
+      const urlModeConfig = getVerificationConfig(mode);
+      if (!urlModeConfig) {
         return {
           success: false,
           error: `Unknown verification mode: ${mode}`,
@@ -357,9 +498,16 @@ export function createVerificationSessionManager(
       }
 
       const session = sessionResult.session;
-      // Use session.mode for feature branching (e.g. 'discord_role')
-      // because the URL-path mode is just 'discord' for all Discord OAuth callbacks.
-      const sessionMode = session.mode;
+      const buyerLinkHook =
+        getBuyerLinkPluginByMode(session.mode) ?? getBuyerLinkPluginByMode(mode);
+      const modeConfig = buyerLinkHook?.oauth ?? urlModeConfig;
+      if (!buyerLinkHook) {
+        return {
+          success: false,
+          error: `Verification mode does not support buyer account linking: ${session.mode}`,
+        };
+      }
+
       // Retrieve the PKCE verifier from the ephemeral state store (never stored in Convex)
       const store = getStateStore();
       const verifierStoreKey = getPkceVerifierStoreKey(state);
@@ -373,8 +521,9 @@ export function createVerificationSessionManager(
       // Exchange code for tokens
       const redirectUri = buildVerificationCallbackUri(
         config.baseUrl,
-        mode,
-        modeConfig.callbackPath
+        modeConfig.callbackPath,
+        config.frontendUrl,
+        modeConfig.callbackOrigin
       );
       const tokenParams = new URLSearchParams({
         grant_type: 'authorization_code',
@@ -384,11 +533,11 @@ export function createVerificationSessionManager(
       });
 
       const clientId = modeConfig.clientIdKey
-        ? (config[modeConfig.clientIdKey] as string | undefined)
-        : config.providerClientIds?.[mode];
+        ? (config[modeConfig.clientIdKey as keyof VerificationConfig] as string | undefined)
+        : (config.providerClientIds?.[session.mode] ?? config.providerClientIds?.[mode]);
       const clientSecret = modeConfig.clientSecretKey
-        ? (config[modeConfig.clientSecretKey] as string | undefined)
-        : config.providerClientSecrets?.[mode];
+        ? (config[modeConfig.clientSecretKey as keyof VerificationConfig] as string | undefined)
+        : (config.providerClientSecrets?.[session.mode] ?? config.providerClientSecrets?.[mode]);
 
       if (clientId) tokenParams.set('client_id', clientId);
       if (clientSecret) tokenParams.set('client_secret', clientSecret);
@@ -407,6 +556,8 @@ export function createVerificationSessionManager(
 
       const tokens = (await tokenRes.json()) as {
         access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
         scope?: string;
       };
       const accessToken = tokens.access_token;
@@ -414,316 +565,95 @@ export function createVerificationSessionManager(
         return { success: false, error: 'No access token in response' };
       }
 
-      // For discord_role: verify guilds.members.read scope before guild member fetch
-      if (sessionMode === 'discord_role') {
-        const scopes = (tokens.scope ?? '').split(/\s+/).filter(Boolean);
-        if (!scopes.includes('guilds.members.read')) {
-          return {
-            success: false,
-            error: 'Please try again and grant server membership access',
-          };
-        }
-      }
-
-      // Get user info from provider
-      const provider = modeToProvider(mode);
-      if (!provider) {
-        return { success: false, error: `Unknown provider for mode: ${mode}` };
-      }
-
-      let providerUserId: string;
-      let username: string | undefined;
-      let email: string | undefined;
-      let avatarUrl: string | undefined;
-      let profileUrl: string | undefined;
-
-      if (provider === 'gumroad') {
-        const meRes = await fetch('https://api.gumroad.com/v2/user', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!meRes.ok) {
-          return { success: false, error: 'Failed to fetch Gumroad user' };
-        }
-        const me = (await meRes.json()) as {
-          success?: boolean;
-          user?: { user_id?: string; name?: string; email?: string };
-        };
-        providerUserId = me.user?.user_id ?? '';
-        username = me.user?.name;
-        email = me.user?.email;
-      } else if (provider === 'discord') {
-        const meRes = await fetch('https://discord.com/api/users/@me', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!meRes.ok) {
-          return { success: false, error: 'Failed to fetch Discord user' };
-        }
-        const me = (await meRes.json()) as {
-          id?: string;
-          username?: string;
-          avatar?: string;
-          email?: string;
-        };
-        providerUserId = me.id ?? '';
-        username = me.username;
-        email = me.email;
-        avatarUrl = me.avatar
-          ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png`
-          : undefined;
-        profileUrl = me.id ? `https://discord.com/users/${me.id}` : undefined;
-      } else {
-        return { success: false, error: `Unknown provider for mode: ${mode}` };
-      }
-
-      if (!providerUserId) {
-        return { success: false, error: 'Could not determine provider user ID' };
-      }
-
-      // Sync user to Convex (pass discordUserId when from Discord verify button for Gumroad→Discord link)
-      const discordUserId = session.discordUserId;
-      logger.info('[verification] Syncing provider user to Convex', {
-        provider,
-        providerUserId,
+      const grantedScopes = (tokens.scope ?? '').split(/\s+/).filter(Boolean);
+      return await completeBuyerLinkSession({
+        buyerLinkHook,
+        session,
         authUserId,
-        discordUserId: discordUserId ?? '(none - Gumroad account will be orphaned!)',
-        sessionId: String(session._id),
-      });
-
-      const syncResult = await convex.mutation(api.identitySync.syncUserFromProvider, {
+        convex,
         apiSecret,
-        provider,
-        providerUserId,
-        username,
-        email,
-        avatarUrl,
-        profileUrl,
-        discordUserId: discordUserId ?? undefined,
+        accessToken,
+        refreshToken: tokens.refresh_token,
+        expiresAt:
+          typeof tokens.expires_in === 'number' ? Date.now() + tokens.expires_in * 1000 : undefined,
+        grantedScopes,
       });
-
-      logger.info('[verification] syncUserFromProvider result', {
-        subjectId: syncResult.subjectId,
-        externalAccountId: syncResult.externalAccountId,
-        isNewSubject: syncResult.isNewSubject,
-        isNewExternalAccount: syncResult.isNewExternalAccount,
-      });
-
-      // For discord_role: guild member lookup, role check, entitlement grant.
-      // Token is stored FIRST (regardless of role match) so it can be reused
-      // for proactive scanning when new discord_role products are added.
-      if (sessionMode === 'discord_role') {
-        // Always store the Discord OAuth token for future proactive checks.
-        // This happens before role checking - even if the user doesn't have
-        // the required role right now, we want the token for later.
-        try {
-          const encryptionSecret = process.env.BETTER_AUTH_SECRET;
-          if (encryptionSecret && syncResult.externalAccountId) {
-            const tokenEncrypted = await encrypt(
-              accessToken,
-              encryptionSecret,
-              'discord-oauth-access-token'
-            );
-            // Discord access tokens expire after ~7 days
-            const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
-            await convex.mutation(api.identitySync.storeDiscordToken, {
-              apiSecret,
-              externalAccountId: syncResult.externalAccountId,
-              discordAccessTokenEncrypted: tokenEncrypted,
-              discordTokenExpiresAt: expiresAt,
-            });
-            logger.info('[verification] Stored Discord token for proactive scanning', {
-              externalAccountId: syncResult.externalAccountId,
-            });
-          }
-        } catch (tokenErr) {
-          // Non-fatal: don't fail the verification if token storage fails
-          logger.warn('[verification] Failed to store Discord token', {
-            error: tokenErr instanceof Error ? tokenErr.message : String(tokenErr),
-          });
-        }
-
-        // Now check if the user has any matching roles for current rules
-        const tenant = await convex.query(api.creatorProfiles.getCreatorProfile, {
-          apiSecret,
-          authUserId,
-        });
-        if (!tenant) {
-          return { success: false, error: 'Tenant not found' };
-        }
-        const policy = tenant.policy ?? {};
-        const enabled = policy.enableDiscordRoleFromOtherServers === true;
-        const allowedGuildIds = policy.allowedSourceGuildIds ?? [];
-        if (!enabled || allowedGuildIds.length === 0) {
-          // Policy not enabled - token is still stored for when it is enabled later
-          logger.info(
-            '[verification] Discord role from other servers not enabled, but token stored'
-          );
-        } else {
-          const rules = await convex.query(api.role_rules.getDiscordRoleRulesByTenant, {
-            apiSecret,
-            authUserId,
-            sourceGuildIds: allowedGuildIds,
-          });
-
-          for (const rule of rules) {
-            const {
-              sourceGuildId,
-              requiredRoleId,
-              requiredRoleIds,
-              requiredRoleMatchMode,
-              productId,
-            } = rule;
-            const requiredIds = requiredRoleIds ?? (requiredRoleId ? [requiredRoleId] : []);
-            if (!sourceGuildId || requiredIds.length === 0) continue;
-
-            let memberRes = await fetch(
-              `https://discord.com/api/v10/users/@me/guilds/${sourceGuildId}/member`,
-              { headers: { Authorization: `Bearer ${accessToken}` } }
-            );
-
-            if (memberRes.status === 429) {
-              const retryAfter = memberRes.headers.get('Retry-After');
-              const waitMs = retryAfter ? Number.parseInt(retryAfter, 10) * 1000 : 5000;
-              await new Promise((r) => setTimeout(r, waitMs));
-              memberRes = await fetch(
-                `https://discord.com/api/v10/users/@me/guilds/${sourceGuildId}/member`,
-                { headers: { Authorization: `Bearer ${accessToken}` } }
-              );
-            }
-            if (memberRes.status === 403 || memberRes.status === 404) continue;
-            if (!memberRes.ok) continue;
-
-            const member = (await memberRes.json()) as { roles?: string[] };
-            const roles = member.roles ?? [];
-            const matchAll = requiredRoleMatchMode === 'all';
-            const hasRole = matchAll
-              ? requiredIds.every(
-                  (id: string) => roles.includes(id) || (id === sourceGuildId && memberRes.ok)
-                )
-              : requiredIds.some(
-                  (id: string) => roles.includes(id) || (id === sourceGuildId && memberRes.ok)
-                );
-
-            if (hasRole) {
-              const sourceReference =
-                productId ?? `discord_role:${sourceGuildId}:${requiredIds[0]}`;
-              await convex.mutation(api.entitlements.grantEntitlement, {
-                apiSecret,
-                authUserId,
-                subjectId: syncResult.subjectId,
-                productId,
-                evidence: {
-                  provider: 'discord',
-                  sourceReference,
-                },
-              });
-            }
-          }
-        }
-        // Note: we no longer fail here if no roles matched.
-        // The token is stored, and entitlements are granted for matching roles.
-        // Non-matching users can be retroactively granted when products change.
-      }
-
-      // Create (or reactivate) a tenant-scoped binding linking subject → external_account.
-      // This is the critical step: getSubjectWithAccounts queries the bindings table
-      // to find all connected provider accounts. Without a binding record, the
-      // provider account is invisible to the Discord bot.
-      // For discord_role: the binding is always created (Discord account linked),
-      // and entitlements are granted for matching roles.
-      try {
-        const bindingResult = await convex.mutation(api.bindings.activateBinding, {
-          apiSecret,
-          authUserId,
-          subjectId: syncResult.subjectId,
-          externalAccountId: syncResult.externalAccountId,
-          bindingType: 'verification',
-        });
-        logger.info('[verification] Binding created/reactivated', {
-          bindingId: String(bindingResult.bindingId),
-          isNew: bindingResult.isNew,
-          authUserId,
-          subjectId: syncResult.subjectId,
-          externalAccountId: syncResult.externalAccountId,
-        });
-      } catch (bindErr) {
-        // Log but do not fail the whole flow
-        logger.error('[verification] Failed to create binding (non-fatal)', {
-          error: bindErr instanceof Error ? bindErr.message : String(bindErr),
-          authUserId,
-          subjectId: syncResult.subjectId,
-          externalAccountId: syncResult.externalAccountId,
-        });
-      }
-
-      if (syncResult.externalAccountId) {
-        try {
-          await convex.mutation(api.subjects.upsertBuyerProviderLink, {
-            apiSecret,
-            subjectId: syncResult.subjectId,
-            provider,
-            externalAccountId: syncResult.externalAccountId,
-            verificationMethod: session.verificationMethod ?? sessionMode,
-            verificationSessionId: session._id,
-          });
-          logger.info('[verification] Buyer provider link stored', {
-            provider,
-            subjectId: syncResult.subjectId,
-            externalAccountId: syncResult.externalAccountId,
-            sessionId: String(session._id),
-          });
-        } catch (buyerLinkErr) {
-          logger.error('[verification] Failed to store buyer provider link', {
-            provider,
-            error: buyerLinkErr instanceof Error ? buyerLinkErr.message : String(buyerLinkErr),
-            subjectId: syncResult.subjectId,
-            externalAccountId: syncResult.externalAccountId,
-          });
-        }
-      }
-
-      // For Gumroad: ensure purchase_facts is populated, then sync past purchases.
-      // syncPastPurchasesForSubject (from syncUserFromProvider) may find 0 if backfill
-      // hasn't run. Trigger backfill for tenant's products, then sync again.
-      if (mode === 'gumroad' && email) {
-        const normalizedEmail = email.trim().toLowerCase();
-        const emailHash = await sha256Hex(normalizedEmail);
-        try {
-          await convex.mutation(api.backgroundSync.scheduleBackfillThenSyncForGumroadBuyer, {
-            apiSecret,
-            authUserId,
-            subjectId: syncResult.subjectId,
-            providerUserId,
-            emailHash,
-          });
-        } catch (backfillErr) {
-          logger.warn('[verification] Failed to schedule backfill+sync (non-fatal)', {
-            error: backfillErr instanceof Error ? backfillErr.message : String(backfillErr),
-          });
-        }
-      }
-
-      // Complete verification session
-      const completeResult = await convex.mutation(
-        api.verificationSessions.completeVerificationSession,
-        {
-          apiSecret,
-          sessionId: session._id,
-          subjectId: syncResult.subjectId,
-        }
-      );
-
-      logger.info('[verification] Session completed, redirecting user', {
-        sessionId: String(session._id),
-        subjectId: syncResult.subjectId,
-        redirectUri: completeResult.redirectUri,
-      });
-
-      return {
-        success: true,
-        redirectUri: completeResult.redirectUri,
-      };
     } catch (err) {
       logger.error('Failed to handle OAuth callback', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return {
+        success: false,
+        error: sanitizePublicErrorMessage(
+          err instanceof Error ? err.message : String(err),
+          'Could not complete verification.'
+        ),
+      };
+    }
+  }
+
+  async function handleImplicitCallback(
+    mode: string,
+    accessToken: string,
+    state: string
+  ): Promise<CallbackResult> {
+    try {
+      const modeConfig = getVerificationConfig(mode);
+      if (!modeConfig) {
+        return {
+          success: false,
+          error: `Unknown verification mode: ${mode}`,
+        };
+      }
+      if ((modeConfig.responseType ?? 'code') !== 'token') {
+        return {
+          success: false,
+          error: `Verification mode does not support implicit callback: ${mode}`,
+        };
+      }
+
+      if (!config.convexUrl || !config.convexApiSecret) {
+        return {
+          success: true,
+          redirectUri: `${config.frontendUrl}/verification/success`,
+        };
+      }
+
+      const parsedState = parseVerificationState(state);
+      if (!parsedState) {
+        return { success: false, error: 'Invalid state parameter' };
+      }
+      const buyerLinkHook = getBuyerLinkPluginByMode(mode);
+      if (!buyerLinkHook) {
+        return {
+          success: false,
+          error: `Provider does not support implicit account linking: ${mode}`,
+        };
+      }
+
+      const convex = getConvexClientFromUrl(config.convexUrl);
+      const apiSecret = config.convexApiSecret;
+      const { authUserId } = parsedState;
+      const sessionResult = await convex.query(
+        api.verificationSessions.getVerificationSessionByState,
+        { apiSecret, authUserId, state }
+      );
+
+      if (!sessionResult.found || !sessionResult.session) {
+        return { success: false, error: 'Session not found or expired' };
+      }
+
+      const session = sessionResult.session;
+      return await completeBuyerLinkSession({
+        buyerLinkHook,
+        session,
+        authUserId,
+        convex,
+        apiSecret,
+        accessToken,
+      });
+    } catch (err) {
+      logger.error('Failed to handle implicit OAuth callback', {
         error: err instanceof Error ? err.message : String(err),
       });
       return {
@@ -791,6 +721,7 @@ export function createVerificationSessionManager(
   return {
     beginSession,
     handleCallback,
+    handleImplicitCallback,
     completeSession,
   };
 }
@@ -977,6 +908,41 @@ export function createVerificationRoutes(config: VerificationConfig) {
     }
   }
 
+  async function finishImplicitVerification(request: Request): Promise<Response> {
+    let mode: string | undefined;
+    let body: { accessToken?: string; state?: string } | undefined;
+    try {
+      const url = new URL(request.url);
+      const pathParts = url.pathname.split('/');
+      mode = pathParts[pathParts.length - 1];
+
+      body = (await request.json()) as { accessToken?: string; state?: string };
+      if (!body.accessToken || !body.state) {
+        return Response.json({ success: false, error: 'Missing required fields' }, { status: 400 });
+      }
+
+      const result = await manager.handleImplicitCallback(mode, body.accessToken, body.state);
+      if (!result.success || !result.redirectUri) {
+        return Response.json(
+          { success: false, error: result.error ?? 'Could not complete verification.' },
+          { status: 400 }
+        );
+      }
+
+      return Response.json({ success: true, redirectUrl: result.redirectUri });
+    } catch (err) {
+      const support = await createApiVerificationSupportError(logger, {
+        error: err,
+        provider: mode,
+        stage: 'verification_implicit_callback',
+      });
+      return Response.json(
+        { success: false, error: 'Internal server error', supportCode: support.supportCode },
+        { status: 500 }
+      );
+    }
+  }
+
   /**
    * POST /api/verification/complete-license
    * Completes license verification - ties license to subject, grants entitlements
@@ -1151,6 +1117,7 @@ export function createVerificationRoutes(config: VerificationConfig) {
   return {
     beginVerification,
     bindVerifyPanel,
+    finishImplicitVerification,
     handleVerificationCallback,
     completeVerification,
     completeLicenseVerification,
@@ -1178,8 +1145,14 @@ export function mountVerificationRouteHandlers(
   routeMap.set('/api/verification/begin', routes.beginVerification);
   routeMap.set('/api/verification/panel/bind', routes.bindVerifyPanel);
   routeMap.set('/api/verification/panel/refresh', routes.refreshVerifyPanel);
-  routeMap.set('/api/verification/callback/gumroad', routes.handleVerificationCallback);
-  routeMap.set('/api/verification/callback/discord', routes.handleVerificationCallback);
+  for (const plugin of listBuyerLinkPlugins()) {
+    const oauth = plugin.oauth;
+    if ((oauth.responseType ?? 'code') === 'token') {
+      routeMap.set(`/api/verification/finish/${oauth.mode}`, routes.finishImplicitVerification);
+      continue;
+    }
+    routeMap.set(oauth.callbackPath, routes.handleVerificationCallback);
+  }
   routeMap.set('/api/verification/complete', routes.completeVerification);
   routeMap.set('/api/verification/complete-license', routes.completeLicenseVerification);
   routeMap.set('/api/verification/complete-vrchat', routes.completeVrchatVerification);

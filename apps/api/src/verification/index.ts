@@ -23,8 +23,6 @@ export {
   type VerificationSessionManager,
 } from './sessionManager';
 export {
-  DISCORD_ROLE_CONFIG,
-  GUMROAD_CONFIG,
   getVerificationConfig,
   type VerificationConfig,
 } from './verificationConfig';

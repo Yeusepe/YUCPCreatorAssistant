@@ -28,6 +28,7 @@ import type {
 } from '@yucp/providers/contracts';
 import { CredentialExpiredError } from '@yucp/providers/contracts';
 import type { RuntimeProviderKey } from '@yucp/providers/types';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import type { Auth } from '../auth';
 import type { getConvexClientFromUrl } from '../lib/convex';
 
@@ -63,6 +64,7 @@ export type BackfillPlugin = ProviderBackfillPlugin<BackfillRecord>;
 interface BaseApiProviderHooks {
   readonly webhook?: WebhookPlugin;
   readonly connect?: ConnectPlugin;
+  readonly buyerLink?: BuyerLinkPlugin;
 }
 
 /**
@@ -157,6 +159,80 @@ export interface ConnectRoute {
 export interface ConnectPlugin {
   readonly providerId: string;
   readonly routes: ReadonlyArray<ConnectRoute>;
+}
+
+export interface BuyerLinkIdentity {
+  providerUserId: string;
+  username?: string;
+  email?: string;
+  avatarUrl?: string;
+  profileUrl?: string;
+  expiresAt?: number;
+}
+
+export interface BuyerLinkOAuthConfig {
+  providerId: string;
+  mode: string;
+  aliases?: readonly string[];
+  authUrl: string;
+  tokenUrl: string;
+  responseType?: 'code' | 'token';
+  usesPkce?: boolean;
+  scopes: readonly string[];
+  callbackPath: string;
+  callbackOrigin?: 'api' | 'frontend';
+  clientIdKey?: string;
+  clientSecretKey?: string;
+  extraOAuthParams?: Readonly<Record<string, string>>;
+}
+
+export interface StoreBuyerLinkCredentialInput {
+  externalAccountId: Id<'external_accounts'>;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  grantedScopes?: readonly string[];
+}
+
+export interface VerifyHostedBuyerLinkIntentInput {
+  authUserId: string;
+  intentId: Id<'verification_intents'>;
+  methodKey: string;
+}
+
+export interface VerifyHostedBuyerLinkIntentResult {
+  success: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface BuyerLinkPostLinkInput {
+  authUserId: string;
+  sessionId: Id<'verification_sessions'>;
+  sessionMode: string;
+  verificationMethod?: string;
+  discordUserId?: string;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  grantedScopes?: readonly string[];
+  identity: BuyerLinkIdentity;
+  subjectId: Id<'subjects'>;
+  externalAccountId: Id<'external_accounts'>;
+}
+
+export interface BuyerLinkPlugin {
+  readonly oauth: BuyerLinkOAuthConfig;
+  fetchIdentity(accessToken: string, ctx: BuyerVerificationContext): Promise<BuyerLinkIdentity>;
+  storeCredential?(
+    input: StoreBuyerLinkCredentialInput,
+    ctx: BuyerVerificationContext
+  ): Promise<void>;
+  afterLink?(input: BuyerLinkPostLinkInput, ctx: BuyerVerificationContext): Promise<void>;
+  verifyHostedIntent?(
+    input: VerifyHostedBuyerLinkIntentInput,
+    ctx: BuyerVerificationContext
+  ): Promise<VerifyHostedBuyerLinkIntentResult>;
 }
 
 export function generateSecureRandom(length: number): string {

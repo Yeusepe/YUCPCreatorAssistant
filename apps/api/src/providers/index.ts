@@ -9,6 +9,7 @@
  */
 
 import type { RuntimeProviderKey } from '@yucp/providers/types';
+import { buyerLink as discordBuyerLink } from './discord/buyerLink';
 import gumroad from './gumroad/index';
 import itchio from './itchio/index';
 import jinxxy from './jinxxy/index';
@@ -17,6 +18,7 @@ import payhip from './payhip/index';
 import type {
   ApiProviderEntry,
   ApiProviderHooks,
+  BuyerLinkPlugin,
   ConnectPlugin,
   ProviderRuntime,
   WebhookPlugin,
@@ -53,8 +55,17 @@ export const PROVIDER_RUNTIMES: ReadonlyMap<string, ProviderRuntime> = new Map(
   Object.entries(PROVIDER_ENTRIES).map(([providerKey, entry]) => [providerKey, entry.runtime])
 );
 
-const PROVIDER_HOOKS: ReadonlyMap<string, ApiProviderHooks> = new Map(
-  Object.entries(PROVIDER_ENTRIES).map(([providerKey, entry]) => [providerKey, entry.hooks])
+const PROVIDER_HOOK_ENTRIES: ReadonlyArray<readonly [string, ApiProviderHooks]> = [
+  ...Object.entries(PROVIDER_ENTRIES).map(
+    ([providerKey, entry]) => [providerKey, entry.hooks] as const
+  ),
+  ['discord', { buyerLink: discordBuyerLink }],
+];
+
+const PROVIDER_HOOKS: ReadonlyMap<string, ApiProviderHooks> = new Map(PROVIDER_HOOK_ENTRIES);
+
+const BUYER_LINK_PLUGINS = Object.freeze(
+  [...PROVIDER_HOOKS.values()].flatMap((hooks) => (hooks.buyerLink ? [hooks.buyerLink] : []))
 );
 
 export function getProviderRuntime(id: string): ProviderRuntime | undefined {
@@ -63,6 +74,16 @@ export function getProviderRuntime(id: string): ProviderRuntime | undefined {
 
 export function getProviderHooks(id: string): ApiProviderHooks | undefined {
   return PROVIDER_HOOKS.get(id);
+}
+
+export function getBuyerLinkPluginByMode(mode: string): BuyerLinkPlugin | undefined {
+  return BUYER_LINK_PLUGINS.find(
+    (plugin) => plugin.oauth.mode === mode || plugin.oauth.aliases?.includes(mode)
+  );
+}
+
+export function listBuyerLinkPlugins(): readonly BuyerLinkPlugin[] {
+  return BUYER_LINK_PLUGINS;
 }
 
 export function listConnectPlugins(): readonly ConnectPlugin[] {

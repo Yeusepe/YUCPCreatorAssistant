@@ -3,6 +3,7 @@ import { api } from '../../../../../convex/_generated/api';
 import { decrypt } from '../../lib/encrypt';
 import { logger } from '../../lib/logger';
 import { defineApiProviderEntry } from '../types';
+import { buyerLink } from './buyerLink';
 import { buyerVerification } from './buyerVerification';
 import { connect } from './connect';
 
@@ -30,6 +31,7 @@ const itchioProvider = defineApiProviderEntry({
     buyerVerification,
   },
   hooks: {
+    buyerLink,
     connect,
   },
 });

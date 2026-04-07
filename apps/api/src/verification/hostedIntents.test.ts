@@ -85,6 +85,28 @@ describe('hostedIntents', () => {
     });
   });
 
+  it('accepts itch.io buyer-linked account requirements for hosted verification', () => {
+    const [requirement] = normalizeHostedVerificationRequirements([
+      {
+        methodKey: 'itchio-link',
+        providerKey: 'itchio',
+        kind: 'buyer_provider_link',
+        creatorAuthUserId: 'creator_123',
+        productId: 'product_123',
+        providerProductRef: '42',
+      },
+    ]);
+
+    expect(requirement).toMatchObject({
+      methodKey: 'itchio-link',
+      providerKey: 'itchio',
+      kind: 'buyer_provider_link',
+      creatorAuthUserId: 'creator_123',
+      productId: 'product_123',
+      providerProductRef: '42',
+    });
+  });
+
   it('rejects buyer-linked account requirements for providers without a hosted link flow', () => {
     expect(() =>
       normalizeHostedVerificationRequirements([

@@ -200,6 +200,7 @@ function normalizeProductsResponse(
       id: product?.id,
       name: product?.name,
       collaboratorName: product?.collaboratorName,
+      productUrl: product?.productUrl,
     })),
     error: payload?.error,
   };

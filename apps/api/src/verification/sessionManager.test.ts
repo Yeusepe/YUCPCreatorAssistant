@@ -5,6 +5,9 @@
  */
 
 import { describe, expect, it } from 'bun:test';
+import { buyerLink as discordBuyerLink } from '../providers/discord/buyerLink';
+import { buyerLink as gumroadBuyerLink } from '../providers/gumroad/buyerLink';
+import { buyerLink as itchioBuyerLink } from '../providers/itchio/buyerLink';
 import {
   computeCodeChallenge,
   createVerificationRoutes,
@@ -14,12 +17,11 @@ import {
   hashVerifier,
   SESSION_EXPIRY_MS,
 } from './sessionManager';
-import {
-  DISCORD_ROLE_CONFIG,
-  GUMROAD_CONFIG,
-  getVerificationConfig,
-  type VerificationConfig,
-} from './verificationConfig';
+import { getVerificationConfig, type VerificationConfig } from './verificationConfig';
+
+const GUMROAD_CONFIG = gumroadBuyerLink.oauth;
+const DISCORD_ROLE_CONFIG = discordBuyerLink.oauth;
+const ITCHIO_CONFIG = itchioBuyerLink.oauth;
 
 // ============================================================================
 // CRYPTO UTILITIES TESTS
@@ -130,6 +132,11 @@ describe('Verification Config', () => {
       expect(config).toBeNull();
     });
 
+    it('returns itchio config for itchio mode', () => {
+      const config = getVerificationConfig('itchio');
+      expect(config).toEqual(ITCHIO_CONFIG);
+    });
+
     it('returns null for unknown mode', () => {
       const config = getVerificationConfig('unknown');
       expect(config).toBeNull();
@@ -164,6 +171,17 @@ describe('Verification Config', () => {
       expect(DISCORD_ROLE_CONFIG.scopes).toContain('guilds');
     });
   });
+
+  describe('ITCHIO_CONFIG', () => {
+    it('uses the implicit OAuth authorize endpoint', () => {
+      expect(ITCHIO_CONFIG.authUrl).toBe('https://itch.io/user/oauth');
+    });
+
+    it('requests the buyer profile and owned-library scopes', () => {
+      expect(ITCHIO_CONFIG.scopes).toContain('profile:me');
+      expect(ITCHIO_CONFIG.scopes).toContain('profile:owned');
+    });
+  });
 });
 
 // ============================================================================
@@ -192,6 +210,9 @@ describe('VerificationSessionManager', () => {
     discordClientSecret: 'test-discord-secret',
     jinxxyClientId: 'test-jinxxy-id',
     jinxxyClientSecret: 'test-jinxxy-secret',
+    providerClientIds: {
+      itchio: 'test-itchio-id',
+    },
   };
 
   describe('createVerificationSessionManager', () => {
@@ -265,6 +286,28 @@ describe('VerificationSessionManager', () => {
       });
       expect(result.success).toBe(false);
       expect(result.error).toContain('Unknown verification mode');
+    });
+
+    it('creates an implicit itchio session without PKCE parameters', async () => {
+      const manager = createVerificationSessionManager(testConfig);
+      const result = await manager.beginSession({
+        authUserId: 'user_test123',
+        mode: 'itchio',
+        redirectUri: 'http://localhost:3000/callback',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.authUrl).toContain('https://itch.io/user/oauth');
+      expect(result.codeVerifier).toBeUndefined();
+      expect(result.codeChallenge).toBeUndefined();
+
+      const authUrl = new URL(result.authUrl ?? '');
+      expect(authUrl.searchParams.get('response_type')).toBe('token');
+      expect(authUrl.searchParams.get('redirect_uri')).toBe(
+        'http://localhost:3000/oauth/callback/itchio'
+      );
+      expect(authUrl.searchParams.get('scope')).toBe('profile:me profile:owned');
+      expect(authUrl.searchParams.get('code_challenge')).toBeNull();
     });
 
     it('includes PKCE parameters in auth URL', async () => {

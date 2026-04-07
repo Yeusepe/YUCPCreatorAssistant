@@ -5,7 +5,7 @@ import type { ConnectContext } from '../types';
 let activeStore = new InMemoryStateStore();
 const mutationCalls: Array<[string, unknown]> = [];
 const credentialsInfoMock = mock(async () => ({
-  scopes: ['profile:me', 'profile:games', 'game:view:purchases'],
+  scopes: ['profile:me', 'profile:games'],
 }));
 const currentUserMock = mock(async () => ({
   id: 'creator-123',
@@ -100,7 +100,7 @@ afterEach(() => {
   credentialsInfoMock.mockReset();
   currentUserMock.mockReset();
   credentialsInfoMock.mockResolvedValue({
-    scopes: ['profile:me', 'profile:games', 'game:view:purchases'],
+    scopes: ['profile:me', 'profile:games'],
   });
   currentUserMock.mockResolvedValue({
     id: 'creator-123',
@@ -126,11 +126,16 @@ describe('itch.io connect - GET /begin', () => {
     expect(response.status).toBe(302);
     const location = response.headers.get('location');
     expect(location).toContain('https://itch.io/user/oauth?');
-    expect(location).toContain('response_type=token');
-    expect(location).toContain('client_id=itchio-client-id');
-    expect(location).toContain(
-      'redirect_uri=https%3A%2F%2Fapp.example.com%2Foauth%2Fcallback%2Fitchio'
+    if (!location) {
+      throw new Error('Expected redirect location');
+    }
+    const authUrl = new URL(location);
+    expect(authUrl.searchParams.get('response_type')).toBe('token');
+    expect(authUrl.searchParams.get('client_id')).toBe('itchio-client-id');
+    expect(authUrl.searchParams.get('redirect_uri')).toBe(
+      'https://app.example.com/oauth/callback/itchio'
     );
+    expect(authUrl.searchParams.get('scope')).toBe('profile:me profile:games');
   });
 });
 
@@ -189,5 +194,44 @@ describe('itch.io connect - POST /finish', () => {
         },
       ],
     });
+  });
+
+  it('rejects the creator token when itch.io did not grant profile:games', async () => {
+    credentialsInfoMock.mockResolvedValueOnce({
+      scopes: ['profile:me'],
+    });
+    const ctx = makeContext();
+    await activeStore.set(
+      'connect_itchio:connect_itchio:auth_user_123:state-token',
+      JSON.stringify({
+        authUserId: 'auth_user_123',
+        guildId: 'guild_456',
+        setupToken: 'setup-token',
+      }),
+      60_000
+    );
+
+    const finishRoute = connect.routes.find((route) => route.path.endsWith('/finish'));
+    if (!finishRoute) {
+      throw new Error('POST /finish route not registered in itchio connect plugin');
+    }
+
+    const response = await finishRoute.handler(
+      new Request('https://api.example.com/api/connect/itchio/finish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: 'creator-fragment-token',
+          state: 'connect_itchio:auth_user_123:state-token',
+        }),
+      }),
+      ctx as unknown as ConnectContext
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Missing required itch.io scopes: profile:games',
+    });
+    expect(mutationCalls).toHaveLength(0);
   });
 });

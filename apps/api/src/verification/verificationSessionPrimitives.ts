@@ -7,7 +7,7 @@ import { base64UrlEncode, bytesToHex, sha256Bytes } from '@yucp/shared/crypto';
 export const SESSION_EXPIRY_MS = 15 * 60 * 1000;
 export const PKCE_CODE_CHALLENGE_METHOD = 'S256';
 
-const GUMROAD_VERIFICATION_STATE_PREFIX = 'verify_gumroad';
+const VERIFICATION_STATE_PREFIX = 'verify';
 const PKCE_VERIFIER_PREFIX = 'pkce_verifier:';
 
 /**
@@ -67,20 +67,24 @@ export async function createPkceBundle(): Promise<VerificationPkceBundle> {
 
 export function createVerificationState(authUserId: string, mode: string): string {
   const randomSuffix = generateSecureRandom(48);
-  return mode === 'gumroad'
-    ? `${GUMROAD_VERIFICATION_STATE_PREFIX}:${authUserId}:${randomSuffix}`
-    : `${authUserId}:${randomSuffix}`;
+  return `${VERIFICATION_STATE_PREFIX}:${mode}:${authUserId}:${randomSuffix}`;
 }
 
 export function parseVerificationState(state: string): { authUserId: string } | null {
   const parts = state.split(':');
-  if (parts.length < 2) {
-    return null;
+  if (parts.length >= 4 && parts[0] === VERIFICATION_STATE_PREFIX) {
+    return {
+      authUserId: parts[2] ?? '',
+    };
   }
 
-  return {
-    authUserId: parts.length >= 3 ? (parts[1] ?? '') : (parts[0] ?? ''),
-  };
+  if (parts.length >= 2) {
+    return {
+      authUserId: parts.length >= 3 ? (parts[1] ?? '') : (parts[0] ?? ''),
+    };
+  }
+
+  return null;
 }
 
 export function getPkceVerifierStoreKey(state: string): string {
@@ -89,10 +93,10 @@ export function getPkceVerifierStoreKey(state: string): string {
 
 export function buildVerificationCallbackUri(
   baseUrl: string,
-  mode: string,
-  callbackPath: string
+  callbackPath: string,
+  frontendUrl?: string,
+  callbackOrigin: 'api' | 'frontend' = 'api'
 ): string {
-  return mode === 'gumroad'
-    ? `${baseUrl}/api/connect/gumroad/callback`
-    : `${baseUrl}${callbackPath}`;
+  const originBase = callbackOrigin === 'frontend' ? (frontendUrl ?? baseUrl) : baseUrl;
+  return `${originBase.replace(/\/$/, '')}${callbackPath}`;
 }

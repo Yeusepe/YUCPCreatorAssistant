@@ -9,6 +9,7 @@ import {
   createItchioProviderModule,
   fetchItchioCredentialsInfo,
   fetchItchioCurrentUser,
+  fetchItchioOwnedKeys,
   itchioScopeSatisfied,
 } from '../../src/itchio/module';
 
@@ -73,6 +74,54 @@ describe('createItchioProviderModule', () => {
         id: '22',
         name: 'Game Two',
         productUrl: 'https://creator.itch.io/game-two',
+        published: false,
+      },
+    ]);
+  });
+
+  it('normalizes creator games when the my-games payload returns an object map', async () => {
+    const module = createItchioProviderModule({
+      logger,
+      async getEncryptedCredential() {
+        return 'encrypted-token';
+      },
+      async decryptCredential() {
+        return 'access-token';
+      },
+      async fetchImpl() {
+        return new Response(
+          JSON.stringify({
+            games: {
+              featured: {
+                id: 33,
+                title: 'Game Three',
+                url: 'https://creator.itch.io/game-three',
+                published: true,
+              },
+              draft: {
+                id: 44,
+                title: 'Game Four',
+                url: 'https://creator.itch.io/game-four',
+                published: false,
+              },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      },
+    });
+
+    await expect(module.fetchProducts('access-token', makeCtx())).resolves.toEqual([
+      {
+        id: '33',
+        name: 'Game Three',
+        productUrl: 'https://creator.itch.io/game-three',
+        published: true,
+      },
+      {
+        id: '44',
+        name: 'Game Four',
+        productUrl: 'https://creator.itch.io/game-four',
         published: false,
       },
     ]);
@@ -176,5 +225,52 @@ describe('itch.io OAuth helpers', () => {
       displayName: 'Creator',
       profileUrl: 'https://creator.itch.io',
     });
+  });
+
+  it('reads owned library pages from the itch.io profile owned-keys endpoint', async () => {
+    const seenUrls: string[] = [];
+    const fetchImpl = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seenUrls.push(url);
+
+      if (url.endsWith('/profile/owned-keys?page=1')) {
+        return new Response(
+          JSON.stringify({
+            owned_keys: [
+              {
+                id: 5001,
+                game_id: 42,
+                purchase_id: 9001,
+                game: {
+                  id: 42,
+                  title: 'Volcanic Sinkhole Battlemap',
+                  url: 'https://creator.itch.io/volcanic-sinkhole-battlemap',
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(JSON.stringify({ owned_keys: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    await expect(fetchItchioOwnedKeys('token', { fetchImpl })).resolves.toEqual([
+      {
+        ownedKeyId: '5001',
+        gameId: '42',
+        purchaseId: '9001',
+        gameTitle: 'Volcanic Sinkhole Battlemap',
+        gameUrl: 'https://creator.itch.io/volcanic-sinkhole-battlemap',
+      },
+    ]);
+    expect(seenUrls).toEqual([
+      'https://api.itch.io/profile/owned-keys?page=1',
+      'https://api.itch.io/profile/owned-keys?page=2',
+    ]);
   });
 });

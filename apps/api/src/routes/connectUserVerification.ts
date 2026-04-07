@@ -450,6 +450,7 @@ export function createConnectUserVerificationRoutes({
       const result = await verifyHostedBuyerProviderLinkIntent({
         convex,
         apiSecret: config.convexApiSecret,
+        encryptionSecret: config.encryptionSecret,
         authUserId: session.user.id,
         intentId: intentId as Id<'verification_intents'>,
         methodKey: body.methodKey,

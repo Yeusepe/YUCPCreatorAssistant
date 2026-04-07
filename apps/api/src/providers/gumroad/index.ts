@@ -5,6 +5,7 @@ import { logger } from '../../lib/logger';
 import type { DisconnectContext } from '../types';
 import { defineApiProviderEntry } from '../types';
 import { backfill } from './backfill';
+import { buyerLink } from './buyerLink';
 import { buyerVerification } from './buyerVerification';
 import { connect } from './connect';
 import { webhook } from './webhook';
@@ -47,6 +48,7 @@ export function createGumroadApiProvider(deps: GumroadApiProviderDeps = {}) {
     hooks: {
       programmaticWebhooks: true,
       webhook,
+      buyerLink,
       connect,
 
       async onDisconnect(ctx: DisconnectContext) {

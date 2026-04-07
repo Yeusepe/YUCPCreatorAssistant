@@ -7,7 +7,7 @@
 
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalQuery, mutation, query } from './_generated/server';
+import { internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { requireApiSecret } from './lib/apiAuth';
 import {
   type ExternalAccountIdentityCandidate,
@@ -821,6 +821,29 @@ export const revokeBuyerProviderLink = mutation({
       status: 'revoked',
       updatedAt: Date.now(),
     });
+    return { success: true };
+  },
+});
+
+export const markBuyerProviderLinkExpired = internalMutation({
+  args: {
+    linkId: v.id('buyer_provider_links'),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    const link = await ctx.db.get(args.linkId);
+    if (!link) {
+      return { success: false };
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.linkId, {
+      status: 'expired',
+      lastValidatedAt: now,
+      expiresAt: now,
+      updatedAt: now,
+    });
+
     return { success: true };
   },
 });
