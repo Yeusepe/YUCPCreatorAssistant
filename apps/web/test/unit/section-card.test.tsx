@@ -4,15 +4,15 @@ import { SectionCard } from '@/components/ui/SectionCard';
 
 describe('SectionCard', () => {
   it('renders as a <section> element with section-card class', () => {
-    render(<SectionCard>content</SectionCard>);
-    const el = screen.getByText('content').closest('section');
-    expect(el).toBeInTheDocument();
+    const { container } = render(<SectionCard>main content</SectionCard>);
+    const el = container.firstElementChild as HTMLElement;
+    expect(el.tagName).toBe('SECTION');
     expect(el).toHaveClass('section-card');
   });
 
   it('merges extra className onto root', () => {
-    render(<SectionCard className="bento-col-6">content</SectionCard>);
-    const el = screen.getByText('content').closest('section');
+    const { container } = render(<SectionCard className="bento-col-6">grid content</SectionCard>);
+    const el = container.firstElementChild as HTMLElement;
     expect(el).toHaveClass('section-card', 'bento-col-6');
   });
 

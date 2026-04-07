@@ -30,16 +30,17 @@ describe('AccountModal', () => {
   });
 
   it('renders with aria-labelledby linking to title', () => {
-    render(
+    const { container } = render(
       <AccountModal title="My Dialog" onClose={vi.fn()}>
         <p>body</p>
       </AccountModal>
     );
 
-    const dialog = screen.getByRole('dialog');
-    const labelId = dialog.getAttribute('aria-labelledby');
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    const labelId = dialog!.getAttribute('aria-labelledby');
     expect(labelId).toBeTruthy();
-    const heading = document.getElementById(labelId!);
+    const heading = container.querySelector(`#${labelId}`);
     expect(heading?.textContent).toBe('My Dialog');
   });
 });
