@@ -1,3 +1,4 @@
+import { Tooltip } from '@heroui/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
@@ -76,7 +77,20 @@ function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
       <div className="account-list-row-info">
         <p className="account-list-row-name">{grant.appName}</p>
         <p className="account-list-row-meta">
-          <span className="account-reference-chip">{grant.clientId}</span>
+          <Tooltip>
+            <Tooltip.Trigger>
+              <span className="account-reference-chip" style={{ cursor: 'default' }}>
+                {grant.clientId.length > 16
+                  ? `${grant.clientId.slice(0, 16)}\u2026`
+                  : grant.clientId}
+              </span>
+            </Tooltip.Trigger>
+            <Tooltip.Content>
+              <p style={{ fontFamily: 'ui-monospace, monospace', fontSize: '11px' }}>
+                {grant.clientId}
+              </p>
+            </Tooltip.Content>
+          </Tooltip>
           {grant.grantedAt ? <span>Authorized {formatAccountDate(grant.grantedAt)}</span> : null}
         </p>
         {grant.scopes.length > 0 ? (

@@ -1,3 +1,4 @@
+import { Tooltip } from '@heroui/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
@@ -86,10 +87,19 @@ function EntitlementRow({ entitlement }: Readonly<{ entitlement: UserLicenseEnti
         <p className="account-list-row-meta">
           <ProviderChip name={entitlement.sourceProvider} />
           {entitlement.sourceReference ? (
-            <span className="account-reference-chip">
-              {entitlement.sourceReference.slice(0, 12)}
-              &hellip;
-            </span>
+            <Tooltip>
+              <Tooltip.Trigger>
+                <span className="account-reference-chip" style={{ cursor: 'default' }}>
+                  {entitlement.sourceReference.slice(0, 12)}
+                  &hellip;
+                </span>
+              </Tooltip.Trigger>
+              <Tooltip.Content>
+                <p style={{ fontFamily: 'ui-monospace, monospace', fontSize: '11px' }}>
+                  {entitlement.sourceReference}
+                </p>
+              </Tooltip.Content>
+            </Tooltip>
           ) : null}
           <span>{formatAccountDate(entitlement.grantedAt)}</span>
         </p>
