@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { AccountModal } from '@/components/account/AccountPage';
+import { type BadgeStatus, StatusChip } from '@/components/ui/StatusChip';
+import { YucpButton } from '@/components/ui/YucpButton';
 import {
   type CreatorCertificateBillingSummary,
   type CreatorCertificateDevice,
@@ -90,16 +92,15 @@ export function CertificatePlanCard({
         ))}
       </ul>
 
-      <button
-        type="button"
-        className={`account-btn account-btn--${isCurrentPlan ? 'secondary' : 'primary'}${isPending ? ' btn-loading' : ''}`}
-        style={{ width: '100%', justifyContent: 'center', borderRadius: '999px' }}
+      <YucpButton
+        yucp={isCurrentPlan ? 'secondary' : 'primary'}
+        pill
+        isLoading={isPending}
+        isDisabled={isPending || isDisabled || isCurrentPlan}
+        className="w-full justify-center"
         onClick={() => onCheckout(plan)}
-        disabled={isPending || isDisabled || isCurrentPlan}
       >
-        {isPending ? (
-          <span className="btn-loading-spinner" aria-hidden="true" />
-        ) : isCurrentPlan ? (
+        {isCurrentPlan ? (
           'Current Plan'
         ) : (
           <>
@@ -107,7 +108,7 @@ export function CertificatePlanCard({
             Subscribe via Polar
           </>
         )}
-      </button>
+      </YucpButton>
     </article>
   );
 }
@@ -142,9 +143,10 @@ export function CertificateDeviceRow({
         <p className="account-list-row-name">{device.publisherName}</p>
         <div className="account-list-row-meta">
           <span className="account-reference-chip">{device.devPublicKey.slice(0, 20)}…</span>
-          <span className={`account-badge account-badge--${isActive ? 'active' : 'revoked'}`}>
-            {device.status}
-          </span>
+          <StatusChip
+            status={(isActive ? 'active' : 'revoked') as BadgeStatus}
+            label={device.status}
+          />
           <span>Issued {formatCertificateDate(device.issuedAt)}</span>
           <span aria-hidden="true">·</span>
           <span>Expires {formatCertificateDate(device.expiresAt)}</span>
@@ -153,14 +155,13 @@ export function CertificateDeviceRow({
 
       <div className="account-list-row-actions">
         {isActive && (
-          <button
-            type="button"
-            className="account-btn account-btn--danger"
-            style={{ borderRadius: '8px', fontSize: '12px', padding: '5px 12px' }}
+          <YucpButton
+            yucp="danger"
+            className="rounded-[8px] text-[12px] px-3 py-[5px]"
             onClick={() => setConfirming(true)}
           >
             Revoke
-          </button>
+          </YucpButton>
         )}
       </div>
 
@@ -178,26 +179,21 @@ export function CertificateDeviceRow({
             immediately and invalidates its signing certificate.
           </p>
           <div className="account-modal-actions">
-            <button
-              type="button"
-              className="account-btn account-btn--secondary"
+            <YucpButton
+              yucp="secondary"
               onClick={() => setConfirming(false)}
-              disabled={isRevoking}
+              isDisabled={isRevoking}
             >
               Cancel
-            </button>
-            <button
-              type="button"
-              className={`account-btn account-btn--danger${isRevoking ? ' btn-loading' : ''}`}
+            </YucpButton>
+            <YucpButton
+              yucp="danger"
+              isLoading={isRevoking}
+              isDisabled={isRevoking}
               onClick={() => onRevoke(device.certNonce)}
-              disabled={isRevoking}
             >
-              {isRevoking ? (
-                <span className="btn-loading-spinner" aria-hidden="true" />
-              ) : (
-                'Confirm Revocation'
-              )}
-            </button>
+              {isRevoking ? 'Revoking...' : 'Confirm Revocation'}
+            </YucpButton>
           </div>
         </AccountModal>
       )}

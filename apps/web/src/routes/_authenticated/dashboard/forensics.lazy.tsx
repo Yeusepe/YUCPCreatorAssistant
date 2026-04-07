@@ -7,6 +7,7 @@ import { DashboardAuthRequiredState } from '@/components/dashboard/AuthRequiredS
 import { DashboardGridSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
 import { isDashboardAuthError, useDashboardSession } from '@/hooks/useDashboardSession';
 import { listCreatorCertificates } from '@/lib/certificates';
@@ -315,16 +316,15 @@ export default function DashboardForensics() {
               <p className="forensics-upgrade-gate-desc">
                 Refresh your billing state and try again before starting a coupling scan.
               </p>
-              <button
-                type="button"
-                className="account-btn account-btn--primary"
-                style={{ borderRadius: '999px' }}
+              <YucpButton
+                yucp="primary"
+                pill
                 onClick={() => {
                   void certificatesQuery.refetch();
                 }}
               >
                 Retry
-              </button>
+              </YucpButton>
             </div>
           ) : certificatesQuery.isSuccess && capabilityEnabled === false ? (
             <div className="forensics-upgrade-gate">
@@ -491,22 +491,20 @@ export default function DashboardForensics() {
               </div>
 
               <div className="account-form-actions">
-                <button
+                <YucpButton
                   type="submit"
-                  className={`account-btn account-btn--primary${lookupMutation.isPending ? ' btn-loading' : ''}`}
-                  style={{ borderRadius: '999px' }}
-                  disabled={
+                  yucp="primary"
+                  pill
+                  isLoading={lookupMutation.isPending}
+                  isDisabled={
                     lookupMutation.isPending ||
                     !selectedPackageId ||
                     !selectedFile ||
                     packageOptions.length === 0
                   }
                 >
-                  {lookupMutation.isPending && (
-                    <span className="btn-loading-spinner" aria-hidden="true" />
-                  )}
-                  <span>{lookupMutation.isPending ? 'Scanning...' : 'Scan upload'}</span>
-                </button>
+                  {lookupMutation.isPending ? 'Scanning...' : 'Scan upload'}
+                </YucpButton>
               </div>
             </form>
           )}

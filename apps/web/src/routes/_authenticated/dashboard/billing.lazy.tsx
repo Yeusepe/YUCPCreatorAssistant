@@ -12,6 +12,7 @@ import {
 } from '@/components/dashboard/CertificateWorkspacePanels';
 import { DashboardCertificatesSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
 import { useCreatorCertificateWorkspace } from '@/hooks/useCreatorCertificateWorkspace';
 import { isDashboardAuthError } from '@/hooks/useDashboardSession';
@@ -337,16 +338,14 @@ export default function DashboardBilling() {
               >
                 Certificates
               </Link>
-              <button
-                type="button"
-                className={`account-btn account-btn--primary${portalMut.isPending ? ' btn-loading' : ''}`}
-                style={{ borderRadius: '10px', fontSize: '13px' }}
+              <YucpButton
+                yucp="primary"
+                isLoading={portalMut.isPending}
+                isDisabled={portalMut.isPending}
+                className="rounded-[10px] text-[13px]"
                 onClick={() => portalMut.mutate()}
-                disabled={portalMut.isPending}
               >
-                {portalMut.isPending ? (
-                  <span className="btn-loading-spinner" aria-hidden="true" />
-                ) : (
+                {!portalMut.isPending && (
                   <svg
                     width="13"
                     height="13"
@@ -364,7 +363,7 @@ export default function DashboardBilling() {
                   </svg>
                 )}
                 {portalMut.isPending ? 'Opening…' : 'Polar Portal'}
-              </button>
+              </YucpButton>
             </div>
           </div>
 

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { AccountInlineError } from '@/components/account/AccountPage';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import { isDashboardAuthError, useDashboardSession } from '@/hooks/useDashboardSession';
 import {
   archiveCreatorPackage,
@@ -314,11 +315,10 @@ export function PackageRegistryPanel({
                         ) : null}
                       </div>
                       <div className="account-list-row-actions">
-                        <button
-                          type="button"
-                          className={`account-btn account-btn--secondary${isSaving ? ' btn-loading' : ''}`}
-                          style={{ borderRadius: '10px' }}
-                          disabled={
+                        <YucpButton
+                          yucp="secondary"
+                          isLoading={isSaving}
+                          isDisabled={
                             isSaving ||
                             isDeleting ||
                             isArchiving ||
@@ -332,35 +332,24 @@ export function PackageRegistryPanel({
                             })
                           }
                         >
-                          {isSaving ? (
-                            <span className="btn-loading-spinner" aria-hidden="true" />
-                          ) : null}
-                          <span>{isSaving ? 'Saving...' : 'Save Name'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={`account-btn account-btn--secondary${isArchiving ? ' btn-loading' : ''}`}
-                          style={{ borderRadius: '10px' }}
-                          disabled={isSaving || isDeleting || isArchiving || !pkg.canArchive}
+                          {isSaving ? 'Saving...' : 'Save Name'}
+                        </YucpButton>
+                        <YucpButton
+                          yucp="secondary"
+                          isLoading={isArchiving}
+                          isDisabled={isSaving || isDeleting || isArchiving || !pkg.canArchive}
                           onClick={() => archiveMutation.mutate({ packageId: pkg.packageId })}
                         >
-                          {isArchiving ? (
-                            <span className="btn-loading-spinner" aria-hidden="true" />
-                          ) : null}
-                          <span>{isArchiving ? 'Archiving...' : 'Archive'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={`account-btn account-btn--secondary${isDeleting ? ' btn-loading' : ''}`}
-                          style={{ borderRadius: '10px' }}
-                          disabled={isSaving || isDeleting || isArchiving || !pkg.canDelete}
+                          {isArchiving ? 'Archiving...' : 'Archive'}
+                        </YucpButton>
+                        <YucpButton
+                          yucp="secondary"
+                          isLoading={isDeleting}
+                          isDisabled={isSaving || isDeleting || isArchiving || !pkg.canDelete}
                           onClick={() => deleteMutation.mutate({ packageId: pkg.packageId })}
                         >
-                          {isDeleting ? (
-                            <span className="btn-loading-spinner" aria-hidden="true" />
-                          ) : null}
-                          <span>{isDeleting ? 'Removing...' : 'Delete'}</span>
-                        </button>
+                          {isDeleting ? 'Removing...' : 'Delete'}
+                        </YucpButton>
                       </div>
                     </div>
                   );
@@ -371,20 +360,15 @@ export function PackageRegistryPanel({
 
           {archivedPackages.length > 0 ? (
             <div>
-              <button
-                type="button"
-                className="account-btn account-btn--secondary"
-                style={{
-                  borderRadius: '10px',
-                  justifyContent: 'space-between',
-                  width: '100%',
-                }}
+              <YucpButton
+                yucp="secondary"
+                className="w-full justify-between"
                 aria-expanded={isArchivedExpanded}
                 onClick={() => setIsArchivedExpanded((current) => !current)}
               >
                 <span>Archived Packages ({archivedPackages.length})</span>
                 <span aria-hidden="true">{isArchivedExpanded ? 'Hide' : 'Show'}</span>
-              </button>
+              </YucpButton>
               {isArchivedExpanded ? (
                 <>
                   <p
@@ -433,30 +417,22 @@ export function PackageRegistryPanel({
                             </p>
                           </div>
                           <div className="account-list-row-actions">
-                            <button
-                              type="button"
-                              className={`account-btn account-btn--secondary${isRestoring ? ' btn-loading' : ''}`}
-                              style={{ borderRadius: '10px' }}
-                              disabled={isDeleting || isRestoring || !pkg.canRestore}
+                            <YucpButton
+                              yucp="secondary"
+                              isLoading={isRestoring}
+                              isDisabled={isDeleting || isRestoring || !pkg.canRestore}
                               onClick={() => restoreMutation.mutate({ packageId: pkg.packageId })}
                             >
-                              {isRestoring ? (
-                                <span className="btn-loading-spinner" aria-hidden="true" />
-                              ) : null}
-                              <span>{isRestoring ? 'Restoring...' : 'Restore'}</span>
-                            </button>
-                            <button
-                              type="button"
-                              className={`account-btn account-btn--secondary${isDeleting ? ' btn-loading' : ''}`}
-                              style={{ borderRadius: '10px' }}
-                              disabled={isDeleting || isRestoring || !pkg.canDelete}
+                              {isRestoring ? 'Restoring...' : 'Restore'}
+                            </YucpButton>
+                            <YucpButton
+                              yucp="secondary"
+                              isLoading={isDeleting}
+                              isDisabled={isDeleting || isRestoring || !pkg.canDelete}
                               onClick={() => deleteMutation.mutate({ packageId: pkg.packageId })}
                             >
-                              {isDeleting ? (
-                                <span className="btn-loading-spinner" aria-hidden="true" />
-                              ) : null}
-                              <span>{isDeleting ? 'Removing...' : 'Delete'}</span>
-                            </button>
+                              {isDeleting ? 'Removing...' : 'Delete'}
+                            </YucpButton>
                           </div>
                         </div>
                       );
