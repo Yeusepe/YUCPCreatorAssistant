@@ -49,6 +49,16 @@
 
   /* Focus ring */
   --focus-ring: 0 0 0 3px rgba(14, 165, 233, 0.4);
+
+  /* Z-index scale */
+  --z-content: 1;
+  --z-content-high: 10;
+  --z-sidebar: 55;
+  --z-sidebar-desktop: 60;
+  --z-sidebar-overlay: 90;
+  --z-sidebar-mobile: 100;
+  --z-modal: 10000;
+  --z-portal: 100003;
 }
 
 /* Holographic Sticker Transparency Fix */

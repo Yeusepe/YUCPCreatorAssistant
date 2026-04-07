@@ -633,6 +633,7 @@ function Sidebar({
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                 </svg>
                 Server Rules
+                <span className="sidebar-nav-soon">Soon</span>
               </Link>
               <Link
                 to="/dashboard/audit-logs"
@@ -660,6 +661,7 @@ function Sidebar({
                   <polyline points="10 9 9 9 8 9" />
                 </svg>
                 Audit Logs
+                <span className="sidebar-nav-soon">Soon</span>
               </Link>
             </div>
           </div>
