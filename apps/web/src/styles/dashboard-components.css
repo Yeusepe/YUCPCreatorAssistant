@@ -3510,63 +3510,6 @@
   color: #94a3b8;
 }
 
-/* Toggle switch inside setting rows */
-
-.setting-toggle {
-  position: relative;
-  display: inline-flex;
-  width: 44px;
-  height: 24px;
-  flex-shrink: 0;
-  cursor: pointer;
-  align-items: center;
-  border-radius: 9999px;
-  transition: background-color 0.2s ease;
-  background: #cbd5e1;
-  border: none;
-  outline: none;
-  padding: 0;
-  user-select: none;
-}
-
-.setting-toggle[aria-checked="true"] {
-  background: #0ea5e9;
-}
-
-.dark .setting-toggle {
-  background: #475569;
-}
-
-.dark .setting-toggle[aria-checked="true"] {
-  background: #0ea5e9;
-}
-
-.setting-toggle:focus-visible {
-  outline: 2px solid #0ea5e9;
-  outline-offset: 2px;
-}
-
-.setting-toggle[aria-disabled="true"] {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.setting-toggle-thumb {
-  pointer-events: none;
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s ease;
-  transform: translateX(4px);
-}
-
-.setting-toggle[aria-checked="true"] .setting-toggle-thumb {
-  transform: translateX(24px);
-}
-
 /* Sidebar account button */
 
 .sidebar-account-btn {
