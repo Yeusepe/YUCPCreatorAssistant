@@ -8,6 +8,7 @@ import {
   AccountSectionCard,
 } from '@/components/account/AccountPage';
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
+import { YucpButton } from '@/components/ui/YucpButton';
 import { useToast } from '@/components/ui/Toast';
 import {
   disconnectUserAccount,
@@ -195,38 +196,29 @@ function ProviderCard({
                     {isConfirming ? (
                       <div className="account-inline-actions">
                         <span className="account-field-note">Disconnect?</span>
-                        <button
-                          type="button"
-                          className={`account-btn account-btn--danger${disconnectMut.isPending ? ' btn-loading' : ''}`}
+                        <YucpButton
+                          yucp="danger"
+                          isLoading={disconnectMut.isPending}
+                          isDisabled={disconnectMut.isPending}
                           onClick={() => disconnectMut.mutate(connection.id)}
-                          disabled={disconnectMut.isPending}
                         >
-                          {disconnectMut.isPending ? (
-                            <>
-                              <span className="btn-loading-spinner" aria-hidden="true" />
-                              Disconnecting...
-                            </>
-                          ) : (
-                            'Yes'
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          className="account-btn account-btn--secondary"
+                          {disconnectMut.isPending ? 'Disconnecting...' : 'Yes'}
+                        </YucpButton>
+                        <YucpButton
+                          yucp="secondary"
+                          isDisabled={disconnectMut.isPending}
                           onClick={() => setConfirmingId(null)}
-                          disabled={disconnectMut.isPending}
                         >
                           No
-                        </button>
+                        </YucpButton>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        className="account-btn account-btn--danger"
+                      <YucpButton
+                        yucp="danger"
                         onClick={() => setConfirmingId(connection.id)}
                       >
                         Disconnect
-                      </button>
+                      </YucpButton>
                     )}
                   </div>
                 </div>
@@ -240,21 +232,14 @@ function ProviderCard({
 
       {!isConnected && provider.canConnect ? (
         <div className="acct-provider-actions">
-          <button
-            type="button"
-            className={`account-btn account-btn--connect${connecting ? ' btn-loading' : ''}`}
+          <YucpButton
+            yucp="primary"
+            isLoading={connecting}
+            isDisabled={connecting}
             onClick={handleConnect}
-            disabled={connecting}
           >
-            {connecting ? (
-              <>
-                <span className="btn-loading-spinner" aria-hidden="true" />
-                Connecting...
-              </>
-            ) : (
-              'Connect'
-            )}
-          </button>
+            {connecting ? 'Connecting...' : 'Connect'}
+          </YucpButton>
         </div>
       ) : null}
     </div>
