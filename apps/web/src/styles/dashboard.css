@@ -1482,6 +1482,8 @@ img.collab-avatar {
 /* Liquid glass sidebar no curved corners; goes under content (lower z) */
 
 .sidebar {
+  display: flex;
+  flex-direction: column;
   z-index: var(--z-sidebar-mobile);
   backdrop-filter: blur(24px) saturate(150%);
   -webkit-backdrop-filter: blur(24px) saturate(150%);
@@ -1604,6 +1606,7 @@ img.collab-avatar {
   z-index: var(--z-portal);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
+  padding: 14px 12px 10px;
 }
 
 .sidebar-brand {
@@ -1611,9 +1614,9 @@ img.collab-avatar {
   align-items: center;
   justify-content: flex-start;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   flex-shrink: 0;
-  padding: 0 4px;
+  padding: 0;
 }
 
 .sidebar-brand img,
@@ -1698,7 +1701,7 @@ img.collab-avatar {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 10px;
+  padding: 12px 12px;
   scrollbar-width: none;
 }
 
