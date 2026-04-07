@@ -72,7 +72,7 @@ export function createItchioBuyerLinkPlugin(deps: ItchioBuyerLinkDeps = {}): Buy
         ITCHIO_PURPOSES.buyerCredential
       );
 
-      await ctx.convex.mutation(internal.identitySync.storeExternalAccountOAuthCredentials, {
+      await ctx.convex.mutation(api.identitySync.storeExternalAccountOAuthCredentials, {
         apiSecret: ctx.apiSecret,
         externalAccountId: input.externalAccountId,
         oauthAccessTokenEncrypted: encryptedAccessToken,
@@ -185,8 +185,9 @@ export function createItchioBuyerLinkPlugin(deps: ItchioBuyerLinkDeps = {}): Buy
       }
 
       const credentials = await ctx.convex.query(
-        internal.identitySync.getExternalAccountOAuthCredentials,
+        api.identitySync.getExternalAccountOAuthCredentials,
         {
+          apiSecret: ctx.apiSecret,
           externalAccountId: buyerProviderLink.externalAccountId,
         }
       );

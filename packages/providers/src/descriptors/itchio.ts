@@ -6,7 +6,7 @@ export const itchio = {
   category: 'commerce',
   status: 'active',
   docsUrl: 'https://itch.io/docs/api/serverside',
-  emojiKey: 'GiftCard',
+  emojiKey: 'ItchIo',
   addProductDescription: 'Pick a game from your connected itch.io account',
   creatorAuthModes: ['oauth'],
   buyerVerificationMethods: ['account_link', 'license_key'],

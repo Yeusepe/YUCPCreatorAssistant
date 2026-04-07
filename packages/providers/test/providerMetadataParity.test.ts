@@ -24,4 +24,8 @@ describe('provider metadata parity', () => {
       expect(PROVIDER_REGISTRY_BY_KEY[provider.providerKey]).toEqual(provider);
     }
   });
+
+  it('keeps itch.io mapped to the custom ItchIo emoji', () => {
+    expect(getProviderDescriptor('itchio')?.emojiKey).toBe('ItchIo');
+  });
 });

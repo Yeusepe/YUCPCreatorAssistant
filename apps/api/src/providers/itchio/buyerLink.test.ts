@@ -6,6 +6,10 @@ const apiMock = {
   subjects: {
     getSubjectByAuthId: 'subjects.getSubjectByAuthId',
   },
+  identitySync: {
+    getExternalAccountOAuthCredentials: 'identitySync.getExternalAccountOAuthCredentials',
+    storeExternalAccountOAuthCredentials: 'identitySync.storeExternalAccountOAuthCredentials',
+  },
   verificationIntents: {
     getIntentRecord: 'verificationIntents.getIntentRecord',
   },
@@ -18,10 +22,6 @@ const internalMock = {
   subjects: {
     getBuyerProviderLinkForSubject: 'subjects.getBuyerProviderLinkForSubject',
     markBuyerProviderLinkExpired: 'subjects.markBuyerProviderLinkExpired',
-  },
-  identitySync: {
-    getExternalAccountOAuthCredentials: 'identitySync.getExternalAccountOAuthCredentials',
-    storeExternalAccountOAuthCredentials: 'identitySync.storeExternalAccountOAuthCredentials',
   },
   verificationIntents: {
     markIntentFailed: 'verificationIntents.markIntentFailed',
@@ -144,7 +144,7 @@ describe('itchio buyer link plugin', () => {
       profileUrl: 'https://itch-buyer.itch.io',
     });
     expect(mutationMock).toHaveBeenCalledWith(
-      internalMock.identitySync.storeExternalAccountOAuthCredentials,
+      apiMock.identitySync.storeExternalAccountOAuthCredentials,
       expect.objectContaining({
         externalAccountId: 'external-account-1',
         oauthAccessTokenEncrypted: 'enc:buyer-access-token',
@@ -188,7 +188,7 @@ describe('itchio buyer link plugin', () => {
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
-        case internalMock.identitySync.getExternalAccountOAuthCredentials:
+        case apiMock.identitySync.getExternalAccountOAuthCredentials:
           return {
             oauthAccessTokenEncrypted: 'enc:buyer-access-token',
           };
@@ -270,7 +270,7 @@ describe('itchio buyer link plugin', () => {
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
-        case internalMock.identitySync.getExternalAccountOAuthCredentials:
+        case apiMock.identitySync.getExternalAccountOAuthCredentials:
           return {
             oauthAccessTokenEncrypted: 'enc:buyer-access-token',
           };

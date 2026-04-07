@@ -60,7 +60,11 @@ describe('itch.io OAuth callback route', () => {
       throw new Error('itch.io callback route component is not defined');
     }
 
-    window.history.replaceState({}, '', '/oauth/callback/itchio?tenant_id=tenant-123&guild_id=guild-456');
+    window.history.replaceState(
+      {},
+      '',
+      '/oauth/callback/itchio?tenant_id=tenant-123&guild_id=guild-456'
+    );
 
     render(<Component />);
 
