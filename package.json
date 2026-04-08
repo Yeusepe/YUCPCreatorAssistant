@@ -25,7 +25,7 @@
     "bebop:regenerate": "bun run --filter @yucp/private-rpc generate",
     "lint": "bun run --filter '*' lint",
     "contracts:check": "bun run --filter @yucp/private-rpc check:generated",
-    "typecheck": "bun run contracts:check && bun run --filter '*' typecheck",
+    "typecheck": "bun run contracts:check && tsc -b tsconfig.solution.json --pretty false && bun run --filter '@yucp/api' typecheck && bun run --filter '@yucp/bot' typecheck && bun run --filter '@yucp/web' typecheck",
     "test": "bun run test:fast",
     "test:ops": "bun test ./ops/dev-supervisor.test.ts",
     "test:fast": "bun run test:ops && bun run --filter '@yucp/api' test && bun run --filter '@yucp/application' test && bun run --filter '@yucp/policy' test && bun run --filter '@yucp/providers' test && bun run --filter '@yucp/shared' test",
