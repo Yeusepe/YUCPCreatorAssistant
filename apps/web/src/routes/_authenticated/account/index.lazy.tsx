@@ -2,12 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { createLazyFileRoute, Link } from '@tanstack/react-router';
 import { AccountPage, AccountSectionCard } from '@/components/account/AccountPage';
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
+import { ProviderChip } from '@/components/ui/ProviderChip';
+import { StatusChip } from '@/components/ui/StatusChip';
 import { useAccountShell } from '@/hooks/useAccountShell';
 import { useAuth } from '@/hooks/useAuth';
 import { listUserLicenses, listUserOAuthGrants } from '@/lib/account';
 import { authClient } from '@/lib/auth-client';
 import { listCreatorCertificates } from '@/lib/certificates';
-import { listUserAccounts, listUserProviders } from '@/lib/dashboard';
+import { listUserAccounts } from '@/lib/dashboard';
 
 function AccountProfilePending() {
   return (
@@ -34,10 +36,6 @@ function AccountProfile() {
     },
     staleTime: 60_000,
   });
-  const providersQuery = useQuery({
-    queryKey: ['user-providers'],
-    queryFn: listUserProviders,
-  });
   const accountsQuery = useQuery({
     queryKey: ['user-accounts'],
     queryFn: listUserAccounts,
@@ -46,7 +44,7 @@ function AccountProfile() {
     queryKey: ['user-licenses'],
     queryFn: listUserLicenses,
   });
-  const certificatesQuery = useQuery({
+  useQuery({
     queryKey: ['creator-certificates'],
     queryFn: listCreatorCertificates,
     enabled: isCreator,
@@ -67,9 +65,7 @@ function AccountProfile() {
   const activeLicenses = entitlements.filter(
     (entitlement) => entitlement.status === 'active'
   ).length;
-  const certificateWorkspace = certificatesQuery.data;
   const authorizedApps = grantsQuery.data;
-  const availableProviders = providersQuery.data;
   const connectedLabels = accounts
     .map((connection, index) => {
       const label = connection.label || connection.provider;
@@ -82,6 +78,7 @@ function AccountProfile() {
       };
     })
     .filter((entry): entry is { key: string; label: string } => entry !== null)
+    .filter((entry, index, arr) => arr.findIndex((e) => e.label === entry.label) === index)
     .slice(0, 3);
   const workspaceHref = '/api/install/bot';
 
@@ -127,14 +124,10 @@ function AccountProfile() {
         </div>
 
         <div className="account-pill-row">
-          <span className="account-badge account-badge--connected">Discord linked</span>
-          <span className="account-badge account-badge--provider">
-            {isCreator ? 'Creator account' : 'Personal account'}
-          </span>
+          <StatusChip status="connected" label="Discord linked" />
+          <ProviderChip name={isCreator ? 'Creator account' : 'Personal account'} />
           {connectedLabels.map(({ key, label }) => (
-            <span key={key} className="account-badge account-badge--provider">
-              {label}
-            </span>
+            <ProviderChip key={key} name={label} />
           ))}
         </div>
       </AccountSectionCard>
@@ -177,21 +170,6 @@ function AccountProfile() {
               {renderMetricValue(licensesQuery, activeLicenses)}
             </span>
           </div>
-          <div className="account-kv-row">
-            <span className="account-kv-label">Signing devices</span>
-            <span className="account-kv-value">
-              {renderMetricValue(
-                certificatesQuery,
-                certificateWorkspace?.billing.activeDeviceCount ?? 0
-              )}
-            </span>
-          </div>
-          <div className="account-kv-row">
-            <span className="account-kv-label">Available providers</span>
-            <span className="account-kv-value">
-              {renderMetricValue(providersQuery, availableProviders?.length ?? 0)}
-            </span>
-          </div>
         </div>
 
         <button
@@ -204,47 +182,7 @@ function AccountProfile() {
       </AccountSectionCard>
 
       <AccountSectionCard
-        className="bento-col-7 animate-in animate-in-delay-2"
-        eyebrow="Shortcuts"
-        title="Jump into the right tool"
-        description="The same account shell now powers every part of your personal workspace."
-      >
-        <div className="account-shortcut-grid">
-          <Link to="/account/connections" className="account-shortcut-card">
-            <span className="account-shortcut-title">Connected Accounts</span>
-            <span className="account-shortcut-desc">
-              Link storefronts and identity providers used during verification.
-            </span>
-          </Link>
-          <Link to="/account/licenses" className="account-shortcut-card">
-            <span className="account-shortcut-title">Verified Purchases</span>
-            <span className="account-shortcut-desc">
-              Review active access and deactivate licenses when needed.
-            </span>
-          </Link>
-          <Link to="/dashboard/certificates" className="account-shortcut-card">
-            <span className="account-shortcut-title">Certificates & Billing</span>
-            <span className="account-shortcut-desc">
-              Open the creator certificate workspace, billing plans, and device controls.
-            </span>
-          </Link>
-          <Link to="/account/authorized-apps" className="account-shortcut-card">
-            <span className="account-shortcut-title">Authorized Apps</span>
-            <span className="account-shortcut-desc">
-              Audit which OAuth apps can act on your account.
-            </span>
-          </Link>
-          <Link to="/account/privacy" className="account-shortcut-card">
-            <span className="account-shortcut-title">Privacy & Data</span>
-            <span className="account-shortcut-desc">
-              Export data, review rights, and manage deletion requests.
-            </span>
-          </Link>
-        </div>
-      </AccountSectionCard>
-
-      <AccountSectionCard
-        className="bento-col-5 animate-in animate-in-delay-3"
+        className="bento-col-12 animate-in animate-in-delay-2"
         eyebrow={isCreator ? 'Creator mode' : 'Get started'}
         title={isCreator ? 'Your creator workspace is ready' : 'Unlock the creator dashboard'}
         description={
@@ -259,15 +197,22 @@ function AccountProfile() {
             : 'Once the bot is installed on a server you manage, this account immediately gains access to the dashboard and its setup flows.'}
         </p>
 
-        {isCreator ? (
-          <Link to="/dashboard" className="account-btn account-btn--primary">
-            Open creator dashboard
-          </Link>
-        ) : workspaceHref ? (
-          <a href={workspaceHref} className="account-btn account-btn--primary">
-            Add bot to a server
-          </a>
-        ) : null}
+        <div className="account-inline-actions">
+          {isCreator ? (
+            <Link to="/dashboard" className="account-btn account-btn--primary">
+              Open creator dashboard
+            </Link>
+          ) : workspaceHref ? (
+            <a href={workspaceHref} className="account-btn account-btn--primary">
+              Add bot to a server
+            </a>
+          ) : null}
+          {isCreator ? (
+            <Link to="/dashboard/certificates" className="account-btn account-btn--secondary">
+              Manage billing
+            </Link>
+          ) : null}
+        </div>
       </AccountSectionCard>
     </AccountPage>
   );

@@ -1,3 +1,4 @@
+import { Switch } from '@heroui/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DashboardSkeletonSwap } from '@/components/dashboard/DashboardSkeletonSwap';
@@ -247,25 +248,18 @@ function ToggleSwitch({
   onChange: () => void;
 }) {
   return (
-    <div
-      id={id}
-      role="switch"
-      tabIndex={0}
-      aria-checked={checked}
-      aria-label={label}
-      aria-disabled={disabled}
-      onClick={() => {
-        if (!disabled) onChange();
-      }}
-      onKeyDown={(event) => {
-        if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
-          event.preventDefault();
-          onChange();
-        }
-      }}
-      className="setting-toggle"
-    >
-      <span aria-hidden="true" className="setting-toggle-thumb" />
+    <div id={id}>
+      <Switch
+        isSelected={checked}
+        isDisabled={disabled}
+        onChange={() => onChange()}
+        aria-label={label}
+        size="sm"
+      >
+        <Switch.Control>
+          <Switch.Thumb />
+        </Switch.Control>
+      </Switch>
     </div>
   );
 }

@@ -1,5 +1,7 @@
+import { Tooltip } from '@heroui/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createLazyFileRoute } from '@tanstack/react-router';
+import { motion } from 'framer-motion';
 import { useMemo, useState } from 'react';
 import {
   AccountEmptyState,
@@ -9,7 +11,10 @@ import {
   AccountSectionCard,
 } from '@/components/account/AccountPage';
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
+import { ProviderChip } from '@/components/ui/ProviderChip';
+import { type BadgeStatus, StatusChip } from '@/components/ui/StatusChip';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import {
   formatAccountDate,
   getAccountProviderIconPath,
@@ -31,10 +36,14 @@ export const Route = createLazyFileRoute('/_authenticated/account/licenses')({
   component: AccountLicenses,
 });
 
-function EntitlementRow({ entitlement }: Readonly<{ entitlement: UserLicenseEntitlement }>) {
+function EntitlementRow({
+  entitlement,
+  index,
+}: Readonly<{ entitlement: UserLicenseEntitlement; index: number }>) {
   const [confirming, setConfirming] = useState(false);
   const queryClient = useQueryClient();
   const toast = useToast();
+  const rowDelay = Math.min(index * 0.05, 0.25);
 
   const revokeMut = useMutation({
     mutationFn: () => revokeUserLicense(entitlement.id),
@@ -55,7 +64,12 @@ function EntitlementRow({ entitlement }: Readonly<{ entitlement: UserLicenseEnti
   const iconPath = getAccountProviderIconPath(entitlement.sourceProvider);
 
   return (
-    <div className="account-list-row">
+    <motion.div
+      className="account-list-row"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: rowDelay, duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
+    >
       <div className="account-list-row-icon">
         {iconPath ? (
           <img src={iconPath} alt={entitlement.sourceProvider} width="20" height="20" />
@@ -72,8 +86,9 @@ function EntitlementRow({ entitlement }: Readonly<{ entitlement: UserLicenseEnti
             aria-hidden="true"
             focusable="false"
           >
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <path d="M9 9h6M9 13h4" />
+            <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
+            <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+            <circle cx="12" cy="13" r="1" />
           </svg>
         )}
       </div>
@@ -81,31 +96,48 @@ function EntitlementRow({ entitlement }: Readonly<{ entitlement: UserLicenseEnti
       <div className="account-list-row-info">
         <p className="account-list-row-name">{entitlement.productId}</p>
         <p className="account-list-row-meta">
-          <span className="account-badge account-badge--provider">
-            {entitlement.sourceProvider}
-          </span>
+          <ProviderChip name={entitlement.sourceProvider} />
           {entitlement.sourceReference ? (
-            <span className="account-reference-chip">
-              {entitlement.sourceReference.slice(0, 12)}
-              &hellip;
-            </span>
+            <Tooltip>
+              <Tooltip.Trigger>
+                <button
+                  type="button"
+                  className="account-reference-chip"
+                  style={{ cursor: 'help' }}
+                  aria-label={entitlement.sourceReference}
+                >
+                  {entitlement.sourceReference.slice(0, 12)}
+                  &hellip;
+                </button>
+              </Tooltip.Trigger>
+              <Tooltip.Content>
+                <p style={{ fontFamily: 'ui-monospace, monospace', fontSize: '11px' }}>
+                  {entitlement.sourceReference}
+                </p>
+              </Tooltip.Content>
+            </Tooltip>
           ) : null}
           <span>{formatAccountDate(entitlement.grantedAt)}</span>
         </p>
       </div>
 
       <div className="account-list-row-actions">
-        <span className={`account-badge account-badge--${entitlement.status}`}>
-          {entitlement.status.charAt(0).toUpperCase() + entitlement.status.slice(1)}
-        </span>
+        {(['active', 'revoked', 'expired'] as BadgeStatus[]).includes(
+          entitlement.status as BadgeStatus
+        ) ? (
+          <StatusChip
+            status={entitlement.status as BadgeStatus}
+            label={entitlement.status.charAt(0).toUpperCase() + entitlement.status.slice(1)}
+          />
+        ) : (
+          <ProviderChip
+            name={entitlement.status.charAt(0).toUpperCase() + entitlement.status.slice(1)}
+          />
+        )}
         {entitlement.status === 'active' && !confirming ? (
-          <button
-            type="button"
-            className="account-btn account-btn--danger"
-            onClick={() => setConfirming(true)}
-          >
+          <YucpButton yucp="ghost" onClick={() => setConfirming(true)}>
             Deactivate
-          </button>
+          </YucpButton>
         ) : null}
         {confirming ? (
           <AccountModal title="Deactivate license?" onClose={() => setConfirming(false)}>
@@ -114,34 +146,26 @@ function EntitlementRow({ entitlement }: Readonly<{ entitlement: UserLicenseEnti
               Re-verification requires the full provider flow again.
             </p>
             <div className="account-modal-actions">
-              <button
-                type="button"
-                className="account-btn account-btn--secondary"
+              <YucpButton
+                yucp="secondary"
                 onClick={() => setConfirming(false)}
-                disabled={revokeMut.isPending}
+                isDisabled={revokeMut.isPending}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                className={`account-btn account-btn--danger${revokeMut.isPending ? ' btn-loading' : ''}`}
+              </YucpButton>
+              <YucpButton
+                yucp="danger"
+                isLoading={revokeMut.isPending}
+                isDisabled={revokeMut.isPending}
                 onClick={() => revokeMut.mutate()}
-                disabled={revokeMut.isPending}
               >
-                {revokeMut.isPending ? (
-                  <>
-                    <span className="btn-loading-spinner" aria-hidden="true" />
-                    Deactivating...
-                  </>
-                ) : (
-                  'Deactivate'
-                )}
-              </button>
+                {revokeMut.isPending ? 'Deactivating...' : 'Deactivate'}
+              </YucpButton>
             </div>
           </AccountModal>
         ) : null}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -212,8 +236,8 @@ function AccountLicenses() {
         ) : null}
 
         {!licensesQuery.isLoading && !licensesQuery.isError && allEntitlements.length > 0
-          ? allEntitlements.map((entitlement) => (
-              <EntitlementRow key={entitlement.id} entitlement={entitlement} />
+          ? allEntitlements.map((entitlement, index) => (
+              <EntitlementRow key={entitlement.id} entitlement={entitlement} index={index} />
             ))
           : null}
       </AccountSectionCard>

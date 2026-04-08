@@ -6,7 +6,9 @@ import { AccountInlineError } from '@/components/account/AccountPage';
 import { DashboardAuthRequiredState } from '@/components/dashboard/AuthRequiredState';
 import { DashboardGridSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { Select } from '@/components/ui/Select';
+import { StatusChip } from '@/components/ui/StatusChip';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
 import { isDashboardAuthError, useDashboardSession } from '@/hooks/useDashboardSession';
 import { listCreatorCertificates } from '@/lib/certificates';
@@ -315,16 +317,15 @@ export default function DashboardForensics() {
               <p className="forensics-upgrade-gate-desc">
                 Refresh your billing state and try again before starting a coupling scan.
               </p>
-              <button
-                type="button"
-                className="account-btn account-btn--primary"
-                style={{ borderRadius: '999px' }}
+              <YucpButton
+                yucp="primary"
+                pill
                 onClick={() => {
                   void certificatesQuery.refetch();
                 }}
               >
                 Retry
-              </button>
+              </YucpButton>
             </div>
           ) : certificatesQuery.isSuccess && capabilityEnabled === false ? (
             <div className="forensics-upgrade-gate">
@@ -491,22 +492,20 @@ export default function DashboardForensics() {
               </div>
 
               <div className="account-form-actions">
-                <button
+                <YucpButton
                   type="submit"
-                  className={`account-btn account-btn--primary${lookupMutation.isPending ? ' btn-loading' : ''}`}
-                  style={{ borderRadius: '999px' }}
-                  disabled={
+                  yucp="primary"
+                  pill
+                  isLoading={lookupMutation.isPending}
+                  isDisabled={
                     lookupMutation.isPending ||
                     !selectedPackageId ||
                     !selectedFile ||
                     packageOptions.length === 0
                   }
                 >
-                  {lookupMutation.isPending && (
-                    <span className="btn-loading-spinner" aria-hidden="true" />
-                  )}
-                  <span>{lookupMutation.isPending ? 'Scanning...' : 'Scan upload'}</span>
-                </button>
+                  {lookupMutation.isPending ? 'Scanning...' : 'Scan upload'}
+                </YucpButton>
               </div>
             </form>
           )}
@@ -542,11 +541,10 @@ export default function DashboardForensics() {
               <div className="account-kv-row">
                 <dt className="account-kv-label">Matched</dt>
                 <dd className="account-kv-value">
-                  <span
-                    className={`account-badge account-badge--${matchedAssets > 0 ? 'connected' : 'provider'}`}
-                  >
-                    {matchedAssets}
-                  </span>
+                  <StatusChip
+                    status={matchedAssets > 0 ? 'connected' : 'pending'}
+                    label={String(matchedAssets)}
+                  />
                 </dd>
               </div>
               <div className="account-kv-row">
@@ -586,12 +584,11 @@ export default function DashboardForensics() {
                 <h2 className="intg-title">Match Results</h2>
                 <p className="intg-desc">{lookupResult.message}</p>
               </div>
-              <span
-                className={`account-badge account-badge--${matchedAssets > 0 ? 'connected' : 'provider'}`}
-                style={{ flexShrink: 0 }}
-              >
-                {matchedAssets > 0 ? `${matchedAssets} matched` : 'No matches'}
-              </span>
+              <StatusChip
+                status={matchedAssets > 0 ? 'connected' : 'pending'}
+                label={matchedAssets > 0 ? `${matchedAssets} matched` : 'No matches'}
+                className="shrink-0"
+              />
             </div>
 
             {matchedAssets > 0 ? (
@@ -622,9 +619,7 @@ export default function DashboardForensics() {
                               className="account-match-record"
                             >
                               <div className="account-match-record-header">
-                                <span className="account-badge account-badge--connected">
-                                  {match.licenseSubject}
-                                </span>
+                                <StatusChip status="connected" label={match.licenseSubject} />
                                 <span className="account-form-hint">
                                   Issued {formatForensicsDate(match.createdAt)}
                                 </span>

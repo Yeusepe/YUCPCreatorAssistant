@@ -1,6 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createLazyFileRoute } from '@tanstack/react-router';
+import { motion } from 'framer-motion';
 import { type CSSProperties, useState } from 'react';
+
+function humanizeLabel(raw: string): string {
+  return raw
+    .split(/[_\s]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
 import {
   AccountEmptyState,
   AccountInlineError,
@@ -8,7 +17,10 @@ import {
   AccountSectionCard,
 } from '@/components/account/AccountPage';
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
+import { ProviderChip } from '@/components/ui/ProviderChip';
+import { StatusChip } from '@/components/ui/StatusChip';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import {
   disconnectUserAccount,
   listUserAccounts,
@@ -92,9 +104,11 @@ export const Route = createLazyFileRoute('/_authenticated/account/connections')(
 function ProviderCard({
   provider,
   connections,
+  index,
 }: Readonly<{
   provider: ProviderCardModel;
   connections: UserAccountConnection[];
+  index: number;
 }>) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -135,11 +149,17 @@ function ProviderCard({
   const providerDescription = provider.description ?? 'Linked provider';
   const iconStyle: CSSProperties = {
     backgroundColor: `${providerColor}20`,
+    color: providerColor,
   };
   const isConnected = connections.length > 0;
 
   return (
-    <div className="acct-provider-card">
+    <motion.div
+      className="acct-provider-row"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.06, duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+    >
       <div className="acct-provider-icon" style={iconStyle} aria-hidden="true">
         {provider.icon ? (
           <img
@@ -148,21 +168,17 @@ function ProviderCard({
             style={{ borderRadius: '4px' }}
           />
         ) : (
-          <span>{provider.label.slice(0, 1).toUpperCase()}</span>
+          <span className="acct-provider-icon-letter">
+            {provider.label.slice(0, 1).toUpperCase()}
+          </span>
         )}
       </div>
 
       <div className="acct-provider-info">
         <div className="acct-provider-title-row">
           <p className="acct-provider-name">{provider.label}</p>
-          {isConnected ? (
-            <span className="account-badge account-badge--connected">Connected</span>
-          ) : null}
-          {connections.length > 1 ? (
-            <span className="account-badge account-badge--provider">
-              {connections.length} links
-            </span>
-          ) : null}
+          {isConnected ? <StatusChip status="connected" /> : null}
+          {connections.length > 1 ? <ProviderChip name={`${connections.length} links`} /> : null}
         </div>
         {isConnected ? (
           <div className="acct-provider-connection-list">
@@ -178,16 +194,10 @@ function ProviderCard({
                         provider.description}
                     </p>
                     <div className="account-pill-row account-pill-row--compact">
-                      <span className="account-badge account-badge--provider">
-                        {connection.connectionType}
-                      </span>
-                      <span className="account-badge account-badge--provider">
-                        {connection.status}
-                      </span>
+                      <ProviderChip name={humanizeLabel(connection.connectionType)} />
+                      <ProviderChip name={humanizeLabel(connection.status)} />
                       {connection.verificationMethod ? (
-                        <span className="account-badge account-badge--provider">
-                          {connection.verificationMethod}
-                        </span>
+                        <ProviderChip name={humanizeLabel(connection.verificationMethod)} />
                       ) : null}
                     </div>
                   </div>
@@ -195,38 +205,26 @@ function ProviderCard({
                     {isConfirming ? (
                       <div className="account-inline-actions">
                         <span className="account-field-note">Disconnect?</span>
-                        <button
-                          type="button"
-                          className={`account-btn account-btn--danger${disconnectMut.isPending ? ' btn-loading' : ''}`}
+                        <YucpButton
+                          yucp="danger"
+                          isLoading={disconnectMut.isPending}
+                          isDisabled={disconnectMut.isPending}
                           onClick={() => disconnectMut.mutate(connection.id)}
-                          disabled={disconnectMut.isPending}
                         >
-                          {disconnectMut.isPending ? (
-                            <>
-                              <span className="btn-loading-spinner" aria-hidden="true" />
-                              Disconnecting...
-                            </>
-                          ) : (
-                            'Yes'
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          className="account-btn account-btn--secondary"
+                          {disconnectMut.isPending ? 'Disconnecting...' : 'Yes'}
+                        </YucpButton>
+                        <YucpButton
+                          yucp="secondary"
+                          isDisabled={disconnectMut.isPending}
                           onClick={() => setConfirmingId(null)}
-                          disabled={disconnectMut.isPending}
                         >
                           No
-                        </button>
+                        </YucpButton>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        className="account-btn account-btn--danger"
-                        onClick={() => setConfirmingId(connection.id)}
-                      >
+                      <YucpButton yucp="ghost" onClick={() => setConfirmingId(connection.id)}>
                         Disconnect
-                      </button>
+                      </YucpButton>
                     )}
                   </div>
                 </div>
@@ -239,25 +237,19 @@ function ProviderCard({
       </div>
 
       {!isConnected && provider.canConnect ? (
-        <div className="acct-provider-actions">
-          <button
-            type="button"
-            className={`account-btn account-btn--connect${connecting ? ' btn-loading' : ''}`}
+        <div className="acct-provider-actions acct-provider-actions--standalone">
+          <YucpButton
+            yucp="primary"
+            pill
+            isLoading={connecting}
+            isDisabled={connecting}
             onClick={handleConnect}
-            disabled={connecting}
           >
-            {connecting ? (
-              <>
-                <span className="btn-loading-spinner" aria-hidden="true" />
-                Connecting...
-              </>
-            ) : (
-              'Connect'
-            )}
-          </button>
+            {connecting ? 'Connecting...' : 'Connect'}
+          </YucpButton>
         </div>
       ) : null}
-    </div>
+    </motion.div>
   );
 }
 
@@ -326,12 +318,13 @@ function AccountConnections() {
             description="Check back later for account providers that support direct linking."
           />
         ) : (
-          <div className="acct-provider-grid">
-            {providers.map((provider) => (
+          <div className="acct-provider-list">
+            {providers.map((provider, index) => (
               <ProviderCard
                 key={provider.id}
                 provider={provider}
                 connections={connectionsByProvider.get(provider.id) ?? []}
+                index={index}
               />
             ))}
           </div>

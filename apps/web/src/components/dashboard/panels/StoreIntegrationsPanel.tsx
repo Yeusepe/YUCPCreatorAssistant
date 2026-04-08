@@ -31,7 +31,7 @@ function requireAuthUserId(authUserId: string | undefined) {
 
 type ProviderStatus = 'active' | 'degraded' | 'disconnected';
 
-function StoreRow({
+export function StoreRow({
   provider,
   account,
   authUserId,
@@ -42,13 +42,13 @@ function StoreRow({
   authUserId: string | undefined;
   guildId: string | undefined;
 }) {
-  const status: ProviderStatus = (account?.status as ProviderStatus) ?? 'active';
+  const status: ProviderStatus = (account?.status as ProviderStatus) ?? 'disconnected';
   const iconPath = getProviderIconPath(provider);
   const manageHref = buildProviderConnectUrl(provider, { authUserId, guildId });
   const label = provider.label ?? provider.key;
 
   const statusLabel =
-    status === 'active' ? 'Connected' : status === 'degraded' ? 'Needs attention' : 'Connected';
+    status === 'active' ? 'Connected' : status === 'degraded' ? 'Needs attention' : 'Not connected';
 
   return (
     <div className="store-row">

@@ -50,7 +50,7 @@ const STAT_DEFINITIONS = [
 
 export function StatsOverviewPanel() {
   const stats = useConvexQuery(api.dashboardViews.getMyDashboardStats);
-  const isLoading = stats === undefined;
+  const isLoading = stats == null;
   const sectionClassName = [
     'stats-overview-panel',
     'animate-in',

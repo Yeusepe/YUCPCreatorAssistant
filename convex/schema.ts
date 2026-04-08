@@ -62,6 +62,13 @@ const ProductCatalogStatus = v.union(
   v.literal('hidden')
 );
 
+/** Signed release artifact publication status */
+const SignedReleaseArtifactStatus = v.union(
+  v.literal('active'),
+  v.literal('inactive'),
+  v.literal('revoked')
+);
+
 /** Catalog product link kinds */
 const LinkKind = v.union(
   v.literal('storefront'),
@@ -164,12 +171,6 @@ const DownloadArtifactStatus = v.union(
 );
 
 const DownloadArtifactSourceMode = v.union(v.literal('reply'), v.literal('webhook'));
-
-const SignedReleaseArtifactStatus = v.union(
-  v.literal('active'),
-  v.literal('inactive'),
-  v.literal('revoked')
-);
 
 /** Outbox job status */
 const OutboxJobStatus = v.union(

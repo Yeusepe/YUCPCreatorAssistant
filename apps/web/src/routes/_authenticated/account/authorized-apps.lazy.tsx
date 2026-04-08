@@ -1,5 +1,7 @@
+import { Tooltip } from '@heroui/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createLazyFileRoute } from '@tanstack/react-router';
+import { motion } from 'framer-motion';
 import { useMemo, useState } from 'react';
 import {
   AccountEmptyState,
@@ -10,6 +12,7 @@ import {
 } from '@/components/account/AccountPage';
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { useToast } from '@/components/ui/Toast';
+import { YucpButton } from '@/components/ui/YucpButton';
 import {
   formatAccountDate,
   listUserOAuthGrants,
@@ -32,10 +35,11 @@ export const Route = createLazyFileRoute('/_authenticated/account/authorized-app
 
 const USER_OAUTH_GRANTS_QUERY_KEY = ['user-oauth-grants'] as const;
 
-function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
+function GrantRow({ grant, index }: Readonly<{ grant: OAuthGrant; index: number }>) {
   const [confirming, setConfirming] = useState(false);
   const queryClient = useQueryClient();
   const toast = useToast();
+  const rowDelay = Math.min(index * 0.05, 0.25);
 
   const revokeMut = useMutation({
     mutationFn: () => revokeUserOAuthGrant(grant.consentId),
@@ -53,29 +57,41 @@ function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
     },
   });
 
+  const appInitial = grant.appName.slice(0, 1).toUpperCase();
+
   return (
-    <div className="account-list-row">
-      <div className="account-list-row-icon" aria-hidden="true">
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
-        </svg>
+    <motion.div
+      className="account-list-row"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: rowDelay, duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
+    >
+      <div className="account-list-row-icon account-app-icon" aria-hidden="true">
+        <span className="account-app-icon-letter">{appInitial}</span>
       </div>
 
       <div className="account-list-row-info">
         <p className="account-list-row-name">{grant.appName}</p>
         <p className="account-list-row-meta">
-          <span className="account-reference-chip">{grant.clientId}</span>
+          <Tooltip>
+            <Tooltip.Trigger>
+              <button
+                type="button"
+                className="account-reference-chip"
+                style={{ cursor: 'help' }}
+                aria-label={grant.clientId}
+              >
+                {grant.clientId.length > 16
+                  ? `${grant.clientId.slice(0, 16)}\u2026`
+                  : grant.clientId}
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content>
+              <p style={{ fontFamily: 'ui-monospace, monospace', fontSize: '11px' }}>
+                {grant.clientId}
+              </p>
+            </Tooltip.Content>
+          </Tooltip>
           {grant.grantedAt ? <span>Authorized {formatAccountDate(grant.grantedAt)}</span> : null}
         </p>
         {grant.scopes.length > 0 ? (
@@ -83,7 +99,7 @@ function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
             {grant.scopes.map((scope) => (
               <span
                 key={`${grant.consentId}:${scope}`}
-                className="account-badge account-badge--scope"
+                className="account-badge account-badge--scope-neutral"
               >
                 {scope}
               </span>
@@ -94,13 +110,9 @@ function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
 
       <div className="account-list-row-actions">
         {!confirming ? (
-          <button
-            type="button"
-            className="account-btn account-btn--danger"
-            onClick={() => setConfirming(true)}
-          >
+          <YucpButton yucp="ghost" onClick={() => setConfirming(true)}>
             Revoke
-          </button>
+          </YucpButton>
         ) : null}
         {confirming ? (
           <AccountModal title={`Revoke ${grant.appName}?`} onClose={() => setConfirming(false)}>
@@ -109,34 +121,26 @@ function GrantRow({ grant }: Readonly<{ grant: OAuthGrant }>) {
               account. Any existing access tokens must be reissued after a new consent flow.
             </p>
             <div className="account-modal-actions">
-              <button
-                type="button"
-                className="account-btn account-btn--secondary"
+              <YucpButton
+                yucp="secondary"
                 onClick={() => setConfirming(false)}
-                disabled={revokeMut.isPending}
+                isDisabled={revokeMut.isPending}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                className={`account-btn account-btn--danger${revokeMut.isPending ? ' btn-loading' : ''}`}
+              </YucpButton>
+              <YucpButton
+                yucp="danger"
+                isLoading={revokeMut.isPending}
+                isDisabled={revokeMut.isPending}
                 onClick={() => revokeMut.mutate()}
-                disabled={revokeMut.isPending}
               >
-                {revokeMut.isPending ? (
-                  <>
-                    <span className="btn-loading-spinner" aria-hidden="true" />
-                    Revoking...
-                  </>
-                ) : (
-                  'Revoke access'
-                )}
-              </button>
+                {revokeMut.isPending ? 'Revoking...' : 'Revoke access'}
+              </YucpButton>
             </div>
           </AccountModal>
         ) : null}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -196,7 +200,9 @@ function AccountAuthorizedApps() {
         ) : null}
 
         {!grantsQuery.isLoading && !grantsQuery.isError && grants.length > 0
-          ? grants.map((grant) => <GrantRow key={grant.consentId} grant={grant} />)
+          ? grants.map((grant, index) => (
+              <GrantRow key={grant.consentId} grant={grant} index={index} />
+            ))
           : null}
       </AccountSectionCard>
 

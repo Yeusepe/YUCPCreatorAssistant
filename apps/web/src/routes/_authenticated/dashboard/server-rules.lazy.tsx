@@ -44,12 +44,13 @@ function DashboardServerRules() {
                   marginRight: '5px',
                 }}
               />
-              Coming soon
+              In development
             </span>
             <p className="empty-state-title">Server Rules</p>
             <p className="empty-state-copy">
-              Define product-to-role mappings directly from your dashboard. Automatically assign or
-              remove Discord roles when members verify their purchases.
+              Define product-to-role mappings directly from the dashboard. Roles will be
+              automatically assigned or removed when members verify purchases — no bot commands
+              required.
             </p>
           </div>
         </section>

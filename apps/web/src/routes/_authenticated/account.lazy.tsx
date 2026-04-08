@@ -182,7 +182,7 @@ function closeAccountSidebar() {
   }
 }
 
-function toggleAccountSidebar() {
+function _toggleAccountSidebar() {
   if (typeof document === 'undefined') return;
   const sidebar = document.getElementById('sidebar');
   const overlay = document.getElementById('sidebar-overlay');
@@ -218,7 +218,11 @@ function AccountLayout() {
         <aside id="sidebar" className="sidebar" aria-label="Account navigation">
           <div className="sidebar-logo-area">
             <div className="sidebar-brand">
-              <img src="/Icons/MainLogo.png" alt="Creator Assistant" className="sidebar-logo-img" />
+              <img
+                src="/Icons/MainLogo.png"
+                alt="Creator Assistant Logo"
+                className="sidebar-logo-img"
+              />
             </div>
           </div>
 

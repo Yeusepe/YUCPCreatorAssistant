@@ -29,6 +29,36 @@
   --vrchat-bg: #1e1e21;
   --vrchat-button: #064b5c;
   --vrchat-accent: #0088ff;
+
+  /* Typography scale */
+  --font-size-xs: 0.75rem; /* 12px */
+  --font-size-sm: 0.8125rem; /* 13px */
+  --font-size-base: 0.875rem; /* 14px */
+  --font-size-lg: 1rem; /* 16px */
+  --font-size-xl: 1.125rem; /* 18px */
+
+  /* Line heights */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.7;
+
+  /* Transition durations */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 3px rgba(14, 165, 233, 0.4);
+
+  /* Z-index scale */
+  --z-content: 1;
+  --z-content-high: 10;
+  --z-sidebar: 55;
+  --z-sidebar-desktop: 60;
+  --z-sidebar-overlay: 90;
+  --z-sidebar-mobile: 100;
+  --z-modal: 10000;
+  --z-portal: 100003;
 }
 
 /* Holographic Sticker Transparency Fix */

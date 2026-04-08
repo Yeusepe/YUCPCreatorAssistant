@@ -308,13 +308,14 @@ function DashboardLayout() {
 function DashboardBootstrapState({ pendingGuild }: { pendingGuild?: PendingDashboardGuild }) {
   return (
     <main className="content-area">
+      <DotMatrixBackground />
       <div className="content-area-inner">
         <section className="section-card bento-col-12 p-6 sm:p-7 md:p-8">
           <div className="content-header-eyebrow">Server Setup</div>
           <h1 className="content-header-title">
             {pendingGuild?.name ? `Linking ${pendingGuild.name}` : 'Linking your server'}
           </h1>
-          <p className="content-header-desc" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+          <p className="content-header-desc">
             Finalizing the server link and loading the dashboard.
           </p>
         </section>
@@ -633,6 +634,7 @@ function Sidebar({
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                 </svg>
                 Server Rules
+                <span className="sidebar-nav-soon">Soon</span>
               </Link>
               <Link
                 to="/dashboard/audit-logs"
@@ -660,6 +662,7 @@ function Sidebar({
                   <polyline points="10 9 9 9 8 9" />
                 </svg>
                 Audit Logs
+                <span className="sidebar-nav-soon">Soon</span>
               </Link>
             </div>
           </div>
@@ -1072,7 +1075,7 @@ function DashboardRouteErrorComponent({ error }: { error: Error }) {
           <section className="section-card bento-col-12 p-6 sm:p-7 md:p-8">
             <div className="content-header-eyebrow">Dashboard Error</div>
             <h1 className="content-header-title">Dashboard unavailable</h1>
-            <p className="content-header-desc" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+            <p className="content-header-desc" style={{ fontFamily: "'AirbnbCereal', sans-serif" }}>
               The dashboard shell could not be loaded. Refresh the page or sign in again if the
               problem persists.
             </p>
@@ -1091,6 +1094,42 @@ function DashboardRouteErrorComponent({ error }: { error: Error }) {
       </div>
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Dot-Matrix Interactive Background                                 */
+/* ------------------------------------------------------------------ */
+
+function DotMatrixBackground() {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const parent = el.parentElement;
+    if (!parent) return;
+
+    const handleMove = (e: MouseEvent) => {
+      const rect = el.getBoundingClientRect();
+      el.style.setProperty('--dot-x', `${e.clientX - rect.left}px`);
+      el.style.setProperty('--dot-y', `${e.clientY - rect.top}px`);
+    };
+
+    const handleLeave = () => {
+      el.style.setProperty('--dot-x', '-9999px');
+      el.style.setProperty('--dot-y', '-9999px');
+    };
+
+    parent.addEventListener('mousemove', handleMove);
+    parent.addEventListener('mouseleave', handleLeave);
+
+    return () => {
+      parent.removeEventListener('mousemove', handleMove);
+      parent.removeEventListener('mouseleave', handleLeave);
+    };
+  }, []);
+
+  return <div ref={ref} className="dot-matrix-bg" aria-hidden="true" />;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1115,6 +1154,7 @@ function MainContent({ pendingGuild }: { pendingGuild?: PendingDashboardGuild })
 
   return (
     <main className="content-area">
+      <DotMatrixBackground />
       <div className="content-area-inner">
         <DashboardHeader title={title} selectedGuild={headerGuild} />
 

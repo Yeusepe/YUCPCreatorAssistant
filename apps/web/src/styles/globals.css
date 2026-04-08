@@ -1,28 +1,52 @@
 @import "tailwindcss";
+@import "@heroui/styles";
+@import "./heroui-theme.css";
 
 /* Scan route and component files for Tailwind utility classes */
 @source "../routes";
 @source "../components";
+@source "../../node_modules/@heroui/react/dist";
+@source "../../node_modules/@heroui/styles/dist";
 
-/* ── Airbnb Cereal display font ── */
+/* ── Airbnb Cereal — self-hosted, all weights ── */
 @font-face {
-  font-family: "AirbnbCereal_W_XBd ExtBd";
-  src: url("https://db.onlinewebfonts.com/t/5319258a505e150ceb169163a3d04dd5.eot");
-  src:
-    url("https://db.onlinewebfonts.com/t/5319258a505e150ceb169163a3d04dd5.eot?#iefix")
-    format("embedded-opentype"),
-    url("https://db.onlinewebfonts.com/t/5319258a505e150ceb169163a3d04dd5.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/5319258a505e150ceb169163a3d04dd5.woff") format("woff"),
-    url("https://db.onlinewebfonts.com/t/5319258a505e150ceb169163a3d04dd5.ttf") format("truetype"),
-    url("https://db.onlinewebfonts.com/t/5319258a505e150ceb169163a3d04dd5.svg#AirbnbCereal_W_XBd ExtBd")
-    format("svg");
+  font-family: "AirbnbCereal";
+  src: url("/fonts/airbnb-cereal/AirbnbCereal-Light.ttf") format("truetype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "AirbnbCereal";
+  src: url("/fonts/airbnb-cereal/AirbnbCereal-Book.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "AirbnbCereal";
+  src: url("/fonts/airbnb-cereal/AirbnbCereal-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "AirbnbCereal";
+  src: url("/fonts/airbnb-cereal/AirbnbCereal-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "AirbnbCereal";
+  src: url("/fonts/airbnb-cereal/AirbnbCereal-ExtraBold.ttf") format("truetype");
   font-weight: 800;
   font-style: normal;
   font-display: swap;
 }
 
 :root {
-  --font-display: "AirbnbCereal_W_XBd ExtBd", "Plus Jakarta Sans", sans-serif;
+  --font-display: "AirbnbCereal", sans-serif;
 }
 
 @layer base {
@@ -39,7 +63,8 @@
   body {
     background-color: var(--bg-color);
     color: var(--text-primary);
-    font-family: "DM Sans", sans-serif;
+    font-family: "AirbnbCereal", sans-serif;
+    font-weight: 400;
     overflow-x: hidden;
     min-height: 100dvh;
   }
@@ -173,4 +198,34 @@
 
 .cloud-scene-layer.is-ready {
   visibility: visible;
+}
+
+/* ============================================================
+   Global accessibility: focus-visible ring
+   ============================================================ */
+:focus-visible {
+  outline: 2px solid var(--accent-sky);
+  outline-offset: 2px;
+}
+
+/* Suppress focus ring for mouse users on known interactive elements */
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+[role="button"]:focus:not(:focus-visible),
+[role="switch"]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ============================================================
+   prefers-reduced-motion: disable non-essential animations
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
+  }
 }
