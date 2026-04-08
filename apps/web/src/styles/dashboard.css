@@ -1144,7 +1144,7 @@ img.collab-avatar {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   padding: 12px 14px;
-  font-family: "DM Mono", monospace;
+  font-family: var(--font-display), sans-serif;
   font-size: 11px;
   color: var(--text-primary);
   word-break: break-all;
@@ -1484,9 +1484,9 @@ img.collab-avatar {
   display: flex;
   flex-direction: column;
   z-index: var(--z-sidebar-mobile);
-  background: rgba(8, 16, 38, 0.78);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  background: rgba(8, 16, 38, 0.5);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 4px 0 32px rgba(0, 0, 0, 0.18);
   overflow: visible;
@@ -1511,7 +1511,7 @@ img.collab-avatar {
     width: 260px;
     height: auto;
     max-width: none;
-    z-index: var(--z-sidebar-desktop);
+    z-index: 1;
   }
 }
 
@@ -1521,17 +1521,7 @@ img.collab-avatar {
   }
 }
 
-/* Largest breakpoint: sidebar on the back, content-area in front */
-@media (min-width: 1280px) {
-  .sidebar {
-    z-index: var(--z-content);
-  }
-
-  .content-area {
-    position: relative;
-    z-index: var(--z-content-high);
-  }
-}
+/* Largest breakpoint: sidebar on the back, content-area in front (already handled at 768px) */
 
 /* When server dropdown is open: sidebar stays behind backdrop (same blur as main content) */
 /* Dropdown is moved to body so it renders above backdrop; sidebar is not elevated */
@@ -1606,7 +1596,7 @@ img.collab-avatar {
   z-index: var(--z-portal);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
-  padding: 14px 12px 10px;
+  padding: 24px 20px 14px;
 }
 
 .sidebar-brand {
@@ -1620,7 +1610,8 @@ img.collab-avatar {
 }
 
 .sidebar-brand img,
-.sidebar-logo-img {
+.sidebar-logo-img,
+.sidebar-logo-img-light {
   width: 100%;
   max-width: 220px;
   height: auto;
@@ -2776,9 +2767,9 @@ img.collab-avatar {
 /* ── Light mode sidebar overrides ── */
 
 html:not(.dark) .sidebar {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  background: rgba(255, 255, 255, 0.48);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
   border-right: 1px solid rgba(0, 0, 0, 0.08);
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.07);
 }
@@ -2838,7 +2829,15 @@ html:not(.dark) .sidebar-footer {
 }
 
 html:not(.dark) .sidebar-logo-img {
-  filter: brightness(0);
+  display: none;
+}
+
+html:not(.dark) .sidebar-logo-img-light {
+  display: block;
+}
+
+.sidebar-logo-img-light {
+  display: none;
 }
 
 .dark #server-dropdown-menu .server-dropdown-action-btn:hover {
