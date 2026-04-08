@@ -1537,15 +1537,25 @@ img.collab-avatar {
 }
 
 .sidebar-overlay {
-  display: none;
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
   z-index: 199;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.22s ease,
+    visibility 0s linear 0.22s;
 }
 
 .sidebar-overlay.is-visible {
-  display: block;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 0.22s ease,
+    visibility 0s linear 0s;
 }
 
 .sidebar-toggle-btn {
@@ -1558,7 +1568,7 @@ img.collab-avatar {
   }
 
   .sidebar {
-    display: none;
+    display: flex;
     position: fixed;
     left: 0;
     top: 0;
@@ -1566,10 +1576,27 @@ img.collab-avatar {
     width: 280px;
     min-width: 280px;
     z-index: 200;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-12px) scale(0.985);
+    transform-origin: left center;
+    transition:
+      opacity 0.22s ease,
+      transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+      visibility 0s linear 0.22s;
+    will-change: transform, opacity;
   }
 
   .sidebar.is-open {
-    display: flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(0) scale(1);
+    transition:
+      opacity 0.22s ease,
+      transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+      visibility 0s linear 0s;
   }
 }
 
@@ -1578,7 +1605,7 @@ img.collab-avatar {
   z-index: var(--z-portal);
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   flex-shrink: 0;
-  padding: 32px 20px 28px;
+  padding: 32px 14px 20px;
 }
 
 .sidebar-brand {
@@ -1586,7 +1613,7 @@ img.collab-avatar {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 24px;
   flex-shrink: 0;
   padding: 0;
 }
@@ -1594,8 +1621,8 @@ img.collab-avatar {
 .sidebar-brand img,
 .sidebar-logo-img,
 .sidebar-logo-img-light {
-  width: 85%;
-  max-width: 85%;
+  width: 92%;
+  max-width: 92%;
   height: auto;
   display: block;
   flex-shrink: 0;
@@ -1836,11 +1863,14 @@ img.collab-avatar {
   padding: 24px 20px 48px;
 
   /* Liquid Glass background */
-  background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(32px) saturate(180%);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  border-left: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-left: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 0 60px rgba(255, 255, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 1px 0 0 rgba(255, 255, 255, 0.4);
 
   color: #0f172a;
   margin-left: 0;
@@ -1860,6 +1890,46 @@ img.collab-avatar {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  position: relative;
+  z-index: 1;
+}
+
+/* Interactive dot-matrix background overlay — mode-agnostic additive grey */
+.dot-matrix-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+/* Base layer: almost invisible white dots, always present */
+.dot-matrix-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Spotlight layer: same white dots, higher opacity, revealed only near cursor */
+.dot-matrix-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.55) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 380px 320px at var(--dot-x, -9999px) var(--dot-y, -9999px),
+    black 0%,
+    transparent 70%
+  );
+  mask-image: radial-gradient(
+    ellipse 380px 320px at var(--dot-x, -9999px) var(--dot-y, -9999px),
+    black 0%,
+    transparent 70%
+  );
 }
 
 @media (min-width: 768px) {
@@ -1868,8 +1938,9 @@ img.collab-avatar {
     border-top-left-radius: 16px;
     border-bottom-left-radius: 16px;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.5),
-      inset 1px 0 0 rgba(255, 255, 255, 0.15);
+      inset 0 0 60px rgba(255, 255, 255, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      inset 1px 0 0 rgba(255, 255, 255, 0.4);
   }
 
   /* Corner gap between sidebar and content-area's rounded corner shows the
@@ -1959,6 +2030,10 @@ img.collab-avatar {
   line-height: 1.15;
 }
 
+.content-header-title {
+  color: #0f172a;
+}
+
 .content-hdr-sub {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.48);
@@ -1984,6 +2059,10 @@ img.collab-avatar {
   margin-bottom: 0;
   font-size: 1.5rem;
   line-height: 1.2;
+  color: #0f172a;
+}
+
+.dark .content-header-title {
   color: #ffffff;
 }
 
@@ -2520,17 +2599,21 @@ img.collab-avatar {
   --text-secondary: #cbd5e1;
   --border-color: rgba(255, 255, 255, 0.15);
 
-  background: rgba(15, 23, 42, 0.45);
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: rgba(10, 16, 34, 0.3);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 0 60px rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 1px 0 0 rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
 }
 
 @media (min-width: 768px) {
   .dark .content-area {
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.08),
-      inset 1px 0 0 rgba(255, 255, 255, 0.04);
+      inset 0 0 60px rgba(255, 255, 255, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 1px 0 0 rgba(255, 255, 255, 0.05);
   }
 }
 

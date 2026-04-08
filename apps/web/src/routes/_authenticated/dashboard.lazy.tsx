@@ -308,6 +308,7 @@ function DashboardLayout() {
 function DashboardBootstrapState({ pendingGuild }: { pendingGuild?: PendingDashboardGuild }) {
   return (
     <main className="content-area">
+      <DotMatrixBackground />
       <div className="content-area-inner">
         <section className="section-card bento-col-12 p-6 sm:p-7 md:p-8">
           <div className="content-header-eyebrow">Server Setup</div>
@@ -1096,6 +1097,42 @@ function DashboardRouteErrorComponent({ error }: { error: Error }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Dot-Matrix Interactive Background                                 */
+/* ------------------------------------------------------------------ */
+
+function DotMatrixBackground() {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const parent = el.parentElement;
+    if (!parent) return;
+
+    const handleMove = (e: MouseEvent) => {
+      const rect = el.getBoundingClientRect();
+      el.style.setProperty('--dot-x', `${e.clientX - rect.left}px`);
+      el.style.setProperty('--dot-y', `${e.clientY - rect.top}px`);
+    };
+
+    const handleLeave = () => {
+      el.style.setProperty('--dot-x', '-9999px');
+      el.style.setProperty('--dot-y', '-9999px');
+    };
+
+    parent.addEventListener('mousemove', handleMove);
+    parent.addEventListener('mouseleave', handleLeave);
+
+    return () => {
+      parent.removeEventListener('mousemove', handleMove);
+      parent.removeEventListener('mouseleave', handleLeave);
+    };
+  }, []);
+
+  return <div ref={ref} className="dot-matrix-bg" aria-hidden="true" />;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main Content Area                                                  */
 /* ------------------------------------------------------------------ */
 
@@ -1117,6 +1154,7 @@ function MainContent({ pendingGuild }: { pendingGuild?: PendingDashboardGuild })
 
   return (
     <main className="content-area">
+      <DotMatrixBackground />
       <div className="content-area-inner">
         <DashboardHeader title={title} selectedGuild={headerGuild} />
 
