@@ -39,6 +39,7 @@ function GrantRow({ grant, index }: Readonly<{ grant: OAuthGrant; index: number 
   const [confirming, setConfirming] = useState(false);
   const queryClient = useQueryClient();
   const toast = useToast();
+  const rowDelay = Math.min(index * 0.05, 0.25);
 
   const revokeMut = useMutation({
     mutationFn: () => revokeUserOAuthGrant(grant.consentId),
@@ -63,7 +64,7 @@ function GrantRow({ grant, index }: Readonly<{ grant: OAuthGrant; index: number 
       className="account-list-row"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05, duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
+      transition={{ delay: rowDelay, duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
     >
       <div className="account-list-row-icon account-app-icon" aria-hidden="true">
         <span className="account-app-icon-letter">{appInitial}</span>
@@ -74,11 +75,16 @@ function GrantRow({ grant, index }: Readonly<{ grant: OAuthGrant; index: number 
         <p className="account-list-row-meta">
           <Tooltip>
             <Tooltip.Trigger>
-              <span className="account-reference-chip" style={{ cursor: 'default' }}>
+              <button
+                type="button"
+                className="account-reference-chip"
+                style={{ cursor: 'help' }}
+                aria-label={grant.clientId}
+              >
                 {grant.clientId.length > 16
                   ? `${grant.clientId.slice(0, 16)}\u2026`
                   : grant.clientId}
-              </span>
+              </button>
             </Tooltip.Trigger>
             <Tooltip.Content>
               <p style={{ fontFamily: 'ui-monospace, monospace', fontSize: '11px' }}>

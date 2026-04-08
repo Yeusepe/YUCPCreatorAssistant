@@ -108,10 +108,11 @@ export function Select({ id, value, options, onChange, disabled, className }: Se
         {options.map((opt) => {
           const isSelected = opt.value === value;
           return (
-            <div
+            <button
               key={opt.value}
+              type="button"
               role="option"
-              tabIndex={-1}
+              tabIndex={open ? 0 : -1}
               aria-selected={isSelected}
               className={`ui-select-option${isSelected ? ' selected' : ''}`}
               onClick={() => {
@@ -146,7 +147,7 @@ export function Select({ id, value, options, onChange, disabled, className }: Se
                 )}
               </span>
               {opt.label}
-            </div>
+            </button>
           );
         })}
       </div>

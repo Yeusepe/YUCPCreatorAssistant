@@ -6,6 +6,21 @@ afterEach(cleanup);
 import { AccountModal } from '@/components/account/AccountPage';
 
 describe('AccountModal focus trap', () => {
+  it('moves initial focus to the first tabbable element', () => {
+    render(
+      <AccountModal title="Focus Trap Test" onClose={vi.fn()}>
+        <button type="button" data-testid="btn-first">
+          First
+        </button>
+        <button type="button" data-testid="btn-second">
+          Second
+        </button>
+      </AccountModal>
+    );
+
+    expect(document.activeElement).toBe(screen.getByTestId('btn-first'));
+  });
+
   it('traps focus: Tab from last focusable element wraps to first', () => {
     render(
       <AccountModal title="Focus Trap Test" onClose={vi.fn()}>
@@ -47,6 +62,27 @@ describe('AccountModal focus trap', () => {
     expect(document.activeElement).toBe(firstBtn);
 
     fireEvent.keyDown(firstBtn, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(secondBtn);
+  });
+
+  it('traps focus when the dialog container itself is focused', () => {
+    render(
+      <AccountModal title="Focus Trap Test" onClose={vi.fn()}>
+        <button type="button" data-testid="btn-first">
+          First
+        </button>
+        <button type="button" data-testid="btn-second">
+          Second
+        </button>
+      </AccountModal>
+    );
+
+    const dialog = screen.getByRole('dialog');
+    const secondBtn = screen.getByTestId('btn-second');
+
+    dialog.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+
     expect(document.activeElement).toBe(secondBtn);
   });
 

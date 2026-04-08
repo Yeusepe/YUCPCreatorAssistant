@@ -14,6 +14,7 @@ export function toGumroadVerificationConfig(config: ConnectConfig): Verification
     frontendUrl: config.frontendBaseUrl,
     convexUrl: config.convexUrl,
     convexApiSecret: config.convexApiSecret,
+    encryptionSecret: config.encryptionSecret,
     gumroadClientId: config.gumroadClientId,
     gumroadClientSecret: config.gumroadClientSecret,
   };

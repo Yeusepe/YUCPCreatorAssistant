@@ -242,10 +242,6 @@ export default function DashboardBilling() {
         ? 'warning'
         : 'inactive';
 
-  const hasStatusStrip =
-    !!statusCopy.badgeLabel || !!currentPlan?.displayName || !!billing?.currentPeriodEnd;
-  void hasStatusStrip;
-
   if (status === 'signed_out' || status === 'expired') {
     return (
       <div id="tab-panel-billing" className="dashboard-tab-panel is-active" role="tabpanel">
@@ -560,7 +556,13 @@ export default function DashboardBilling() {
                           : `${formatMeterUnits(meter.creditedUnits)} credited`}
                       </span>
                       {total > 0 && (
-                        <div className="billing-meter-v2" role="progressbar">
+                        <div
+                          className="billing-meter-v2"
+                          role="progressbar"
+                          aria-valuemin={0}
+                          aria-valuenow={meter.consumedUnits}
+                          aria-valuemax={total}
+                        >
                           <div
                             className={`billing-meter-fill-v2${pct > 85 ? ' billing-meter-fill-v2--warning' : ''}`}
                             style={{ width: `${pct.toFixed(1)}%` }}

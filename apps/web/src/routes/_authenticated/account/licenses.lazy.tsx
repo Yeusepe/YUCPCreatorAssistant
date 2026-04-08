@@ -43,6 +43,7 @@ function EntitlementRow({
   const [confirming, setConfirming] = useState(false);
   const queryClient = useQueryClient();
   const toast = useToast();
+  const rowDelay = Math.min(index * 0.05, 0.25);
 
   const revokeMut = useMutation({
     mutationFn: () => revokeUserLicense(entitlement.id),
@@ -67,7 +68,7 @@ function EntitlementRow({
       className="account-list-row"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05, duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
+      transition={{ delay: rowDelay, duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
     >
       <div className="account-list-row-icon">
         {iconPath ? (
@@ -99,10 +100,15 @@ function EntitlementRow({
           {entitlement.sourceReference ? (
             <Tooltip>
               <Tooltip.Trigger>
-                <span className="account-reference-chip" style={{ cursor: 'default' }}>
+                <button
+                  type="button"
+                  className="account-reference-chip"
+                  style={{ cursor: 'help' }}
+                  aria-label={entitlement.sourceReference}
+                >
                   {entitlement.sourceReference.slice(0, 12)}
                   &hellip;
-                </span>
+                </button>
               </Tooltip.Trigger>
               <Tooltip.Content>
                 <p style={{ fontFamily: 'ui-monospace, monospace', fontSize: '11px' }}>

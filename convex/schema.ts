@@ -62,6 +62,13 @@ const ProductCatalogStatus = v.union(
   v.literal('hidden')
 );
 
+/** Signed release artifact publication status */
+const SignedReleaseArtifactStatus = v.union(
+  v.literal('active'),
+  v.literal('inactive'),
+  v.literal('revoked')
+);
+
 /** Catalog product link kinds */
 const LinkKind = v.union(
   v.literal('storefront'),
@@ -1815,6 +1822,32 @@ const creator_billing_reconciliation_targets = defineTable({
   .index('by_auth_user', ['authUserId'])
   .index('by_next_run_at', ['nextRunAt']);
 
+const signed_release_artifacts = defineTable({
+  artifactKey: v.string(),
+  channel: v.string(),
+  platform: v.string(),
+  version: v.string(),
+  metadataVersion: v.number(),
+  storageId: v.id('_storage'),
+  contentType: v.string(),
+  deliveryName: v.string(),
+  envelopeCipher: v.string(),
+  envelopeIvBase64: v.string(),
+  ciphertextSha256: v.string(),
+  ciphertextSize: v.number(),
+  plaintextSha256: v.string(),
+  plaintextSize: v.number(),
+  codeSigningSubject: v.optional(v.string()),
+  codeSigningThumbprint: v.optional(v.string()),
+  status: SignedReleaseArtifactStatus,
+  activatedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_artifact_key', ['artifactKey'])
+  .index('by_artifact_key_status', ['artifactKey', 'status'])
+  .index('by_status', ['status']);
+
 const coupling_trace_records = defineTable({
   authUserId: v.string(),
   packageId: v.string(),
@@ -2181,6 +2214,7 @@ export default defineSchema({
   creator_billing_catalog_benefits,
   creator_billing_meters,
   creator_billing_reconciliation_targets,
+  signed_release_artifacts,
   coupling_trace_records,
   revoked_grants,
   yucp_manifests,

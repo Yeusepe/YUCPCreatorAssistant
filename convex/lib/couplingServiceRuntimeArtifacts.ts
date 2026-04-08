@@ -131,7 +131,12 @@ export function buildRuntimeArtifactDownloadUrl(
   manifest: RuntimeArtifactManifestSuccess,
   token: string
 ): string {
-  const url = new URL(manifest.downloadUrl);
+  let url: URL;
+  try {
+    url = new URL(manifest.downloadUrl);
+  } catch {
+    throw new Error('Coupling service returned an invalid runtime artifact download URL');
+  }
   url.searchParams.set('token', token);
   return url.toString();
 }

@@ -550,14 +550,20 @@
 }
 
 .account-reference-chip {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   padding: 4px 8px;
+  border: 0;
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.06);
   color: #475569;
   font-family: ui-monospace, monospace;
   font-size: 11px;
+}
+.account-reference-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.24);
 }
 .dark .account-reference-chip {
   background: rgba(255, 255, 255, 0.08);
