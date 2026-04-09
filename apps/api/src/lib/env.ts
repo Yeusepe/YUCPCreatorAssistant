@@ -1,6 +1,11 @@
 // Environment loader with Infisical integration
 // Fetches secrets from Infisical when INFISICAL_PROJECT_ID + machine identity are set
 
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+
+import { parse as parseDotenv } from 'dotenv';
 import type { EnvConfig } from '@yucp/shared';
 import { resolveConvexSiteUrl as resolveSharedConvexSiteUrl } from '@yucp/shared';
 import { logger } from './logger';
@@ -59,6 +64,7 @@ export interface LocalEnv {
   POLAR_SERVER?: string;
   YUCP_COUPLING_SERVICE_BASE_URL?: string;
   YUCP_COUPLING_SERVICE_SHARED_SECRET?: string;
+  COUPLING_SERVICE_SECRET?: string;
 }
 
 async function fetchFromInfisical(): Promise<Record<string, string>> {
@@ -79,10 +85,48 @@ async function fetchFromInfisical(): Promise<Record<string, string>> {
   }
 }
 
+async function loadLocalInfisicalEnvFile(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd()
+): Promise<number> {
+  const envFilePath = path.join(cwd, '.env.infisical');
+  if (!existsSync(envFilePath)) {
+    return 0;
+  }
+
+  const envFile = await readFile(envFilePath, 'utf8');
+  const parsed = parseDotenv(envFile);
+  let loaded = 0;
+  for (const [key, value] of Object.entries(parsed)) {
+    if (value !== undefined && isEnvValueMissing(env[key])) {
+      env[key] = value;
+      loaded += 1;
+    }
+  }
+  return loaded;
+}
+
 // Load from process.env
 function normalizeUrl(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return value.replace(/\/$/, '');
+}
+
+function isEnvValueMissing(value: string | undefined): boolean {
+  return value === undefined || value.trim().length === 0;
+}
+
+function resolveCouplingServiceSharedSecret(
+  env: Record<string, string | undefined> = process.env
+): string | undefined {
+  const preferred = env.YUCP_COUPLING_SERVICE_SHARED_SECRET?.trim();
+  const legacy = env.COUPLING_SERVICE_SECRET?.trim();
+  if (preferred && legacy && preferred !== legacy) {
+    logger.warn(
+      'YUCP_COUPLING_SERVICE_SHARED_SECRET and COUPLING_SERVICE_SECRET differ; using YUCP_COUPLING_SERVICE_SHARED_SECRET'
+    );
+  }
+  return preferred || legacy;
 }
 
 export function resolveConvexSiteUrl(
@@ -145,7 +189,8 @@ function loadFromEnv(): LocalEnv {
     POLAR_WEBHOOK_SECRET: process.env.POLAR_WEBHOOK_SECRET,
     POLAR_SERVER: process.env.POLAR_SERVER,
     YUCP_COUPLING_SERVICE_BASE_URL: process.env.YUCP_COUPLING_SERVICE_BASE_URL,
-    YUCP_COUPLING_SERVICE_SHARED_SECRET: process.env.YUCP_COUPLING_SERVICE_SHARED_SECRET,
+    YUCP_COUPLING_SERVICE_SHARED_SECRET: resolveCouplingServiceSharedSecret(process.env),
+    COUPLING_SERVICE_SECRET: process.env.COUPLING_SERVICE_SECRET,
   };
 }
 
@@ -160,7 +205,7 @@ export async function loadEnvAsync(): Promise<LocalEnv> {
   if (Object.keys(infisicalSecrets).length > 0 && !infisicalLoaded) {
     infisicalLoaded = true;
     for (const [key, value] of Object.entries(infisicalSecrets)) {
-      if (value !== undefined && process.env[key] === undefined) {
+      if (value !== undefined && isEnvValueMissing(process.env[key])) {
         process.env[key] = value;
       }
     }
@@ -173,6 +218,14 @@ export async function loadEnvAsync(): Promise<LocalEnv> {
       infisicalEnv: process.env.INFISICAL_ENV ?? 'dev (default)',
     });
   }
+
+  const localInfisicalCount = await loadLocalInfisicalEnvFile();
+  if (localInfisicalCount > 0) {
+    logger.info('Loaded fallback secrets from local .env.infisical', {
+      count: localInfisicalCount,
+    });
+  }
+
   return loadFromEnv();
 }
 

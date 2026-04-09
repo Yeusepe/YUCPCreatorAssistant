@@ -17,8 +17,10 @@
 
 import path from 'node:path';
 import type { Auth } from './auth';
+import { validateCouplingServiceBaseUrl } from './lib/couplingRuntimeConfig';
 import { createLegacyFrontendMovedResponse, isLegacyFrontendAsset } from './lib/legacyFrontend';
 import {
+  createCouplingLicenseRoutes,
   createVerificationRoutes,
   mountVerificationRouteHandlers,
   type VerificationConfig,
@@ -61,6 +63,8 @@ export interface TestServerConfig {
   convexApiSecret: string;
   convexSiteUrl: string;
   encryptionSecret: string;
+  couplingServiceBaseUrl?: string;
+  couplingServiceSharedSecret?: string;
   /** Optional — connect/collab Discord OAuth flows are skipped in tests */
   discordClientId?: string;
   discordClientSecret?: string;
@@ -110,6 +114,11 @@ function redirectToFrontendRoute(
 export async function createServer(config: TestServerConfig): Promise<TestServer> {
   const baseUrl = config.baseUrl ?? `http://localhost:${config.port}`;
   const frontendUrl = config.frontendUrl ?? baseUrl;
+  validateCouplingServiceBaseUrl({
+    apiBaseUrl: baseUrl,
+    convexSiteUrl: config.convexSiteUrl,
+    couplingServiceBaseUrl: config.couplingServiceBaseUrl,
+  });
 
   const stubAuth = config.auth ?? createStubAuth();
 
@@ -124,6 +133,13 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
   };
   const verificationHandlers = createVerificationRoutes(verificationConfig);
   const verificationRoutes = mountVerificationRouteHandlers(verificationHandlers);
+  const couplingLicenseRoutes = createCouplingLicenseRoutes({
+    apiBaseUrl: baseUrl,
+    couplingServiceBaseUrl: config.couplingServiceBaseUrl ?? '',
+    couplingServiceSharedSecret: config.couplingServiceSharedSecret ?? '',
+    convexUrl: config.convexUrl,
+    convexApiSecret: config.convexApiSecret,
+  });
 
   const connectRoutes = createConnectRoutes(stubAuth, {
     apiBaseUrl: baseUrl,
@@ -219,6 +235,8 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
 
     // Provider platform routes (/v1/*)
     if (pathname.startsWith('/v1/')) {
+      const couplingResponse = await couplingLicenseRoutes.handleRequest(request);
+      if (couplingResponse) return couplingResponse;
       const local = await providerPlatformRoutes.handleRequest(request);
       if (local) return local;
     }

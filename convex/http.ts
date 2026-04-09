@@ -71,27 +71,18 @@ import {
   getBetterAuthPage,
 } from './lib/betterAuthAdapter';
 import { isSigningRequestTimestampFresh, verifySigningProof } from './lib/certificateSigning';
-import {
-  buildRuntimeArtifactDownloadUrl,
-  fetchRuntimeArtifactManifest,
-} from './lib/couplingServiceRuntimeArtifacts';
 import { buildPublicAuthIssuer, resolveConfiguredPublicApiBaseUrl } from './lib/publicAuthIssuer';
 import { type PublicProductRecord } from './lib/publicProducts';
 import { constantTimeEqual } from './lib/vrchat/crypto';
 import {
   base64ToBytes,
   type CertEnvelope,
-  type CouplingRuntimeClaims,
-  type CouplingRuntimePackageClaims,
   getPublicKeyFromPrivate,
   type LicenseClaims,
   type PackageCertificateData,
-  signCouplingRuntimeJwt,
-  signCouplingRuntimePackageJwt,
   signLicenseJwt,
   signPackageCertificateData,
   verifyCertEnvelope,
-  verifyLicenseJwt,
 } from './lib/yucpCrypto';
 import { handleOAuthAuthorizationServerMetadata } from './oauthDiscovery';
 import './polyfills';
@@ -122,8 +113,6 @@ async function sha256HexHttp(input: string): Promise<string> {
 
 const PROTECTED_ASSET_ID_RE = /^[a-f0-9]{32}$/;
 const PROJECT_ID_RE = /^[a-f0-9]{32}$/;
-const COUPLING_RUNTIME_TTL_SECONDS = 10 * 60;
-const COUPLING_RUNTIME_PACKAGE_TTL_SECONDS = 10 * 60;
 
 const http = httpRouter();
 
@@ -142,16 +131,34 @@ function errorResponse(message: string, status: number): Response {
   return jsonResponse({ error: message }, status);
 }
 
-async function redirectToRuntimeArtifact(
-  token: string,
-  artifactKey: 'coupling-runtime' | 'coupling-runtime-package'
-): Promise<Response> {
-  const manifest = await fetchRuntimeArtifactManifest(artifactKey);
-  if (!manifest.success) {
-    return errorResponse(manifest.error, 503);
+async function proxyToPublicApi(request: Request, targetPath: string): Promise<Response> {
+  const apiBaseUrl = resolveConfiguredPublicApiBaseUrl();
+  if (!apiBaseUrl) {
+    return errorResponse('Service not configured', 503);
   }
 
-  return Response.redirect(buildRuntimeArtifactDownloadUrl(manifest, token), 307);
+  const requestUrl = new URL(request.url);
+  const targetUrl = new URL(targetPath, `${apiBaseUrl.replace(/\/$/, '')}/`);
+  targetUrl.search = requestUrl.search;
+
+  const headers = new Headers(request.headers);
+  headers.delete('host');
+
+  const body =
+    request.method === 'GET' || request.method === 'HEAD'
+      ? undefined
+      : await request.clone().arrayBuffer();
+  const proxied = await fetch(targetUrl.toString(), {
+    method: request.method,
+    headers,
+    body,
+    redirect: 'manual',
+  });
+
+  return new Response(proxied.body, {
+    status: proxied.status,
+    headers: new Headers(proxied.headers),
+  });
 }
 
 function buildServerTimingHeader(
@@ -1639,67 +1646,8 @@ http.route({
 http.route({
   method: 'POST',
   path: '/v1/licenses/protected-materialization-grant',
-  handler: httpAction(async (ctx, request) => {
-    let body: {
-      packageId: string;
-      protectedAssetId: string;
-      projectId: string;
-      machineFingerprint: string;
-      licenseToken: string;
-      assetPaths: string[];
-    };
-
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return errorResponse('Invalid JSON body', 400);
-    }
-
-    const { packageId, protectedAssetId, projectId, machineFingerprint, licenseToken, assetPaths } =
-      body ?? {};
-    if (
-      !packageId ||
-      !protectedAssetId ||
-      !projectId ||
-      !machineFingerprint ||
-      !licenseToken ||
-      !Array.isArray(assetPaths)
-    ) {
-      return errorResponse(
-        'packageId, protectedAssetId, projectId, machineFingerprint, licenseToken, and assetPaths are required',
-        400
-      );
-    }
-
-    if (!PROTECTED_ASSET_ID_RE.test(protectedAssetId)) {
-      return errorResponse('Invalid protectedAssetId format', 400);
-    }
-    if (!PROJECT_ID_RE.test(projectId)) {
-      return errorResponse('Invalid projectId format', 400);
-    }
-
-    const publicIssuerBaseUrl = resolveConfiguredPublicApiBaseUrl();
-    if (!publicIssuerBaseUrl) return errorResponse('Service not configured', 503);
-
-    const result = await ctx.runAction(internal.yucpLicenses.issueProtectedMaterializationGrant, {
-      packageId,
-      protectedAssetId,
-      machineFingerprint,
-      projectId,
-      licenseToken,
-      assetPaths,
-      issuerBaseUrl: publicIssuerBaseUrl,
-    });
-
-    if (!result.success) {
-      return jsonResponse({ error: result.error }, 422);
-    }
-
-    return jsonResponse({
-      success: true,
-      grant: result.grant,
-      expiresAt: result.expiresAt,
-    });
+  handler: httpAction(async (_ctx, request) => {
+    return await proxyToPublicApi(request, '/v1/licenses/protected-materialization-grant');
   }),
 });
 
@@ -1814,220 +1762,26 @@ http.route({
 });
 
 http.route({
+  method: 'GET',
+  path: '/v1/runtime-artifacts/manifest',
+  handler: httpAction(async (_ctx, request) => {
+    return await proxyToPublicApi(request, '/v1/runtime-artifacts/manifest');
+  }),
+});
+
+http.route({
   method: 'POST',
   path: '/v1/licenses/runtime-package-token',
-  handler: httpAction(async (ctx, request) => {
-    let body: {
-      packageId: string;
-      projectId: string;
-      machineFingerprint: string;
-      licenseToken: string;
-    };
-
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return errorResponse('Invalid JSON body', 400);
-    }
-
-    const { packageId, projectId, machineFingerprint, licenseToken } = body ?? {};
-    if (!packageId || !projectId || !machineFingerprint || !licenseToken) {
-      return errorResponse(
-        'packageId, projectId, machineFingerprint, and licenseToken are required',
-        400
-      );
-    }
-
-    if (!PROJECT_ID_RE.test(projectId)) {
-      return errorResponse('Invalid projectId format', 400);
-    }
-
-    const rootPrivateKey = process.env.YUCP_ROOT_PRIVATE_KEY;
-    if (!rootPrivateKey) {
-      throw new Error('YUCP_ROOT_PRIVATE_KEY not configured');
-    }
-    const rootPublicKey =
-      process.env.YUCP_ROOT_PUBLIC_KEY ?? (await getPublicKeyFromPrivate(rootPrivateKey));
-    const publicIssuerBaseUrl = resolveConfiguredPublicApiBaseUrl();
-    if (!publicIssuerBaseUrl) return errorResponse('Service not configured', 503);
-
-    const licenseClaims = await verifyLicenseJwt(
-      licenseToken,
-      rootPublicKey,
-      buildPublicAuthIssuer(publicIssuerBaseUrl)
-    );
-    if (!licenseClaims) {
-      return errorResponse('License token is invalid or expired', 401);
-    }
-    if (
-      licenseClaims.package_id !== packageId ||
-      licenseClaims.machine_fingerprint !== machineFingerprint
-    ) {
-      return errorResponse('License token did not match this package or machine', 401);
-    }
-
-    const artifact = await fetchRuntimeArtifactManifest('coupling-runtime-package');
-    if (!artifact.success) {
-      return errorResponse(
-        artifact.error ?? 'Coupling runtime package is not configured on the server',
-        503
-      );
-    }
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const exp = nowSeconds + COUPLING_RUNTIME_PACKAGE_TTL_SECONDS;
-    const keyId = process.env.YUCP_ROOT_KEY_ID ?? 'yucp-root';
-    const publicAuthIssuer = buildPublicAuthIssuer(publicIssuerBaseUrl);
-    const claims: CouplingRuntimePackageClaims = {
-      iss: publicAuthIssuer,
-      aud: 'yucp-runtime-package',
-      sub: licenseClaims.sub,
-      jti: crypto.randomUUID(),
-      package_id: packageId,
-      machine_fingerprint: machineFingerprint,
-      project_id: projectId,
-      artifact_key: artifact.artifactKey ?? '',
-      artifact_channel: artifact.channel ?? '',
-      artifact_platform: artifact.platform ?? '',
-      artifact_version: artifact.version ?? '',
-      metadata_version: artifact.metadataVersion ?? 0,
-      delivery_name: artifact.deliveryName ?? 'yucp-coupling-runtime-package.zip',
-      content_type: artifact.contentType ?? 'application/zip',
-      envelope_cipher: artifact.envelopeCipher ?? '',
-      envelope_iv_b64: artifact.envelopeIvBase64 ?? '',
-      ciphertext_sha256: artifact.ciphertextSha256 ?? '',
-      ciphertext_size: artifact.ciphertextSize ?? 0,
-      plaintext_sha256: artifact.plaintextSha256 ?? '',
-      plaintext_size: artifact.plaintextSize ?? 0,
-      code_signing_subject: artifact.codeSigningSubject,
-      code_signing_thumbprint: artifact.codeSigningThumbprint,
-      iat: nowSeconds,
-      exp,
-    };
-
-    const runtimePackageToken = await signCouplingRuntimePackageJwt(claims, rootPrivateKey, keyId);
-    return jsonResponse({
-      success: true,
-      runtimePackageToken,
-      runtimePackageSha256: artifact.plaintextSha256,
-      runtimePackageUrl: buildRuntimeArtifactDownloadUrl(artifact, runtimePackageToken),
-      expiresAt: exp,
-    });
+  handler: httpAction(async (_ctx, request) => {
+    return await proxyToPublicApi(request, '/v1/licenses/runtime-package-token');
   }),
 });
 
 http.route({
   method: 'POST',
   path: '/v1/licenses/coupling-job',
-  handler: httpAction(async (ctx, request) => {
-    let body: {
-      packageId: string;
-      projectId: string;
-      machineFingerprint: string;
-      licenseToken: string;
-      assetPaths: string[];
-    };
-
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return errorResponse('Invalid JSON body', 400);
-    }
-
-    const { packageId, projectId, machineFingerprint, licenseToken, assetPaths } = body ?? {};
-    if (
-      !packageId ||
-      !projectId ||
-      !machineFingerprint ||
-      !licenseToken ||
-      !Array.isArray(assetPaths)
-    ) {
-      return errorResponse(
-        'packageId, projectId, machineFingerprint, licenseToken, and assetPaths are required',
-        400
-      );
-    }
-
-    if (!PROJECT_ID_RE.test(projectId)) {
-      return errorResponse('Invalid projectId format', 400);
-    }
-
-    const publicIssuerBaseUrl = resolveConfiguredPublicApiBaseUrl();
-    if (!publicIssuerBaseUrl) return errorResponse('Service not configured', 503);
-    const issued = await ctx.runAction(internal.yucpLicenses.issueCouplingJob, {
-      packageId,
-      projectId,
-      machineFingerprint,
-      licenseToken,
-      assetPaths,
-      issuerBaseUrl: publicIssuerBaseUrl,
-    });
-
-    if (!issued.success) {
-      return jsonResponse({ error: issued.error }, 422);
-    }
-
-    if (!issued.jobs || issued.jobs.length === 0) {
-      return jsonResponse({
-        success: true,
-        files: [],
-        skipReason: issued.skipReason,
-      });
-    }
-
-    const artifact = await fetchRuntimeArtifactManifest('coupling-runtime');
-    if (!artifact.success) {
-      return errorResponse(
-        artifact.error ?? 'Coupling runtime is not configured on the server',
-        503
-      );
-    }
-
-    const rootPrivateKey = process.env.YUCP_ROOT_PRIVATE_KEY;
-    if (!rootPrivateKey) {
-      throw new Error('YUCP_ROOT_PRIVATE_KEY not configured');
-    }
-
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const exp = nowSeconds + COUPLING_RUNTIME_TTL_SECONDS;
-    const keyId = process.env.YUCP_ROOT_KEY_ID ?? 'yucp-root';
-    const publicAuthIssuer = buildPublicAuthIssuer(publicIssuerBaseUrl);
-    const claims: CouplingRuntimeClaims = {
-      iss: publicAuthIssuer,
-      aud: 'yucp-coupling-runtime',
-      sub: issued.subject ?? '',
-      jti: crypto.randomUUID(),
-      package_id: packageId,
-      machine_fingerprint: machineFingerprint,
-      project_id: projectId,
-      artifact_key: artifact.artifactKey ?? '',
-      artifact_channel: artifact.channel ?? '',
-      artifact_platform: artifact.platform ?? '',
-      artifact_version: artifact.version ?? '',
-      metadata_version: artifact.metadataVersion ?? 0,
-      delivery_name: artifact.deliveryName ?? 'yucp_coupling.dll',
-      content_type: artifact.contentType ?? 'application/octet-stream',
-      envelope_cipher: artifact.envelopeCipher ?? '',
-      envelope_iv_b64: artifact.envelopeIvBase64 ?? '',
-      ciphertext_sha256: artifact.ciphertextSha256 ?? '',
-      ciphertext_size: artifact.ciphertextSize ?? 0,
-      plaintext_sha256: artifact.plaintextSha256 ?? '',
-      plaintext_size: artifact.plaintextSize ?? 0,
-      code_signing_subject: artifact.codeSigningSubject,
-      code_signing_thumbprint: artifact.codeSigningThumbprint,
-      iat: nowSeconds,
-      exp,
-    };
-
-    const runtimeToken = await signCouplingRuntimeJwt(claims, rootPrivateKey, keyId);
-    return jsonResponse({
-      success: true,
-      runtimeToken,
-      runtimeSha256: artifact.plaintextSha256,
-      runtimeUrl: buildRuntimeArtifactDownloadUrl(artifact, runtimeToken),
-      expiresAt: exp,
-      files: issued.jobs ?? [],
-      skipReason: issued.skipReason,
-    });
+  handler: httpAction(async (_ctx, request) => {
+    return await proxyToPublicApi(request, '/v1/licenses/coupling-job');
   }),
 });
 
@@ -2035,12 +1789,7 @@ http.route({
   method: 'GET',
   path: '/v1/licenses/runtime-package',
   handler: httpAction(async (_ctx, request) => {
-    const requestUrl = new URL(request.url);
-    const token = requestUrl.searchParams.get('token');
-    if (!token) {
-      return errorResponse('token query parameter is required', 400);
-    }
-    return await redirectToRuntimeArtifact(token, 'coupling-runtime-package');
+    return await proxyToPublicApi(request, '/v1/licenses/runtime-package');
   }),
 });
 
@@ -2048,12 +1797,7 @@ http.route({
   method: 'GET',
   path: '/v1/licenses/coupling-runtime',
   handler: httpAction(async (_ctx, request) => {
-    const requestUrl = new URL(request.url);
-    const token = requestUrl.searchParams.get('token');
-    if (!token) {
-      return errorResponse('token query parameter is required', 400);
-    }
-    return await redirectToRuntimeArtifact(token, 'coupling-runtime');
+    return await proxyToPublicApi(request, '/v1/licenses/coupling-runtime');
   }),
 });
 

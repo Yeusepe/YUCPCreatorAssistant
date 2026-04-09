@@ -8,6 +8,7 @@ import { buildAllowedBrowserOrigins } from '@yucp/shared/authOrigins';
 import { type Auth, createAuth } from './auth';
 import { createInternalRpcRouter, INTERNAL_RPC_PATH } from './internalRpc/router';
 import { getConfiguredConvexSiteUrlForProxy } from './lib/convexSiteProxy';
+import { validateCouplingServiceBaseUrl } from './lib/couplingRuntimeConfig';
 import { getRequired, loadEnv, loadEnvAsync } from './lib/env';
 import {
   createLegacyFrontendMovedResponse,
@@ -18,6 +19,7 @@ import { logger } from './lib/logger';
 import { detectTunnelUrl } from './lib/tunnel';
 import {
   createConnectRoutes,
+  createCouplingLicenseRoutes,
   createForensicsRoutes,
   createPackageRoutes,
   createProviderPlatformRoutes,
@@ -42,6 +44,7 @@ let installRoutes: Map<string, (request: Request) => Promise<Response>> | null =
 let verificationRoutes: Map<string, (request: Request) => Promise<Response>> | null = null;
 let verificationHandlers: ReturnType<typeof createVerificationRoutes> | null = null;
 let connectRoutes: ReturnType<typeof createConnectRoutes> | null = null;
+let couplingLicenseRoutes: ReturnType<typeof createCouplingLicenseRoutes> | null = null;
 let forensicsRoutes: ReturnType<typeof createForensicsRoutes> | null = null;
 let packageRoutes: ReturnType<typeof createPackageRoutes> | null = null;
 let providerPlatformRoutes: ReturnType<typeof createProviderPlatformRoutes> | null = null;
@@ -149,7 +152,11 @@ function initializeAuth(webhookBaseUrl?: string) {
     getRequired('VRCHAT_PENDING_STATE_SECRET');
     getRequired('ENCRYPTION_SECRET');
     getRequired('YUCP_COUPLING_SERVICE_BASE_URL');
-    getRequired('YUCP_COUPLING_SERVICE_SHARED_SECRET');
+    if (!env.YUCP_COUPLING_SERVICE_SHARED_SECRET?.trim()) {
+      throw new Error(
+        'YUCP_COUPLING_SERVICE_SHARED_SECRET or COUPLING_SERVICE_SECRET must be configured in production'
+      );
+    }
   }
   const configuredPolarKeys = [env.POLAR_ACCESS_TOKEN, env.POLAR_WEBHOOK_SECRET].filter(
     (value) => typeof value === 'string' && value.trim()
@@ -161,6 +168,11 @@ function initializeAuth(webhookBaseUrl?: string) {
   // Use a tunnel only for externally reachable webhook/install callbacks.
   const publicBaseUrl = webhookBaseUrl ?? siteUrl;
   const frontendUrl = env.FRONTEND_URL ?? siteUrl;
+  validateCouplingServiceBaseUrl({
+    apiBaseUrl: publicBaseUrl,
+    convexSiteUrl: env.CONVEX_SITE_URL,
+    couplingServiceBaseUrl: env.YUCP_COUPLING_SERVICE_BASE_URL,
+  });
 
   resolvedApiBaseUrl = publicBaseUrl;
   resolvedFrontendOrigin = new URL(frontendUrl).origin;
@@ -241,6 +253,14 @@ function initializeAuth(webhookBaseUrl?: string) {
     encryptionSecret,
   } satisfies Parameters<typeof createConnectRoutes>[1];
   connectRoutes = createConnectRoutes(auth, connectConfig);
+
+  couplingLicenseRoutes = createCouplingLicenseRoutes({
+    apiBaseUrl: publicBaseUrl,
+    couplingServiceBaseUrl: env.YUCP_COUPLING_SERVICE_BASE_URL ?? '',
+    couplingServiceSharedSecret: env.YUCP_COUPLING_SERVICE_SHARED_SECRET ?? '',
+    convexApiSecret: env.CONVEX_API_SECRET ?? '',
+    convexUrl,
+  });
 
   forensicsRoutes = createForensicsRoutes(auth, {
     apiBaseUrl: publicBaseUrl,
@@ -521,6 +541,13 @@ async function routeRequest(request: Request): Promise<Response> {
   // requests to Convex. Auth, YUCP OAuth, and the versioned public API (/v1/)
   // all live on Convex .site.
   // When the API runs on localhost, proxy so everything works from a single origin.
+  if (pathname.startsWith('/v1/') && couplingLicenseRoutes) {
+    const localCouplingResponse = await couplingLicenseRoutes.handleRequest(request);
+    if (localCouplingResponse) {
+      return localCouplingResponse;
+    }
+  }
+
   if (pathname.startsWith('/v1/') && providerPlatformRoutes) {
     const localV1Response = await providerPlatformRoutes.handleRequest(request);
     if (localV1Response) {

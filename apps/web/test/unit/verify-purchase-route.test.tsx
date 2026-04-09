@@ -18,6 +18,12 @@ vi.mock('@/hooks/useAuth', () => ({
   }),
 }));
 
+vi.mock('@/components/three/CloudBackground', () => ({
+  CloudBackground: ({ variant }: { variant?: 'default' | '404' }) => (
+    <div data-testid="cloud-background" data-variant={variant ?? 'default'} />
+  ),
+}));
+
 vi.mock('@/lib/account', () => ({
   getUserVerificationIntent: vi.fn(),
   verifyUserVerificationEntitlement: vi.fn(),
@@ -193,5 +199,20 @@ describe('verify purchase route', () => {
     expect(screen.queryByRole('button', { name: /^sign in$/i })).not.toBeInTheDocument();
 
     deferredAccounts.resolve([]);
+  });
+
+  it('renders the shared cloud background like the dashboard shell', async () => {
+    const Component = VerifyPurchaseRoute.options.component;
+    if (!Component) {
+      throw new Error('Verify purchase route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    expect(
+      screen
+        .getAllByTestId('cloud-background')
+        .every((element) => element.getAttribute('data-variant') === 'default')
+    ).toBe(true);
   });
 });

@@ -12,6 +12,7 @@ export {
   type VerificationRouteHandlers,
 } from '../verification';
 export { type ConnectConfig, createConnectRoutes } from './connect';
+export { createCouplingLicenseRoutes, type CouplingLicenseConfig } from './couplingLicenses';
 export { createForensicsRoutes, type ForensicsConfig } from './forensics';
 export {
   createInstallRoutes,

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createLazyFileRoute, useSearch } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { CloudBackground } from '@/components/three/CloudBackground';
 import { useAuth } from '@/hooks/useAuth';
 import {
   getUserVerificationIntent,
@@ -617,38 +618,39 @@ function VerifyPurchasePage() {
     (hasEntitlementMethod && entitlementCheckState === 'checking') ||
     oauthReturnState === 'checking';
 
+  const renderShell = (content: React.ReactNode) => (
+    <div className="vp-page">
+      <CloudBackground variant="default" />
+      <div className={wrapperClass}>
+        <main className={mainClass}>{content}</main>
+      </div>
+    </div>
+  );
+
   const wrapperClass = `vp-wrapper`;
   const mainClass = `vp-main${isVisible ? ' is-visible' : ''}`;
 
   // ---- empty intent
   if (!intentId) {
-    return (
-      <div className={wrapperClass}>
-        <main className={mainClass}>
-          <div className="vp-card vp-card--error fade-up" style={{ animationDelay: '0.15s' }}>
-            <h1 className="vp-package-name">No verification intent</h1>
-            <p className="vp-card-subtitle">
-              This page must be opened from within Unity's verification flow. Return to Unity and
-              try again.
-            </p>
-          </div>
-        </main>
+    return renderShell(
+      <div className="vp-card vp-card--error fade-up" style={{ animationDelay: '0.15s' }}>
+        <h1 className="vp-package-name">No verification intent</h1>
+        <p className="vp-card-subtitle">
+          This page must be opened from within Unity's verification flow. Return to Unity and try
+          again.
+        </p>
       </div>
     );
   }
 
   // ---- loading
   if (intentQuery.isPending) {
-    return (
-      <div className={wrapperClass}>
-        <main className={mainClass}>
-          <div className="vp-card fade-up" style={{ animationDelay: '0.1s' }}>
-            <div className="vp-loading-state">
-              <span className="vp-spinner vp-spinner--lg" aria-hidden="true" />
-              <p className="vp-loading-text">Loading verification...</p>
-            </div>
-          </div>
-        </main>
+    return renderShell(
+      <div className="vp-card fade-up" style={{ animationDelay: '0.1s' }}>
+        <div className="vp-loading-state">
+          <span className="vp-spinner vp-spinner--lg" aria-hidden="true" />
+          <p className="vp-loading-text">Loading verification...</p>
+        </div>
       </div>
     );
   }
@@ -656,113 +658,101 @@ function VerifyPurchasePage() {
   // ---- fetch error
   if (intentQuery.isError || !intent) {
     const loadErrorState = getPurchaseIntentLoadErrorState(intentQuery.error);
-    return (
-      <div className={wrapperClass}>
-        <main className={mainClass}>
-          <div className="vp-card vp-card--error fade-up" style={{ animationDelay: '0.1s' }}>
-            <h1 className="vp-package-name">{loadErrorState.title}</h1>
-            <p className="vp-card-subtitle">{loadErrorState.message}</p>
-            {loadErrorState.allowSignOut ? (
-              <button
-                type="button"
-                className={`vp-primary-btn${isSigningOut ? ' btn-loading' : ''}`}
-                onClick={async () => {
-                  setIsSigningOut(true);
-                  try {
-                    await signOut();
-                  } finally {
-                    setIsSigningOut(false);
-                  }
-                }}
-                disabled={isSigningOut}
-              >
-                {isSigningOut ? (
-                  <>
-                    <span className="btn-loading-spinner" aria-hidden="true" />
-                    Signing out...
-                  </>
-                ) : (
-                  'Sign out and continue'
-                )}
-              </button>
-            ) : null}
-          </div>
-        </main>
+    return renderShell(
+      <div className="vp-card vp-card--error fade-up" style={{ animationDelay: '0.1s' }}>
+        <h1 className="vp-package-name">{loadErrorState.title}</h1>
+        <p className="vp-card-subtitle">{loadErrorState.message}</p>
+        {loadErrorState.allowSignOut ? (
+          <button
+            type="button"
+            className={`vp-primary-btn${isSigningOut ? ' btn-loading' : ''}`}
+            onClick={async () => {
+              setIsSigningOut(true);
+              try {
+                await signOut();
+              } finally {
+                setIsSigningOut(false);
+              }
+            }}
+            disabled={isSigningOut}
+          >
+            {isSigningOut ? (
+              <>
+                <span className="btn-loading-spinner" aria-hidden="true" />
+                Signing out...
+              </>
+            ) : (
+              'Sign out and continue'
+            )}
+          </button>
+        ) : null}
       </div>
     );
   }
 
   // ---- expired / cancelled
   if (intent.status === 'expired' || intent.status === 'cancelled') {
-    return (
-      <div className={wrapperClass}>
-        <main className={mainClass}>
-          <div className="vp-card vp-card--error fade-up" style={{ animationDelay: '0.1s' }}>
-            <h1 className="vp-package-name">Verification expired</h1>
-            <p className="vp-card-subtitle">
-              This verification session has expired. Return to Unity and start the flow again.
-            </p>
-          </div>
-        </main>
+    return renderShell(
+      <div className="vp-card vp-card--error fade-up" style={{ animationDelay: '0.1s' }}>
+        <h1 className="vp-package-name">Verification expired</h1>
+        <p className="vp-card-subtitle">
+          This verification session has expired. Return to Unity and start the flow again.
+        </p>
       </div>
     );
   }
 
   // ---- verified (success)
   if (intent.status === 'verified') {
-    return (
-      <div className={wrapperClass}>
-        <main className={mainClass}>
-          <div className="vp-card vp-card--success" style={{ textAlign: 'center' }}>
-            <div className="vp-success-icon fade-up" style={{ animationDelay: '0.1s' }}>
-              <svg viewBox="0 0 100 100" aria-hidden="true">
-                <circle
-                  className="vp-circle-path"
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  stroke="var(--accent-green-dark)"
-                  strokeWidth="5"
-                  fill="none"
-                />
-                <path
-                  className="vp-check-path"
-                  d="M28 50 L43 65 L72 35"
-                  stroke="var(--accent-green-dark)"
-                  strokeWidth="5"
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
+    return renderShell(
+      <div className="vp-card vp-card--success" style={{ textAlign: 'center' }}>
+        <div className="vp-success-icon fade-up" style={{ animationDelay: '0.1s' }}>
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle
+              className="vp-circle-path"
+              cx="50"
+              cy="50"
+              r="45"
+              stroke="var(--accent-green-dark)"
+              strokeWidth="5"
+              fill="none"
+            />
+            <path
+              className="vp-check-path"
+              d="M28 50 L43 65 L72 35"
+              stroke="var(--accent-green-dark)"
+              strokeWidth="5"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
 
-            <h1 className="vp-success-title fade-up" style={{ animationDelay: '0.3s' }}>
-              Verified!
-            </h1>
+        <h1 className="vp-success-title fade-up" style={{ animationDelay: '0.3s' }}>
+          Verified!
+        </h1>
 
-            <p className="vp-success-subtitle fade-up" style={{ animationDelay: '0.45s' }}>
-              {intent.packageName || intent.packageId} ΓÇö purchase confirmed. Return to Unity to
-              finish installing.
-            </p>
+        <p className="vp-success-subtitle fade-up" style={{ animationDelay: '0.45s' }}>
+          {intent.packageName || intent.packageId} - purchase confirmed. Return to Unity to finish
+          installing.
+        </p>
 
-            {returnToUrl ? (
-              <div className="fade-up" style={{ animationDelay: '0.6s' }}>
-                <a href={returnToUrl} className="vp-primary-btn">
-                  Return to Unity
-                </a>
-                <p className="vp-countdown-text">Returning automatically in {redirectCountdown}s</p>
-              </div>
-            ) : (
-              <p
-                className="vp-success-subtitle fade-up"
-                style={{ animationDelay: '0.6s', marginBottom: '2rem' }}
-              >
-                You can close this window and return to Unity.
-              </p>
-            )}
+        {returnToUrl ? (
+          <div className="fade-up" style={{ animationDelay: '0.6s' }}>
+            <a href={returnToUrl} className="vp-primary-btn">
+              Return to Unity
+            </a>
+            <p className="vp-countdown-text">Returning automatically in {redirectCountdown}s</p>
           </div>
-        </main>
+        ) : (
+          <p
+            className="vp-success-subtitle fade-up"
+            style={{ animationDelay: '0.6s', marginBottom: '2rem' }}
+          >
+            You can close this window and return to Unity.
+          </p>
+        )}
       </div>
     );
   }
@@ -785,103 +775,95 @@ function VerifyPurchasePage() {
   const invalidateIntent = () =>
     queryClient.invalidateQueries({ queryKey: ['vp-intent', intentId] });
 
-  return (
-    <div className={wrapperClass}>
-      <main className={mainClass}>
-        <div className="vp-card fade-up" style={{ animationDelay: '0.1s' }}>
-          {/* Header */}
-          <div className="vp-card-header">
-            <p className="vp-eyebrow">Verify your purchase</p>
-            <h1 className="vp-package-name">{intent.packageName || intent.packageId}</h1>
-            {visibleErrorMessage ? (
-              <div className="vp-error-banner">{visibleErrorMessage}</div>
-            ) : null}
-          </div>
+  return renderShell(
+    <div className="vp-card fade-up" style={{ animationDelay: '0.1s' }}>
+      {/* Header */}
+      <div className="vp-card-header">
+        <p className="vp-eyebrow">Verify your purchase</p>
+        <h1 className="vp-package-name">{intent.packageName || intent.packageId}</h1>
+        {visibleErrorMessage ? <div className="vp-error-banner">{visibleErrorMessage}</div> : null}
+      </div>
 
-          {isAutoChecking ? (
-            <div className="vp-checking-section">
-              <span className="vp-spinner vp-spinner--lg" aria-hidden="true" />
-              <p className="vp-checking-text">Checking your access...</p>
-            </div>
-          ) : (
-            <>
-              {/* OAuth sign-in section */}
-              {hasOAuth ? (
-                <div className="vp-oauth-section">
-                  <p className="vp-section-eyebrow">Sign in to verify</p>
-                  <p className="vp-section-desc">
-                    Choose the store where you purchased this product.
-                  </p>
-                  <div className="vp-oauth-buttons">
-                    {oauthMethods.map((req) => (
-                      <OAuthMethodButton
-                        key={req.methodKey}
-                        intentId={intentId}
-                        requirement={req}
-                        linkedAccounts={accountsByProvider.get(req.providerKey) ?? []}
-                        provider={providersByKey.get(req.providerKey) ?? null}
-                        accountsLoading={accountsQuery.isPending}
-                        providersLoading={providersQuery.isPending}
-                        verifiedMethodKey={verifiedMethodKey}
-                        onSuccess={invalidateIntent}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Divider between OAuth and license */}
-              {hasOAuth && hasLicense ? (
-                <div className="vp-methods-divider">
-                  <span className="vp-methods-divider-label">or enter license key</span>
-                </div>
-              ) : null}
-
-              {/* License key section */}
-              {hasLicense ? (
-                <div className={`vp-section${!hasOAuth ? ' vp-section--top' : ''}`}>
-                  {!hasOAuth ? <p className="vp-section-title">Enter license key</p> : null}
-                  {licenseMethods.map((req) => (
-                    <LicenseMethodRow
-                      key={req.methodKey}
-                      intentId={intentId}
-                      requirement={req}
-                      provider={providersByKey.get(req.providerKey) ?? null}
-                      verifiedMethodKey={verifiedMethodKey}
-                      onSuccess={invalidateIntent}
-                    />
-                  ))}
-                </div>
-              ) : null}
-
-              {/* Entitlement check rows (shown only if no OAuth or they failed) */}
-              {hasEntitlement && !hasOAuth && !hasLicense ? (
-                <div className="vp-section">
-                  {entitlementMethods.map((req) => (
-                    <EntitlementRow
-                      key={req.methodKey}
-                      intentId={intentId}
-                      requirement={req}
-                      provider={providersByKey.get(req.providerKey) ?? null}
-                      verifiedMethodKey={verifiedMethodKey}
-                      isAutoChecking={isAutoChecking}
-                      onSuccess={invalidateIntent}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </>
-          )}
-
-          {/* Footer */}
-          <div className="vp-card-footer">
-            <p className="vp-footer-note">
-              Verification is handled securely in your browser. Unity only receives access after the
-              server confirms your purchase.
-            </p>
-          </div>
+      {isAutoChecking ? (
+        <div className="vp-checking-section">
+          <span className="vp-spinner vp-spinner--lg" aria-hidden="true" />
+          <p className="vp-checking-text">Checking your access...</p>
         </div>
-      </main>
+      ) : (
+        <>
+          {/* OAuth sign-in section */}
+          {hasOAuth ? (
+            <div className="vp-oauth-section">
+              <p className="vp-section-eyebrow">Sign in to verify</p>
+              <p className="vp-section-desc">Choose the store where you purchased this product.</p>
+              <div className="vp-oauth-buttons">
+                {oauthMethods.map((req) => (
+                  <OAuthMethodButton
+                    key={req.methodKey}
+                    intentId={intentId}
+                    requirement={req}
+                    linkedAccounts={accountsByProvider.get(req.providerKey) ?? []}
+                    provider={providersByKey.get(req.providerKey) ?? null}
+                    accountsLoading={accountsQuery.isPending}
+                    providersLoading={providersQuery.isPending}
+                    verifiedMethodKey={verifiedMethodKey}
+                    onSuccess={invalidateIntent}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Divider between OAuth and license */}
+          {hasOAuth && hasLicense ? (
+            <div className="vp-methods-divider">
+              <span className="vp-methods-divider-label">or enter license key</span>
+            </div>
+          ) : null}
+
+          {/* License key section */}
+          {hasLicense ? (
+            <div className={`vp-section${!hasOAuth ? ' vp-section--top' : ''}`}>
+              {!hasOAuth ? <p className="vp-section-title">Enter license key</p> : null}
+              {licenseMethods.map((req) => (
+                <LicenseMethodRow
+                  key={req.methodKey}
+                  intentId={intentId}
+                  requirement={req}
+                  provider={providersByKey.get(req.providerKey) ?? null}
+                  verifiedMethodKey={verifiedMethodKey}
+                  onSuccess={invalidateIntent}
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {/* Entitlement check rows (shown only if no OAuth or they failed) */}
+          {hasEntitlement && !hasOAuth && !hasLicense ? (
+            <div className="vp-section">
+              {entitlementMethods.map((req) => (
+                <EntitlementRow
+                  key={req.methodKey}
+                  intentId={intentId}
+                  requirement={req}
+                  provider={providersByKey.get(req.providerKey) ?? null}
+                  verifiedMethodKey={verifiedMethodKey}
+                  isAutoChecking={isAutoChecking}
+                  onSuccess={invalidateIntent}
+                />
+              ))}
+            </div>
+          ) : null}
+        </>
+      )}
+
+      {/* Footer */}
+      <div className="vp-card-footer">
+        <p className="vp-footer-note">
+          Verification is handled securely in your browser. Unity only receives access after the
+          server confirms your purchase.
+        </p>
+      </div>
     </div>
   );
 }

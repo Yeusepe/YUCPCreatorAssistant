@@ -5,6 +5,7 @@ export interface VerifiedOAuthAccessToken {
 }
 
 interface LoggerLike {
+  debug?(message: string, metadata?: Record<string, unknown>): void;
   warn(message: string, metadata?: Record<string, unknown>): void;
 }
 
@@ -19,6 +20,36 @@ interface VerifyOAuthAccessTokenOptions {
 export type VerifyOAuthAccessTokenResult =
   | { ok: true; token: VerifiedOAuthAccessToken }
   | { ok: false; reason: 'invalid' | 'insufficient_scope' };
+
+const EXPECTED_VERIFICATION_ERROR_NAMES = new Set([
+  'JWTInvalid',
+  'JWTExpired',
+  'JWKSNoMatchingKey',
+  'JWSSignatureVerificationFailed',
+]);
+
+const EXPECTED_VERIFICATION_ERROR_MESSAGES = [
+  'no applicable key found in the json web key set',
+  'jwt expired',
+  'signature verification failed',
+  'invalid compact jws',
+  'invalid jwt',
+];
+
+function isExpectedVerificationFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  if (EXPECTED_VERIFICATION_ERROR_NAMES.has(error.name)) {
+    return true;
+  }
+
+  const normalizedMessage = error.message.trim().toLowerCase();
+  return EXPECTED_VERIFICATION_ERROR_MESSAGES.some((fragment) =>
+    normalizedMessage.includes(fragment)
+  );
+}
 
 export async function verifyBetterAuthAccessToken(
   token: string,
@@ -57,9 +88,18 @@ export async function verifyBetterAuthAccessToken(
       token: { sub: verified.sub, scope, grantedScopes },
     };
   } catch (error) {
-    options.logger?.warn(options.logContext ?? 'OAuth access token verification failed', {
+    const logMessage = options.logContext ?? 'OAuth access token verification failed';
+    const metadata = {
       message: error instanceof Error ? error.message : String(error),
-    });
+      ...(error instanceof Error && error.name ? { name: error.name } : {}),
+    };
+
+    if (isExpectedVerificationFailure(error)) {
+      options.logger?.debug?.(logMessage, metadata);
+    } else {
+      options.logger?.warn(logMessage, metadata);
+    }
+
     return { ok: false, reason: 'invalid' };
   }
 }

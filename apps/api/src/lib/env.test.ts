@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { loadEnv, resolveConvexSiteUrl, resolveSiteUrl } from './env';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { loadEnv, loadEnvAsync, resolveConvexSiteUrl, resolveSiteUrl } from './env';
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -62,6 +65,42 @@ describe('loadEnv', () => {
       POLAR_ACCESS_TOKEN: 'polar-access-token',
       POLAR_WEBHOOK_SECRET: 'polar-webhook-secret',
       POLAR_SERVER: 'sandbox',
+    });
+  });
+
+  it('falls back to local .env.infisical values when process env is missing or blank', async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yucp-api-env-'));
+    await writeFile(
+      path.join(tempDir, '.env.infisical'),
+      [
+        'YUCP_COUPLING_SERVICE_BASE_URL=http://127.0.0.1:8788',
+        'YUCP_COUPLING_SERVICE_SHARED_SECRET=local-dev-secret',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const originalCwd = process.cwd();
+    process.chdir(tempDir);
+    try {
+      process.env.YUCP_COUPLING_SERVICE_BASE_URL = '';
+      process.env.YUCP_COUPLING_SERVICE_SHARED_SECRET = '';
+
+      await loadEnvAsync();
+
+      expect(loadEnv()).toMatchObject({
+        YUCP_COUPLING_SERVICE_BASE_URL: 'http://127.0.0.1:8788',
+        YUCP_COUPLING_SERVICE_SHARED_SECRET: 'local-dev-secret',
+      });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it('falls back to COUPLING_SERVICE_SECRET when the YUCP alias is absent', () => {
+    process.env.COUPLING_SERVICE_SECRET = 'legacy-secret';
+
+    expect(loadEnv()).toMatchObject({
+      YUCP_COUPLING_SERVICE_SHARED_SECRET: 'legacy-secret',
     });
   });
 });

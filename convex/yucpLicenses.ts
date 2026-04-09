@@ -34,9 +34,9 @@ import { symmetricDecrypt } from 'better-auth/crypto';
 import { ConvexError, v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
-import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import { action, internalAction, internalMutation, internalQuery } from './_generated/server';
+import { requireApiSecret } from './lib/apiAuth';
 import { BILLING_CAPABILITY_KEYS } from './lib/billingCapabilities';
-import { fetchRuntimeArtifactManifest } from './lib/couplingServiceRuntimeArtifacts';
 import {
   decryptProtectedBlobContentKey,
   encryptProtectedBlobContentKey,
@@ -1269,6 +1269,8 @@ export const issueProtectedMaterializationGrant = internalAction({
     licenseToken: v.string(),
     assetPaths: v.array(v.string()),
     issuerBaseUrl: v.string(),
+    runtimeArtifactVersion: v.optional(v.string()),
+    runtimePlaintextSha256: v.optional(v.string()),
   },
   returns: v.object({
     success: v.boolean(),
@@ -1315,6 +1317,8 @@ export const issueProtectedMaterializationGrant = internalAction({
         assetPaths: args.assetPaths,
         grantId,
         issuerBaseUrl: args.issuerBaseUrl,
+        runtimeArtifactVersion: args.runtimeArtifactVersion,
+        runtimePlaintextSha256: args.runtimePlaintextSha256,
       }
     );
 
@@ -1352,6 +1356,41 @@ export const issueProtectedMaterializationGrant = internalAction({
       grant,
       expiresAt: unlockResult.expiresAt,
     };
+  },
+});
+
+export const issueProtectedMaterializationGrantForApi = action({
+  args: {
+    apiSecret: v.string(),
+    packageId: v.string(),
+    protectedAssetId: v.string(),
+    machineFingerprint: v.string(),
+    projectId: v.string(),
+    licenseToken: v.string(),
+    assetPaths: v.array(v.string()),
+    issuerBaseUrl: v.string(),
+    runtimeArtifactVersion: v.optional(v.string()),
+    runtimePlaintextSha256: v.optional(v.string()),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    grant: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args): Promise<ProtectedMaterializationGrantIssueResult> => {
+    requireApiSecret(args.apiSecret);
+    return await ctx.runAction(internal.yucpLicenses.issueProtectedMaterializationGrant, {
+      packageId: args.packageId,
+      protectedAssetId: args.protectedAssetId,
+      machineFingerprint: args.machineFingerprint,
+      projectId: args.projectId,
+      licenseToken: args.licenseToken,
+      assetPaths: args.assetPaths,
+      issuerBaseUrl: args.issuerBaseUrl,
+      runtimeArtifactVersion: args.runtimeArtifactVersion,
+      runtimePlaintextSha256: args.runtimePlaintextSha256,
+    });
   },
 });
 
@@ -1584,6 +1623,8 @@ export const issueCouplingJob = internalAction({
     assetPaths: v.array(v.string()),
     grantId: v.optional(v.string()),
     issuerBaseUrl: v.string(),
+    runtimeArtifactVersion: v.optional(v.string()),
+    runtimePlaintextSha256: v.optional(v.string()),
   },
   returns: v.object({
     success: v.boolean(),
@@ -1665,6 +1706,12 @@ export const issueCouplingJob = internalAction({
     if (!couplingHmacKey) {
       throw new Error('YUCP_COUPLING_HMAC_KEY is required for coupling token derivation');
     }
+    if (!!args.runtimeArtifactVersion !== !!args.runtimePlaintextSha256) {
+      return { success: false, error: 'Coupling runtime trace metadata is incomplete' };
+    }
+    if (args.runtimePlaintextSha256 && !CONTENT_HASH_RE.test(args.runtimePlaintextSha256)) {
+      return { success: false, error: 'Coupling runtime trace hash is invalid' };
+    }
 
     type JobRecord = {
       assetPath: string;
@@ -1712,27 +1759,21 @@ export const issueCouplingJob = internalAction({
       jobs.push({ assetPath, tokenHex, materializationNonce });
     }
 
-    const activeRuntimeArtifact = await fetchRuntimeArtifactManifest('coupling-runtime');
-    if (!activeRuntimeArtifact.success) {
-      return {
-        success: false,
-        error: activeRuntimeArtifact.error ?? 'Coupling runtime is not configured on the server',
-      };
+    if (jobs.length > 0 && args.runtimeArtifactVersion && args.runtimePlaintextSha256) {
+      const correlationId = crypto.randomUUID();
+      await ctx.runMutation(internal.yucpLicenses.recordCouplingTraceIssuance, {
+        authUserId: packageReg.yucpUserId,
+        packageId: args.packageId,
+        licenseSubject: licenseClaims.sub,
+        machineFingerprint: args.machineFingerprint,
+        projectId: args.projectId,
+        runtimeArtifactVersion: args.runtimeArtifactVersion,
+        runtimePlaintextSha256: args.runtimePlaintextSha256,
+        grantId: args.grantId,
+        correlationId,
+        jobs,
+      });
     }
-
-    const correlationId = crypto.randomUUID();
-    await ctx.runMutation(internal.yucpLicenses.recordCouplingTraceIssuance, {
-      authUserId: packageReg.yucpUserId,
-      packageId: args.packageId,
-      licenseSubject: licenseClaims.sub,
-      machineFingerprint: args.machineFingerprint,
-      projectId: args.projectId,
-      runtimeArtifactVersion: activeRuntimeArtifact.version,
-      runtimePlaintextSha256: activeRuntimeArtifact.plaintextSha256,
-      grantId: args.grantId,
-      correlationId,
-      jobs,
-    });
 
     return {
       success: true,
@@ -1744,6 +1785,50 @@ export const issueCouplingJob = internalAction({
         materializationNonce,
       })),
     };
+  },
+});
+
+export const issueCouplingJobForApi = action({
+  args: {
+    apiSecret: v.string(),
+    packageId: v.string(),
+    machineFingerprint: v.string(),
+    projectId: v.string(),
+    licenseToken: v.string(),
+    assetPaths: v.array(v.string()),
+    grantId: v.optional(v.string()),
+    issuerBaseUrl: v.string(),
+    runtimeArtifactVersion: v.optional(v.string()),
+    runtimePlaintextSha256: v.optional(v.string()),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    subject: v.optional(v.string()),
+    jobs: v.optional(
+      v.array(
+        v.object({
+          assetPath: v.string(),
+          tokenHex: v.string(),
+          materializationNonce: v.string(),
+        })
+      )
+    ),
+    skipReason: v.optional(v.string()),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args): Promise<CouplingJobIssueResult> => {
+    requireApiSecret(args.apiSecret);
+    return await ctx.runAction(internal.yucpLicenses.issueCouplingJob, {
+      packageId: args.packageId,
+      machineFingerprint: args.machineFingerprint,
+      projectId: args.projectId,
+      licenseToken: args.licenseToken,
+      assetPaths: args.assetPaths,
+      grantId: args.grantId,
+      issuerBaseUrl: args.issuerBaseUrl,
+      runtimeArtifactVersion: args.runtimeArtifactVersion,
+      runtimePlaintextSha256: args.runtimePlaintextSha256,
+    });
   },
 });
 

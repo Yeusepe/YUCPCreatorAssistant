@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "overrides": {
+    "axios": ">=1.15.0",
     "bebop": "3.0.4",
     "fast-xml-parser": ">=5.5.7",
     "h3": "2.0.1-rc.19",

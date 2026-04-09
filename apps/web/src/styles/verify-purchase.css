@@ -5,6 +5,21 @@
 
 /* === Page shell === */
 
+.vp-page {
+  background: #afcde5;
+  min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  color: var(--text-primary);
+  font-family: "AirbnbCereal", sans-serif;
+}
+
+.dark .vp-page {
+  background: #24405c;
+}
+
 .vp-wrapper {
   color: var(--text-primary);
   font-family: "AirbnbCereal", sans-serif;
@@ -13,6 +28,7 @@
   align-items: flex-start;
   justify-content: center;
   position: relative;
+  z-index: 1;
   padding: 2rem 1rem 3rem;
   box-sizing: border-box;
   overflow-x: hidden;
