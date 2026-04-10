@@ -136,6 +136,14 @@ export const lookupTraceMatchesForAuthUser = query({
         createdAt: v.number(),
         runtimeArtifactVersion: v.string(),
         runtimePlaintextSha256: v.string(),
+        machineFingerprintHash: v.string(),
+        projectIdHash: v.string(),
+        grantId: v.optional(v.string()),
+        packFamily: v.optional(v.string()),
+        packVersion: v.optional(v.string()),
+        provider: v.optional(v.string()),
+        purchaserEmail: v.optional(v.string()),
+        licenseKey: v.optional(v.string()),
       })
     ),
     unmatchedTokenHashes: v.array(v.string()),
@@ -181,6 +189,14 @@ export const lookupTraceMatchesForAuthUser = query({
       createdAt: number;
       runtimeArtifactVersion: string;
       runtimePlaintextSha256: string;
+      machineFingerprintHash: string;
+      projectIdHash: string;
+      grantId?: string;
+      packFamily?: string;
+      packVersion?: string;
+      provider?: string;
+      purchaserEmail?: string;
+      licenseKey?: string;
     }> = [];
     const matchedTokenHashes = new Set<string>();
 
@@ -198,6 +214,13 @@ export const lookupTraceMatchesForAuthUser = query({
 
       for (const row of scopedRows) {
         matchedTokenHashes.add(tokenHash);
+
+        // Join with license_buyer_identity to get WHO, WHERE, and the LICENSE key
+        const identity = await ctx.db
+          .query('license_buyer_identity')
+          .withIndex('by_subject', (q) => q.eq('licenseSubject', row.licenseSubject))
+          .first();
+
         matches.push({
           tokenHash,
           licenseSubject: row.licenseSubject,
@@ -206,6 +229,14 @@ export const lookupTraceMatchesForAuthUser = query({
           createdAt: row.createdAt,
           runtimeArtifactVersion: row.runtimeArtifactVersion,
           runtimePlaintextSha256: row.runtimePlaintextSha256,
+          machineFingerprintHash: row.machineFingerprintHash,
+          projectIdHash: row.projectIdHash,
+          grantId: row.grantId,
+          packFamily: row.packFamily,
+          packVersion: row.packVersion,
+          provider: identity?.provider ?? row.provider,
+          purchaserEmail: identity?.purchaserEmail,
+          licenseKey: identity?.licenseKey,
         });
       }
     }

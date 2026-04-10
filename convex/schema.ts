@@ -1872,11 +1872,35 @@ const coupling_trace_records = defineTable({
   packVersion: v.optional(v.string()),
   /** ID of the Tardos probability vector used for this materialization. */
   pVectorId: v.optional(v.string()),
+  /** License provider (e.g. 'gumroad', 'jinxxy'). Populated at coupling trace time. */
+  provider: v.optional(v.string()),
 })
   .index('by_auth_user_created', ['authUserId', 'createdAt'])
   .index('by_package_token', ['packageId', 'tokenHash'])
   .index('by_correlation', ['correlationId'])
   .index('by_grant_id', ['grantId']);
+
+/**
+ * Maps a license subject (SHA-256 of the raw license key) to buyer identity.
+ * Written at license verification time so forensics lookups can resolve
+ * WHO bought it, WHERE (provider), and the raw LICENSE key.
+ */
+const license_buyer_identity = defineTable({
+  /** SHA-256 of the raw license key — join key shared with coupling_trace_records.licenseSubject */
+  licenseSubject: v.string(),
+  /** Creator who owns this package */
+  authUserId: v.string(),
+  packageId: v.string(),
+  /** Store the license was purchased from ('gumroad', 'jinxxy', etc.) */
+  provider: v.string(),
+  /** The raw license key — needed to cross-reference in the provider's dashboard */
+  licenseKey: v.string(),
+  /** Buyer email returned by the provider API at verification time */
+  purchaserEmail: v.string(),
+  createdAt: v.number(),
+})
+  .index('by_subject', ['licenseSubject'])
+  .index('by_auth_user', ['authUserId', 'createdAt']);
 
 /**
  * Revoked protected materialization grants.
@@ -2216,6 +2240,7 @@ export default defineSchema({
   creator_billing_reconciliation_targets,
   signed_release_artifacts,
   coupling_trace_records,
+  license_buyer_identity,
   revoked_grants,
   yucp_manifests,
   yucp_certificates,

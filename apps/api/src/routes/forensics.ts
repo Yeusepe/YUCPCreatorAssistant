@@ -497,6 +497,14 @@ export function createForensicsRoutes(auth: Auth, config: ForensicsConfig) {
             createdAt: match.createdAt,
             runtimeArtifactVersion: match.runtimeArtifactVersion,
             runtimePlaintextSha256: match.runtimePlaintextSha256,
+            machineFingerprintHash: match.machineFingerprintHash,
+            projectIdHash: match.projectIdHash,
+            ...(match.grantId !== undefined ? { grantId: match.grantId } : {}),
+            ...(match.packFamily !== undefined ? { packFamily: match.packFamily } : {}),
+            ...(match.packVersion !== undefined ? { packVersion: match.packVersion } : {}),
+            ...(match.provider !== undefined ? { provider: match.provider } : {}),
+            ...(match.purchaserEmail !== undefined ? { purchaserEmail: match.purchaserEmail } : {}),
+            ...(match.licenseKey !== undefined ? { licenseKey: match.licenseKey } : {}),
           })),
         };
       });

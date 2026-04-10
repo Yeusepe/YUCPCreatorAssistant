@@ -596,7 +596,7 @@ async function verifyGumroadLicense(
   licenseKey: string,
   productPermalink: string,
   accessToken: string
-): Promise<{ valid: boolean; reason?: string }> {
+): Promise<{ valid: boolean; purchaserEmail?: string; reason?: string }> {
   const params = new URLSearchParams({
     access_token: accessToken,
     product_permalink: productPermalink,
@@ -616,7 +616,7 @@ async function verifyGumroadLicense(
   if (json.purchase?.refunded) return { valid: false, reason: 'License has been refunded' };
   if (json.purchase?.chargebacked) return { valid: false, reason: 'License has a chargeback' };
 
-  return { valid: true };
+  return { valid: true, purchaserEmail: json.purchase?.email };
 }
 
 async function verifyJinxxyLicense(
@@ -838,6 +838,7 @@ export const recordCouplingTraceIssuance = internalMutation({
     runtimePlaintextSha256: v.string(),
     grantId: v.optional(v.string()),
     correlationId: v.string(),
+    provider: v.optional(v.string()),
     jobs: v.array(
       v.object({
         assetPath: v.string(),
@@ -868,6 +869,7 @@ export const recordCouplingTraceIssuance = internalMutation({
         correlationId: args.correlationId,
         createdAt: now,
         materializationNonce: job.materializationNonce,
+        provider: args.provider,
       });
     }
 
@@ -913,6 +915,40 @@ export const recordCouplingTraceIssuance = internalMutation({
         },
         correlationId: args.correlationId,
         createdAt: now,
+      });
+    }
+  },
+});
+
+export const recordLicenseBuyerIdentity = internalMutation({
+  args: {
+    licenseSubject: v.string(),
+    authUserId: v.string(),
+    packageId: v.string(),
+    provider: v.string(),
+    licenseKey: v.string(),
+    purchaserEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query('license_buyer_identity')
+      .withIndex('by_subject', (q) => q.eq('licenseSubject', args.licenseSubject))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        purchaserEmail: args.purchaserEmail,
+        licenseKey: args.licenseKey,
+        provider: args.provider,
+      });
+    } else {
+      await ctx.db.insert('license_buyer_identity', {
+        licenseSubject: args.licenseSubject,
+        authUserId: args.authUserId,
+        packageId: args.packageId,
+        provider: args.provider,
+        licenseKey: args.licenseKey,
+        purchaserEmail: args.purchaserEmail,
+        createdAt: Date.now(),
       });
     }
   },
@@ -1022,7 +1058,8 @@ export const verifyLicense = internalAction({
     }
 
     // 3. Resolve credentials from product_catalog + provider_connections
-    let verifyResult: { valid: boolean; reason?: string } | null = null;
+    let verifyResult: { valid: boolean; purchaserEmail?: string; reason?: string } | null = null;
+    let productAuthUserId: string | null = null;
 
     const product = await ctx.runQuery(internal.yucpLicenses.getProductByProviderRef, {
       provider: args.provider,
@@ -1041,6 +1078,8 @@ export const verifyLicense = internalAction({
           error: 'Package not found or not registered to the product owner',
         };
       }
+
+      productAuthUserId = product.authUserId;
 
       const conn = await ctx.runQuery(internal.yucpLicenses.getProviderConnection, {
         authUserId: product.authUserId,
@@ -1114,6 +1153,22 @@ export const verifyLicense = internalAction({
 
     const keyId = process.env.YUCP_ROOT_KEY_ID ?? 'yucp-root';
     const token = await signLicenseJwt(claims, rootPrivateKey, keyId);
+
+    // 5b. Store buyer identity for forensics lookups (best-effort, does not fail the request).
+    if (productAuthUserId && verifyResult.purchaserEmail) {
+      try {
+        await ctx.runMutation(internal.yucpLicenses.recordLicenseBuyerIdentity, {
+          licenseSubject: licenseKeyHash,
+          authUserId: productAuthUserId,
+          packageId: args.packageId,
+          provider: args.provider,
+          licenseKey: args.licenseKey,
+          purchaserEmail: verifyResult.purchaserEmail,
+        });
+      } catch {
+        // Non-fatal: forensics data is best-effort
+      }
+    }
 
     console.log(
       `[license/verify] issued token package_id=${args.packageId} provider=${args.provider} exp=${exp}`
@@ -1771,6 +1826,7 @@ export const issueCouplingJob = internalAction({
         runtimePlaintextSha256: args.runtimePlaintextSha256,
         grantId: args.grantId,
         correlationId,
+        provider: licenseClaims.provider,
         jobs,
       });
     }

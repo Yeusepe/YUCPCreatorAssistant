@@ -6,7 +6,6 @@ import { AccountInlineError } from '@/components/account/AccountPage';
 import { DashboardAuthRequiredState } from '@/components/dashboard/AuthRequiredState';
 import { DashboardGridSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { Select } from '@/components/ui/Select';
-import { StatusChip } from '@/components/ui/StatusChip';
 import { useToast } from '@/components/ui/Toast';
 import { YucpButton } from '@/components/ui/YucpButton';
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
@@ -40,23 +39,27 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatForensicsDate(timestamp: number) {
-  return new Date(timestamp).toLocaleString(undefined, {
+function formatBuyerDate(timestamp: number) {
+  return new Date(timestamp).toLocaleDateString(undefined, {
     year: 'numeric',
-    month: 'short',
+    month: 'long',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
   });
-}
-
-function countMatchedAssets(result: CouplingForensicsLookupResponse | null) {
-  return result?.results.filter((entry) => entry.matched).length ?? 0;
 }
 
 function noRetryOn4xx(failureCount: number, error: unknown): boolean {
   if (error instanceof ApiError && error.status >= 400 && error.status < 500) return false;
   return failureCount < 2;
+}
+
+function getVerdictKind(
+  status: CouplingForensicsLookupResponse['lookupStatus'],
+  buyerCount: number
+): 'match' | 'tampered' | 'no_match' | 'no_assets' {
+  if (status === 'attributed' && buyerCount > 0) return 'match';
+  if (status === 'tampered_suspected') return 'tampered';
+  if (status === 'no_candidate_assets') return 'no_assets';
+  return 'no_match';
 }
 
 export default function DashboardForensics() {
@@ -98,7 +101,6 @@ export default function DashboardForensics() {
     if (file) handleFilePick(file);
   };
 
-  // certificatesQuery must come first — capabilityEnabled is derived from it before packagesQuery
   const certificatesQuery = useQuery({
     queryKey: ['creator-certificates'],
     queryFn: listCreatorCertificates,
@@ -113,7 +115,6 @@ export default function DashboardForensics() {
         (capability.status === 'active' || capability.status === 'grace')
     ) ?? false;
 
-  // Only fire once capability check resolves — prevents 400 spam for non-Studio+ users
   const packagesQuery = useQuery({
     queryKey: ['coupling-forensics', 'packages'],
     queryFn: listCouplingForensicsPackages,
@@ -139,13 +140,6 @@ export default function DashboardForensics() {
     [packagesQuery.data?.packages]
   );
 
-  const selectedPackageSummary = useMemo(
-    () =>
-      (packagesQuery.data?.packages ?? []).find((pkg) => pkg.packageId === selectedPackageId) ??
-      null,
-    [packagesQuery.data?.packages, selectedPackageId]
-  );
-
   useEffect(() => {
     if (packageOptions.length === 0) {
       if (selectedPackageId) setSelectedPackageId('');
@@ -156,6 +150,51 @@ export default function DashboardForensics() {
     }
   }, [packageOptions, selectedPackageId]);
 
+  // Collect all matches across all matched assets, deduplicated by licenseSubject
+  const matchedBuyers = useMemo(() => {
+    if (!lookupResult) return [];
+    const seen = new Set<string>();
+    const buyers: Array<{
+      licenseSubject: string;
+      createdAt: number;
+      correlationId: string | null;
+      runtimeArtifactVersion?: string | null;
+      runtimePlaintextSha256?: string | null;
+      machineFingerprintHash?: string | null;
+      projectIdHash?: string | null;
+      grantId?: string | null;
+      packFamily?: string | null;
+      packVersion?: string | null;
+      provider?: string | null;
+      purchaserEmail?: string | null;
+      licenseKey?: string | null;
+    }> = [];
+    for (const entry of lookupResult.results) {
+      if (!entry.matched) continue;
+      for (const match of entry.matches) {
+        if (!seen.has(match.licenseSubject)) {
+          seen.add(match.licenseSubject);
+          buyers.push({
+            licenseSubject: match.licenseSubject,
+            createdAt: match.createdAt,
+            correlationId: match.correlationId,
+            runtimeArtifactVersion: match.runtimeArtifactVersion,
+            runtimePlaintextSha256: match.runtimePlaintextSha256,
+            machineFingerprintHash: match.machineFingerprintHash,
+            projectIdHash: match.projectIdHash,
+            grantId: match.grantId,
+            packFamily: match.packFamily,
+            packVersion: match.packVersion,
+            provider: match.provider,
+            purchaserEmail: match.purchaserEmail,
+            licenseKey: match.licenseKey,
+          });
+        }
+      }
+    }
+    return buyers.sort((a, b) => b.createdAt - a.createdAt);
+  }, [lookupResult]);
+
   const lookupMutation = useMutation({
     mutationFn: ({ packageId, file }: { packageId: string; file: File }) =>
       runCouplingForensicsLookup({ packageId, file }),
@@ -165,25 +204,6 @@ export default function DashboardForensics() {
     },
     onSuccess: (result) => {
       setLookupResult(result);
-      const matchedAssets = countMatchedAssets(result);
-      if (matchedAssets > 0) {
-        toast.success('Authorized matches found', {
-          description: `${matchedAssets} asset${matchedAssets === 1 ? '' : 's'} matched creator-owned coupling records.`,
-        });
-      } else if (result.lookupStatus === 'tampered_suspected') {
-        toast.info('No coupling signals found', {
-          description:
-            'The uploaded assets contain no coupling markers. They may be original unprotected files, or coupling signals were stripped.',
-        });
-      } else if (result.lookupStatus === 'no_candidate_assets') {
-        toast.info('No eligible assets found', {
-          description: 'No PNG or FBX assets were found in the uploaded archive.',
-        });
-      } else {
-        toast.info('No authorized match found', {
-          description: 'The upload did not resolve to a creator-owned coupling record.',
-        });
-      }
     },
     onError: (error) => {
       if (isDashboardAuthError(error)) {
@@ -192,13 +212,11 @@ export default function DashboardForensics() {
       }
       if (isCouplingTraceabilityRequiredError(error)) {
         toast.warning('Creator Studio+ required', {
-          description: 'Upgrade your creator workspace to use coupling traceability.',
+          description: 'Upgrade your creator workspace to use leak tracing.',
         });
         return;
       }
-      setInlineError(
-        'Coupling lookup failed. Please try again with a supported .unitypackage or .zip file.'
-      );
+      setInlineError('Scan failed. Please try again with a supported .unitypackage or .zip file.');
     },
   });
 
@@ -207,7 +225,9 @@ export default function DashboardForensics() {
   const hasCapabilityQueryError =
     certificatesQuery.isError && !isDashboardAuthError(certificatesQuery.error);
   const hasQueryError = packagesQuery.isError && !isDashboardAuthError(packagesQuery.error);
-  const matchedAssets = countMatchedAssets(lookupResult);
+
+  const verdictKind =
+    lookupResult ? getVerdictKind(lookupResult.lookupStatus, matchedBuyers.length) : null;
 
   /* ── Guards ── */
 
@@ -216,8 +236,8 @@ export default function DashboardForensics() {
       <div id="tab-panel-forensics" className="dashboard-tab-panel is-active" role="tabpanel">
         <DashboardAuthRequiredState
           id="forensics-auth"
-          title="Sign in to use coupling forensics"
-          description="Your session expired. Sign in again to inspect creator-owned packages."
+          title="Sign in to trace leaked files"
+          description="Your session expired. Sign in again to identify who shared your product."
         />
       </div>
     );
@@ -240,8 +260,8 @@ export default function DashboardForensics() {
               <div className="intg-copy">
                 <h1 className="intg-title">Creator scope required</h1>
                 <p className="intg-desc">
-                  Coupling forensics is scoped to your creator-owned package catalog. Open it from
-                  your root creator dashboard.
+                  Leak tracing is scoped to your creator account. Open it from your root creator
+                  dashboard.
                 </p>
               </div>
             </div>
@@ -276,7 +296,7 @@ export default function DashboardForensics() {
       <div className="bento-grid">
         {hasQueryError && (
           <div className="bento-col-12">
-            <AccountInlineError message="Failed to load coupling forensics. Refresh the page and try again." />
+            <AccountInlineError message="Failed to load your products. Refresh the page and try again." />
           </div>
         )}
 
@@ -286,23 +306,22 @@ export default function DashboardForensics() {
           </div>
         )}
 
-        {/* Scan Form */}
-        <section className="intg-card animate-in bento-col-8">
+        {/* Scan form */}
+        <section className="intg-card animate-in bento-col-12">
           <div className="intg-header">
             <div className="intg-title-row">
               <div className="intg-icon">
                 <img src="/Icons/Shield.png" alt="" aria-hidden="true" />
               </div>
               <div className="intg-copy">
-                <h2 className="intg-title">Coupling Forensics</h2>
+                <h2 className="intg-title">Leak Tracer</h2>
                 <p className="intg-desc">
-                  Scan a .unitypackage or .zip against your owned packages to verify authorized
-                  coupling records.
+                  Found a suspicious file? Upload it to find out which buyer it came from.
                 </p>
               </div>
             </div>
             <span className="account-badge account-badge--provider" style={{ flexShrink: 0 }}>
-              Creator-only
+              Creator Studio+
             </span>
           </div>
 
@@ -311,11 +330,9 @@ export default function DashboardForensics() {
               <div className="forensics-upgrade-gate-icon">
                 <img src="/Icons/Wrench.png" alt="" aria-hidden="true" />
               </div>
-              <p className="forensics-upgrade-gate-title">
-                Could not verify Creator Studio+ access
-              </p>
+              <p className="forensics-upgrade-gate-title">Could not verify your plan</p>
               <p className="forensics-upgrade-gate-desc">
-                Refresh your billing state and try again before starting a coupling scan.
+                Refresh your billing state and try again.
               </p>
               <YucpButton
                 yucp="primary"
@@ -334,8 +351,8 @@ export default function DashboardForensics() {
               </div>
               <p className="forensics-upgrade-gate-title">Creator Studio+ required</p>
               <p className="forensics-upgrade-gate-desc">
-                Coupling traceability is a Creator Studio+ feature. Upgrade your plan to inspect
-                coupling matches for your packages.
+                Leak tracing is available on Creator Studio+. Upgrade to identify buyers who share
+                your files.
               </p>
               <Link
                 to="/dashboard/billing"
@@ -351,123 +368,41 @@ export default function DashboardForensics() {
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!selectedPackageId || !selectedFile) {
-                  setInlineError('Choose a package and upload a .unitypackage or .zip file.');
+                  setInlineError('Choose a product and upload a file to scan.');
                   return;
                 }
                 lookupMutation.mutate({ packageId: selectedPackageId, file: selectedFile });
               }}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div>
-                  <label htmlFor="forensics-package" className="account-form-label">
-                    Package
-                  </label>
-                  <Select
-                    id="forensics-package"
-                    value={selectedPackageId}
-                    options={packageOptions}
-                    onChange={setSelectedPackageId}
-                    disabled={lookupMutation.isPending || packageOptions.length === 0}
-                  />
-                  {selectedPackageSummary ? (
-                    <p className="account-form-hint" style={{ marginTop: '6px' }}>
-                      Package ID: {selectedPackageSummary.packageId}
-                    </p>
-                  ) : null}
+              <div className="forensics-steps">
+                {/* Step 1 */}
+                <div className="forensics-step">
+                  <div className="forensics-step-num">1</div>
+                  <div className="forensics-step-body">
+                    <label htmlFor="forensics-package" className="forensics-step-label">
+                      Which product is this file from?
+                    </label>
+                    <Select
+                      id="forensics-package"
+                      value={selectedPackageId}
+                      options={packageOptions}
+                      onChange={setSelectedPackageId}
+                      disabled={lookupMutation.isPending || packageOptions.length === 0}
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <p className="account-form-label" style={{ marginBottom: '8px' }}>
-                    Upload file
-                  </p>
-                  {selectedFile ? (
-                    <div className="forensics-dropzone forensics-dropzone--selected">
-                      <div className="forensics-dropzone-file-icon">
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          aria-hidden="true"
-                        >
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                        </svg>
-                      </div>
-                      <div className="forensics-dropzone-file-info">
-                        <p className="forensics-dropzone-file-name">{selectedFile.name}</p>
-                        <p className="forensics-dropzone-file-size">
-                          {formatFileSize(selectedFile.size)}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="forensics-dropzone-clear"
-                        disabled={lookupMutation.isPending}
-                        onClick={() => {
-                          if (lookupMutation.isPending) return;
-                          handleFilePick(null);
-                          if (fileInputRef.current) fileInputRef.current.value = '';
-                        }}
-                        aria-label="Remove file"
-                      >
-                        <svg
-                          width="11"
-                          height="11"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          aria-hidden="true"
-                        >
-                          <line x1="18" y1="6" x2="6" y2="18" />
-                          <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </button>
-                      <input
-                        ref={fileInputRef}
-                        id="forensics-file"
-                        type="file"
-                        accept=".unitypackage,.zip"
-                        disabled={lookupMutation.isPending}
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          if (lookupMutation.isPending) return;
-                          handleFilePick(e.target.files?.[0] ?? null);
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <label
-                      htmlFor="forensics-file"
-                      className={`forensics-dropzone${isDragOver ? ' is-dragover' : ''}${lookupMutation.isPending ? ' is-disabled' : ''}`}
-                      onDragEnter={handleDragEnter}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDragLeave={handleDragLeave}
-                      onDrop={handleDrop}
-                    >
-                      <input
-                        ref={fileInputRef}
-                        id="forensics-file"
-                        type="file"
-                        accept=".unitypackage,.zip"
-                        className="forensics-dropzone-input"
-                        disabled={lookupMutation.isPending}
-                        onChange={(e) => {
-                          if (lookupMutation.isPending) return;
-                          handleFilePick(e.target.files?.[0] ?? null);
-                        }}
-                      />
-                      <div className="forensics-dropzone-idle">
-                        <div className="forensics-dropzone-icon">
+                {/* Step 2 */}
+                <div className="forensics-step">
+                  <div className="forensics-step-num">2</div>
+                  <div className="forensics-step-body">
+                    <p className="forensics-step-label">Upload the suspicious file</p>
+                    {selectedFile ? (
+                      <div className="forensics-dropzone forensics-dropzone--selected">
+                        <div className="forensics-dropzone-file-icon">
                           <svg
-                            width="20"
-                            height="20"
+                            width="18"
+                            height="18"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
@@ -476,18 +411,101 @@ export default function DashboardForensics() {
                             strokeLinejoin="round"
                             aria-hidden="true"
                           >
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="17 8 12 3 7 8" />
-                            <line x1="12" y1="3" x2="12" y2="15" />
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
                           </svg>
                         </div>
-                        <p className="forensics-dropzone-label">
-                          {isDragOver ? 'Drop to upload' : 'Click to upload or drag & drop'}
-                        </p>
-                        <p className="forensics-dropzone-hint">.unitypackage or .zip</p>
+                        <div className="forensics-dropzone-file-info">
+                          <p className="forensics-dropzone-file-name">{selectedFile.name}</p>
+                          <p className="forensics-dropzone-file-size">
+                            {formatFileSize(selectedFile.size)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="forensics-dropzone-clear"
+                          disabled={lookupMutation.isPending}
+                          onClick={() => {
+                            if (lookupMutation.isPending) return;
+                            handleFilePick(null);
+                            if (fileInputRef.current) fileInputRef.current.value = '';
+                          }}
+                          aria-label="Remove file"
+                        >
+                          <svg
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            aria-hidden="true"
+                          >
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                        <input
+                          ref={fileInputRef}
+                          id="forensics-file"
+                          type="file"
+                          accept=".unitypackage,.zip"
+                          disabled={lookupMutation.isPending}
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            if (lookupMutation.isPending) return;
+                            handleFilePick(e.target.files?.[0] ?? null);
+                          }}
+                        />
                       </div>
-                    </label>
-                  )}
+                    ) : (
+                      <label
+                        htmlFor="forensics-file"
+                        className={`forensics-dropzone${isDragOver ? ' is-dragover' : ''}${lookupMutation.isPending ? ' is-disabled' : ''}`}
+                        onDragEnter={handleDragEnter}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                      >
+                        <input
+                          ref={fileInputRef}
+                          id="forensics-file"
+                          type="file"
+                          accept=".unitypackage,.zip"
+                          className="forensics-dropzone-input"
+                          disabled={lookupMutation.isPending}
+                          onChange={(e) => {
+                            if (lookupMutation.isPending) return;
+                            handleFilePick(e.target.files?.[0] ?? null);
+                          }}
+                        />
+                        <div className="forensics-dropzone-idle">
+                          <div className="forensics-dropzone-icon">
+                            <svg
+                              width="20"
+                              height="20"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="17 8 12 3 7 8" />
+                              <line x1="12" y1="3" x2="12" y2="15" />
+                            </svg>
+                          </div>
+                          <p className="forensics-dropzone-label">
+                            {isDragOver ? 'Drop to upload' : 'Click to upload or drag & drop'}
+                          </p>
+                          <p className="forensics-dropzone-hint">.unitypackage or .zip · max 100 MB</p>
+                        </div>
+                      </label>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -504,175 +522,211 @@ export default function DashboardForensics() {
                     packageOptions.length === 0
                   }
                 >
-                  {lookupMutation.isPending ? 'Scanning...' : 'Scan upload'}
+                  {lookupMutation.isPending ? 'Scanning...' : 'Find buyer'}
                 </YucpButton>
               </div>
             </form>
           )}
         </section>
 
-        {/* Lookup Summary */}
-        <section className="intg-card animate-in animate-in-delay-1 bento-col-4">
-          <div className="intg-header">
-            <div className="intg-icon">
-              <img
-                src="/Icons/Wrench.png"
-                alt=""
-                aria-hidden="true"
-                style={{ width: '22px', height: '22px', objectFit: 'contain' }}
-              />
-            </div>
-            <div className="intg-copy">
-              <h2 className="intg-title">Scan Results</h2>
-              <p className="intg-desc">Stats from the most recent lookup.</p>
-            </div>
-          </div>
+        {/* Results */}
+        {lookupResult && verdictKind && (
+          <section className="intg-card animate-in animate-in-delay-1 bento-col-12">
+            {verdictKind === 'match' ? (
+              <>
+                <div className="forensics-verdict forensics-verdict--match">
+                  <div className="forensics-verdict-icon">
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="m21 21-4.35-4.35" />
+                    </svg>
+                  </div>
+                  <div className="forensics-verdict-copy">
+                    <p className="forensics-verdict-title">
+                      {matchedBuyers.length === 1 ? 'Buyer identified' : `${matchedBuyers.length} buyers identified`}
+                    </p>
+                    <p className="forensics-verdict-desc">
+                      {matchedBuyers.length === 1
+                        ? 'This file traces back to the following purchase.'
+                        : 'This file traces back to the following purchases.'}
+                    </p>
+                  </div>
+                </div>
+                <div className="forensics-buyer-list">
+                  {matchedBuyers.map((buyer) => (
+                    <div key={buyer.licenseSubject} className="forensics-buyer-row">
+                      <dl className="forensics-buyer-meta">
+                        {/* ── Primary: WHO, WHERE, LICENSE ── */}
+                        {buyer.purchaserEmail && (
+                          <div className="forensics-buyer-meta-row">
+                            <dt className="forensics-buyer-meta-key">Buyer</dt>
+                            <dd className="forensics-buyer-meta-val">{buyer.purchaserEmail}</dd>
+                          </div>
+                        )}
 
-          {lookupResult ? (
-            <dl className="account-kv-list">
-              <div className="account-kv-row">
-                <dt className="account-kv-label">Candidates</dt>
-                <dd className="account-kv-value">{lookupResult.candidateAssetCount}</dd>
-              </div>
-              <div className="account-kv-row">
-                <dt className="account-kv-label">Decoded</dt>
-                <dd className="account-kv-value">{lookupResult.decodedAssetCount}</dd>
-              </div>
-              <div className="account-kv-row">
-                <dt className="account-kv-label">Matched</dt>
-                <dd className="account-kv-value">
-                  <StatusChip
-                    status={matchedAssets > 0 ? 'connected' : 'pending'}
-                    label={String(matchedAssets)}
-                  />
-                </dd>
-              </div>
-              <div className="account-kv-row">
-                <dt className="account-kv-label">Status</dt>
-                <dd className="account-kv-value">{lookupResult.lookupStatus.replace(/_/g, ' ')}</dd>
-              </div>
-            </dl>
-          ) : (
-            <div className="account-empty">
-              <div className="account-empty-icon">
-                <img
-                  src="/Icons/Wrench.png"
-                  alt=""
-                  aria-hidden="true"
-                  style={{ width: '20px', height: '20px', objectFit: 'contain', opacity: 0.45 }}
-                />
-              </div>
-              <p className="account-empty-title">No scan yet</p>
-              <p className="account-empty-desc">Run a scan to see results here.</p>
-            </div>
-          )}
-        </section>
+                        {buyer.provider && (
+                          <div className="forensics-buyer-meta-row">
+                            <dt className="forensics-buyer-meta-key">Store</dt>
+                            <dd className="forensics-buyer-meta-val" style={{ textTransform: 'capitalize' }}>
+                              {buyer.provider}
+                            </dd>
+                          </div>
+                        )}
 
-        {/* Match Results */}
-        {lookupResult && (
-          <section className="intg-card animate-in animate-in-delay-2 bento-col-12">
-            <div className="intg-header">
-              <div className="intg-icon">
-                <img
-                  src="/Icons/Shield.png"
-                  alt=""
-                  aria-hidden="true"
-                  style={{ width: '22px', height: '22px', objectFit: 'contain' }}
-                />
-              </div>
-              <div className="intg-copy">
-                <h2 className="intg-title">Match Results</h2>
-                <p className="intg-desc">{lookupResult.message}</p>
-              </div>
-              <StatusChip
-                status={matchedAssets > 0 ? 'connected' : 'pending'}
-                label={matchedAssets > 0 ? `${matchedAssets} matched` : 'No matches'}
-                className="shrink-0"
-              />
-            </div>
-
-            {matchedAssets > 0 ? (
-              <div className="account-list">
-                {lookupResult.results
-                  .filter((entry) => entry.matched)
-                  .map((entry) => (
-                    <div key={`${entry.assetPath}:${entry.assetType}`} className="account-list-row">
-                      <div className="account-list-row-info">
-                        <div className="account-list-row-meta" style={{ marginBottom: '4px' }}>
-                          <span
-                            className={`account-asset-type-badge account-asset-type-badge--${entry.assetType}`}
-                          >
-                            {entry.assetType.toUpperCase()}
-                          </span>
-                          <span className="account-reference-chip">{entry.decoderKind}</span>
-                          <span>{entry.tokenLength} hex chars</span>
-                          <span aria-hidden="true">·</span>
-                          <span>
-                            {entry.matches.length} record{entry.matches.length === 1 ? '' : 's'}
-                          </span>
+                        <div className="forensics-buyer-meta-row">
+                          <dt className="forensics-buyer-meta-key">Purchased</dt>
+                          <dd className="forensics-buyer-meta-val">{formatBuyerDate(buyer.createdAt)}</dd>
                         </div>
-                        <p className="account-list-row-name">{entry.assetPath}</p>
-                        <div className="forensics-match-records">
-                          {entry.matches.map((match) => (
-                            <div
-                              key={`${entry.assetPath}:${match.correlationId ?? match.licenseSubject}`}
-                              className="account-match-record"
-                            >
-                              <div className="account-match-record-header">
-                                <StatusChip status="connected" label={match.licenseSubject} />
-                                <span className="account-form-hint">
-                                  Issued {formatForensicsDate(match.createdAt)}
-                                </span>
-                              </div>
-                              <div className="account-match-record-meta">
-                                <span>Trace: {match.assetPath}</span>
-                                {match.correlationId && (
-                                  <span>Correlation: {match.correlationId}</span>
-                                )}
-                                {match.runtimeArtifactVersion && (
-                                  <span>Runtime: {match.runtimeArtifactVersion}</span>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+
+                        {buyer.licenseKey && (
+                          <div className="forensics-buyer-meta-row forensics-buyer-meta-row--full">
+                            <dt className="forensics-buyer-meta-key">License key</dt>
+                            <dd className="forensics-buyer-meta-val forensics-buyer-meta-val--mono">
+                              {buyer.licenseKey}
+                            </dd>
+                          </div>
+                        )}
+
+                        {/* ── Secondary: technical identifiers ── */}
+                        {!buyer.purchaserEmail && (
+                          <div className="forensics-buyer-meta-row forensics-buyer-meta-row--full">
+                            <dt className="forensics-buyer-meta-key">License key hash (SHA-256)</dt>
+                            <dd className="forensics-buyer-meta-val forensics-buyer-meta-val--mono">
+                              {buyer.licenseSubject}
+                            </dd>
+                          </div>
+                        )}
+
+                        {buyer.runtimeArtifactVersion && (
+                          <div className="forensics-buyer-meta-row">
+                            <dt className="forensics-buyer-meta-key">Package version</dt>
+                            <dd className="forensics-buyer-meta-val forensics-buyer-meta-val--mono">
+                              {buyer.runtimeArtifactVersion}
+                            </dd>
+                          </div>
+                        )}
+
+                        {buyer.grantId && (
+                          <div className="forensics-buyer-meta-row">
+                            <dt className="forensics-buyer-meta-key">Grant ID</dt>
+                            <dd className="forensics-buyer-meta-val forensics-buyer-meta-val--mono">
+                              {buyer.grantId}
+                            </dd>
+                          </div>
+                        )}
+
+                        {buyer.machineFingerprintHash && (
+                          <div className="forensics-buyer-meta-row forensics-buyer-meta-row--full">
+                            <dt className="forensics-buyer-meta-key">Machine fingerprint (SHA-256)</dt>
+                            <dd className="forensics-buyer-meta-val forensics-buyer-meta-val--mono">
+                              {buyer.machineFingerprintHash}
+                            </dd>
+                          </div>
+                        )}
+
+                        {buyer.projectIdHash && (
+                          <div className="forensics-buyer-meta-row forensics-buyer-meta-row--full">
+                            <dt className="forensics-buyer-meta-key">Project ID (SHA-256)</dt>
+                            <dd className="forensics-buyer-meta-val forensics-buyer-meta-val--mono">
+                              {buyer.projectIdHash}
+                            </dd>
+                          </div>
+                        )}
+                      </dl>
                     </div>
                   ))}
+                </div>
+              </>
+            ) : verdictKind === 'tampered' ? (
+              <div className="forensics-verdict forensics-verdict--warn">
+                <div className="forensics-verdict-icon">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                </div>
+                <div className="forensics-verdict-copy">
+                  <p className="forensics-verdict-title">Tracking removed</p>
+                  <p className="forensics-verdict-desc">
+                    This file was modified to remove identifying information. We can't trace it to a
+                    specific buyer, but the file was tampered with.
+                  </p>
+                </div>
+              </div>
+            ) : verdictKind === 'no_assets' ? (
+              <div className="forensics-verdict forensics-verdict--neutral">
+                <div className="forensics-verdict-icon">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                </div>
+                <div className="forensics-verdict-copy">
+                  <p className="forensics-verdict-title">No trackable files found</p>
+                  <p className="forensics-verdict-desc">
+                    This archive doesn't contain any files that can be traced. Make sure you're
+                    uploading the right product.
+                  </p>
+                </div>
               </div>
             ) : (
-              <div className="account-empty">
-                <div className="account-empty-icon">
-                  <img
-                    src="/Icons/Wrench.png"
-                    alt=""
+              <div className="forensics-verdict forensics-verdict--neutral">
+                <div className="forensics-verdict-icon">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                     aria-hidden="true"
-                    style={{ width: '20px', height: '20px', objectFit: 'contain', opacity: 0.45 }}
-                  />
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
                 </div>
-                {lookupResult?.lookupStatus === 'tampered_suspected' ? (
-                  <>
-                    <p className="account-empty-title">No coupling signals found</p>
-                    <p className="account-empty-desc">
-                      The uploaded assets contain no coupling markers. They may be original
-                      unprotected files, or coupling signals were stripped.
-                    </p>
-                  </>
-                ) : lookupResult?.lookupStatus === 'no_candidate_assets' ? (
-                  <>
-                    <p className="account-empty-title">No eligible assets found</p>
-                    <p className="account-empty-desc">
-                      No PNG or FBX assets were found in the uploaded archive.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="account-empty-title">No authorized match found</p>
-                    <p className="account-empty-desc">
-                      The upload did not resolve to a coupling token under the selected package.
-                    </p>
-                  </>
-                )}
+                <div className="forensics-verdict-copy">
+                  <p className="forensics-verdict-title">No match found</p>
+                  <p className="forensics-verdict-desc">
+                    This file doesn't match any purchase in your store. It may have come from a
+                    different product or platform.
+                  </p>
+                </div>
               </div>
             )}
           </section>

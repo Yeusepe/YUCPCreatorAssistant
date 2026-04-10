@@ -14,6 +14,17 @@ export interface CouplingForensicsMatchSummary {
   createdAt: number;
   runtimeArtifactVersion?: string | null;
   runtimePlaintextSha256?: string | null;
+  machineFingerprintHash?: string | null;
+  projectIdHash?: string | null;
+  grantId?: string | null;
+  packFamily?: string | null;
+  packVersion?: string | null;
+  /** License store ('gumroad', 'jinxxy', etc.) */
+  provider?: string | null;
+  /** Buyer's email address from the provider API */
+  purchaserEmail?: string | null;
+  /** Raw license key used to verify the purchase */
+  licenseKey?: string | null;
 }
 
 export interface CouplingForensicsAssetResult {
