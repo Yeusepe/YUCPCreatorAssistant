@@ -52,13 +52,20 @@ describe('auth-server environment resolution', () => {
 
     await import('@/lib/auth-server');
 
-    expect(reactStartSpy).toHaveBeenCalledWith({
-      convexUrl: 'https://rare-squid-409.convex.cloud',
-      convexSiteUrl: 'https://rare-squid-409.convex.site',
-    });
+    expect(reactStartSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        convexUrl: 'https://rare-squid-409.convex.cloud',
+        convexSiteUrl: 'https://rare-squid-409.convex.site',
+        cookiePrefix: 'yucp',
+        jwtCache: expect.objectContaining({
+          enabled: true,
+          isAuthError: expect.any(Function),
+        }),
+      })
+    );
   });
 
-  it('forwards only the cookie header when fetching the auth token', async () => {
+  it('forwards the session and cached convex jwt cookies when fetching the auth token', async () => {
     vi.stubEnv('CONVEX_URL', 'https://rare-squid-409.convex.cloud');
     vi.stubEnv('CONVEX_SITE_URL', 'https://rare-squid-409.convex.site');
     getRequestHeadersMock.mockReturnValue(
@@ -68,7 +75,8 @@ describe('auth-server environment resolution', () => {
         'x-forwarded-proto': 'https',
         'accept-language': 'en-US,en;q=0.9',
         connection: 'keep-alive',
-        cookie: '__Secure-yucp.session_token=abc; __Secure-yucp.session_data=def',
+        cookie:
+          '__Secure-yucp.session_token=abc; __Secure-yucp.session_data=def; __Secure-yucp.convex_jwt=jwt; ignored_cookie=skip-me',
       })
     );
     getConvexAuthTokenMock.mockResolvedValue({
@@ -83,7 +91,14 @@ describe('auth-server environment resolution', () => {
     expect(getConvexAuthTokenMock).toHaveBeenCalledTimes(1);
     expect(getConvexAuthTokenMock).toHaveBeenCalledWith(
       'https://rare-squid-409.convex.site',
-      expect.any(Headers)
+      expect.any(Headers),
+      expect.objectContaining({
+        cookiePrefix: 'yucp',
+        jwtCache: expect.objectContaining({
+          enabled: true,
+          isAuthError: expect.any(Function),
+        }),
+      })
     );
 
     const forwardedHeaders = getConvexAuthTokenMock.mock.calls[0][1] as Headers;
@@ -95,7 +110,7 @@ describe('auth-server environment resolution', () => {
     expect(forwardedHeaders.get('accept')).toBe('application/json');
     expect(forwardedHeaders.get('accept-encoding')).toBe('identity');
     expect(forwardedHeaders.get('cookie')).toBe(
-      '__Secure-yucp.session_token=abc; __Secure-yucp.session_data=def'
+      '__Secure-yucp.session_token=abc; __Secure-yucp.session_data=def; __Secure-yucp.convex_jwt=jwt'
     );
     expect(forwardedHeaders.get('host')).toBeNull();
     expect(forwardedHeaders.get('x-forwarded-host')).toBeNull();

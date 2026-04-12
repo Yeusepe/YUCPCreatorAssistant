@@ -1,6 +1,7 @@
 const FORWARDED_AUTH_COOKIE_NAMES = new Set([
   'yucp.session_token',
   'yucp.session_data',
+  'yucp.convex_jwt',
   'yucp_setup_session',
   'yucp_connect_token',
   'yucp_collab_session',
@@ -8,13 +9,16 @@ const FORWARDED_AUTH_COOKIE_NAMES = new Set([
   'yucp_vrchat_connect_pending',
   '__Secure-yucp.session_token',
   '__Secure-yucp.session_data',
+  '__Secure-yucp.convex_jwt',
 ]);
 
 const FORWARDED_SESSION_COOKIE_NAMES = new Set([
   'yucp.session_token',
   'yucp.session_data',
+  'yucp.convex_jwt',
   '__Secure-yucp.session_token',
   '__Secure-yucp.session_data',
+  '__Secure-yucp.convex_jwt',
 ]);
 
 function filterCookieHeader(

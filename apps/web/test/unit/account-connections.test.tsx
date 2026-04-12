@@ -97,14 +97,14 @@ describe('account connections route', () => {
     await waitFor(() => expect(dashboardApi.listUserProviders).toHaveBeenCalled());
     await waitFor(() => expect(dashboardApi.listUserAccounts).toHaveBeenCalled());
 
-    const gumroadCard = (await screen.findByText('Gumroad')).closest('.acct-provider-card');
+    const gumroadCard = (await screen.findByText('Gumroad')).closest('.acct-provider-row');
     if (!(gumroadCard instanceof HTMLElement)) {
       throw new Error('Gumroad card was not rendered');
     }
     expect(within(gumroadCard).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
 
     const vrchatHandle = await screen.findByText('vrchat-user');
-    const vrchatCard = vrchatHandle.closest('.acct-provider-card');
+    const vrchatCard = vrchatHandle.closest('.acct-provider-row');
     if (!(vrchatCard instanceof HTMLElement)) {
       throw new Error('VRChat card was not rendered for the linked provider');
     }

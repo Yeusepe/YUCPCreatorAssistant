@@ -2263,8 +2263,30 @@
 }
 
 @media (max-width: 767px) {
+  /* Shared shell + nested panel tokens (match linked-provider mobile cards) */
   .account-dashboard-view {
+    --account-m-stack-gap: 16px;
+    --account-m-shell-border: 1px solid rgba(148, 163, 184, 0.22);
+    --account-m-shell-radius: 16px;
+    --account-m-shell-bg: rgba(255, 255, 255, 0.62);
+    --account-m-shell-blur: blur(8px);
+    --account-m-nested-border: 1px solid rgba(148, 163, 184, 0.2);
+    --account-m-nested-radius: 12px;
+    --account-m-nested-bg: rgba(248, 250, 252, 0.88);
     gap: 14px;
+  }
+
+  .dark .account-dashboard-view {
+    --account-m-shell-border: 1px solid rgba(255, 255, 255, 0.1);
+    --account-m-shell-bg: rgba(15, 23, 42, 0.45);
+    --account-m-nested-border: 1px solid rgba(255, 255, 255, 0.09);
+    --account-m-nested-bg: rgba(255, 255, 255, 0.05);
+  }
+
+  .account-surface-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--account-m-stack-gap);
   }
 
   .account-surface-card-header {
@@ -2305,16 +2327,34 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+    box-sizing: border-box;
+    padding: 16px;
+    border: var(--account-m-shell-border);
+    border-radius: var(--account-m-shell-radius);
+    background: var(--account-m-shell-bg);
+    backdrop-filter: var(--account-m-shell-blur);
+    -webkit-backdrop-filter: var(--account-m-shell-blur);
   }
 
   .account-profile-hero-copy {
     width: 100%;
   }
 
+  .account-kv-list {
+    gap: 12px;
+  }
+
   .account-kv-row {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
+    align-items: stretch;
+    gap: 6px;
+    box-sizing: border-box;
+    padding: 14px 16px;
+    border: var(--account-m-shell-border);
+    border-radius: var(--account-m-shell-radius);
+    background: var(--account-m-shell-bg);
+    backdrop-filter: var(--account-m-shell-blur);
+    -webkit-backdrop-filter: var(--account-m-shell-blur);
   }
 
   .account-kv-value {
@@ -2323,24 +2363,189 @@
   }
 
   .account-list-row {
-    align-items: flex-start;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 12px 14px;
+    box-sizing: border-box;
+    padding: 16px;
+    margin: 0;
+    border: var(--account-m-shell-border);
+    border-radius: var(--account-m-shell-radius);
+    background: var(--account-m-shell-bg);
+    backdrop-filter: var(--account-m-shell-blur);
+    -webkit-backdrop-filter: var(--account-m-shell-blur);
+    border-bottom: none;
   }
 
-  .account-list-row-actions,
-  .acct-provider-actions,
-  .acct-provider-connection-row {
+  .dark .account-list-row {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: var(--account-m-shell-bg);
+  }
+
+  .account-list-row:first-child,
+  .account-list-row:last-child {
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+
+  .account-list-row-icon {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .account-list-row-info {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .account-list-row-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
     width: 100%;
-    justify-content: flex-start;
+    justify-content: stretch;
+  }
+
+  .account-list-row-actions > * {
+    width: 100%;
+    max-width: none;
+  }
+
+  /* Rows without a leading icon (e.g. verify method rows): stack info + actions */
+  .account-list-row:not(:has(.account-list-row-icon)) .account-list-row-info {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .account-list-row:not(:has(.account-list-row-icon)) .account-list-row-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .account-rights-list {
+    gap: 10px;
+  }
+
+  .account-rights-item {
+    padding: 14px 16px;
+    border: var(--account-m-shell-border);
+    border-radius: var(--account-m-shell-radius);
+    background: var(--account-m-shell-bg);
+    backdrop-filter: var(--account-m-shell-blur);
+    -webkit-backdrop-filter: var(--account-m-shell-blur);
+    box-sizing: border-box;
+  }
+
+  .dark .account-rights-item {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: var(--account-m-shell-bg);
+  }
+
+  /* Linked providers (connections tab): card rows + stacked link panels (replaces flat flex wrap) */
+  .acct-provider-list {
+    gap: 16px;
+  }
+
+  .acct-provider-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 12px 14px;
+    padding: 16px;
+    margin: 0;
+    border: var(--account-m-shell-border);
+    border-radius: var(--account-m-shell-radius);
+    background: var(--account-m-shell-bg);
+    backdrop-filter: var(--account-m-shell-blur);
+    -webkit-backdrop-filter: var(--account-m-shell-blur);
+    box-sizing: border-box;
+  }
+
+  .dark .acct-provider-row {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: var(--account-m-shell-bg);
+  }
+
+  .acct-provider-row:first-child {
+    padding-top: 16px;
+  }
+
+  .acct-provider-row:last-child {
+    padding-bottom: 16px;
+  }
+
+  .acct-provider-icon {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .acct-provider-info {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .acct-provider-actions--standalone {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin-left: 0;
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .acct-provider-actions--standalone > * {
+    width: 100%;
+    max-width: none;
+  }
+
+  .acct-provider-title-row {
+    row-gap: 6px;
+  }
+
+  .acct-provider-meta {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.45;
+    letter-spacing: -0.02em;
+    word-break: break-all;
+  }
+
+  .acct-provider-connection-list {
+    gap: 10px;
   }
 
   .acct-provider-connection-row {
+    display: flex;
     flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: var(--account-m-nested-radius);
+    border: var(--account-m-nested-border);
+    background: var(--account-m-nested-bg);
+    box-sizing: border-box;
   }
 
-  .acct-provider-card,
-  .acct-provider-row {
-    flex-direction: column;
+  .dark .acct-provider-connection-row {
+    border-color: rgba(255, 255, 255, 0.09);
+    background: var(--account-m-nested-bg);
+  }
+
+  .acct-provider-connection-copy {
+    width: 100%;
+  }
+
+  .acct-provider-actions {
+    width: 100%;
+    justify-content: stretch;
+    align-self: stretch;
+  }
+
+  .acct-provider-actions > * {
+    width: 100%;
+    max-width: none;
   }
 
   .account-inline-actions {
