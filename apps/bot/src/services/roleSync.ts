@@ -16,7 +16,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { Client, GuildMember, RESTJSONErrorCodes } from 'discord.js';
 import { api } from '../../../../convex/_generated/api';
 import { sendDashboardNotification } from '../lib/notifications';
-import { withBotSpan } from '../lib/observability';
+import { withBotSpan, withBotStageSpan } from '../lib/observability';
 import { buildVerifyPromptMessage, getEnabledProviders } from '../lib/verifyPrompt';
 import { buildVerifyPromptAccessPreview } from '../lib/verifyPromptAccess';
 
@@ -305,30 +305,37 @@ export class RoleSyncService {
    * Process all pending outbox jobs.
    */
   async processPendingJobs(): Promise<number> {
-    // Fetch pending jobs from Convex
-    const jobs = await this.fetchPendingJobs();
+    return withBotStageSpan(
+      'outbox.process_pending',
+      {
+        pollIntervalMs: this.pollIntervalMs,
+      },
+      async () => {
+        const jobs = await this.fetchPendingJobs();
 
-    if (jobs.length === 0) {
-      return 0;
-    }
+        if (jobs.length === 0) {
+          return 0;
+        }
 
-    this.logger.info('Processing pending jobs', { count: jobs.length });
+        this.logger.info('Processing pending jobs', { count: jobs.length });
 
-    let processedCount = 0;
-    for (const job of jobs) {
-      try {
-        await this.processJob(job);
-        processedCount++;
-      } catch (error) {
-        this.logger.error('Failed to process job', {
-          jobId: job._id,
-          jobType: job.jobType,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        let processedCount = 0;
+        for (const job of jobs) {
+          try {
+            await this.processJob(job);
+            processedCount++;
+          } catch (error) {
+            this.logger.error('Failed to process job', {
+              jobId: job._id,
+              jobType: job.jobType,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+
+        return processedCount;
       }
-    }
-
-    return processedCount;
+    );
   }
 
   /**
@@ -1129,26 +1136,34 @@ export class RoleSyncService {
    * Fetch pending outbox jobs for role sync.
    */
   private async fetchPendingJobs(): Promise<OutboxJob[]> {
-    try {
-      const jobs = await this.convexClient.query(api.outbox_jobs.getPendingJobs, {
-        apiSecret: this.apiSecret,
-        jobTypes: [
-          'role_sync',
-          'role_removal',
-          'creator_alert',
-          'retroactive_rule_sync',
-          'verify_prompt_refresh',
-        ],
+    return withBotStageSpan(
+      'outbox.fetch_pending',
+      {
         limit: 10,
-      });
+      },
+      async () => {
+        try {
+          const jobs = await this.convexClient.query(api.outbox_jobs.getPendingJobs, {
+            apiSecret: this.apiSecret,
+            jobTypes: [
+              'role_sync',
+              'role_removal',
+              'creator_alert',
+              'retroactive_rule_sync',
+              'verify_prompt_refresh',
+            ],
+            limit: 10,
+          });
 
-      return jobs as OutboxJob[];
-    } catch (error) {
-      this.logger.error('Failed to fetch pending jobs', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return [];
-    }
+          return jobs as OutboxJob[];
+        } catch (error) {
+          this.logger.error('Failed to fetch pending jobs', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return [];
+        }
+      }
+    );
   }
 
   /**
@@ -1160,66 +1175,94 @@ export class RoleSyncService {
     error?: string,
     nextRetryAt?: number
   ): Promise<void> {
-    try {
-      await this.convexClient.mutation(api.outbox_jobs.updateJobStatus, {
-        apiSecret: this.apiSecret,
+    await withBotStageSpan(
+      'outbox.update_status',
+      {
         jobId,
         status,
-        error,
-        nextRetryAt,
-      });
-    } catch (updateError) {
-      this.logger.error('Failed to update job status', {
-        jobId,
-        status,
-        error: updateError instanceof Error ? updateError.message : String(updateError),
-      });
-    }
+        hasError: Boolean(error),
+        hasNextRetryAt: nextRetryAt !== undefined,
+      },
+      async () => {
+        try {
+          await this.convexClient.mutation(api.outbox_jobs.updateJobStatus, {
+            apiSecret: this.apiSecret,
+            jobId,
+            status,
+            error,
+            nextRetryAt,
+          });
+        } catch (updateError) {
+          this.logger.error('Failed to update job status', {
+            jobId,
+            status,
+            error: updateError instanceof Error ? updateError.message : String(updateError),
+          });
+        }
+      }
+    );
   }
 
   /**
    * Fetch role rules for a creator and product.
    */
   private async fetchRoleRules(authUserId: string, productId: string): Promise<RoleRule[]> {
-    try {
-      const rules = await this.convexClient.query(api.role_rules.getByProduct, {
-        apiSecret: this.apiSecret,
+    return withBotStageSpan(
+      'role_rules.fetch',
+      {
         authUserId,
         productId,
-      });
+      },
+      async () => {
+        try {
+          const rules = await this.convexClient.query(api.role_rules.getByProduct, {
+            apiSecret: this.apiSecret,
+            authUserId,
+            productId,
+          });
 
-      return rules as RoleRule[];
-    } catch (error) {
-      this.logger.error('Failed to fetch role rules', {
-        authUserId,
-        productId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return [];
-    }
+          return rules as RoleRule[];
+        } catch (error) {
+          this.logger.error('Failed to fetch role rules', {
+            authUserId,
+            productId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return [];
+        }
+      }
+    );
   }
 
   /**
    * Fetch entitlement by ID.
    */
   private async fetchEntitlement(entitlementId: Id<'entitlements'>): Promise<Entitlement | null> {
-    try {
-      const result = await this.convexClient.query(api.entitlements.getEntitlement, {
-        apiSecret: this.apiSecret,
+    return withBotStageSpan(
+      'entitlement.fetch',
+      {
         entitlementId,
-      });
+      },
+      async () => {
+        try {
+          const result = await this.convexClient.query(api.entitlements.getEntitlement, {
+            apiSecret: this.apiSecret,
+            entitlementId,
+          });
 
-      if (result.found) {
-        return result.entitlement as Entitlement;
+          if (result.found) {
+            return result.entitlement as Entitlement;
+          }
+          return null;
+        } catch (error) {
+          this.logger.error('Failed to fetch entitlement', {
+            entitlementId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }
       }
-      return null;
-    } catch (error) {
-      this.logger.error('Failed to fetch entitlement', {
-        entitlementId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
+    );
   }
 
   // ============================================================================

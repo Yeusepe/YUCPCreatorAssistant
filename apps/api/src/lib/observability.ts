@@ -8,29 +8,15 @@ import {
   SpanStatusCode,
   trace,
 } from '@opentelemetry/api';
-import { applyNodeHyperdxDefaults } from '@yucp/shared';
+import {
+  applyNodeHyperdxDefaults,
+  setActiveSpanAttributes,
+  toSpanAttributes,
+  withObservedSpan,
+} from '@yucp/shared';
 
 const tracer = trace.getTracer('yucp-api');
 let initialized = false;
-
-function toAttributes(input: Record<string, string | number | boolean | undefined>): Attributes {
-  return Object.fromEntries(
-    Object.entries(input).filter(([, value]) => value !== undefined)
-  ) as Attributes;
-}
-
-function addSpanAttributes(attributes: Record<string, string | number | boolean | undefined>) {
-  const span = trace.getActiveSpan();
-  if (!span) {
-    return;
-  }
-
-  for (const [key, value] of Object.entries(attributes)) {
-    if (value !== undefined) {
-      span.setAttribute(key, value);
-    }
-  }
-}
 
 export function initApiObservability(env: NodeJS.ProcessEnv = process.env) {
   const resolved = applyNodeHyperdxDefaults(env, 'yucp-api');
@@ -60,13 +46,31 @@ export function getActiveTraceIds() {
 }
 
 export function annotateApiSpan(attributes: Record<string, string | number | boolean | undefined>) {
-  addSpanAttributes(attributes);
+  setActiveSpanAttributes(attributes);
   setTraceAttributes(
     Object.fromEntries(
       Object.entries(attributes)
         .filter(([, value]) => value !== undefined)
         .map(([key, value]) => [key, String(value)])
     )
+  );
+}
+
+export async function withApiSpan<T>(
+  name: string,
+  attributes: Record<string, string | number | boolean | undefined>,
+  run: () => Promise<T>,
+  kind: SpanKind = SpanKind.INTERNAL
+): Promise<T> {
+  return withObservedSpan(
+    tracer,
+    name,
+    attributes,
+    async () => {
+      annotateApiSpan(attributes);
+      return run();
+    },
+    kind
   );
 }
 
@@ -84,7 +88,7 @@ export async function withApiRequestSpan<T>(
       `${request.method} ${url.pathname}`,
       {
         kind: SpanKind.SERVER,
-        attributes: toAttributes({
+        attributes: toSpanAttributes({
           'http.request.method': request.method,
           'url.full': url.toString(),
           'url.path': url.pathname,

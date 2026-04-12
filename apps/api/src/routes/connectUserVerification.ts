@@ -5,6 +5,7 @@ import type { Id } from '../../../../convex/_generated/dataModel';
 import type { Auth } from '../auth';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { logger } from '../lib/logger';
+import { withApiSpan } from '../lib/observability';
 import {
   getConnectedAccountProviderDisplay,
   listHostedVerificationProviderDisplays,
@@ -38,14 +39,24 @@ export function createConnectUserVerificationRoutes({
     convex: ReturnType<typeof getConvexClientFromUrl>,
     authUserId: string
   ) {
-    await convex.mutation(api.subjects.reconcileBuyerProviderLinksForAuthUser, {
-      apiSecret: config.convexApiSecret,
-      authUserId,
-    });
-    return await convex.query(api.subjects.listBuyerProviderLinksForAuthUser, {
-      apiSecret: config.convexApiSecret,
-      authUserId,
-    });
+    return withApiSpan(
+      'verification.accounts.reconcile',
+      {
+        authUserId,
+        verificationFlow: 'buyer-provider-links',
+      },
+      async () => {
+        await convex.mutation(api.subjects.reconcileBuyerProviderLinksForAuthUser, {
+          apiSecret: config.convexApiSecret,
+          authUserId,
+        });
+        const links = await convex.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+          apiSecret: config.convexApiSecret,
+          authUserId,
+        });
+        return links;
+      }
+    );
   }
 
   async function ensureLinkedEntitlementRequirements(
@@ -53,49 +64,60 @@ export function createConnectUserVerificationRoutes({
     intent: HostedVerificationIntentRecord,
     authUserId: string
   ): Promise<HostedVerificationIntentRecord> {
-    const links = await reconcileBuyerVerificationAccounts(convex, authUserId);
-    const derivedRequirements = buildLinkedEntitlementRequirements(
-      intent,
-      links
-        .filter((link: (typeof links)[number]) => link.status === 'active')
-        .map((link: (typeof links)[number]) => link.provider),
-      async (requirement) => {
-        if (!requirement.providerProductRef) {
-          return null;
+    return withApiSpan(
+      'verification.intent.requirements.resolve',
+      {
+        authUserId,
+        intentId: String(intent._id),
+        requirementCount: intent.requirements.length,
+      },
+      async () => {
+        const links = await reconcileBuyerVerificationAccounts(convex, authUserId);
+        const activeProviders = links
+          .filter((link: (typeof links)[number]) => link.status === 'active')
+          .map((link: (typeof links)[number]) => link.provider);
+        const derivedRequirements = buildLinkedEntitlementRequirements(
+          intent,
+          activeProviders,
+          async (requirement) => {
+            if (!requirement.providerProductRef) {
+              return null;
+            }
+
+            const product = await convex.query(api.yucpLicenses.lookupProductByProviderRef, {
+              apiSecret: config.convexApiSecret,
+              provider: requirement.providerKey,
+              providerProductRef: requirement.providerProductRef,
+            });
+
+            if (!product) {
+              return null;
+            }
+
+            return {
+              creatorAuthUserId: product.authUserId,
+              productId: product.productId,
+            };
+          }
+        );
+        const resolvedRequirements = await derivedRequirements;
+        if (resolvedRequirements.length === 0) {
+          return intent;
         }
 
-        const product = await convex.query(api.yucpLicenses.lookupProductByProviderRef, {
+        await convex.mutation(api.verificationIntents.appendVerificationIntentRequirements, {
           apiSecret: config.convexApiSecret,
-          provider: requirement.providerKey,
-          providerProductRef: requirement.providerProductRef,
+          authUserId,
+          intentId: intent._id,
+          requirements: resolvedRequirements,
         });
 
-        if (!product) {
-          return null;
-        }
-
         return {
-          creatorAuthUserId: product.authUserId,
-          productId: product.productId,
+          ...intent,
+          requirements: [...intent.requirements, ...resolvedRequirements],
         };
       }
     );
-    const resolvedRequirements = await derivedRequirements;
-    if (resolvedRequirements.length === 0) {
-      return intent;
-    }
-
-    await convex.mutation(api.verificationIntents.appendVerificationIntentRequirements, {
-      apiSecret: config.convexApiSecret,
-      authUserId,
-      intentId: intent._id,
-      requirements: resolvedRequirements,
-    });
-
-    return {
-      ...intent,
-      requirements: [...intent.requirements, ...resolvedRequirements],
-    };
   }
 
   async function getUserConnections(request: Request): Promise<Response> {

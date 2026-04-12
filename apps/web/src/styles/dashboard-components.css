@@ -3725,34 +3725,9 @@
   color: #94a3b8;
 }
 
-/* Sidebar account button */
-
-.sidebar-account-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 9px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: var(--font-display), sans-serif;
-  color: rgba(255, 255, 255, 0.92);
-  text-decoration: none;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease;
-}
-
-.sidebar-account-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 1);
-}
-
-.sidebar-account-btn svg {
-  flex-shrink: 0;
-  opacity: 0.7;
-}
+/* Sidebar shell (including .sidebar-account-btn) lives in dashboard.css, which loads before this file.
+   Do not redeclare .sidebar-account-btn here: a duplicate previously used 9px 12px padding and overrode
+   the shared nav/footer rhythm from dashboard.css. */
 
 .btn-show-more {
   width: 100%;

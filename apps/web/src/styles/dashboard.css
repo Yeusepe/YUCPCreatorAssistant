@@ -1485,8 +1485,10 @@ img.collab-avatar {
 .sidebar {
   display: flex;
   flex-direction: column;
-  /* Single horizontal inset for logo / scroll / footer so the rail aligns optically */
+  /* Outer inset: logo / scroll / footer share one gutter */
   --sidebar-pad-x: 12px;
+  /* Inner padding for pills, nav rows, labels (must match so text edges line up) */
+  --sidebar-content-inline: 10px;
   /* Liquid glass: ultra-transparent, shows clouds behind */
   background: linear-gradient(170deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.07) 100%);
   backdrop-filter: blur(20px) saturate(160%);
@@ -1523,6 +1525,8 @@ img.collab-avatar {
   .sidebar {
     width: 160px;
     min-width: 160px;
+    --sidebar-pad-x: 8px;
+    --sidebar-content-inline: 8px;
   }
 
   .sidebar-brand-name,
@@ -1532,7 +1536,7 @@ img.collab-avatar {
 
   .sidebar-nav-btn {
     font-size: 11px;
-    padding: 7px 10px;
+    padding: 7px var(--sidebar-content-inline, 8px);
   }
 }
 
@@ -1639,8 +1643,9 @@ img.collab-avatar {
 .sidebar-brand img,
 .sidebar-logo-img,
 .sidebar-logo-img-light {
-  width: 92%;
-  max-width: 92%;
+  /* Full width of the padded logo column so the mark lines up with the server pill and nav */
+  width: 100%;
+  max-width: 100%;
   height: auto;
   display: block;
   flex-shrink: 0;
@@ -1662,7 +1667,7 @@ img.collab-avatar {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 7px 10px;
+  padding: 7px var(--sidebar-content-inline, 10px);
   border-radius: 10px;
   /* White glass pill for liquid glass sidebar */
   background: rgba(255, 255, 255, 0.12);
@@ -1742,7 +1747,7 @@ img.collab-avatar {
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.75);
-  padding: 0 10px;
+  padding: 0 var(--sidebar-content-inline, 10px);
   margin-bottom: 4px;
   display: block;
 }
@@ -1751,7 +1756,7 @@ img.collab-avatar {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 10px;
+  padding: 8px var(--sidebar-content-inline, 10px);
   border-radius: 10px;
   cursor: pointer;
   transition:
@@ -1834,7 +1839,7 @@ img.collab-avatar {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 10px;
+  padding: 8px var(--sidebar-content-inline, 10px);
   border-radius: 10px;
   cursor: pointer;
   transition:
