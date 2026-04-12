@@ -109,6 +109,30 @@ describe('DevSupervisor', () => {
       '-p',
       '4318:4318',
       '-v',
+      'yucp-hyperdx-dev-db:/data/db',
+      '-v',
+      'yucp-hyperdx-dev-ch-data:/var/lib/clickhouse',
+      '-v',
+      'yucp-hyperdx-dev-ch-logs:/var/log/clickhouse-server',
+      '-e',
+      'USAGE_STATS_ENABLED=false',
+      'clickhouse/clickstack-all-in-one:latest',
+    ]);
+  });
+
+  test('buildHyperdxDockerArgs supports explicit bind mounts when requested', () => {
+    expect(buildHyperdxDockerArgs({ HYPERDX_DEV_VOLUME_MODE: 'bind' })).toEqual([
+      'run',
+      '--rm',
+      '--name',
+      'yucp-hyperdx-dev',
+      '-p',
+      '8080:8080',
+      '-p',
+      '4317:4317',
+      '-p',
+      '4318:4318',
+      '-v',
       `${path.join(process.cwd(), '.volumes', 'hyperdx', 'db')}:/data/db`,
       '-v',
       `${path.join(process.cwd(), '.volumes', 'hyperdx', 'ch_data')}:/var/lib/clickhouse`,

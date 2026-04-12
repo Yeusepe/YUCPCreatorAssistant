@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createLazyFileRoute, useSearch } from '@tanstack/react-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CloudBackground } from '@/components/three/CloudBackground';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -154,109 +154,122 @@ function OAuthMethodButton({
   const providerVisual = getProviderVisual(provider, linkedAccounts);
   const iconSrc = providerVisual ? getProviderIconPath(providerVisual) : null;
   const brandColor = providerVisual?.color ?? null;
+  const isLinkStateLoading = accountsLoading || (providersLoading && !provider);
+
+  const rowPhase = isVerified
+    ? 'verified'
+    : isConnected
+      ? 'connected'
+      : isLinkStateLoading
+        ? 'loading'
+        : 'disconnected';
 
   // Verified state ΓÇö green row
   if (isVerified) {
     return (
-      <div className="vp-oauth-row vp-oauth-row--verified">
-        <div className="vp-oauth-row-left">
-          {iconSrc ? (
-            <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" />
-          ) : null}
-          <div className="vp-oauth-row-text">
-            <span className="vp-oauth-label">{requirement.providerLabel}</span>
-            {accountCountLabel ? (
-              <span className="vp-oauth-account">{accountCountLabel}</span>
+      <Fragment key={rowPhase}>
+        <div className="vp-oauth-row vp-oauth-row--verified vp-oauth-row--enter">
+          <div className="vp-oauth-row-left">
+            {iconSrc ? (
+              <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" />
             ) : null}
-            {linkedAccountsForDisplay.map((account) => (
-              <span key={account.id} className="vp-oauth-account">
-                @{account.label}
-              </span>
-            ))}
+            <div className="vp-oauth-row-text">
+              <span className="vp-oauth-label">{requirement.providerLabel}</span>
+              {accountCountLabel ? (
+                <span className="vp-oauth-account">{accountCountLabel}</span>
+              ) : null}
+              {linkedAccountsForDisplay.map((account) => (
+                <span key={account.id} className="vp-oauth-account">
+                  @{account.label}
+                </span>
+              ))}
+            </div>
           </div>
+          <span className="vp-status-badge vp-status-badge--connected">
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="vp-status-badge-icon">
+              <polyline points="3 8 6 11 13 5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Verified
+          </span>
         </div>
-        <span className="vp-status-badge vp-status-badge--connected">
-          <svg viewBox="0 0 16 16" aria-hidden="true" className="vp-status-badge-icon">
-            <polyline points="3 8 6 11 13 5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Verified
-        </span>
-      </div>
+      </Fragment>
     );
   }
 
   // Connected ΓÇö show account info + Verify button
   if (isConnected) {
     return (
-      <div className="vp-oauth-row">
-        <div className="vp-oauth-row-left">
-          {iconSrc ? (
-            <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" />
-          ) : null}
-          <div className="vp-oauth-row-text">
-            <span className="vp-oauth-label">{requirement.providerLabel}</span>
-            {accountCountLabel ? (
-              <span className="vp-oauth-account">{accountCountLabel}</span>
+      <Fragment key={rowPhase}>
+        <div className="vp-oauth-row vp-oauth-row--enter">
+          <div className="vp-oauth-row-left">
+            {iconSrc ? (
+              <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" />
             ) : null}
-            {linkedAccountsForDisplay.map((account) => (
-              <span key={account.id} className="vp-oauth-account">
-                @{account.label}
-              </span>
-            ))}
+            <div className="vp-oauth-row-text">
+              <span className="vp-oauth-label">{requirement.providerLabel}</span>
+              {accountCountLabel ? (
+                <span className="vp-oauth-account">{accountCountLabel}</span>
+              ) : null}
+              {linkedAccountsForDisplay.map((account) => (
+                <span key={account.id} className="vp-oauth-account">
+                  @{account.label}
+                </span>
+              ))}
+            </div>
           </div>
+          <div className="vp-oauth-row-right">
+            <button
+              type="button"
+              className={`vp-oauth-verify-btn${isVerifyLoading ? ' btn-loading' : ''}`}
+              onClick={() => providerLinkMut.mutate()}
+              disabled={isVerifyLoading}
+              style={brandColor ? ({ '--brand': brandColor } as React.CSSProperties) : undefined}
+            >
+              {isVerifyLoading ? (
+                <>
+                  <span className="btn-loading-spinner" aria-hidden="true" />
+                  Verifying...
+                </>
+              ) : (
+                `Verify purchase`
+              )}
+            </button>
+          </div>
+          {providerLinkMut.isError ? (
+            <p className="vp-method-error vp-method-error--full">
+              Uh oh, we didn't find a purchase. Make sure you bought on this account.
+            </p>
+          ) : null}
         </div>
-        <div className="vp-oauth-row-right">
-          <button
-            type="button"
-            className={`vp-oauth-verify-btn${isVerifyLoading ? ' btn-loading' : ''}`}
-            onClick={() => providerLinkMut.mutate()}
-            disabled={isVerifyLoading}
-            style={brandColor ? ({ '--brand': brandColor } as React.CSSProperties) : undefined}
-          >
-            {isVerifyLoading ? (
-              <>
-                <span className="btn-loading-spinner" aria-hidden="true" />
-                Verifying...
-              </>
-            ) : (
-              `Verify purchase`
-            )}
-          </button>
-        </div>
-        {providerLinkMut.isError ? (
-          <p className="vp-method-error vp-method-error--full">
-            Uh oh, we didn't find a purchase. Make sure you bought on this account.
-          </p>
-        ) : null}
-      </div>
+      </Fragment>
     );
   }
 
-  const isLinkStateLoading = accountsLoading || (providersLoading && !provider);
-
   if (isLinkStateLoading) {
     return (
-      <div className="vp-oauth-row">
-        <div className="vp-oauth-row-left">
-          {iconSrc ? (
-            <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" />
-          ) : null}
-          <div className="vp-oauth-row-text">
-            <span className="vp-oauth-label">{requirement.providerLabel}</span>
+      <Fragment key={rowPhase}>
+        <div className="vp-oauth-row vp-oauth-row--enter">
+          <div className="vp-oauth-row-left">
+            {iconSrc ? (
+              <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" />
+            ) : null}
+            <div className="vp-oauth-row-text">
+              <span className="vp-oauth-label">{requirement.providerLabel}</span>
+            </div>
+          </div>
+          <div className="vp-oauth-row-right">
+            <button
+              type="button"
+              className="vp-oauth-verify-btn btn-loading"
+              disabled
+              style={brandColor ? ({ '--brand': brandColor } as React.CSSProperties) : undefined}
+            >
+              <span className="btn-loading-spinner" aria-hidden="true" />
+              Loading...
+            </button>
           </div>
         </div>
-        <div className="vp-oauth-row-right">
-          <button
-            type="button"
-            className="vp-oauth-verify-btn btn-loading"
-            disabled
-            style={brandColor ? ({ '--brand': brandColor } as React.CSSProperties) : undefined}
-          >
-            <span className="btn-loading-spinner" aria-hidden="true" />
-            Loading...
-          </button>
-        </div>
-      </div>
+      </Fragment>
     );
   }
 
@@ -265,49 +278,53 @@ function OAuthMethodButton({
   const ctaLabel = expiredLinks.length > 0 ? 'Reconnect' : 'Sign in';
 
   return (
-    <div className="vp-oauth-row">
-      <div className="vp-oauth-row-left">
-        {iconSrc ? <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" /> : null}
-        <div className="vp-oauth-row-text">
-          <span className="vp-oauth-label">{requirement.providerLabel}</span>
-          {expiredAccountsForDisplay.length > 0 ? (
-            <>
-              <span className="vp-oauth-account">
-                Previously linked {expiredAccountsForDisplay.length > 1 ? 'accounts' : 'account'}
-              </span>
-              {expiredAccountsForDisplay.map((account) => (
-                <span key={account.id} className="vp-oauth-account">
-                  @{account.label}
-                </span>
-              ))}
-            </>
+    <Fragment key={rowPhase}>
+      <div className="vp-oauth-row vp-oauth-row--enter">
+        <div className="vp-oauth-row-left">
+          {iconSrc ? (
+            <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" />
           ) : null}
+          <div className="vp-oauth-row-text">
+            <span className="vp-oauth-label">{requirement.providerLabel}</span>
+            {expiredAccountsForDisplay.length > 0 ? (
+              <>
+                <span className="vp-oauth-account">
+                  Previously linked {expiredAccountsForDisplay.length > 1 ? 'accounts' : 'account'}
+                </span>
+                {expiredAccountsForDisplay.map((account) => (
+                  <span key={account.id} className="vp-oauth-account">
+                    @{account.label}
+                  </span>
+                ))}
+              </>
+            ) : null}
+          </div>
         </div>
+        <div className="vp-oauth-row-right">
+          <button
+            type="button"
+            className={`vp-oauth-verify-btn${isPending ? ' btn-loading' : ''}`}
+            onClick={() => connectMut.mutate()}
+            disabled={isPending}
+            style={brandColor ? ({ '--brand': brandColor } as React.CSSProperties) : undefined}
+          >
+            {isPending ? (
+              <>
+                <span className="btn-loading-spinner" aria-hidden="true" />
+                {expiredLinks.length > 0 ? 'Reconnecting...' : 'Connecting...'}
+              </>
+            ) : (
+              ctaLabel
+            )}
+          </button>
+        </div>
+        {connectMut.isError ? (
+          <p className="vp-method-error vp-method-error--full">
+            Could not connect — please try again
+          </p>
+        ) : null}
       </div>
-      <div className="vp-oauth-row-right">
-        <button
-          type="button"
-          className={`vp-oauth-verify-btn${isPending ? ' btn-loading' : ''}`}
-          onClick={() => connectMut.mutate()}
-          disabled={isPending}
-          style={brandColor ? ({ '--brand': brandColor } as React.CSSProperties) : undefined}
-        >
-          {isPending ? (
-            <>
-              <span className="btn-loading-spinner" aria-hidden="true" />
-              {expiredLinks.length > 0 ? 'Reconnecting...' : 'Connecting...'}
-            </>
-          ) : (
-            ctaLabel
-          )}
-        </button>
-      </div>
-      {connectMut.isError ? (
-        <p className="vp-method-error vp-method-error--full">
-          Could not connect — please try again
-        </p>
-      ) : null}
-    </div>
+    </Fragment>
   );
 }
 
@@ -369,9 +386,40 @@ function LinkedEntitlementMethodButton({
       ? `${linkedAccountsForDisplay.length} accounts connected`
       : 'Connected account';
 
+  const rowPhase = isVerified ? 'verified' : 'interactive';
+
   if (isVerified) {
     return (
-      <div className="vp-oauth-row vp-oauth-row--verified">
+      <Fragment key={rowPhase}>
+        <div className="vp-oauth-row vp-oauth-row--verified vp-oauth-row--enter">
+          <div className="vp-oauth-row-left">
+            {iconSrc ? (
+              <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" />
+            ) : null}
+            <div className="vp-oauth-row-text">
+              <span className="vp-oauth-label">{requirement.providerLabel}</span>
+              <span className="vp-oauth-account">{accountCountLabel}</span>
+              {linkedAccountsForDisplay.map((account) => (
+                <span key={account.id} className="vp-oauth-account">
+                  @{account.label}
+                </span>
+              ))}
+            </div>
+          </div>
+          <span className="vp-status-badge vp-status-badge--connected">
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="vp-status-badge-icon">
+              <polyline points="3 8 6 11 13 5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Verified
+          </span>
+        </div>
+      </Fragment>
+    );
+  }
+
+  return (
+    <Fragment key={rowPhase}>
+      <div className="vp-oauth-row vp-oauth-row--enter">
         <div className="vp-oauth-row-left">
           {iconSrc ? (
             <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" />
@@ -386,54 +434,31 @@ function LinkedEntitlementMethodButton({
             ))}
           </div>
         </div>
-        <span className="vp-status-badge vp-status-badge--connected">
-          <svg viewBox="0 0 16 16" aria-hidden="true" className="vp-status-badge-icon">
-            <polyline points="3 8 6 11 13 5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Verified
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="vp-oauth-row">
-      <div className="vp-oauth-row-left">
-        {iconSrc ? <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" /> : null}
-        <div className="vp-oauth-row-text">
-          <span className="vp-oauth-label">{requirement.providerLabel}</span>
-          <span className="vp-oauth-account">{accountCountLabel}</span>
-          {linkedAccountsForDisplay.map((account) => (
-            <span key={account.id} className="vp-oauth-account">
-              @{account.label}
-            </span>
-          ))}
+        <div className="vp-oauth-row-right">
+          <button
+            type="button"
+            className={`vp-oauth-verify-btn${isVerifyLoading ? ' btn-loading' : ''}`}
+            onClick={() => entitlementMut.mutate()}
+            disabled={isVerifyLoading}
+            style={brandColor ? ({ '--brand': brandColor } as React.CSSProperties) : undefined}
+          >
+            {isVerifyLoading ? (
+              <>
+                <span className="btn-loading-spinner" aria-hidden="true" />
+                Verifying...
+              </>
+            ) : (
+              'Verify purchase'
+            )}
+          </button>
         </div>
+        {entitlementMut.isError ? (
+          <p className="vp-method-error vp-method-error--full">
+            Uh oh, we didn&apos;t find a purchase. Make sure you bought on this account.
+          </p>
+        ) : null}
       </div>
-      <div className="vp-oauth-row-right">
-        <button
-          type="button"
-          className={`vp-oauth-verify-btn${isVerifyLoading ? ' btn-loading' : ''}`}
-          onClick={() => entitlementMut.mutate()}
-          disabled={isVerifyLoading}
-          style={brandColor ? ({ '--brand': brandColor } as React.CSSProperties) : undefined}
-        >
-          {isVerifyLoading ? (
-            <>
-              <span className="btn-loading-spinner" aria-hidden="true" />
-              Verifying...
-            </>
-          ) : (
-            'Verify purchase'
-          )}
-        </button>
-      </div>
-      {entitlementMut.isError ? (
-        <p className="vp-method-error vp-method-error--full">
-          Uh oh, we didn&apos;t find a purchase. Make sure you bought on this account.
-        </p>
-      ) : null}
-    </div>
+    </Fragment>
   );
 }
 

@@ -181,6 +181,50 @@
   border-color: rgba(255, 255, 255, 0.09);
 }
 
+@keyframes vp-oauth-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.vp-oauth-row.vp-oauth-row--enter {
+  animation: vp-oauth-row-enter 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.vp-oauth-buttons > .vp-oauth-row.vp-oauth-row--enter:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.vp-oauth-buttons > .vp-oauth-row.vp-oauth-row--enter:nth-child(2) {
+  animation-delay: 0.07s;
+}
+
+.vp-oauth-buttons > .vp-oauth-row.vp-oauth-row--enter:nth-child(3) {
+  animation-delay: 0.14s;
+}
+
+.vp-oauth-buttons > .vp-oauth-row.vp-oauth-row--enter:nth-child(4) {
+  animation-delay: 0.21s;
+}
+
+.vp-oauth-buttons > .vp-oauth-row.vp-oauth-row--enter:nth-child(5) {
+  animation-delay: 0.28s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vp-oauth-row.vp-oauth-row--enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .vp-oauth-row-left {
   display: flex;
   align-items: center;

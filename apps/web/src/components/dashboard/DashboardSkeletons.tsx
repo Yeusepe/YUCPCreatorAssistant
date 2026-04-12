@@ -90,6 +90,49 @@ export function DashboardSettingsSkeleton({ rows = 5 }: { rows?: number }) {
   );
 }
 
+/** Billing tab skeleton — matches `billing-layout` (hero + metrics + caps). */
+export function DashboardBillingSkeleton() {
+  return (
+    <div className="bento-col-12 billing-layout-skeleton" aria-hidden="true">
+      <div className="billing-skeleton-hero">
+        <div className="billing-skeleton-hero-left">
+          <SkeletonCircle size="44px" />
+          <div className="skeleton-copy" style={copySectionStyle}>
+            <SkeletonLine width="48%" />
+            <SkeletonLine width="68%" className="skeleton-line-muted" />
+          </div>
+        </div>
+        <div className="billing-skeleton-hero-actions">
+          <SkeletonPill width="96px" />
+          <SkeletonPill width="152px" />
+        </div>
+      </div>
+      <div className="billing-skeleton-metrics">
+        {Array.from({ length: 3 }, (_, i) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+            key={i}
+            className="billing-skeleton-metric-tile"
+          >
+            <SkeletonLine width="52%" />
+            <SkeletonLine width="40%" style={{ height: '30px' }} />
+            <SkeletonLine width="58%" className="skeleton-line-muted" />
+          </div>
+        ))}
+      </div>
+      <div className="billing-skeleton-caps">
+        <SkeletonLine width="32%" />
+        <div className="billing-skeleton-caps-chips">
+          {Array.from({ length: 4 }, (_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+            <SkeletonPill key={i} width={`${84 + (i % 3) * 20}px`} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Certificates page skeleton — matches the 8/4 bento-grid split. */
 export function DashboardCertificatesSkeleton() {
   return (

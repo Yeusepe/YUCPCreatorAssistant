@@ -10,7 +10,7 @@ import {
   formatMeterUnits,
   formatQuota,
 } from '@/components/dashboard/CertificateWorkspacePanels';
-import { DashboardCertificatesSkeleton } from '@/components/dashboard/DashboardSkeletons';
+import { DashboardBillingSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { useToast } from '@/components/ui/Toast';
 import { YucpButton } from '@/components/ui/YucpButton';
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
@@ -28,7 +28,7 @@ function DashboardBillingPending() {
   return (
     <div id="tab-panel-billing" className="dashboard-tab-panel is-active" role="tabpanel">
       <div className="bento-grid">
-        <DashboardCertificatesSkeleton />
+        <DashboardBillingSkeleton />
       </div>
     </div>
   );
@@ -294,7 +294,7 @@ export default function DashboardBilling() {
     return (
       <div id="tab-panel-billing" className="dashboard-tab-panel is-active" role="tabpanel">
         <div className="bento-grid">
-          <DashboardCertificatesSkeleton />
+          <DashboardBillingSkeleton />
         </div>
       </div>
     );

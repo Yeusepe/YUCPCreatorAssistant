@@ -36,6 +36,16 @@ export interface HyperdxDevConfig {
   otlpGrpcPort: string;
   otlpHttpPort: string;
   usageStatsEnabled: string;
+  volumeMode: 'bind' | 'named';
+}
+
+function resolveVolumeMode(env: NodeJS.ProcessEnv = process.env): 'bind' | 'named' {
+  const configured = env.HYPERDX_DEV_VOLUME_MODE?.trim().toLowerCase();
+  if (configured === 'bind' || configured === 'named') {
+    return configured;
+  }
+
+  return process.platform === 'win32' ? 'named' : 'bind';
 }
 
 function readConfig(env: NodeJS.ProcessEnv = process.env): HyperdxDevConfig {
@@ -46,12 +56,35 @@ function readConfig(env: NodeJS.ProcessEnv = process.env): HyperdxDevConfig {
     otlpGrpcPort: env.HYPERDX_OTLP_GRPC_PORT ?? DEFAULT_OTLP_GRPC_PORT,
     otlpHttpPort: env.HYPERDX_OTLP_HTTP_PORT ?? DEFAULT_OTLP_HTTP_PORT,
     usageStatsEnabled: env.HYPERDX_USAGE_STATS_ENABLED ?? DEFAULT_USAGE_STATS_ENABLED,
+    volumeMode: resolveVolumeMode(env),
   };
+}
+
+function buildVolumeArgs(config: HyperdxDevConfig): string[] {
+  if (config.volumeMode === 'named') {
+    return [
+      '-v',
+      `${config.containerName}-db:/data/db`,
+      '-v',
+      `${config.containerName}-ch-data:/var/lib/clickhouse`,
+      '-v',
+      `${config.containerName}-ch-logs:/var/log/clickhouse-server`,
+    ];
+  }
+
+  const volumesDir = path.join(process.cwd(), '.volumes', 'hyperdx');
+  return [
+    '-v',
+    `${path.join(volumesDir, 'db')}:/data/db`,
+    '-v',
+    `${path.join(volumesDir, 'ch_data')}:/var/lib/clickhouse`,
+    '-v',
+    `${path.join(volumesDir, 'ch_logs')}:/var/log/clickhouse-server`,
+  ];
 }
 
 export function buildHyperdxDockerArgs(env: NodeJS.ProcessEnv = process.env): string[] {
   const config = readConfig(env);
-  const volumesDir = path.join(process.cwd(), '.volumes', 'hyperdx');
   return [
     'run',
     '--rm',
@@ -63,12 +96,7 @@ export function buildHyperdxDockerArgs(env: NodeJS.ProcessEnv = process.env): st
     `${config.otlpGrpcPort}:4317`,
     '-p',
     `${config.otlpHttpPort}:4318`,
-    '-v',
-    `${path.join(volumesDir, 'db')}:/data/db`,
-    '-v',
-    `${path.join(volumesDir, 'ch_data')}:/var/lib/clickhouse`,
-    '-v',
-    `${path.join(volumesDir, 'ch_logs')}:/var/log/clickhouse-server`,
+    ...buildVolumeArgs(config),
     '-e',
     `USAGE_STATS_ENABLED=${config.usageStatsEnabled}`,
     config.image,
@@ -144,17 +172,19 @@ async function main() {
     process.exit(0);
   }
 
-  const volumesDir = path.join(process.cwd(), '.volumes', 'hyperdx');
-  await Promise.all([
-    mkdir(path.join(volumesDir, 'db'), { recursive: true }),
-    mkdir(path.join(volumesDir, 'ch_data'), { recursive: true }),
-    mkdir(path.join(volumesDir, 'ch_logs'), { recursive: true }),
-  ]);
+  if (config.volumeMode === 'bind') {
+    const volumesDir = path.join(process.cwd(), '.volumes', 'hyperdx');
+    await Promise.all([
+      mkdir(path.join(volumesDir, 'db'), { recursive: true }),
+      mkdir(path.join(volumesDir, 'ch_data'), { recursive: true }),
+      mkdir(path.join(volumesDir, 'ch_logs'), { recursive: true }),
+    ]);
+  }
 
   await removeExistingContainer(config.containerName);
 
   console.log(
-    `[hyperdx] Starting ClickStack at http://localhost:${config.appPort} with OTLP on grpc:${config.otlpGrpcPort} http:${config.otlpHttpPort}`
+    `[hyperdx] Starting ClickStack at http://localhost:${config.appPort} with OTLP on grpc:${config.otlpGrpcPort} http:${config.otlpHttpPort} using ${config.volumeMode} volumes`
   );
 
   const proc = Bun.spawn({

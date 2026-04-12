@@ -292,6 +292,32 @@
   gap: 6px;
 }
 
+/* Late-loaded provider chips (account profile): staggered fade/slide */
+@keyframes account-pill-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.account-pill-chip-enter {
+  animation: account-pill-chip-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--account-pill-enter-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-pill-chip-enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .account-kv-list {
   display: flex;
   flex-direction: column;
@@ -2207,12 +2233,15 @@
   font-size: 12px;
 }
 
+@media (max-width: 767px) {
+  .cert-stat-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 479px) {
   .cert-features-grid {
     grid-template-columns: 1fr;
-  }
-  .cert-stat-row {
-    grid-template-columns: repeat(2, 1fr);
   }
   .cert-billing-metric-grid--compact {
     grid-template-columns: 1fr;
@@ -2515,6 +2544,87 @@
   flex-direction: column;
   gap: 20px;
   padding-bottom: 80px;
+}
+
+/* Loading skeleton: mirrors billing-layout (sub-hero + metrics + caps) */
+.billing-layout-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: 48px;
+}
+
+.billing-skeleton-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 22px 28px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(226, 232, 240, 0.65);
+}
+
+.dark .billing-skeleton-hero {
+  background: rgba(30, 41, 59, 0.55);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.billing-skeleton-hero-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1 1 200px;
+}
+
+.billing-skeleton-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.billing-skeleton-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.billing-skeleton-metric-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(226, 232, 240, 0.55);
+  min-height: 112px;
+}
+
+.dark .billing-skeleton-metric-tile {
+  background: rgba(30, 41, 59, 0.55);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.billing-skeleton-caps {
+  padding: 20px 24px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(226, 232, 240, 0.55);
+}
+
+.dark .billing-skeleton-caps {
+  background: rgba(30, 41, 59, 0.55);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.billing-skeleton-caps-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 /* ── Sales hero (unsubscribed) ── */
@@ -3304,6 +3414,10 @@
   color: #64748b;
 }
 
+.dark .billing-metric-tile--featured .billing-metric-label {
+  color: #94a3b8;
+}
+
 .billing-metric-value {
   font-family: var(--font-display), sans-serif;
   font-size: 1.9rem;
@@ -3320,6 +3434,10 @@
   color: #0f172a;
 }
 
+.dark .billing-metric-tile--featured .billing-metric-value {
+  color: #f1f5f9;
+}
+
 .billing-metric-sub {
   font-size: 12px;
   color: #94a3b8;
@@ -3328,6 +3446,10 @@
 
 .billing-metric-tile--featured .billing-metric-sub {
   color: #64748b;
+}
+
+.dark .billing-metric-tile--featured .billing-metric-sub {
+  color: rgba(148, 163, 184, 0.88);
 }
 
 .billing-metric-sub-value {
@@ -3356,6 +3478,10 @@
 
 .billing-metric-tile--featured .billing-meter-v2 {
   background: rgba(0, 0, 0, 0.07);
+}
+
+.dark .billing-metric-tile--featured .billing-meter-v2 {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .billing-meter-fill-v2 {
