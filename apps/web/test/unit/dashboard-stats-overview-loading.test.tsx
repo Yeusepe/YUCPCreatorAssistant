@@ -9,7 +9,7 @@ import { useQuery } from 'convex/react';
 import { StatsOverviewPanel } from '@/components/dashboard/panels/StatsOverviewPanel';
 
 describe('StatsOverviewPanel loading presentation', () => {
-  it('avoids the boxed card treatment while stats are still loading', () => {
+  it('keeps the same integrated card shell while stats are still loading', () => {
     vi.mocked(useQuery).mockReturnValue(undefined);
 
     const { container } = render(<StatsOverviewPanel />);
@@ -18,7 +18,8 @@ describe('StatsOverviewPanel loading presentation', () => {
     expect(section).toBeTruthy();
     expect(section.className).toContain('stats-overview-panel');
     expect(section.className).toContain('stats-overview-panel--loading');
-    expect(section.className).not.toContain('intg-card');
+    expect(section.className).toContain('intg-card');
+    expect(section.className).toContain('intg-card--flush');
   });
 
   it('restores the standard integrated card once stats have loaded', () => {

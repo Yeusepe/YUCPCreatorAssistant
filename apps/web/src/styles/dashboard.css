@@ -1939,6 +1939,15 @@ img.collab-avatar {
   );
 }
 
+/* Dark mode: white dots read too strong on glass; keep matrix near-imperceptible */
+.dark .content-area .dot-matrix-bg::before {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+}
+
+.dark .content-area .dot-matrix-bg::after {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+}
+
 @media (min-width: 768px) {
   .content-area {
     padding: 32px 40px 64px;

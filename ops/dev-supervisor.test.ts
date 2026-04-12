@@ -34,13 +34,16 @@ async function waitFor<T>(
 }
 
 describe('DevSupervisor', () => {
-  test('applyLocalDevDefaults seeds HyperDX and OTLP endpoints without overriding explicit values', async () => {
+  test('applyLocalDevDefaults prefers the local ClickStack endpoints for dev runs', async () => {
     const fixturePath = path.join(process.cwd(), 'ops', 'test-fixtures', 'echo-env.mjs');
     const child = spawn(process.execPath, [fixturePath], {
       cwd: process.cwd(),
       env: applyLocalDevDefaults({
         FRONTEND_URL: 'http://localhost:9999',
-        HYPERDX_OTLP_HTTP_URL: 'http://localhost:54321',
+        HYPERDX_APP_URL: 'https://app.hyperdx.example',
+        HYPERDX_OTLP_HTTP_URL: 'https://otel.hyperdx.example',
+        HYPERDX_OTLP_GRPC_URL: 'otel.hyperdx.example:4317',
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'https://otel.hyperdx.example',
       }),
       stdio: ['ignore', 'pipe', 'inherit'],
       windowsHide: true,
@@ -55,9 +58,40 @@ describe('DevSupervisor', () => {
     expect(JSON.parse(outputText)).toEqual({
       FRONTEND_URL: 'http://localhost:9999',
       HYPERDX_APP_URL: 'http://localhost:8080',
-      HYPERDX_OTLP_HTTP_URL: 'http://localhost:54321',
+      HYPERDX_OTLP_HTTP_URL: 'http://localhost:4318',
       HYPERDX_OTLP_GRPC_URL: 'http://localhost:4317',
-      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:54321',
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318',
+      OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
+    });
+  });
+
+  test('applyLocalDevDefaults keeps explicit HyperDX endpoints when remote mode is requested', async () => {
+    const fixturePath = path.join(process.cwd(), 'ops', 'test-fixtures', 'echo-env.mjs');
+    const child = spawn(process.execPath, [fixturePath], {
+      cwd: process.cwd(),
+      env: applyLocalDevDefaults({
+        HYPERDX_DEV_USE_REMOTE: 'true',
+        HYPERDX_APP_URL: 'https://app.hyperdx.example',
+        HYPERDX_OTLP_HTTP_URL: 'https://otel.hyperdx.example',
+        HYPERDX_OTLP_GRPC_URL: 'otel.hyperdx.example:4317',
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'https://otel.hyperdx.example',
+      }),
+      stdio: ['ignore', 'pipe', 'inherit'],
+      windowsHide: true,
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    child.stdout?.on('data', (chunk) => stdoutChunks.push(Buffer.from(chunk)));
+    const [exitCode] = await once(child, 'close');
+    const outputText = Buffer.concat(stdoutChunks).toString('utf8').trim();
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(outputText)).toEqual({
+      FRONTEND_URL: 'http://localhost:3000',
+      HYPERDX_APP_URL: 'https://app.hyperdx.example',
+      HYPERDX_OTLP_HTTP_URL: 'https://otel.hyperdx.example',
+      HYPERDX_OTLP_GRPC_URL: 'otel.hyperdx.example:4317',
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'https://otel.hyperdx.example',
       OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
     });
   });

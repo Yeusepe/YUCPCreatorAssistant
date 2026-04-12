@@ -539,46 +539,6 @@
   position: relative;
 }
 
-.stats-overview-panel--loading {
-  padding: 0;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  overflow: visible;
-}
-
-.stats-overview-panel--loading .stat-grid {
-  gap: 16px;
-  background: transparent;
-  border-radius: 0;
-  overflow: visible;
-}
-
-.stats-overview-panel--loading .stat-cell {
-  padding: 0;
-  min-height: 48px;
-  background: transparent;
-}
-
-.stats-overview-panel--loading .stat-cell-skeleton-val {
-  width: 48px;
-}
-
-.stats-overview-panel--loading .stat-cell-skeleton-label {
-  width: 68px;
-}
-
-.dark .stats-overview-panel--loading {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-.dark .stats-overview-panel--loading .stat-grid,
-.dark .stats-overview-panel--loading .stat-cell {
-  background: transparent;
-}
-
 .intg-header {
   display: flex;
   align-items: flex-start;
@@ -2727,15 +2687,41 @@
 }
 
 .stat-cell-skeleton-val {
-  height: 28px;
-  width: 56px;
+  height: 32px;
+  width: min(72px, 45%);
+  max-width: 88px;
   border-radius: 6px;
   background: #e2e8f0;
   animation: pulse 1.4s ease-in-out infinite;
 }
 
 .stat-cell-skeleton-label {
-  height: 14px;
+  height: 13px;
+  width: min(148px, 92%);
+  border-radius: 4px;
+  background: #f1f5f9;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* Mirrors .stat-cell-trend: icon + text row */
+.stat-cell-skeleton-trend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.stat-cell-skeleton-trend-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  background: #e2e8f0;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.stat-cell-skeleton-trend-text {
+  height: 12px;
   width: 72px;
   border-radius: 4px;
   background: #f1f5f9;
@@ -2789,6 +2775,14 @@
 }
 
 .dark .stat-cell-skeleton-label {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dark .stat-cell-skeleton-trend-icon {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark .stat-cell-skeleton-trend-text {
   background: rgba(255, 255, 255, 0.05);
 }
 

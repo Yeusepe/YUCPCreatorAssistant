@@ -13,6 +13,7 @@ const DEV_FRONTEND_URL = 'http://localhost:3000';
 const DEV_HYPERDX_APP_URL = 'http://localhost:8080';
 const DEV_HYPERDX_OTLP_HTTP_URL = 'http://localhost:4318';
 const DEV_HYPERDX_OTLP_GRPC_URL = 'http://localhost:4317';
+const DEV_HYPERDX_USE_REMOTE_FLAG = 'HYPERDX_DEV_USE_REMOTE';
 const PREFIX_RESET = '\u001B[0m';
 const PREFIX_COLORS = {
   blue: '\u001B[34m',
@@ -322,16 +323,25 @@ async function runCommandStep(step: DevCommandSpec, env: NodeJS.ProcessEnv): Pro
 }
 
 export function applyLocalDevDefaults(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const preferRemoteHyperdx = baseEnv[DEV_HYPERDX_USE_REMOTE_FLAG] === 'true';
   return {
     ...baseEnv,
     FRONTEND_URL: baseEnv.FRONTEND_URL ?? DEV_FRONTEND_URL,
-    HYPERDX_APP_URL: baseEnv.HYPERDX_APP_URL ?? DEV_HYPERDX_APP_URL,
-    HYPERDX_OTLP_HTTP_URL: baseEnv.HYPERDX_OTLP_HTTP_URL ?? DEV_HYPERDX_OTLP_HTTP_URL,
-    HYPERDX_OTLP_GRPC_URL: baseEnv.HYPERDX_OTLP_GRPC_URL ?? DEV_HYPERDX_OTLP_GRPC_URL,
+    HYPERDX_APP_URL: preferRemoteHyperdx
+      ? baseEnv.HYPERDX_APP_URL ?? DEV_HYPERDX_APP_URL
+      : DEV_HYPERDX_APP_URL,
+    HYPERDX_OTLP_HTTP_URL: preferRemoteHyperdx
+      ? baseEnv.HYPERDX_OTLP_HTTP_URL ?? DEV_HYPERDX_OTLP_HTTP_URL
+      : DEV_HYPERDX_OTLP_HTTP_URL,
+    HYPERDX_OTLP_GRPC_URL: preferRemoteHyperdx
+      ? baseEnv.HYPERDX_OTLP_GRPC_URL ?? DEV_HYPERDX_OTLP_GRPC_URL
+      : DEV_HYPERDX_OTLP_GRPC_URL,
     OTEL_EXPORTER_OTLP_ENDPOINT:
-      baseEnv.OTEL_EXPORTER_OTLP_ENDPOINT ??
-      baseEnv.HYPERDX_OTLP_HTTP_URL ??
-      DEV_HYPERDX_OTLP_HTTP_URL,
+      preferRemoteHyperdx
+        ? baseEnv.OTEL_EXPORTER_OTLP_ENDPOINT ??
+          baseEnv.HYPERDX_OTLP_HTTP_URL ??
+          DEV_HYPERDX_OTLP_HTTP_URL
+        : DEV_HYPERDX_OTLP_HTTP_URL,
     OTEL_EXPORTER_OTLP_PROTOCOL: baseEnv.OTEL_EXPORTER_OTLP_PROTOCOL ?? 'http/protobuf',
   };
 }

@@ -150,7 +150,7 @@ Full options and catalog: `apps/bot/src/commands/index.ts`.
 - Lint: `bun run lint`. Typecheck: `bun run typecheck`. Tests: `bun run test` (or `bun run test:ci`).
 - Full dev stack (Convex + API + bot + HyperDX + optional tunnel): `bun run dev` or `bun run dev:infisical`.
 - Local HyperDX UI: `http://localhost:8080`. OTLP endpoints: `http://localhost:4318` (HTTP) and `localhost:4317` (gRPC).
-- `bun run dev:infisical` reads `.env.infisical` and seeds the local ClickStack endpoints automatically. To actually ingest browser/API/bot telemetry, create a HyperDX ingest key in `http://localhost:8080` under Team Settings -> API Keys and store it as `HYPERDX_API_KEY` in Infisical. The API and bot derive `OTEL_EXPORTER_OTLP_HEADERS=Authorization=<key>` from that value automatically, matching ClickStack's OTEL collector auth model.
+- `bun run dev:infisical` now prefers the local ClickStack endpoints that it starts, even if Infisical already contains hosted HyperDX URLs. To actually ingest browser/API/bot telemetry, create a HyperDX ingest key in `http://localhost:8080` under Team Settings -> API Keys and store it as `HYPERDX_API_KEY` in Infisical. The API and bot derive `OTEL_EXPORTER_OTLP_HEADERS=Authorization=<key>` from that value automatically, matching ClickStack's OTEL collector auth model. Set `HYPERDX_DEV_USE_REMOTE=true` only when you intentionally want the dev supervisor to keep using the hosted HyperDX endpoints instead of the local ClickStack collector.
 - If Docker Desktop is not running, the dev stack stays up and logs that HyperDX was skipped.
 - Convex: `npx convex dev` / `npx convex deploy`. Unit tests live alongside implementations.
 
