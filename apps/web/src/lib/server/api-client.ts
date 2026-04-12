@@ -30,6 +30,44 @@ interface ServerFetchOptions {
   params?: Record<string, string>;
   /** Pass the user's Convex auth token for user-scoped requests */
   authToken?: string | null;
+  onServerTiming?: (metrics: ServerTimingMetric[]) => void;
+}
+
+export interface ServerTimingMetric {
+  name: string;
+  durationMs: number;
+}
+
+function roundDuration(value: number) {
+  return Number(value.toFixed(1));
+}
+
+function parseServerTimingHeader(headerValue: string | null): ServerTimingMetric[] {
+  if (!headerValue) {
+    return [];
+  }
+
+  return headerValue
+    .split(',')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map((segment) => {
+      const [rawName, ...params] = segment.split(';').map((part) => part.trim());
+      const durParam = params.find((param) => param.startsWith('dur='));
+      const durationMs = durParam ? Number.parseFloat(durParam.slice(4)) : Number.NaN;
+      return {
+        name: rawName,
+        durationMs,
+      };
+    })
+    .filter(
+      (metric): metric is ServerTimingMetric =>
+        Boolean(metric.name) && Number.isFinite(metric.durationMs)
+    )
+    .map((metric) => ({
+      name: metric.name,
+      durationMs: roundDuration(metric.durationMs),
+    }));
 }
 
 function getForwardedAuthCookieHeader(): string | null {
@@ -47,7 +85,7 @@ export async function serverApiFetch<T = unknown>(
   path: string,
   options: ServerFetchOptions = {}
 ): Promise<T> {
-  const { method = 'GET', body, params, authToken } = options;
+  const { method = 'GET', body, params, authToken, onServerTiming } = options;
 
   return withWebServerSpan(
     `web.api.${method.toLowerCase()} ${path}`,
@@ -103,6 +141,11 @@ export async function serverApiFetch<T = unknown>(
       if (currentTraceId) {
         activeSpan?.setAttribute('web.trace_id', currentTraceId);
       }
+      const serverTimingMetrics = parseServerTimingHeader(response.headers.get('Server-Timing'));
+      for (const metric of serverTimingMetrics) {
+        activeSpan?.setAttribute(`downstream.server_timing.${metric.name}`, metric.durationMs);
+      }
+      onServerTiming?.(serverTimingMetrics);
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => '');

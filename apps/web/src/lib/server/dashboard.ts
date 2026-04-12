@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
+import { getResponseHeader, setResponseHeader } from '@tanstack/react-start/server';
 import { logWebError } from '../webDiagnostics';
-import { serverApiFetch } from './api-client';
+import { type ServerTimingMetric, serverApiFetch } from './api-client';
 import { withWebServerRequestSpan, withWebServerSpan } from './observability';
 
 /**
@@ -120,6 +121,31 @@ function logDashboardInfo(event: string, context: Record<string, unknown>): void
 
 function stripQuotes(value: string): string {
   return value.replace(/^"|"$/g, '');
+}
+
+function roundDuration(value: number) {
+  return Number(value.toFixed(1));
+}
+
+function formatServerTimingHeader(metrics: ServerTimingMetric[]): string {
+  return metrics
+    .filter((metric) => metric.name.length > 0 && Number.isFinite(metric.durationMs))
+    .map((metric) => `${metric.name};dur=${roundDuration(metric.durationMs)}`)
+    .join(', ');
+}
+
+function appendServerTimingMetrics(metrics: ServerTimingMetric[]) {
+  if (metrics.length === 0) {
+    return;
+  }
+
+  const existing = getResponseHeader('Server-Timing');
+  const nextValue = formatServerTimingHeader(metrics);
+  if (!nextValue) {
+    return;
+  }
+
+  setResponseHeader('Server-Timing', existing ? `${existing}, ${nextValue}` : nextValue);
 }
 
 function normalizeGuild(guild: GuildResponse): Guild {
@@ -306,6 +332,7 @@ export const fetchDashboardShell = createServerFn({ method: 'GET' })
             });
 
             try {
+              const requestStartedAt = performance.now();
               const params: Record<string, string> = {};
               if (data?.authUserId) {
                 params.authUserId = data.authUserId;
@@ -316,12 +343,26 @@ export const fetchDashboardShell = createServerFn({ method: 'GET' })
               if (data?.includeHomeData) {
                 params.includeHomeData = 'true';
               }
+              const documentServerTimingMetrics: ServerTimingMetric[] = [];
               const response = await serverApiFetch<DashboardShellResponse>(
                 '/api/connect/dashboard/shell',
                 {
                   params: Object.keys(params).length > 0 ? params : undefined,
+                  onServerTiming: (metrics) => {
+                    for (const metric of metrics) {
+                      documentServerTimingMetrics.push({
+                        name: `dashboard-api-${metric.name.replace(/[^a-z0-9_-]/gi, '-')}`,
+                        durationMs: metric.durationMs,
+                      });
+                    }
+                  },
                 }
               );
+              documentServerTimingMetrics.unshift({
+                name: 'dashboard-shell',
+                durationMs: roundDuration(performance.now() - requestStartedAt),
+              });
+              appendServerTimingMetrics(documentServerTimingMetrics);
               const shell = normalizeDashboardShellResponse(response);
 
               logDashboardInfo('Dashboard shell load completed', {
