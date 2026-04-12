@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '@/api/client';
 import { AccountInlineError } from '@/components/account/AccountPage';
 import { DashboardAuthRequiredState } from '@/components/dashboard/AuthRequiredState';
-import { DashboardGridSkeleton } from '@/components/dashboard/DashboardSkeletons';
+import { DashboardForensicsSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { YucpButton } from '@/components/ui/YucpButton';
@@ -23,7 +23,7 @@ function DashboardForensicsPending() {
   return (
     <div id="tab-panel-forensics" className="dashboard-tab-panel is-active" role="tabpanel">
       <div className="bento-grid">
-        <DashboardGridSkeleton cards={3} />
+        <DashboardForensicsSkeleton />
       </div>
     </div>
   );

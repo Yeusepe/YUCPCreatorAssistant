@@ -175,7 +175,7 @@
 .sidebar-brand {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 10px;
   margin-bottom: 24px;
   flex-shrink: 0;
@@ -194,7 +194,7 @@
   display: block;
   flex-shrink: 0;
   object-fit: contain;
-  object-position: left center;
+  object-position: center center;
 }
 
 .sidebar-brand-name {
@@ -212,6 +212,8 @@
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+  margin: 0;
+  box-sizing: border-box;
   padding: 7px var(--sidebar-content-inline, 10px);
   border-radius: 10px;
   /* White glass pill for liquid glass sidebar */

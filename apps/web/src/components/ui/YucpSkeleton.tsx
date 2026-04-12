@@ -31,6 +31,29 @@ export function SkeletonCircle({
   );
 }
 
+/** Rounded rectangle for dashboard `.intg-icon` slots (not circular server icons). */
+export function SkeletonTile({
+  size = 40,
+  radius = 12,
+  className,
+}: {
+  size?: number;
+  radius?: number;
+  className?: string;
+}) {
+  return (
+    <Skeleton
+      className={['skeleton-tile', className].filter(Boolean).join(' ')}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: radius,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
 export function SkeletonPill({ width, className, style }: SkeletonLineProps) {
   return (
     <Skeleton
