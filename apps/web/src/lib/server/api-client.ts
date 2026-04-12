@@ -1,5 +1,5 @@
+import { context, propagation, trace } from '@opentelemetry/api';
 import { getRequestHeader } from '@tanstack/react-start/server';
-import { trace } from '@opentelemetry/api';
 import { getInternalRpcSharedSecret } from '@yucp/shared';
 import { getToken } from '../auth-server';
 import { filterForwardedAuthCookieHeader } from './forwardedAuthCookies';
@@ -84,6 +84,8 @@ export async function serverApiFetch<T = unknown>(
       if (body !== undefined) {
         headers['Content-Type'] = 'application/json';
       }
+
+      propagation.inject(context.active(), headers);
 
       const response = await fetch(url, {
         method,

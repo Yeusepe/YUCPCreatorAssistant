@@ -10,6 +10,13 @@ import { DashboardSessionProvider, useDashboardSession } from '@/hooks/useDashbo
 import { useDashboardShell } from '@/hooks/useDashboardShell';
 import { ServerContextProvider } from '@/hooks/useServerContext';
 import { listCreatorCertificates } from '@/lib/certificates';
+import {
+  addHyperdxActionWithNumbers,
+  buildHyperdxNavigationPhases,
+  getHyperdxNavigationSnapshot,
+  getHyperdxSlowestNavigationPhase,
+  recordHyperdxNavigationTrace,
+} from '@/lib/hyperdx';
 import { type Guild } from '@/lib/server/dashboard';
 import { getServerIconUrl } from '@/lib/utils';
 import { BILLING_CAPABILITY_KEYS } from '../../../../../convex/lib/billingCapabilities';
@@ -93,6 +100,7 @@ function DashboardLayout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const search = Route.useSearch();
+  const navigationRecordedRef = useRef(false);
   const { guild_id, tenant_id } = search;
   const { selectedGuild } = useDashboardShell();
   const shouldCheckBootstrap = Boolean(guild_id && !tenant_id && !selectedGuild);
@@ -117,6 +125,70 @@ function DashboardLayout() {
   const resolvedGuildId = displayGuild?.id ?? guild_id;
   const resolvedTenantId = displayGuild?.tenantId ?? tenant_id;
   const isPersonalDashboard = !resolvedGuildId;
+
+  useEffect(() => {
+    if (navigationRecordedRef.current || typeof window === 'undefined') {
+      return;
+    }
+
+    const snapshot = getHyperdxNavigationSnapshot();
+    if (!snapshot || window.location.pathname !== '/dashboard') {
+      return;
+    }
+
+    navigationRecordedRef.current = true;
+
+    const phases = buildHyperdxNavigationPhases(snapshot);
+    const slowestPhase = getHyperdxSlowestNavigationPhase(phases);
+    addHyperdxActionWithNumbers('dashboard.navigation.breakdown', {
+      route: '/dashboard',
+      navigationType: snapshot.navigationType,
+      totalMs: snapshot.totalMs,
+      redirectMs: snapshot.redirectMs,
+      dnsMs: snapshot.dnsMs,
+      connectionMs: snapshot.connectionMs,
+      requestSentMs: snapshot.requestSentMs,
+      serverWaitMs: snapshot.serverWaitMs,
+      responseDownloadMs: snapshot.responseDownloadMs,
+      browserProcessingMs: snapshot.browserProcessingMs,
+      domInteractiveMs: snapshot.domInteractiveMs,
+      domContentLoadedMs: snapshot.domContentLoadedMs,
+      loadEventEndMs: snapshot.loadEventEndMs,
+      transferSize: snapshot.transferSize,
+      encodedBodySize: snapshot.encodedBodySize,
+      decodedBodySize: snapshot.decodedBodySize,
+      phaseCount: phases.length,
+      slowestPhase: slowestPhase?.name,
+      slowestPhaseMs: slowestPhase?.durationMs,
+    });
+
+    for (const phase of phases) {
+      addHyperdxActionWithNumbers('dashboard.navigation.phase', {
+        route: '/dashboard',
+        navigationType: snapshot.navigationType,
+        phase: phase.name,
+        startMs: phase.startMs,
+        endMs: phase.endMs,
+        durationMs: phase.durationMs,
+      });
+    }
+
+    for (const metric of snapshot.serverTiming) {
+      addHyperdxActionWithNumbers('dashboard.navigation.server_timing', {
+        route: '/dashboard',
+        stage: metric.name,
+        durationMs: metric.durationMs,
+      });
+    }
+
+    recordHyperdxNavigationTrace('dashboard.navigation.document', phases, {
+      route: '/dashboard',
+      navigationType: snapshot.navigationType,
+      totalMs: snapshot.totalMs,
+      slowestPhase: slowestPhase?.name,
+      slowestPhaseMs: slowestPhase?.durationMs,
+    });
+  }, []);
 
   useEffect(() => {
     if (search.setup_token || search.connect_token) {

@@ -188,7 +188,9 @@ async function loadGuilds(): Promise<Guild[]> {
       });
 
       try {
-        const response = await serverApiFetch<{ guilds?: GuildResponse[] }>('/api/connect/user/guilds');
+        const response = await serverApiFetch<{ guilds?: GuildResponse[] }>(
+          '/api/connect/user/guilds'
+        );
 
         const guilds = (response.guilds ?? []).map(normalizeGuild);
 
@@ -220,7 +222,9 @@ async function loadDashboardViewer(): Promise<DashboardViewer> {
       });
 
       try {
-        const response = await serverApiFetch<DashboardShellResponse>('/api/connect/dashboard/shell');
+        const response = await serverApiFetch<DashboardShellResponse>(
+          '/api/connect/dashboard/shell'
+        );
         const dashboardViewer = normalizeDashboardViewer(response.viewer);
 
         logDashboardInfo('Dashboard viewer load completed', {

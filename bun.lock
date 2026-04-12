@@ -116,7 +116,6 @@
         "@heroui/react": "^3.0.2",
         "@heroui/styles": "^3.0.2",
         "@hyperdx/browser": "^0.22.0",
-        "@hyperdx/node-opentelemetry": "^0.10.3",
         "@infisical/sdk": "^4.0.6",
         "@opentelemetry/api": "^1.9.1",
         "@polar-sh/better-auth": "^1.8.3",

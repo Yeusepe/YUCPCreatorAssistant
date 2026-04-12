@@ -3,6 +3,11 @@ import { PageLoadingOverlay } from '@/components/page/PageLoadingOverlay';
 import { normalizeDashboardIdentifier } from '@/lib/dashboard';
 import { dashboardShellQueryOptions } from '@/lib/dashboardQueryOptions';
 import { primeDashboardShellCaches } from '@/lib/dashboardShellCache';
+import {
+  addHyperdxActionWithNumbers,
+  captureHyperdxException,
+  startHyperdxBrowserSpan,
+} from '@/lib/hyperdx';
 import { routeStyleHrefs, routeStylesheetLinks } from '@/lib/routeStyles';
 import { type DashboardShellData, fetchDashboardShell } from '@/lib/server/dashboard';
 
@@ -49,38 +54,104 @@ export const Route = createFileRoute('/_authenticated/dashboard')({
     );
 
     const cacheKey = `${selectedGuildId ?? ''}|${selectedTenantId ?? ''}`;
+    const isBrowser = typeof window !== 'undefined';
+    const cacheHit = isBrowser && dashboardLoaderCache.has(cacheKey);
+    const loaderStartedAt = isBrowser ? performance.now() : 0;
+    const loaderSpan = isBrowser
+      ? startHyperdxBrowserSpan('dashboard.loader', {
+          route: '/dashboard',
+          cacheHit,
+          hasGuildId: Boolean(selectedGuildId),
+          hasTenantId: Boolean(selectedTenantId),
+        })
+      : null;
+
     if (typeof window !== 'undefined' && dashboardLoaderCache.has(cacheKey)) {
+      const durationMs = Number((performance.now() - loaderStartedAt).toFixed(1));
+      addHyperdxActionWithNumbers('dashboard.loader.completed', {
+        route: '/dashboard',
+        cacheHit: true,
+        durationMs,
+        hasGuildId: Boolean(selectedGuildId),
+        hasTenantId: Boolean(selectedTenantId),
+      });
+      loaderSpan?.end({
+        cacheHit: true,
+        durationMs,
+      });
       return dashboardLoaderCache.get(cacheKey) as DashboardShellData;
     }
 
-    const shell = await queryClient.ensureQueryData(
-      dashboardShellQueryOptions({
-        queryKey: ['dashboard-shell', 'route', selectedGuildId ?? null, selectedTenantId ?? null],
-        queryFn: () =>
-          fetchDashboardShell({
-            data: {
-              authUserId: selectedTenantId,
-              guildId: selectedGuildId,
-              includeHomeData: true,
-            },
-          }),
-      })
-    );
-    primeDashboardShellCaches(queryClient, shell);
-    const locationHash = String(location.hash ?? '');
-    const allowsFreshGuildBootstrap =
-      locationHref.includes('guild_id=') ||
-      locationHref.includes('setup_token=') ||
-      locationHref.includes('connect_token=') ||
-      locationHash.includes('s=') ||
-      locationHash.includes('token=');
-    if (shell.guilds.length === 0 && !allowsFreshGuildBootstrap) {
-      throw redirect({ to: '/account' });
+    try {
+      const shell = await queryClient.ensureQueryData(
+        dashboardShellQueryOptions({
+          queryKey: ['dashboard-shell', 'route', selectedGuildId ?? null, selectedTenantId ?? null],
+          queryFn: () =>
+            fetchDashboardShell({
+              data: {
+                authUserId: selectedTenantId,
+                guildId: selectedGuildId,
+                includeHomeData: true,
+              },
+            }),
+        })
+      );
+      primeDashboardShellCaches(queryClient, shell);
+      const locationHash = String(location.hash ?? '');
+      const allowsFreshGuildBootstrap =
+        locationHref.includes('guild_id=') ||
+        locationHref.includes('setup_token=') ||
+        locationHref.includes('connect_token=') ||
+        locationHash.includes('s=') ||
+        locationHash.includes('token=');
+      if (shell.guilds.length === 0 && !allowsFreshGuildBootstrap) {
+        throw redirect({ to: '/account' });
+      }
+      if (typeof window !== 'undefined') {
+        dashboardLoaderCache.set(cacheKey, shell);
+      }
+
+      if (isBrowser) {
+        const durationMs = Number((performance.now() - loaderStartedAt).toFixed(1));
+        addHyperdxActionWithNumbers('dashboard.loader.completed', {
+          route: '/dashboard',
+          cacheHit: false,
+          durationMs,
+          guildCount: shell.guilds.length,
+          hasGuildId: Boolean(selectedGuildId),
+          hasTenantId: Boolean(selectedTenantId),
+        });
+        loaderSpan?.end({
+          cacheHit: false,
+          durationMs,
+          guildCount: shell.guilds.length,
+        });
+      }
+
+      return shell;
+    } catch (error) {
+      if (isBrowser) {
+        const durationMs = Number((performance.now() - loaderStartedAt).toFixed(1));
+        addHyperdxActionWithNumbers('dashboard.loader.failed', {
+          route: '/dashboard',
+          cacheHit,
+          durationMs,
+          hasGuildId: Boolean(selectedGuildId),
+          hasTenantId: Boolean(selectedTenantId),
+        });
+        captureHyperdxException(error, {
+          route: '/dashboard',
+          stage: 'route-loader',
+          cacheHit,
+        });
+        loaderSpan?.fail(error, {
+          cacheHit,
+          durationMs,
+        });
+      }
+
+      throw error;
     }
-    if (typeof window !== 'undefined') {
-      dashboardLoaderCache.set(cacheKey, shell);
-    }
-    return shell;
   },
 });
 

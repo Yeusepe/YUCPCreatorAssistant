@@ -1,20 +1,6 @@
-import { initSDK } from '@hyperdx/node-opentelemetry';
-import { getRequestHeaders } from '@tanstack/react-start/server';
-import {
-  context,
-  propagation,
-  ROOT_CONTEXT,
-  SpanKind,
-  SpanStatusCode,
-  trace,
-} from '@opentelemetry/api';
-import {
-  applyNodeHyperdxDefaults,
-  detectServerObservabilityRuntime,
-  initBunServerObservability,
-  toSpanAttributes,
-  withObservedSpan,
-} from '@yucp/shared';
+import { context, propagation, ROOT_CONTEXT, SpanKind, trace } from '@opentelemetry/api';
+import { getRequest, getRequestHeaders } from '@tanstack/react-start/server';
+import { initBunServerObservability, withObservedSpan } from '@yucp/shared';
 
 const tracer = trace.getTracer('yucp-web-server');
 let initialized = false;
@@ -36,44 +22,30 @@ export function buildIncomingTraceCarrier(headers: Headers): Record<string, stri
 }
 
 function initWebServerObservability(env: NodeJS.ProcessEnv = process.env) {
-  if (detectServerObservabilityRuntime() === 'bun-manual') {
-    const resolved = initBunServerObservability({
-      env,
-      serviceName: 'yucp-web-server',
-      resourceAttributes: {
-        'deployment.environment': env.NODE_ENV ?? 'development',
-        'service.namespace': 'yucp',
-        'service.version': env.BUILD_ID ?? 'dev',
-      },
-    });
-    initialized ||= resolved.hasOtelAuth;
-    return resolved;
-  }
-
-  const resolved = applyNodeHyperdxDefaults(env, 'yucp-web-server');
-  if (initialized || !resolved.hasOtelAuth) {
-    return resolved;
-  }
-
-  initSDK({
-    consoleCapture: true,
-    additionalResourceAttributes: {
+  const resolved = initBunServerObservability({
+    env,
+    serviceName: 'yucp-web-server',
+    resourceAttributes: {
       'deployment.environment': env.NODE_ENV ?? 'development',
       'service.namespace': 'yucp',
       'service.version': env.BUILD_ID ?? 'dev',
     },
   });
 
-  initialized = true;
+  initialized ||= resolved.hasOtelAuth;
   return resolved;
 }
 
 function getIncomingRequestCarrier(): Record<string, string> {
   try {
+    return buildIncomingTraceCarrier(getRequest().headers);
+  } catch {}
+
+  try {
     return buildIncomingTraceCarrier(getRequestHeaders());
-  } catch {
-    return {};
-  }
+  } catch {}
+
+  return {};
 }
 
 export async function withWebServerSpan<T>(
@@ -97,28 +69,13 @@ export async function withWebServerRequestSpan<T>(
   attributes: Record<string, ObservableValue>,
   run: () => Promise<T>
 ): Promise<T> {
-  return withWebServerSpan(name, attributes, run, SpanKind.SERVER);
+  initWebServerObservability(process.env);
+  const parentContext = propagation.extract(ROOT_CONTEXT, getIncomingRequestCarrier());
+  return context.with(parentContext, () =>
+    withObservedSpan(tracer, name, attributes, run, SpanKind.SERVER)
+  );
 }
 
 export function getActiveWebServerTraceId(): string | undefined {
   return trace.getActiveSpan()?.spanContext().traceId;
-}
-
-export function annotateWebServerError(spanError: unknown): void {
-  const span = trace.getActiveSpan();
-  if (!span || !(spanError instanceof Error)) {
-    return;
-  }
-
-  span.recordException(spanError);
-  span.setStatus({
-    code: SpanStatusCode.ERROR,
-    message: spanError.message,
-  });
-}
-
-export function toWebServerAttributes(
-  attributes: Record<string, ObservableValue>
-): Record<string, ObservableValue> {
-  return toSpanAttributes(attributes) as Record<string, ObservableValue>;
 }
