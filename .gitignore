@@ -49,3 +49,4 @@ convex/tsconfig.tsbuildinfo
 /apps/api/test-results
 /apps/web/.tanstack
 /Verify/Native/
+/.volumes

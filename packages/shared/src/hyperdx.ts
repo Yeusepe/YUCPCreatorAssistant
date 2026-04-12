@@ -37,7 +37,10 @@ export function resolveHyperdxApiKey(env: HyperdxEnvLike): string | undefined {
   return normalizeOptional(env.HYPERDX_API_KEY);
 }
 
-function resolveOtelExporterHeaders(env: HyperdxEnvLike, apiKey: string | undefined): string | undefined {
+function resolveOtelExporterHeaders(
+  env: HyperdxEnvLike,
+  apiKey: string | undefined
+): string | undefined {
   const explicitHeaders = normalizeOptional(env.OTEL_EXPORTER_OTLP_HEADERS);
   if (!apiKey) {
     return explicitHeaders;

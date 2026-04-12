@@ -95,6 +95,7 @@ Each service has its own machine identity with least-privilege access:
 | `HYPERDX_OTLP_HTTP_URL` | OTLP HTTP collector URL (e.g. `http://localhost:4318`) | On topology change |
 | `HYPERDX_OTLP_GRPC_URL` | OTLP gRPC collector host/port (e.g. `localhost:4317`) | On topology change |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Default OTLP exporter endpoint for local SDK wiring | On topology change |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Optional explicit OTLP headers override for API/bot exporters. Usually derived from `HYPERDX_API_KEY` automatically. | On auth change |
 | `INTERNAL_RPC_SHARED_SECRET` | Shared bearer secret for web, API, and bot internal RPC/authenticated proxy calls. Required in production, optional in local dev because services share a built-in dev secret. | On compromise / 90 days |
 | `WEBHOOK_SIGNING_SECRET` | Webhook signature key | On compromise / 90 days |
 
@@ -126,6 +127,7 @@ HYPERDX_APP_URL=/infra/observability/HYPERDX_APP_URL
 HYPERDX_OTLP_HTTP_URL=/infra/observability/HYPERDX_OTLP_HTTP_URL
 HYPERDX_OTLP_GRPC_URL=/infra/observability/HYPERDX_OTLP_GRPC_URL
 OTEL_EXPORTER_OTLP_ENDPOINT=/infra/observability/OTEL_EXPORTER_OTLP_ENDPOINT
+OTEL_EXPORTER_OTLP_HEADERS=/infra/observability/OTEL_EXPORTER_OTLP_HEADERS
 INTERNAL_RPC_SHARED_SECRET=/infra/signing/INTERNAL_RPC_SHARED_SECRET
 WEBHOOK_SIGNING_SECRET=/infra/signing/WEBHOOK_SIGNING_SECRET
 ```
