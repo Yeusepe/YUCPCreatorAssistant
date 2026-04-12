@@ -5,6 +5,7 @@ import {
   SkeletonLine,
   SkeletonPill,
   SkeletonSwitch,
+  SkeletonTile,
 } from '@/components/ui/YucpSkeleton';
 
 const copySectionStyle: CSSProperties = { flex: 1 };
@@ -86,6 +87,49 @@ export function DashboardSettingsSkeleton({ rows = 5 }: { rows?: number }) {
           <SkeletonSwitch />
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Billing tab skeleton — matches `billing-layout` (hero + metrics + caps). */
+export function DashboardBillingSkeleton() {
+  return (
+    <div className="bento-col-12 billing-layout-skeleton" aria-hidden="true">
+      <div className="billing-skeleton-hero">
+        <div className="billing-skeleton-hero-left">
+          <SkeletonCircle size="44px" />
+          <div className="skeleton-copy" style={copySectionStyle}>
+            <SkeletonLine width="48%" />
+            <SkeletonLine width="68%" className="skeleton-line-muted" />
+          </div>
+        </div>
+        <div className="billing-skeleton-hero-actions">
+          <SkeletonPill width="96px" />
+          <SkeletonPill width="152px" />
+        </div>
+      </div>
+      <div className="billing-skeleton-metrics">
+        {Array.from({ length: 3 }, (_, i) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+            key={i}
+            className="billing-skeleton-metric-tile"
+          >
+            <SkeletonLine width="52%" />
+            <SkeletonLine width="40%" style={{ height: '30px' }} />
+            <SkeletonLine width="58%" className="skeleton-line-muted" />
+          </div>
+        ))}
+      </div>
+      <div className="billing-skeleton-caps">
+        <SkeletonLine width="32%" />
+        <div className="billing-skeleton-caps-chips">
+          {Array.from({ length: 4 }, (_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+            <SkeletonPill key={i} width={`${84 + (i % 3) * 20}px`} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -187,5 +231,51 @@ export function DashboardIntegrationsSkeleton({ cards = 3 }: { cards?: number })
         </div>
       ))}
     </div>
+  );
+}
+
+/** Forensics tab — mirrors `section.intg-card.bento-col-12` (Leak Tracer form). */
+export function DashboardForensicsSkeleton() {
+  return (
+    <section className="intg-card animate-in bento-col-12" aria-hidden="true">
+      <div className="intg-header">
+        <div className="intg-title-row">
+          <SkeletonTile size={40} radius={12} />
+          <div className="skeleton-copy" style={copySectionStyle}>
+            <SkeletonLine width="32%" />
+            <SkeletonLine width="62%" className="skeleton-line-muted" />
+          </div>
+        </div>
+        <SkeletonPill width="124px" />
+      </div>
+
+      <div className="forensics-steps">
+        <div className="forensics-step">
+          <SkeletonCircle size="26px" />
+          <div className="forensics-step-body">
+            <SkeletonLine width="44%" style={{ marginBottom: 8 }} />
+            <SkeletonLine width="100%" style={{ height: 40, borderRadius: 10 }} />
+          </div>
+        </div>
+        <div className="forensics-step">
+          <SkeletonCircle size="26px" />
+          <div className="forensics-step-body">
+            <SkeletonLine width="38%" style={{ marginBottom: 8 }} />
+            <div
+              className="skeleton-block"
+              style={{
+                width: '100%',
+                height: 132,
+                borderRadius: 12,
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="account-form-actions">
+        <SkeletonPill width="168px" style={{ height: 40, borderRadius: 999 }} />
+      </div>
+    </section>
   );
 }

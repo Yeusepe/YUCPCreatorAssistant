@@ -3,7 +3,9 @@
  * Used by install and verification routes to call Convex mutations.
  */
 
+import { SpanKind } from '@opentelemetry/api';
 import { ConvexHttpClient } from 'convex/browser';
+import { withApiSpan } from './observability';
 
 type ConvexServerClient = {
   // biome-ignore lint/suspicious/noExplicitAny: Convex server wrappers are intentionally dynamic at this boundary.
@@ -18,15 +20,83 @@ export type { ConvexServerClient };
 
 let client: ConvexServerClient | null = null;
 
+function resolveConvexUrl(url: string): string {
+  return url.startsWith('http')
+    ? url
+    : `https://${url.includes(':') ? url.split(':')[1] : url}.convex.cloud`;
+}
+
+function describeFunctionReference(functionReference: unknown): string {
+  if (typeof functionReference === 'string') {
+    return functionReference;
+  }
+  if (!functionReference || typeof functionReference !== 'object') {
+    return 'unknown';
+  }
+
+  const candidate = functionReference as {
+    name?: unknown;
+    _name?: unknown;
+    functionName?: unknown;
+    canonicalReference?: unknown;
+  };
+
+  if (typeof candidate.name === 'string') return candidate.name;
+  if (typeof candidate._name === 'string') return candidate._name;
+  if (typeof candidate.functionName === 'string') return candidate.functionName;
+  if (typeof candidate.canonicalReference === 'string') return candidate.canonicalReference;
+  return 'unknown';
+}
+
+function describeArgs(args: unknown) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    return {
+      argCount: 0,
+      hasApiSecret: false,
+    };
+  }
+
+  const keys = Object.keys(args);
+  return {
+    argCount: keys.length,
+    hasApiSecret: keys.includes('apiSecret'),
+  };
+}
+
+function createObservedConvexClient(convexUrl: string): ConvexServerClient {
+  const rawClient = new ConvexHttpClient(convexUrl) as unknown as ConvexServerClient;
+  const endpointHost = new URL(convexUrl).host;
+
+  const invoke = (
+    operation: 'query' | 'mutation' | 'action',
+    functionReference: unknown,
+    args?: unknown
+  ) =>
+    withApiSpan(
+      `convex.${operation}`,
+      {
+        'convex.operation': operation,
+        'convex.function': describeFunctionReference(functionReference),
+        'convex.endpoint_host': endpointHost,
+        ...describeArgs(args),
+      },
+      () => rawClient[operation](functionReference, args),
+      SpanKind.CLIENT
+    );
+
+  return {
+    query: (functionReference, args) => invoke('query', functionReference, args),
+    mutation: (functionReference, args) => invoke('mutation', functionReference, args),
+    action: (functionReference, args) => invoke('action', functionReference, args),
+  };
+}
+
 /**
  * Create a Convex HTTP client from a URL.
  * Use when URL comes from config (e.g. verification routes).
  */
 export function getConvexClientFromUrl(url: string): ConvexServerClient {
-  const convexUrl = url.startsWith('http')
-    ? url
-    : `https://${url.includes(':') ? url.split(':')[1] : url}.convex.cloud`;
-  return new ConvexHttpClient(convexUrl) as unknown as ConvexServerClient;
+  return createObservedConvexClient(resolveConvexUrl(url));
 }
 
 /**
@@ -39,12 +109,7 @@ export function getConvexClient(): ConvexServerClient {
     if (!url) {
       throw new Error('CONVEX_URL or CONVEX_DEPLOYMENT must be set for Convex client');
     }
-    // CONVEX_URL should be full URL (e.g. https://xxx.convex.cloud)
-    // CONVEX_DEPLOYMENT may be "dev:xxx" - extract deployment name for URL
-    const convexUrl = url.startsWith('http')
-      ? url
-      : `https://${url.includes(':') ? url.split(':')[1] : url}.convex.cloud`;
-    client = new ConvexHttpClient(convexUrl) as unknown as ConvexServerClient;
+    client = createObservedConvexClient(resolveConvexUrl(url));
   }
   return client;
 }

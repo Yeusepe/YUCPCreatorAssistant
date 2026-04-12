@@ -4,8 +4,8 @@ import { once } from 'node:events';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-
-import { isProcessAlive, killProcessTree } from './dev-supervisor';
+import { applyLocalDevDefaults, isProcessAlive, killProcessTree } from './dev-supervisor';
+import { buildHyperdxDockerArgs, isDockerUnavailable } from './hyperdx-dev';
 
 async function waitFor<T>(
   load: () => Promise<T>,
@@ -34,6 +34,129 @@ async function waitFor<T>(
 }
 
 describe('DevSupervisor', () => {
+  test('applyLocalDevDefaults prefers the local ClickStack endpoints for dev runs', async () => {
+    const fixturePath = path.join(process.cwd(), 'ops', 'test-fixtures', 'echo-env.mjs');
+    const child = spawn(process.execPath, [fixturePath], {
+      cwd: process.cwd(),
+      env: applyLocalDevDefaults({
+        FRONTEND_URL: 'http://localhost:9999',
+        HYPERDX_APP_URL: 'https://app.hyperdx.example',
+        HYPERDX_OTLP_HTTP_URL: 'https://otel.hyperdx.example',
+        HYPERDX_OTLP_GRPC_URL: 'otel.hyperdx.example:4317',
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'https://otel.hyperdx.example',
+      }),
+      stdio: ['ignore', 'pipe', 'inherit'],
+      windowsHide: true,
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    child.stdout?.on('data', (chunk) => stdoutChunks.push(Buffer.from(chunk)));
+    const [exitCode] = await once(child, 'close');
+    const outputText = Buffer.concat(stdoutChunks).toString('utf8').trim();
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(outputText)).toEqual({
+      FRONTEND_URL: 'http://localhost:9999',
+      HYPERDX_APP_URL: 'http://localhost:8080',
+      HYPERDX_OTLP_HTTP_URL: 'http://localhost:4318',
+      HYPERDX_OTLP_GRPC_URL: 'localhost:4317',
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318',
+      OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
+    });
+  });
+
+  test('applyLocalDevDefaults keeps explicit HyperDX endpoints when remote mode is requested', async () => {
+    const fixturePath = path.join(process.cwd(), 'ops', 'test-fixtures', 'echo-env.mjs');
+    const child = spawn(process.execPath, [fixturePath], {
+      cwd: process.cwd(),
+      env: applyLocalDevDefaults({
+        HYPERDX_DEV_USE_REMOTE: 'true',
+        HYPERDX_APP_URL: 'https://app.hyperdx.example',
+        HYPERDX_OTLP_HTTP_URL: 'https://otel.hyperdx.example',
+        HYPERDX_OTLP_GRPC_URL: 'otel.hyperdx.example:4317',
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'https://otel.hyperdx.example',
+      }),
+      stdio: ['ignore', 'pipe', 'inherit'],
+      windowsHide: true,
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    child.stdout?.on('data', (chunk) => stdoutChunks.push(Buffer.from(chunk)));
+    const [exitCode] = await once(child, 'close');
+    const outputText = Buffer.concat(stdoutChunks).toString('utf8').trim();
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(outputText)).toEqual({
+      FRONTEND_URL: 'http://localhost:3000',
+      HYPERDX_APP_URL: 'https://app.hyperdx.example',
+      HYPERDX_OTLP_HTTP_URL: 'https://otel.hyperdx.example',
+      HYPERDX_OTLP_GRPC_URL: 'otel.hyperdx.example:4317',
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'https://otel.hyperdx.example',
+      OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
+    });
+  });
+
+  test('buildHyperdxDockerArgs exposes the supported local HyperDX ports', () => {
+    expect(
+      buildHyperdxDockerArgs({
+        HYPERDX_USAGE_STATS_ENABLED: 'false',
+        HYPERDX_DEV_VOLUME_MODE: 'named',
+      })
+    ).toEqual([
+      'run',
+      '--rm',
+      '--name',
+      'yucp-hyperdx-dev',
+      '-p',
+      '8080:8080',
+      '-p',
+      '4317:4317',
+      '-p',
+      '4318:4318',
+      '-v',
+      'yucp-hyperdx-dev-db:/data/db',
+      '-v',
+      'yucp-hyperdx-dev-ch-data:/var/lib/clickhouse',
+      '-v',
+      'yucp-hyperdx-dev-ch-logs:/var/log/clickhouse-server',
+      '-e',
+      'USAGE_STATS_ENABLED=false',
+      'clickhouse/clickstack-all-in-one:latest',
+    ]);
+  });
+
+  test('buildHyperdxDockerArgs supports explicit bind mounts when requested', () => {
+    expect(buildHyperdxDockerArgs({ HYPERDX_DEV_VOLUME_MODE: 'bind' })).toEqual([
+      'run',
+      '--rm',
+      '--name',
+      'yucp-hyperdx-dev',
+      '-p',
+      '8080:8080',
+      '-p',
+      '4317:4317',
+      '-p',
+      '4318:4318',
+      '-v',
+      `${path.join(process.cwd(), '.volumes', 'hyperdx', 'db')}:/data/db`,
+      '-v',
+      `${path.join(process.cwd(), '.volumes', 'hyperdx', 'ch_data')}:/var/lib/clickhouse`,
+      '-v',
+      `${path.join(process.cwd(), '.volumes', 'hyperdx', 'ch_logs')}:/var/log/clickhouse-server`,
+      '-e',
+      'USAGE_STATS_ENABLED=false',
+      'clickhouse/clickstack-all-in-one:latest',
+    ]);
+  });
+
+  test('isDockerUnavailable recognizes the Docker Desktop daemon-offline error from Windows', () => {
+    expect(
+      isDockerUnavailable(
+        'failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.'
+      )
+    ).toBe(true);
+  });
+
   test('killProcessTree tears down spawned child trees', async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yucp-dev-supervisor-'));
     const infoPath = path.join(tempDir, 'tree.json');

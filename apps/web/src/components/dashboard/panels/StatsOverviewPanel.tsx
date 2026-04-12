@@ -21,12 +21,15 @@ const STAT_DEFINITIONS = [
       s.recent24h > 0
         ? { direction: 'up' as const, label: `+${String(s.recent24h)} today` }
         : undefined,
+    /** Skeleton rows: trend is optional for this stat */
+    loadingTrendRow: false,
   },
   {
     key: 'active-products',
     label: 'Active Products',
     getValue: (s: DashboardStats) => s.totalProducts,
     getTrend: undefined,
+    loadingTrendRow: false,
   },
   {
     key: 'verifications-7d',
@@ -36,6 +39,7 @@ const STAT_DEFINITIONS = [
       direction: s.recent24h > 0 ? ('up' as const) : ('neutral' as const),
       label: `${String(s.recent24h)} today`,
     }),
+    loadingTrendRow: true,
   },
   {
     key: 'active-licenses',
@@ -45,6 +49,7 @@ const STAT_DEFINITIONS = [
       direction: 'neutral' as const,
       label: `${String(s.totalLicenses)} total`,
     }),
+    loadingTrendRow: true,
   },
 ];
 
@@ -54,8 +59,12 @@ export function StatsOverviewPanel() {
   const sectionClassName = [
     'stats-overview-panel',
     'animate-in',
-    isLoading ? 'stats-overview-panel--loading' : 'intg-card intg-card--flush',
-  ].join(' ');
+    'intg-card',
+    'intg-card--flush',
+    isLoading ? 'stats-overview-panel--loading' : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <section
@@ -72,6 +81,7 @@ export function StatsOverviewPanel() {
             icon={null}
             trend={isLoading ? undefined : def.getTrend?.(stats)}
             loading={isLoading}
+            loadingTrendRow={def.loadingTrendRow}
           />
         ))}
       </div>

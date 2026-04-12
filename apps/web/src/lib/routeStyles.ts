@@ -1,3 +1,6 @@
+/* Route stylesheets are linked from route `head` (no side-effect CSS imports in lazy routes).
+ * HeroUI v3 does not expose a root Provider in the public API; components use react-aria primitives. */
+
 import notFoundHref from '@/styles/404.css?url';
 import accountHref from '@/styles/account.css?url';
 import collabInviteHref from '@/styles/collab-invite.css?url';
@@ -42,10 +45,23 @@ export const routeStyleHrefs = {
   vrchatVerify: vrchatVerifyHref,
 } as const;
 
+function normalizeRouteStyleHref(href: string) {
+  if (!href.includes('?')) {
+    return href;
+  }
+
+  const parsed = new URL(href, 'http://localhost');
+  parsed.searchParams.delete('t');
+  const search = parsed.searchParams.toString();
+  return `${parsed.pathname}${search ? `?${search}` : ''}`;
+}
+
 export function routeStylesheetLinks(...hrefs: Array<string | undefined>) {
-  return hrefs.filter(Boolean).map((href) => ({
-    rel: 'stylesheet' as const,
-    href,
-    suppressHydrationWarning: true as const,
-  }));
+  return hrefs
+    .filter((href): href is string => Boolean(href))
+    .map((href) => ({
+      rel: 'stylesheet' as const,
+      href: normalizeRouteStyleHref(href),
+      suppressHydrationWarning: true as const,
+    }));
 }

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../src/api/client';
 import {
+  areVerifyPurchaseConnectionQueriesSettled,
   getPurchaseIntentLoadErrorState,
   getVisiblePurchaseVerificationError,
   shouldAutoCheckExistingEntitlement,
-} from '../../src/routes/verify/-purchaseUiState';
+} from '../../src/routes/_authenticated/verify/-purchaseUiState';
 
 describe('purchase verification ui state', () => {
   it('does not auto-check existing entitlement when OAuth or manual methods are available', () => {
@@ -128,5 +129,42 @@ describe('purchase verification ui state', () => {
         'This verification link is invalid or has already expired. Return to Unity and restart the verification flow.',
       allowSignOut: false,
     });
+  });
+
+  it('treats connection queries as unsettled until both accounts and providers have data or error', () => {
+    expect(
+      areVerifyPurchaseConnectionQueriesSettled({
+        accounts: { data: undefined, isError: false },
+        providers: { data: undefined, isError: false },
+      })
+    ).toBe(false);
+
+    expect(
+      areVerifyPurchaseConnectionQueriesSettled({
+        accounts: { data: [], isError: false },
+        providers: { data: undefined, isError: false },
+      })
+    ).toBe(false);
+
+    expect(
+      areVerifyPurchaseConnectionQueriesSettled({
+        accounts: { data: undefined, isError: true },
+        providers: { data: undefined, isError: false },
+      })
+    ).toBe(false);
+
+    expect(
+      areVerifyPurchaseConnectionQueriesSettled({
+        accounts: { data: [], isError: false },
+        providers: { data: [], isError: false },
+      })
+    ).toBe(true);
+
+    expect(
+      areVerifyPurchaseConnectionQueriesSettled({
+        accounts: { data: undefined, isError: true },
+        providers: { data: undefined, isError: true },
+      })
+    ).toBe(true);
   });
 });

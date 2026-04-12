@@ -10,6 +10,13 @@ import { DashboardSessionProvider, useDashboardSession } from '@/hooks/useDashbo
 import { useDashboardShell } from '@/hooks/useDashboardShell';
 import { ServerContextProvider } from '@/hooks/useServerContext';
 import { listCreatorCertificates } from '@/lib/certificates';
+import {
+  addHyperdxActionWithNumbers,
+  buildHyperdxNavigationPhases,
+  getHyperdxNavigationSnapshot,
+  getHyperdxSlowestNavigationPhase,
+  recordHyperdxNavigationTrace,
+} from '@/lib/hyperdx';
 import { type Guild } from '@/lib/server/dashboard';
 import { getServerIconUrl } from '@/lib/utils';
 import { BILLING_CAPABILITY_KEYS } from '../../../../../convex/lib/billingCapabilities';
@@ -93,6 +100,7 @@ function DashboardLayout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const search = Route.useSearch();
+  const navigationRecordedRef = useRef(false);
   const { guild_id, tenant_id } = search;
   const { selectedGuild } = useDashboardShell();
   const shouldCheckBootstrap = Boolean(guild_id && !tenant_id && !selectedGuild);
@@ -117,6 +125,70 @@ function DashboardLayout() {
   const resolvedGuildId = displayGuild?.id ?? guild_id;
   const resolvedTenantId = displayGuild?.tenantId ?? tenant_id;
   const isPersonalDashboard = !resolvedGuildId;
+
+  useEffect(() => {
+    if (navigationRecordedRef.current || typeof window === 'undefined') {
+      return;
+    }
+
+    const snapshot = getHyperdxNavigationSnapshot();
+    if (!snapshot || window.location.pathname !== '/dashboard') {
+      return;
+    }
+
+    navigationRecordedRef.current = true;
+
+    const phases = buildHyperdxNavigationPhases(snapshot);
+    const slowestPhase = getHyperdxSlowestNavigationPhase(phases);
+    addHyperdxActionWithNumbers('dashboard.navigation.breakdown', {
+      route: '/dashboard',
+      navigationType: snapshot.navigationType,
+      totalMs: snapshot.totalMs,
+      redirectMs: snapshot.redirectMs,
+      dnsMs: snapshot.dnsMs,
+      connectionMs: snapshot.connectionMs,
+      requestSentMs: snapshot.requestSentMs,
+      serverWaitMs: snapshot.serverWaitMs,
+      responseDownloadMs: snapshot.responseDownloadMs,
+      browserProcessingMs: snapshot.browserProcessingMs,
+      domInteractiveMs: snapshot.domInteractiveMs,
+      domContentLoadedMs: snapshot.domContentLoadedMs,
+      loadEventEndMs: snapshot.loadEventEndMs,
+      transferSize: snapshot.transferSize,
+      encodedBodySize: snapshot.encodedBodySize,
+      decodedBodySize: snapshot.decodedBodySize,
+      phaseCount: phases.length,
+      slowestPhase: slowestPhase?.name,
+      slowestPhaseMs: slowestPhase?.durationMs,
+    });
+
+    for (const phase of phases) {
+      addHyperdxActionWithNumbers('dashboard.navigation.phase', {
+        route: '/dashboard',
+        navigationType: snapshot.navigationType,
+        phase: phase.name,
+        startMs: phase.startMs,
+        endMs: phase.endMs,
+        durationMs: phase.durationMs,
+      });
+    }
+
+    for (const metric of snapshot.serverTiming) {
+      addHyperdxActionWithNumbers('dashboard.navigation.server_timing', {
+        route: '/dashboard',
+        stage: metric.name,
+        durationMs: metric.durationMs,
+      });
+    }
+
+    recordHyperdxNavigationTrace('dashboard.navigation.document', phases, {
+      route: '/dashboard',
+      navigationType: snapshot.navigationType,
+      totalMs: snapshot.totalMs,
+      slowestPhase: slowestPhase?.name,
+      slowestPhaseMs: slowestPhase?.durationMs,
+    });
+  }, []);
 
   useEffect(() => {
     if (search.setup_token || search.connect_token) {
@@ -491,39 +563,41 @@ function Sidebar({
                 </svg>
                 Certificates
               </Link>
-              {hasForensicsCapability && (
-                <Link
-                  id="tab-btn-forensics"
-                  to="/dashboard/forensics"
-                  search={(prev) => ({
-                    ...prev,
-                    guild_id: undefined,
-                    tenant_id: undefined,
-                  })}
-                  className="sidebar-nav-btn"
-                  activeProps={{ className: 'sidebar-nav-btn is-active' }}
-                  role="tab"
-                  aria-selected={false}
-                  aria-controls="tab-panel-forensics"
-                >
-                  <svg
-                    className="sidebar-nav-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
+              {hasForensicsCapability ? (
+                <div className="sidebar-nav-reveal" key="sidebar-nav-forensics">
+                  <Link
+                    id="tab-btn-forensics"
+                    to="/dashboard/forensics"
+                    search={(prev) => ({
+                      ...prev,
+                      guild_id: undefined,
+                      tenant_id: undefined,
+                    })}
+                    className="sidebar-nav-btn"
+                    activeProps={{ className: 'sidebar-nav-btn is-active' }}
+                    role="tab"
+                    aria-selected={false}
+                    aria-controls="tab-panel-forensics"
                   >
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="M21 21l-4.35-4.35" />
-                    <path d="M11 8v6" />
-                    <path d="M8 11h6" />
-                  </svg>
-                  Coupling Forensics
-                </Link>
-              )}
+                    <svg
+                      className="sidebar-nav-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="M21 21l-4.35-4.35" />
+                      <path d="M11 8v6" />
+                      <path d="M8 11h6" />
+                    </svg>
+                    Coupling Forensics
+                  </Link>
+                </div>
+              ) : null}
               <Link
                 to="/dashboard/integrations"
                 search={(prev) => prev}

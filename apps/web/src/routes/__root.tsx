@@ -2,10 +2,22 @@
 
 import type { ConvexQueryClient } from '@convex-dev/react-query';
 import type { QueryClient } from '@tanstack/react-query';
-import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from '@tanstack/react-router';
-import { type ReactNode, useEffect } from 'react';
+import {
+  createRootRouteWithContext,
+  HeadContent,
+  Outlet,
+  Scripts,
+  useRouterState,
+} from '@tanstack/react-router';
+import { type ReactNode, useEffect, useRef } from 'react';
+import { CookiePreferencesPrompt } from '@/components/ui/CookiePreferencesPrompt';
 import { ToastProvider } from '@/components/ui/Toast';
 import { installChunkErrorRecovery } from '@/lib/chunkErrorRecovery';
+import {
+  addHyperdxActionWithNumbers,
+  initializeHyperdxBrowser,
+  setHyperdxGlobalAttributes,
+} from '@/lib/hyperdx';
 import { useVersionPoller } from '@/lib/versionPoller';
 import { logRootRenderError } from '@/lib/webDiagnostics';
 
@@ -41,6 +53,7 @@ function RootComponent() {
       <ToastProvider>
         <AppEffects />
         <Outlet />
+        <CookiePreferencesPrompt />
       </ToastProvider>
     </RootDocument>
   );
@@ -48,9 +61,36 @@ function RootComponent() {
 
 /** Mounts global client-side effects that require React context. */
 function AppEffects() {
+  const routerState = useRouterState();
+  const lastRouteKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     installChunkErrorRecovery();
+    initializeHyperdxBrowser();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const routeKey = routerState.location.href;
+    if (lastRouteKeyRef.current === routeKey) {
+      return;
+    }
+
+    lastRouteKeyRef.current = routeKey;
+    const searchParamCount = new URL(routeKey, window.location.origin).searchParams.size;
+    setHyperdxGlobalAttributes({
+      route: routerState.location.pathname,
+      searchParamCount,
+    });
+    addHyperdxActionWithNumbers('route.view', {
+      route: routerState.location.pathname,
+      searchParamCount,
+      hasHash: window.location.hash.length > 1,
+    });
+  }, [routerState.location.href, routerState.location.pathname]);
 
   useVersionPoller();
 

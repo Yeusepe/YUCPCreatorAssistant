@@ -1,0 +1,31 @@
+/* Dashboard design tokens: shared glass, shell, and layout variables.
+ * Imported first by dashboard.css; rules here are global (:root). */
+
+:root {
+  /* Liquid glass (sidebar + main content panels) */
+  --dashboard-glass-blur: 20px;
+  /* Percent for filter: saturate() */
+  --dashboard-glass-saturate: 160%;
+  --dashboard-glass-bg-light: rgba(255, 255, 255, 0.6);
+  --dashboard-glass-border-light: rgba(255, 255, 255, 0.6);
+  --dashboard-glass-inset-highlight: rgba(255, 255, 255, 0.9);
+
+  /* Main / account content seam (glass overlap) */
+  --dashboard-content-seam-overlap: -16px;
+  --dashboard-content-inner-radius: 16px;
+  /* Extra padding on the seam edge of the sidebar (toward main) so the rail lines up with content-area inset */
+  --dashboard-sidebar-seam-inset: 0px;
+  /* Wordmark: keep under server pill row height (~36px); width follows aspect ratio (no horizontal squish) */
+  --dashboard-sidebar-logo-max-height: 30px;
+
+  /* Dot matrix (content-area backdrop) */
+  --dashboard-dot-matrix-size: 22px;
+  --dashboard-dot-matrix-light: rgba(255, 255, 255, 0.12);
+  --dashboard-dot-matrix-spotlight: rgba(255, 255, 255, 0.55);
+}
+
+.dark {
+  --dashboard-glass-bg-main: rgba(10, 16, 34, 0.3);
+  --dashboard-dot-matrix-light: rgba(255, 255, 255, 0.018);
+  --dashboard-dot-matrix-spotlight: rgba(255, 255, 255, 0.06);
+}

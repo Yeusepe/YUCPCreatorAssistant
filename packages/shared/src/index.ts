@@ -45,6 +45,7 @@ export * from './crypto';
 export { sha256Hex } from './crypto';
 // Entitlement module exports
 export * from './entitlement';
+export * from './hyperdx';
 export * from './internalRpcSecret';
 export {
   createLogger,
@@ -57,7 +58,9 @@ export {
 export * from './logging/audit';
 export * from './logging/correlation';
 export * from './logging/redaction';
+export * from './observability';
 export * from './product';
 export * from './productParsers';
 export * from './publicAuthority';
+export * from './serverObservability';
 export * from './verificationSupport';

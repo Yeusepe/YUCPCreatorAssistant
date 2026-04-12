@@ -220,4 +220,26 @@ describe('serverApiFetch', () => {
     const [url] = mockFetch.mock.calls[0];
     expect(url).toContain('localhost:3001');
   });
+
+  it('captures downstream Server-Timing metrics for callers that need document timing', async () => {
+    const onServerTiming = vi.fn();
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Server-Timing': 'session;dur=12.5, convex;dur=48.75, total;dur=80.1',
+        },
+      })
+    );
+    const { serverApiFetch } = await import('@/lib/server/api-client');
+
+    await serverApiFetch('/api/connect/dashboard/shell', { onServerTiming });
+
+    expect(onServerTiming).toHaveBeenCalledWith([
+      { name: 'session', durationMs: 12.5 },
+      { name: 'convex', durationMs: 48.8 },
+      { name: 'total', durationMs: 80.1 },
+    ]);
+  });
 });

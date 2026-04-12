@@ -10,6 +10,8 @@ export interface StatCardProps {
     label: string;
   };
   loading?: boolean;
+  /** When loading, show a third skeleton row matching `.stat-cell-trend` height */
+  loadingTrendRow?: boolean;
 }
 
 function TrendArrow({ direction }: { direction: 'up' | 'down' | 'neutral' }) {
@@ -48,15 +50,25 @@ function TrendArrow({ direction }: { direction: 'up' | 'down' | 'neutral' }) {
   );
 }
 
-export function StatCard({ label, value, icon: _icon, trend, loading }: StatCardProps) {
+export function StatCard({
+  label,
+  value,
+  icon: _icon,
+  trend,
+  loading,
+  loadingTrendRow = false,
+}: StatCardProps) {
   if (loading) {
     return (
       <div className="stat-cell" aria-hidden="true">
-        <Skeleton className="stat-cell-skeleton-val" style={{ width: '60px', height: '28px' }} />
-        <Skeleton
-          className="stat-cell-skeleton-label"
-          style={{ width: '80px', height: '12px', marginTop: '4px' }}
-        />
+        <Skeleton className="stat-cell-skeleton-val" />
+        <Skeleton className="stat-cell-skeleton-label" />
+        {loadingTrendRow ? (
+          <div className="stat-cell-skeleton-trend">
+            <Skeleton className="stat-cell-skeleton-trend-icon" />
+            <Skeleton className="stat-cell-skeleton-trend-text" />
+          </div>
+        ) : null}
       </div>
     );
   }

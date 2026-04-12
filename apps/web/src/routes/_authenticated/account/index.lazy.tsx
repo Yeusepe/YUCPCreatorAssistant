@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createLazyFileRoute, Link } from '@tanstack/react-router';
+import type { CSSProperties } from 'react';
 import { AccountPage, AccountSectionCard } from '@/components/account/AccountPage';
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { ProviderChip } from '@/components/ui/ProviderChip';
@@ -80,6 +81,7 @@ function AccountProfile() {
     .filter((entry): entry is { key: string; label: string } => entry !== null)
     .filter((entry, index, arr) => arr.findIndex((e) => e.label === entry.label) === index)
     .slice(0, 3);
+
   const workspaceHref = '/api/install/bot';
 
   const renderMetricValue = (query: { isLoading: boolean; isError: boolean }, value: number) => {
@@ -126,9 +128,19 @@ function AccountProfile() {
         <div className="account-pill-row">
           <StatusChip status="connected" label="Discord linked" />
           <ProviderChip name={isCreator ? 'Creator account' : 'Personal account'} />
-          {connectedLabels.map(({ key, label }) => (
-            <ProviderChip key={key} name={label} />
-          ))}
+          {accountsQuery.isSuccess &&
+            connectedLabels.map(({ key, label }, index) => (
+              <ProviderChip
+                key={key}
+                name={label}
+                className="account-pill-chip-enter"
+                style={
+                  {
+                    '--account-pill-enter-delay': `${Math.min(index, 5) * 55}ms`,
+                  } as CSSProperties
+                }
+              />
+            ))}
         </div>
       </AccountSectionCard>
 

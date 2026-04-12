@@ -1,3 +1,5 @@
+import { annotateApiSpan } from './observability';
+
 export interface RequestTimingEntry {
   name: string;
   durationMs: number;
@@ -31,10 +33,16 @@ export class RouteTimingCollector {
       return;
     }
 
+    const metricName = sanitiseMetricName(name);
+    const roundedDurationMs = Number(durationMs.toFixed(2));
+
     this.entries.push({
-      name: sanitiseMetricName(name),
-      durationMs,
+      name: metricName,
+      durationMs: roundedDurationMs,
       description,
+    });
+    annotateApiSpan({
+      [`timing.${metricName}.ms`]: roundedDurationMs,
     });
   }
 
@@ -57,11 +65,17 @@ export class RouteTimingCollector {
   }
 
   toServerTimingHeader(): string {
+    const totalDurationMs = Number((performance.now() - this.startedAt).toFixed(2));
+    annotateApiSpan({
+      'timing.total.ms': totalDurationMs,
+      'timing.stage_count': this.entries.length,
+    });
+
     const entries = [
       ...this.entries,
       {
         name: 'total',
-        durationMs: performance.now() - this.startedAt,
+        durationMs: totalDurationMs,
         description: 'end-to-end request duration',
       },
     ];
