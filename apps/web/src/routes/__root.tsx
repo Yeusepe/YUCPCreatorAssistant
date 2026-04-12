@@ -74,13 +74,13 @@ function AppEffects() {
       return;
     }
 
-    const routeKey = `${routerState.location.pathname}${window.location.search}`;
+    const routeKey = routerState.location.href;
     if (lastRouteKeyRef.current === routeKey) {
       return;
     }
 
     lastRouteKeyRef.current = routeKey;
-    const searchParamCount = new URLSearchParams(window.location.search).size;
+    const searchParamCount = new URL(routeKey, window.location.origin).searchParams.size;
     setHyperdxGlobalAttributes({
       route: routerState.location.pathname,
       searchParamCount,
@@ -90,7 +90,7 @@ function AppEffects() {
       searchParamCount,
       hasHash: window.location.hash.length > 1,
     });
-  }, [routerState.location.pathname]);
+  }, [routerState.location.href, routerState.location.pathname]);
 
   useVersionPoller();
 

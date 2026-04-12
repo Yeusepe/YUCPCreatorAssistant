@@ -10,10 +10,16 @@ import {
 } from '../../src/lib/privacyPreferences';
 
 describe('privacyPreferences', () => {
+  const originalCrypto = globalThis.crypto;
+
   beforeEach(() => {
     localStorage.clear();
     // biome-ignore lint/suspicious/noDocumentCookie: The test needs to clear the consent cookie to verify cookie fallback behavior.
     document.cookie = `${PRIVACY_PREFERENCES_COOKIE}=; Max-Age=0; Path=/`;
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: originalCrypto,
+    });
   });
 
   it('parses stored helpful diagnostics preferences', () => {
@@ -62,5 +68,31 @@ describe('privacyPreferences', () => {
       source: 'banner',
     });
     expect(localStorage.getItem(PRIVACY_PREFERENCES_STORAGE_KEY)).toContain('helpful-diagnostics');
+  });
+
+  it('ignores malformed cookie payloads', () => {
+    // biome-ignore lint/suspicious/noDocumentCookie: The test seeds an invalid cookie to verify safe fallback behavior.
+    document.cookie = `${PRIVACY_PREFERENCES_COOKIE}=%E0%A4%A; Path=/`;
+
+    expect(readStoredPrivacyPreferences()).toBeNull();
+  });
+
+  it('uses crypto.getRandomValues when randomUUID is unavailable', () => {
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: {
+        getRandomValues(values: Uint8Array) {
+          values.set([
+            0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+            0x77, 0x88,
+          ]);
+          return values;
+        },
+      } satisfies Pick<Crypto, 'getRandomValues'>,
+    });
+
+    expect(buildPrivacyPreferences('helpful-diagnostics', 'banner').diagnosticsSessionId).toBe(
+      '10325476-98ba-4cfe-9122-334455667788'
+    );
   });
 });

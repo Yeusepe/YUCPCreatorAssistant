@@ -320,10 +320,9 @@ body:not(.state-server-selected) .server-only {
 
 /*  Custom Select (Replaces setting-select) */
 
-.custom-select-trigger:hover,
 /*  Server Selector Dropdown  */
 
-  .sidebar-server-selector {
+.sidebar-server-selector {
   position: relative;
   width: 100%;
   z-index: var(--z-portal);
@@ -343,7 +342,6 @@ body:not(.state-server-selected) .server-only {
 
 /* Custom Scrollbar for List */
 
-.dark .custom-select-trigger:hover,
 .setting-select {
   display: none;
 }

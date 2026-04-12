@@ -25,7 +25,15 @@ function createDiagnosticsSessionId() {
     return crypto.randomUUID();
   }
 
-  return `diag-${Math.random().toString(36).slice(2, 10)}`;
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  return `diag-${Date.now().toString(36)}-${performance.now().toFixed(0)}`;
 }
 
 function normalizePreferences(value: unknown): PrivacyPreferences | null {
@@ -121,6 +129,18 @@ function getCookieValue(cookieString: string, name: string) {
   return null;
 }
 
+function decodeStoredPrivacyPreferences(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 export function readStoredPrivacyPreferences() {
   if (!isBrowser()) {
     return null;
@@ -134,7 +154,7 @@ export function readStoredPrivacyPreferences() {
   }
 
   const fromCookie = parsePrivacyPreferences(
-    decodeURIComponent(getCookieValue(document.cookie, PRIVACY_PREFERENCES_COOKIE) ?? '')
+    decodeStoredPrivacyPreferences(getCookieValue(document.cookie, PRIVACY_PREFERENCES_COOKIE))
   );
   if (!fromCookie) {
     return null;

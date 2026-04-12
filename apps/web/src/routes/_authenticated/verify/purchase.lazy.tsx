@@ -604,9 +604,7 @@ function VerifyPurchasePage() {
   const [entitlementCheckState, setEntitlementCheckState] = useState<'idle' | 'checking' | 'done'>(
     'idle'
   );
-  const [oauthReturnState, setOauthReturnState] = useState<'idle' | 'checking' | 'done'>(() =>
-    justConnectedProvider ? 'checking' : 'idle'
-  );
+  const [oauthReturnState, setOauthReturnState] = useState<'idle' | 'checking' | 'done'>('idle');
 
   const queryClient = useQueryClient();
   const { signOut } = useAuth();

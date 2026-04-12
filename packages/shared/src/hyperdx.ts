@@ -49,7 +49,12 @@ export function detectServerObservabilityRuntime(
 }
 
 export function buildOtlpSignalUrl(endpoint: string, signal: OtlpSignal): string {
-  const normalizedEndpoint = endpoint.trim().replace(/\/+$/, '');
+  const trimmedEndpoint = endpoint.trim();
+  let normalizedEnd = trimmedEndpoint.length;
+  while (normalizedEnd > 0 && trimmedEndpoint.charCodeAt(normalizedEnd - 1) === 47) {
+    normalizedEnd -= 1;
+  }
+  const normalizedEndpoint = trimmedEndpoint.slice(0, normalizedEnd);
   const signalPath = `/v1/${signal}`;
   return normalizedEndpoint.endsWith(signalPath)
     ? normalizedEndpoint

@@ -1105,7 +1105,8 @@ async function handleRequest(request: Request): Promise<Response> {
       corsHeaders['Access-Control-Allow-Origin'] = origin;
       corsHeaders['Access-Control-Allow-Credentials'] = 'true';
       corsHeaders['Access-Control-Allow-Methods'] = 'GET, POST, PATCH, DELETE, OPTIONS';
-      corsHeaders['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, Traceparent';
+      corsHeaders['Access-Control-Allow-Headers'] =
+        'Authorization, Content-Type, Traceparent, traceparent, Tracestate, tracestate, Baggage, baggage';
       corsHeaders['Access-Control-Expose-Headers'] = 'X-Request-Id, X-Trace-Id';
       corsHeaders['Timing-Allow-Origin'] = origin;
       corsHeaders.Vary = 'Origin';

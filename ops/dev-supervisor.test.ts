@@ -59,7 +59,7 @@ describe('DevSupervisor', () => {
       FRONTEND_URL: 'http://localhost:9999',
       HYPERDX_APP_URL: 'http://localhost:8080',
       HYPERDX_OTLP_HTTP_URL: 'http://localhost:4318',
-      HYPERDX_OTLP_GRPC_URL: 'http://localhost:4317',
+      HYPERDX_OTLP_GRPC_URL: 'localhost:4317',
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318',
       OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
     });
@@ -97,7 +97,12 @@ describe('DevSupervisor', () => {
   });
 
   test('buildHyperdxDockerArgs exposes the supported local HyperDX ports', () => {
-    expect(buildHyperdxDockerArgs({ HYPERDX_USAGE_STATS_ENABLED: 'false' })).toEqual([
+    expect(
+      buildHyperdxDockerArgs({
+        HYPERDX_USAGE_STATS_ENABLED: 'false',
+        HYPERDX_DEV_VOLUME_MODE: 'named',
+      })
+    ).toEqual([
       'run',
       '--rm',
       '--name',

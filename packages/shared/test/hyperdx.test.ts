@@ -72,6 +72,9 @@ describe('hyperdx config helpers', () => {
     expect(buildOtlpSignalUrl('http://localhost:4318/v1/traces', 'traces')).toBe(
       'http://localhost:4318/v1/traces'
     );
+    expect(buildOtlpSignalUrl('http://localhost:4318////', 'traces')).toBe(
+      'http://localhost:4318/v1/traces'
+    );
   });
 
   test('parseOtelExporterHeaders converts OTLP headers to an object', () => {

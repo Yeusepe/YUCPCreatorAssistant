@@ -169,7 +169,7 @@ async function main() {
   const config = readConfig();
   const dockerAvailable = await ensureDockerAvailable(process.env);
   if (!dockerAvailable) {
-    process.exit(0);
+    return;
   }
 
   if (config.volumeMode === 'bind') {
