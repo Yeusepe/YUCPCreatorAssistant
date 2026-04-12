@@ -21,6 +21,7 @@ import {
   type UserProviderDisplay,
 } from '@/lib/dashboard';
 import {
+  areVerifyPurchaseConnectionQueriesSettled,
   getPurchaseIntentLoadErrorState,
   getVisiblePurchaseVerificationError,
   shouldAutoCheckExistingEntitlement,
@@ -60,8 +61,6 @@ interface OAuthButtonProps {
   requirement: UserVerificationIntentRequirement;
   linkedAccounts: UserAccountConnection[];
   provider: UserProvider | null;
-  accountsLoading: boolean;
-  providersLoading: boolean;
   verifiedMethodKey: string | null;
   onSuccess: () => void;
 }
@@ -84,8 +83,6 @@ function OAuthMethodButton({
   requirement,
   linkedAccounts,
   provider,
-  accountsLoading,
-  providersLoading,
   verifiedMethodKey,
   onSuccess,
 }: OAuthButtonProps) {
@@ -154,17 +151,8 @@ function OAuthMethodButton({
   const providerVisual = getProviderVisual(provider, linkedAccounts);
   const iconSrc = providerVisual ? getProviderIconPath(providerVisual) : null;
   const brandColor = providerVisual?.color ?? null;
-  /* Avoid swapping to the skeleton row during refetch when we already know link state */
-  const isLinkStateLoading =
-    !isConnected && !isVerified && (accountsLoading || (providersLoading && !provider));
 
-  const rowPhase = isVerified
-    ? 'verified'
-    : isConnected
-      ? 'connected'
-      : isLinkStateLoading
-        ? 'loading'
-        : 'disconnected';
+  const rowPhase = isVerified ? 'verified' : isConnected ? 'connected' : 'disconnected';
 
   // Verified state ΓÇö green row
   if (isVerified) {
@@ -242,34 +230,6 @@ function OAuthMethodButton({
               Uh oh, we didn't find a purchase. Make sure you bought on this account.
             </p>
           ) : null}
-        </div>
-      </Fragment>
-    );
-  }
-
-  if (isLinkStateLoading) {
-    return (
-      <Fragment key={rowPhase}>
-        <div className="vp-oauth-row vp-oauth-row--enter">
-          <div className="vp-oauth-row-left">
-            {iconSrc ? (
-              <img src={iconSrc} alt="" className="vp-oauth-icon" aria-hidden="true" />
-            ) : null}
-            <div className="vp-oauth-row-text">
-              <span className="vp-oauth-label">{requirement.providerLabel}</span>
-            </div>
-          </div>
-          <div className="vp-oauth-row-right">
-            <button
-              type="button"
-              className="vp-oauth-verify-btn btn-loading"
-              disabled
-              style={brandColor ? ({ '--brand': brandColor } as React.CSSProperties) : undefined}
-            >
-              <span className="btn-loading-spinner" aria-hidden="true" />
-              Loading...
-            </button>
-          </div>
         </div>
       </Fragment>
     );
@@ -777,6 +737,17 @@ function VerifyPurchasePage() {
     return m;
   }, [accountsQuery.data]);
 
+  const connectionQueriesSettled = areVerifyPurchaseConnectionQueriesSettled({
+    accounts: {
+      data: accountsQuery.data,
+      isError: accountsQuery.isError,
+    },
+    providers: {
+      data: providersQuery.data,
+      isError: providersQuery.isError,
+    },
+  });
+
   const hasEntitlementMethod =
     intent?.requirements.some((r) => r.kind === 'existing_entitlement') ?? false;
 
@@ -980,32 +951,43 @@ function VerifyPurchasePage() {
             <div className="vp-oauth-section">
               <p className="vp-section-eyebrow">Sign in to verify</p>
               <p className="vp-section-desc">Choose the store where you purchased this product.</p>
-              <div className="vp-oauth-buttons">
-                {oauthMethods.map((req) => (
-                  <OAuthMethodButton
-                    key={req.methodKey}
-                    intentId={intentId}
-                    requirement={req}
-                    linkedAccounts={accountsByProvider.get(req.providerKey) ?? []}
-                    provider={providersByKey.get(req.providerKey) ?? null}
-                    accountsLoading={accountsQuery.isPending && accountsQuery.data === undefined}
-                    providersLoading={providersQuery.isPending && providersQuery.data === undefined}
-                    verifiedMethodKey={verifiedMethodKey}
-                    onSuccess={invalidateIntent}
-                  />
-                ))}
-                {linkedEntitlementMethods.map((req) => (
-                  <LinkedEntitlementMethodButton
-                    key={req.methodKey}
-                    intentId={intentId}
-                    requirement={req}
-                    linkedAccounts={accountsByProvider.get(req.providerKey) ?? []}
-                    provider={providersByKey.get(req.providerKey) ?? null}
-                    verifiedMethodKey={verifiedMethodKey}
-                    onSuccess={invalidateIntent}
-                  />
-                ))}
-              </div>
+              {!connectionQueriesSettled ? (
+                <output
+                  className="vp-oauth-connections-loading"
+                  aria-live="polite"
+                  aria-label="Loading store connections"
+                >
+                  <span className="vp-spinner vp-spinner--lg" aria-hidden="true" />
+                  <p className="vp-oauth-connections-loading-text">
+                    Loading your store connections...
+                  </p>
+                </output>
+              ) : (
+                <div className="vp-oauth-buttons">
+                  {oauthMethods.map((req) => (
+                    <OAuthMethodButton
+                      key={req.methodKey}
+                      intentId={intentId}
+                      requirement={req}
+                      linkedAccounts={accountsByProvider.get(req.providerKey) ?? []}
+                      provider={providersByKey.get(req.providerKey) ?? null}
+                      verifiedMethodKey={verifiedMethodKey}
+                      onSuccess={invalidateIntent}
+                    />
+                  ))}
+                  {linkedEntitlementMethods.map((req) => (
+                    <LinkedEntitlementMethodButton
+                      key={req.methodKey}
+                      intentId={intentId}
+                      requirement={req}
+                      linkedAccounts={accountsByProvider.get(req.providerKey) ?? []}
+                      provider={providersByKey.get(req.providerKey) ?? null}
+                      verifiedMethodKey={verifiedMethodKey}
+                      onSuccess={invalidateIntent}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           ) : null}
 

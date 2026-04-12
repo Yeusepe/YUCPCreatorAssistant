@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import { logWebError } from '../webDiagnostics';
 import { serverApiFetch } from './api-client';
+import { withWebServerRequestSpan, withWebServerSpan } from './observability';
 
 /**
  * Server functions for the dashboard layout and its child routes.
@@ -176,51 +177,67 @@ function normalizeDashboardViewer(
 }
 
 async function loadGuilds(): Promise<Guild[]> {
-  logDashboardInfo('Dashboard guild load started', {
-    phase: 'dashboard-load-guilds',
-  });
-
-  try {
-    const response = await serverApiFetch<{ guilds?: GuildResponse[] }>('/api/connect/user/guilds');
-
-    const guilds = (response.guilds ?? []).map(normalizeGuild);
-
-    logDashboardInfo('Dashboard guild load completed', {
+  return withWebServerSpan(
+    'web.dashboard.guilds',
+    {
       phase: 'dashboard-load-guilds',
-      guildCount: guilds.length,
-    });
+    },
+    async () => {
+      logDashboardInfo('Dashboard guild load started', {
+        phase: 'dashboard-load-guilds',
+      });
 
-    return guilds;
-  } catch (error) {
-    logWebError('Dashboard guild load failed', error, {
-      phase: 'dashboard-load-guilds',
-    });
-    throw error;
-  }
+      try {
+        const response = await serverApiFetch<{ guilds?: GuildResponse[] }>('/api/connect/user/guilds');
+
+        const guilds = (response.guilds ?? []).map(normalizeGuild);
+
+        logDashboardInfo('Dashboard guild load completed', {
+          phase: 'dashboard-load-guilds',
+          guildCount: guilds.length,
+        });
+
+        return guilds;
+      } catch (error) {
+        logWebError('Dashboard guild load failed', error, {
+          phase: 'dashboard-load-guilds',
+        });
+        throw error;
+      }
+    }
+  );
 }
 
 async function loadDashboardViewer(): Promise<DashboardViewer> {
-  logDashboardInfo('Dashboard viewer load started', {
-    phase: 'dashboard-load-viewer',
-  });
-
-  try {
-    const response = await serverApiFetch<DashboardShellResponse>('/api/connect/dashboard/shell');
-    const dashboardViewer = normalizeDashboardViewer(response.viewer);
-
-    logDashboardInfo('Dashboard viewer load completed', {
+  return withWebServerSpan(
+    'web.dashboard.viewer',
+    {
       phase: 'dashboard-load-viewer',
-      hasViewerName: dashboardViewer.name !== null,
-      hasDiscordUserId: dashboardViewer.discordUserId !== null,
-    });
+    },
+    async () => {
+      logDashboardInfo('Dashboard viewer load started', {
+        phase: 'dashboard-load-viewer',
+      });
 
-    return dashboardViewer;
-  } catch (error) {
-    logWebError('Dashboard viewer load failed', error, {
-      phase: 'dashboard-load-viewer',
-    });
-    throw error;
-  }
+      try {
+        const response = await serverApiFetch<DashboardShellResponse>('/api/connect/dashboard/shell');
+        const dashboardViewer = normalizeDashboardViewer(response.viewer);
+
+        logDashboardInfo('Dashboard viewer load completed', {
+          phase: 'dashboard-load-viewer',
+          hasViewerName: dashboardViewer.name !== null,
+          hasDiscordUserId: dashboardViewer.discordUserId !== null,
+        });
+
+        return dashboardViewer;
+      } catch (error) {
+        logWebError('Dashboard viewer load failed', error, {
+          phase: 'dashboard-load-viewer',
+        });
+        throw error;
+      }
+    }
+  );
 }
 
 /**
@@ -228,58 +245,96 @@ async function loadDashboardViewer(): Promise<DashboardViewer> {
  * Used by the dashboard sidebar to populate the guild picker.
  */
 export const fetchGuilds = createServerFn({ method: 'GET' }).handler(async (): Promise<Guild[]> => {
-  return loadGuilds();
+  return withWebServerRequestSpan(
+    'serverFn.dashboard.guilds',
+    {
+      'tanstack.serverfn': 'fetchGuilds',
+    },
+    async () => loadGuilds()
+  );
 });
 
 /**
  * Fetches the list of available providers for the dashboard.
  */
 export const fetchDashboardProviders = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<DashboardProvider[]> => serverApiFetch<DashboardProvider[]>('/api/providers')
+  async (): Promise<DashboardProvider[]> =>
+    withWebServerRequestSpan(
+      'serverFn.dashboard.providers',
+      {
+        'tanstack.serverfn': 'fetchDashboardProviders',
+      },
+      async () => serverApiFetch<DashboardProvider[]>('/api/providers')
+    )
 );
 
 export const fetchDashboardViewer = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<DashboardViewer> => loadDashboardViewer()
+  async (): Promise<DashboardViewer> =>
+    withWebServerRequestSpan(
+      'serverFn.dashboard.viewer',
+      {
+        'tanstack.serverfn': 'fetchDashboardViewer',
+      },
+      async () => loadDashboardViewer()
+    )
 );
 
 export const fetchDashboardShell = createServerFn({ method: 'GET' })
   .inputValidator((data: DashboardShellRequest | undefined) => data ?? {})
   .handler(async ({ data }: { data?: DashboardShellRequest }): Promise<DashboardShellData> => {
-    logDashboardInfo('Dashboard shell load started', {
-      phase: 'dashboard-load-shell',
-    });
+    return withWebServerRequestSpan(
+      'serverFn.dashboard.shell',
+      {
+        'tanstack.serverfn': 'fetchDashboardShell',
+        'dashboard.include_home_data': Boolean(data?.includeHomeData),
+        'dashboard.has_guild_id': Boolean(data?.guildId),
+        'dashboard.has_auth_user_id': Boolean(data?.authUserId),
+      },
+      async () =>
+        withWebServerSpan(
+          'web.dashboard.shell',
+          {
+            phase: 'dashboard-load-shell',
+          },
+          async () => {
+            logDashboardInfo('Dashboard shell load started', {
+              phase: 'dashboard-load-shell',
+            });
 
-    try {
-      const params: Record<string, string> = {};
-      if (data?.authUserId) {
-        params.authUserId = data.authUserId;
-      }
-      if (data?.guildId) {
-        params.guildId = data.guildId;
-      }
-      if (data?.includeHomeData) {
-        params.includeHomeData = 'true';
-      }
-      const response = await serverApiFetch<DashboardShellResponse>(
-        '/api/connect/dashboard/shell',
-        {
-          params: Object.keys(params).length > 0 ? params : undefined,
-        }
-      );
-      const shell = normalizeDashboardShellResponse(response);
+            try {
+              const params: Record<string, string> = {};
+              if (data?.authUserId) {
+                params.authUserId = data.authUserId;
+              }
+              if (data?.guildId) {
+                params.guildId = data.guildId;
+              }
+              if (data?.includeHomeData) {
+                params.includeHomeData = 'true';
+              }
+              const response = await serverApiFetch<DashboardShellResponse>(
+                '/api/connect/dashboard/shell',
+                {
+                  params: Object.keys(params).length > 0 ? params : undefined,
+                }
+              );
+              const shell = normalizeDashboardShellResponse(response);
 
-      logDashboardInfo('Dashboard shell load completed', {
-        phase: 'dashboard-load-shell',
-        guildCount: shell.guilds.length,
-        hasHomeData: Boolean(shell.home),
-        hasSelectedServer: Boolean(shell.selectedServer),
-      });
+              logDashboardInfo('Dashboard shell load completed', {
+                phase: 'dashboard-load-shell',
+                guildCount: shell.guilds.length,
+                hasHomeData: Boolean(shell.home),
+                hasSelectedServer: Boolean(shell.selectedServer),
+              });
 
-      return shell;
-    } catch (error) {
-      logWebError('Dashboard shell load failed', error, {
-        phase: 'dashboard-load-shell',
-      });
-      throw error;
-    }
+              return shell;
+            } catch (error) {
+              logWebError('Dashboard shell load failed', error, {
+                phase: 'dashboard-load-shell',
+              });
+              throw error;
+            }
+          }
+        )
+    );
   });

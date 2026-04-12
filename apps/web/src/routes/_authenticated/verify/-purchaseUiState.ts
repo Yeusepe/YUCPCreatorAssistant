@@ -82,3 +82,13 @@ export function getPurchaseIntentLoadErrorState(error: unknown): PurchaseIntentL
     allowSignOut: false,
   };
 }
+
+/** True once accounts and providers have a result (data or error). Used to avoid per-row loading rows that unmount when connection state becomes known. */
+export function areVerifyPurchaseConnectionQueriesSettled(args: {
+  accounts: { data: unknown; isError: boolean };
+  providers: { data: unknown; isError: boolean };
+}): boolean {
+  const accountsSettled = args.accounts.data !== undefined || args.accounts.isError;
+  const providersSettled = args.providers.data !== undefined || args.providers.isError;
+  return accountsSettled && providersSettled;
+}

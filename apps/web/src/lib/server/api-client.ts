@@ -1,7 +1,9 @@
 import { getRequestHeader } from '@tanstack/react-start/server';
+import { trace } from '@opentelemetry/api';
 import { getInternalRpcSharedSecret } from '@yucp/shared';
 import { getToken } from '../auth-server';
 import { filterForwardedAuthCookieHeader } from './forwardedAuthCookies';
+import { getActiveWebServerTraceId, withWebServerSpan } from './observability';
 
 /**
  * Server-side HTTP client for calling the Bun API.
@@ -46,51 +48,74 @@ export async function serverApiFetch<T = unknown>(
   options: ServerFetchOptions = {}
 ): Promise<T> {
   const { method = 'GET', body, params, authToken } = options;
-  const base = getApiBaseUrl();
 
-  let url = `${base}${path}`;
-  if (params) {
-    const search = new URLSearchParams(params);
-    url += `?${search.toString()}`;
-  }
+  return withWebServerSpan(
+    `web.api.${method.toLowerCase()} ${path}`,
+    {
+      'http.request.method': method,
+      'http.route': path,
+      'http.url_params.count': params ? Object.keys(params).length : 0,
+      'web.server.auth.forwarded': Boolean(authToken),
+    },
+    async () => {
+      const base = getApiBaseUrl();
 
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'X-Internal-Service': 'web',
-    'X-Internal-Service-Secret': getInternalSecret(),
-  };
+      let url = `${base}${path}`;
+      if (params) {
+        const search = new URLSearchParams(params);
+        url += `?${search.toString()}`;
+      }
 
-  if (authToken) {
-    headers['X-Auth-Token'] = authToken;
-  }
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'X-Internal-Service': 'web',
+        'X-Internal-Service-Secret': getInternalSecret(),
+      };
 
-  const forwardedCookieHeader = getForwardedAuthCookieHeader();
-  if (forwardedCookieHeader) {
-    headers.Cookie = forwardedCookieHeader;
-  }
+      if (authToken) {
+        headers['X-Auth-Token'] = authToken;
+      }
 
-  if (body !== undefined) {
-    headers['Content-Type'] = 'application/json';
-  }
+      const forwardedCookieHeader = getForwardedAuthCookieHeader();
+      if (forwardedCookieHeader) {
+        headers.Cookie = forwardedCookieHeader;
+      }
 
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+      if (body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+      }
 
-  if (!response.ok) {
-    const errorBody = await response.text().catch(() => '');
-    throw new Error(
-      `API ${method} ${path} failed: ${response.status} ${response.statusText} - ${errorBody}`
-    );
-  }
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
+      const activeSpan = trace.getActiveSpan();
+      activeSpan?.setAttribute('http.response.status_code', response.status);
+      const apiTraceId = response.headers.get('x-trace-id')?.trim();
+      if (apiTraceId) {
+        activeSpan?.setAttribute('downstream.trace_id', apiTraceId);
+      }
+      const currentTraceId = getActiveWebServerTraceId();
+      if (currentTraceId) {
+        activeSpan?.setAttribute('web.trace_id', currentTraceId);
+      }
 
-  return response.json() as Promise<T>;
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => '');
+        throw new Error(
+          `API ${method} ${path} failed: ${response.status} ${response.statusText} - ${errorBody}`
+        );
+      }
+
+      if (response.status === 204) {
+        return undefined as T;
+      }
+
+      return response.json() as Promise<T>;
+    }
+  );
 }
 
 /**
