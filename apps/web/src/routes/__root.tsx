@@ -4,6 +4,7 @@ import type { ConvexQueryClient } from '@convex-dev/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from '@tanstack/react-router';
 import { type ReactNode, useEffect } from 'react';
+import { CookiePreferencesPrompt } from '@/components/ui/CookiePreferencesPrompt';
 import { ToastProvider } from '@/components/ui/Toast';
 import { installChunkErrorRecovery } from '@/lib/chunkErrorRecovery';
 import { useVersionPoller } from '@/lib/versionPoller';
@@ -41,6 +42,7 @@ function RootComponent() {
       <ToastProvider>
         <AppEffects />
         <Outlet />
+        <CookiePreferencesPrompt />
       </ToastProvider>
     </RootDocument>
   );

@@ -328,9 +328,12 @@ function PrivacyPolicyPage() {
                 or a few hours.
               </li>
               <li>
-                <strong>Analytics:</strong> We currently do not use analytics cookies. If we add
-                analytics in the future, we will disclose the provider and purpose and update this
-                section.
+                <strong>Optional diagnostics:</strong> If you opt in to helpful diagnostics, we may
+                use first-party cookies or similar browser storage to remember that choice and
+                enable anonymous diagnostics tooling, including HyperDX-powered error, performance,
+                and session-replay debugging. These diagnostics are used to investigate bugs and
+                slow pages, not for advertising, resale, or cross-site profiling. You can change
+                this at any time from account privacy settings.
               </li>
             </ul>
             <p>

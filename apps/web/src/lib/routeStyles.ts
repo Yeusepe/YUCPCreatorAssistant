@@ -42,10 +42,23 @@ export const routeStyleHrefs = {
   vrchatVerify: vrchatVerifyHref,
 } as const;
 
+function normalizeRouteStyleHref(href: string) {
+  if (!href.includes('?')) {
+    return href;
+  }
+
+  const parsed = new URL(href, 'http://localhost');
+  parsed.searchParams.delete('t');
+  const search = parsed.searchParams.toString();
+  return `${parsed.pathname}${search ? `?${search}` : ''}`;
+}
+
 export function routeStylesheetLinks(...hrefs: Array<string | undefined>) {
-  return hrefs.filter(Boolean).map((href) => ({
-    rel: 'stylesheet' as const,
-    href,
-    suppressHydrationWarning: true as const,
-  }));
+  return hrefs
+    .filter((href): href is string => Boolean(href))
+    .map((href) => ({
+      rel: 'stylesheet' as const,
+      href: normalizeRouteStyleHref(href),
+      suppressHydrationWarning: true as const,
+    }));
 }

@@ -252,6 +252,7 @@
   margin: 4px 0 0;
   font-size: 13px;
   color: #64748b;
+  overflow-wrap: anywhere;
 }
 .dark .account-profile-meta {
   color: rgba(226, 232, 240, 0.74);
@@ -271,6 +272,20 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.account-pill-row > * {
+  max-width: 100%;
+}
+
+.account-pill-row [data-slot="base"] {
+  max-width: 100%;
+}
+
+.account-pill-row [data-slot="content"] {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .account-pill-row--compact {
@@ -305,6 +320,7 @@
   font-size: 14px;
   font-weight: 600;
   color: #0f172a;
+  overflow-wrap: anywhere;
 }
 .dark .account-kv-value {
   color: #f8fafc;
@@ -2208,6 +2224,16 @@
     gap: 14px;
   }
 
+  .account-surface-card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .account-surface-card-copy,
+  .account-surface-card-actions {
+    width: 100%;
+  }
+
   .account-stat-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2217,8 +2243,40 @@
     justify-content: flex-start;
   }
 
+  .account-surface-card-actions > * {
+    width: 100%;
+  }
+
+  .account-surface-card-actions .flex {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .account-surface-card-actions .account-btn,
+  .account-surface-card-actions .button {
+    width: 100%;
+  }
+
   .account-profile-hero {
+    flex-direction: column;
     align-items: flex-start;
+    gap: 12px;
+  }
+
+  .account-profile-hero-copy {
+    width: 100%;
+  }
+
+  .account-kv-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .account-kv-value {
+    width: 100%;
+    text-align: left;
   }
 
   .account-list-row {
@@ -2240,6 +2298,16 @@
   .acct-provider-card,
   .acct-provider-row {
     flex-direction: column;
+  }
+
+  .account-inline-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .account-inline-actions > * {
+    width: 100%;
   }
 
   .cert-billing-hero-row {

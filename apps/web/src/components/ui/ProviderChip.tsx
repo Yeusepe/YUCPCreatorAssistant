@@ -7,8 +7,13 @@ interface ProviderChipProps {
 
 export function ProviderChip({ name, className }: ProviderChipProps) {
   return (
-    <Chip variant="soft" color="default" size="sm" className={`rounded-full ${className ?? ''}`}>
-      {name}
+    <Chip
+      variant="soft"
+      color="default"
+      size="sm"
+      className={`max-w-full rounded-full ${className ?? ''}`}
+    >
+      <span className="block max-w-full break-all text-left whitespace-normal">{name}</span>
     </Chip>
   );
 }
