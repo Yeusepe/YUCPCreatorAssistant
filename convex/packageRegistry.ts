@@ -22,7 +22,8 @@ import { requireApiSecret } from './lib/apiAuth';
 
 const PACKAGE_ID_RE = /^[a-z0-9\-_./:]{1,128}$/;
 const PACKAGE_NAME_MAX_LENGTH = 120;
-const PACKAGE_DELETE_BLOCKED_REASON = 'Package has signing or license history and cannot be deleted.';
+const PACKAGE_DELETE_BLOCKED_REASON =
+  'Package has signing or license history and cannot be deleted.';
 const PACKAGE_ARCHIVED_UPDATE_BLOCKED_REASON =
   'Archived packages cannot be updated. Restore the package before renaming it.';
 const PACKAGE_ARCHIVED_SIGNING_BLOCKED_REASON =
@@ -47,9 +48,7 @@ function normalizePackageName(packageName: string | undefined): string | undefin
     return undefined;
   }
   if (normalized.length > PACKAGE_NAME_MAX_LENGTH) {
-    throw new ConvexError(
-      `Package name must be ${PACKAGE_NAME_MAX_LENGTH} characters or fewer`
-    );
+    throw new ConvexError(`Package name must be ${PACKAGE_NAME_MAX_LENGTH} characters or fewer`);
   }
   return normalized;
 }
@@ -246,10 +245,12 @@ export const listForAuthUser = query({
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
 
-    const rows = (await ctx.db
-      .query('package_registry')
-      .withIndex('by_yucp_user_id', (q) => q.eq('yucpUserId', args.authUserId))
-      .collect()).filter((row) => args.includeArchived || !isArchivedRegistration(row));
+    const rows = (
+      await ctx.db
+        .query('package_registry')
+        .withIndex('by_yucp_user_id', (q) => q.eq('yucpUserId', args.authUserId))
+        .collect()
+    ).filter((row) => args.includeArchived || !isArchivedRegistration(row));
 
     const packages = await Promise.all(
       rows.map(async (row) => {
@@ -300,14 +301,11 @@ export const listForAuthUser = query({
     );
 
     return {
-      packages: packages
-        .sort((left, right) => {
-          const leftLabel = (left.packageName ?? left.packageId).toLowerCase();
-          const rightLabel = (right.packageName ?? right.packageId).toLowerCase();
-          return (
-            leftLabel.localeCompare(rightLabel) || left.packageId.localeCompare(right.packageId)
-          );
-        }),
+      packages: packages.sort((left, right) => {
+        const leftLabel = (left.packageName ?? left.packageId).toLowerCase();
+        const rightLabel = (right.packageName ?? right.packageId).toLowerCase();
+        return leftLabel.localeCompare(rightLabel) || left.packageId.localeCompare(right.packageId);
+      }),
     };
   },
 });

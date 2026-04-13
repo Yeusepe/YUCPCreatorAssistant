@@ -7,8 +7,8 @@
 
 import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
-import { ProviderV, WebhookProviderV } from './lib/providers';
 import { requireApiSecret } from './lib/apiAuth';
+import { ProviderV, WebhookProviderV } from './lib/providers';
 
 /**
  * Determines whether a webhook event is considered authenticated and may enter

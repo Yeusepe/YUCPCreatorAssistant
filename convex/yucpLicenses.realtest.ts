@@ -8,8 +8,7 @@ import { makeTestConvex, seedCertificateBillingCatalog } from './testHelpers';
 describe('coupling job capability gating', () => {
   const issuerBaseUrl = 'https://public-api.test.example';
   const packageId = 'pkg-coupling-capability';
-  const machineFingerprint =
-    'a604eb0948054b9acb9f40da80a6a4c8e711b98c59e54a11089fea3a2b77dc1c';
+  const machineFingerprint = 'a604eb0948054b9acb9f40da80a6a4c8e711b98c59e54a11089fea3a2b77dc1c';
   const projectId = '0123456789abcdef0123456789abcdef';
   const creatorAuthUserId = 'auth-coupling-capability';
 
@@ -119,7 +118,8 @@ describe('coupling job capability gating', () => {
 
   function mockActiveRuntimeArtifact() {
     globalThis.fetch = (async (input) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       if (
         url ===
         'https://coupling.internal/v1/runtime-artifacts/manifest?artifactKey=coupling-runtime'

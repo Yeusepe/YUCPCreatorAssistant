@@ -45,10 +45,13 @@ export async function deriveEnvelopeKeyBytes(secret: string, purpose: string): P
 }
 
 async function importAesKey(keyBytes: Uint8Array): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', toArrayBuffer(keyBytes), { name: 'AES-GCM', length: 256 }, false, [
-    'encrypt',
-    'decrypt',
-  ]);
+  return crypto.subtle.importKey(
+    'raw',
+    toArrayBuffer(keyBytes),
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
 }
 
 export async function encryptArtifactEnvelope(

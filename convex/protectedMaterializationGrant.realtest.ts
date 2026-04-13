@@ -3,7 +3,11 @@ import { internal } from './_generated/api';
 import { buildCreatorProfileWorkspaceKey } from './lib/certificateBillingConfig';
 import { unsealProtectedMaterializationGrant } from './lib/protectedMaterializationGrant';
 import { buildPublicAuthIssuer } from './lib/publicAuthIssuer';
-import { getPublicKeyFromPrivate, signLicenseJwt, verifyProtectedUnlockJwt } from './lib/yucpCrypto';
+import {
+  getPublicKeyFromPrivate,
+  signLicenseJwt,
+  verifyProtectedUnlockJwt,
+} from './lib/yucpCrypto';
 import { makeTestConvex, seedCertificateBillingCatalog } from './testHelpers';
 
 describe('protected materialization grant issuance', () => {
@@ -12,8 +16,7 @@ describe('protected materialization grant issuance', () => {
   const packageVersion = '1.0.0';
   const contentHash = 'c'.repeat(64);
   const protectedAssetId = '46c90a22a12b44fe88fcd9be626bdedb';
-  const machineFingerprint =
-    'a604eb0948054b9acb9f40da80a6a4c8e711b98c59e54a11089fea3a2b77dc1c';
+  const machineFingerprint = 'a604eb0948054b9acb9f40da80a6a4c8e711b98c59e54a11089fea3a2b77dc1c';
   const projectId = '0123456789abcdef0123456789abcdef';
   const creatorAuthUserId = 'auth-protected-grant';
   const publisherId = 'publisher-protected-grant';
@@ -162,7 +165,11 @@ describe('protected materialization grant issuance', () => {
       runtimePlaintextSha256: couplingRuntimePlaintextSha256,
     });
 
-    expect(result).toMatchObject({ success: true, expiresAt: expect.any(Number), grant: expect.any(String) });
+    expect(result).toMatchObject({
+      success: true,
+      expiresAt: expect.any(Number),
+      grant: expect.any(String),
+    });
     expect(result.grant).toBeTruthy();
     expect(result.grant).not.toContain(contentKeyBase64);
 
@@ -257,9 +264,12 @@ describe('protected materialization grant issuance', () => {
     );
     expect(grantRedeemedEvents).toHaveLength(1);
 
-    const receiptResult = await t.mutation(internal.yucpLicenses.receiptProtectedMaterializationGrant, {
-      grant: result.grant ?? '',
-    });
+    const receiptResult = await t.mutation(
+      internal.yucpLicenses.receiptProtectedMaterializationGrant,
+      {
+        grant: result.grant ?? '',
+      }
+    );
 
     expect(receiptResult).toMatchObject({
       success: true,
@@ -305,7 +315,11 @@ describe('protected materialization grant issuance', () => {
       runtimePlaintextSha256: couplingRuntimePlaintextSha256,
     });
 
-    expect(result).toMatchObject({ success: true, grant: expect.any(String), expiresAt: expect.any(Number) });
+    expect(result).toMatchObject({
+      success: true,
+      grant: expect.any(String),
+      expiresAt: expect.any(Number),
+    });
 
     const payload = await unsealProtectedMaterializationGrant(result.grant ?? '');
     expect(payload.coupling).toMatchObject({
@@ -332,9 +346,12 @@ describe('protected materialization grant issuance', () => {
       skipReason: 'capability_disabled',
     });
 
-    const receiptResult = await t.mutation(internal.yucpLicenses.receiptProtectedMaterializationGrant, {
-      grant: result.grant ?? '',
-    });
+    const receiptResult = await t.mutation(
+      internal.yucpLicenses.receiptProtectedMaterializationGrant,
+      {
+        grant: result.grant ?? '',
+      }
+    );
 
     expect(receiptResult).toMatchObject({
       success: true,

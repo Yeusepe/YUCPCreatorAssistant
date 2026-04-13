@@ -1,5 +1,5 @@
 import { v } from 'convex/values';
-import { type QueryCtx, mutation, query } from './_generated/server';
+import { mutation, type QueryCtx, query } from './_generated/server';
 import { createAuth } from './auth';
 import { requireApiSecret } from './lib/apiAuth';
 
@@ -52,7 +52,9 @@ interface BetterAuthOAuthServerApi {
   getOAuthClient(args: { query: { client_id: string } }): Promise<unknown>;
   getOAuthClientPublic(args: { query: { client_id: string } }): Promise<unknown>;
   createOAuthClient(args: { body: Record<string, unknown> }): Promise<unknown>;
-  updateOAuthClient(args: { body: { client_id: string; update: Record<string, unknown> } }): Promise<unknown>;
+  updateOAuthClient(args: {
+    body: { client_id: string; update: Record<string, unknown> };
+  }): Promise<unknown>;
   rotateClientSecret(args: { body: { client_id: string } }): Promise<unknown>;
   deleteOAuthClient(args: { body: { client_id: string } }): Promise<unknown>;
 }

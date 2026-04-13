@@ -63,10 +63,10 @@ export type SignedManifest = {
  * Six-state validation outcome (C2PA-shaped).
  */
 export type ManifestValidationState =
-  | 'well-formed'       // manifest parses and is structurally valid
-  | 'valid'             // canonical_sha256 matches the asset's canonical form
-  | 'trusted'           // signer identity is on the YUCP trust list
-  | 'modified'          // canonical hash mismatch — asset was changed after signing
+  | 'well-formed' // manifest parses and is structurally valid
+  | 'valid' // canonical_sha256 matches the asset's canonical form
+  | 'trusted' // signer identity is on the YUCP trust list
+  | 'modified' // canonical hash mismatch — asset was changed after signing
   | 'descriptor-missing' // no .yucp.sig present (never collapsed into 'modified')
   | 'unsupported-transform'; // format re-encoded in a way that destroys the canonical form
 
@@ -260,7 +260,10 @@ export async function verifyManifest(
   // 2. Canonical hash check
   let computedHash: string;
   try {
-    computedHash = await computePreTraceCanonicalHash(assetBytes, manifest.claim.format ?? 'unknown');
+    computedHash = await computePreTraceCanonicalHash(
+      assetBytes,
+      manifest.claim.format ?? 'unknown'
+    );
   } catch {
     return 'unsupported-transform';
   }
@@ -271,9 +274,7 @@ export async function verifyManifest(
 
   // 3. Signature verification
   try {
-    const b64 = manifest.signatures.ed25519.sig
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
+    const b64 = manifest.signatures.ed25519.sig.replace(/-/g, '+').replace(/_/g, '/');
     const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
     const sigBytes = base64ToBytes(padded);
     const pubKeyBytes = base64ToBytes(trustedPublicKeyBase64);

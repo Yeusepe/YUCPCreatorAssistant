@@ -6,9 +6,8 @@
  */
 
 import type { GenericMutationCtx } from 'convex/server';
-import type { DataModel } from '../../_generated/dataModel';
 import { internal } from '../../_generated/api';
-import type { Id } from '../../_generated/dataModel';
+import type { DataModel, Id } from '../../_generated/dataModel';
 import { requireApiSecret, sha256Hex } from './queries';
 
 type MutationCtx = GenericMutationCtx<DataModel>;

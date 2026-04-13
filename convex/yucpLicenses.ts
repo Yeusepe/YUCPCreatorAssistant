@@ -45,11 +45,11 @@ import { requireApiSecret } from './lib/apiAuth';
 import { BILLING_CAPABILITY_KEYS } from './lib/billingCapabilities';
 import { PII_PURPOSES } from './lib/credentialKeys';
 import { upsertLicenseSubjectLink } from './lib/licenseSubjectLink';
+import { encryptPii } from './lib/piiCrypto';
 import {
   decryptProtectedBlobContentKey,
   encryptProtectedBlobContentKey,
 } from './lib/protectedAssetKeyCrypto';
-import { encryptPii } from './lib/piiCrypto';
 import { resolveProtectedAssetUnlockMode } from './lib/protectedAssetUnlockMode';
 import {
   sealProtectedMaterializationGrant,

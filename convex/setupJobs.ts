@@ -1,0 +1,1558 @@
+import { ConvexError, v } from 'convex/values';
+import type { Doc, Id } from './_generated/dataModel';
+import type { MutationCtx } from './_generated/server';
+import { mutation, query } from './_generated/server';
+import { requireApiSecret } from './lib/apiAuth';
+import { getAuthenticatedAuthUser } from './lib/authUser';
+import { ProviderV } from './lib/providers';
+
+const SetupJobMode = v.union(v.literal('automatic_setup'), v.literal('migration'));
+const SetupJobTriggerSource = v.union(
+  v.literal('dashboard'),
+  v.literal('discord_setup'),
+  v.literal('discord_autosetup'),
+  v.literal('api')
+);
+const SetupJobStatus = v.union(
+  v.literal('pending'),
+  v.literal('running'),
+  v.literal('waiting_for_user'),
+  v.literal('blocked'),
+  v.literal('completed'),
+  v.literal('failed'),
+  v.literal('cancelled')
+);
+const SetupJobPhase = v.union(
+  v.literal('connect_store'),
+  v.literal('scan_server'),
+  v.literal('generate_plan'),
+  v.literal('review_exceptions'),
+  v.literal('apply_setup'),
+  v.literal('shadow_migration'),
+  v.literal('confirm_cutover')
+);
+const SetupStepStatus = v.union(
+  v.literal('pending'),
+  v.literal('in_progress'),
+  v.literal('waiting_for_user'),
+  v.literal('completed'),
+  v.literal('failed'),
+  v.literal('skipped'),
+  v.literal('cancelled')
+);
+const SetupStepKind = v.union(
+  v.literal('provider_connection'),
+  v.literal('server_scan'),
+  v.literal('recommendation'),
+  v.literal('review'),
+  v.literal('apply'),
+  v.literal('migration'),
+  v.literal('cutover')
+);
+const SetupRecommendationType = v.union(
+  v.literal('provider_connection'),
+  v.literal('role_adoption'),
+  v.literal('role_creation'),
+  v.literal('verify_surface_reuse'),
+  v.literal('verify_surface_creation'),
+  v.literal('migration_action')
+);
+const SetupRecommendationStatus = v.union(
+  v.literal('proposed'),
+  v.literal('applied'),
+  v.literal('dismissed'),
+  v.literal('superseded')
+);
+const EventLevel = v.union(
+  v.literal('info'),
+  v.literal('success'),
+  v.literal('warning'),
+  v.literal('error')
+);
+const MigrationMode = v.union(
+  v.literal('adopt_existing_roles'),
+  v.literal('import_verified_users'),
+  v.literal('bridge_from_current_roles'),
+  v.literal('cross_server_bridge')
+);
+const MigrationJobStatus = v.union(
+  v.literal('pending'),
+  v.literal('running'),
+  v.literal('waiting_for_user'),
+  v.literal('blocked'),
+  v.literal('completed'),
+  v.literal('failed'),
+  v.literal('cancelled')
+);
+const MigrationPhase = v.union(
+  v.literal('analyze'),
+  v.literal('shadow'),
+  v.literal('bridged'),
+  v.literal('enforced'),
+  v.literal('rollback')
+);
+const MigrationSourceType = v.union(
+  v.literal('verification_bot'),
+  v.literal('server_export'),
+  v.literal('manual_snapshot')
+);
+const MigrationCapabilityMode = v.union(
+  v.literal('full_export'),
+  v.literal('partial_export'),
+  v.literal('analysis_only'),
+  v.literal('manual_review')
+);
+const MigrationSourceStatus = v.union(
+  v.literal('detected'),
+  v.literal('connected'),
+  v.literal('imported'),
+  v.literal('failed')
+);
+const MigrationMatchStrategy = v.union(
+  v.literal('exact_name'),
+  v.literal('alias'),
+  v.literal('permalink'),
+  v.literal('fuzzy'),
+  v.literal('duplicate_group'),
+  v.literal('source_bot_hint'),
+  v.literal('manual')
+);
+const MigrationRoleMappingStatus = v.union(
+  v.literal('auto_matched'),
+  v.literal('suggested'),
+  v.literal('unresolved'),
+  v.literal('adopted'),
+  v.literal('ignored')
+);
+const MigrationGrantStatus = v.union(
+  v.literal('canonical'),
+  v.literal('provisional_migration'),
+  v.literal('revoked')
+);
+const Provider = ProviderV;
+
+const TERMINAL_SETUP_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+const DEFAULT_SETUP_FLOW: ReadonlyArray<{
+  phase:
+    | 'connect_store'
+    | 'scan_server'
+    | 'generate_plan'
+    | 'review_exceptions'
+    | 'apply_setup'
+    | 'shadow_migration'
+    | 'confirm_cutover';
+  stepKey: string;
+  label: string;
+  stepKind:
+    | 'provider_connection'
+    | 'server_scan'
+    | 'recommendation'
+    | 'review'
+    | 'apply'
+    | 'migration'
+    | 'cutover';
+  requiresUserAction: boolean;
+}> = [
+  {
+    phase: 'connect_store',
+    stepKey: 'connect-store',
+    label: 'Connect store',
+    stepKind: 'provider_connection',
+    requiresUserAction: true,
+  },
+  {
+    phase: 'scan_server',
+    stepKey: 'scan-server',
+    label: 'Scan server',
+    stepKind: 'server_scan',
+    requiresUserAction: false,
+  },
+  {
+    phase: 'generate_plan',
+    stepKey: 'generate-plan',
+    label: 'Generate recommended plan',
+    stepKind: 'recommendation',
+    requiresUserAction: false,
+  },
+  {
+    phase: 'review_exceptions',
+    stepKey: 'review-exceptions',
+    label: 'Review exceptions',
+    stepKind: 'review',
+    requiresUserAction: true,
+  },
+  {
+    phase: 'apply_setup',
+    stepKey: 'apply-setup',
+    label: 'Apply setup',
+    stepKind: 'apply',
+    requiresUserAction: false,
+  },
+  {
+    phase: 'shadow_migration',
+    stepKey: 'shadow-migration',
+    label: 'Shadow migration',
+    stepKind: 'migration',
+    requiresUserAction: false,
+  },
+  {
+    phase: 'confirm_cutover',
+    stepKey: 'confirm-cutover',
+    label: 'Confirm cutover',
+    stepKind: 'cutover',
+    requiresUserAction: true,
+  },
+];
+
+const SetupStepSummaryV = v.object({
+  id: v.id('setup_job_steps'),
+  phase: SetupJobPhase,
+  stepKey: v.string(),
+  label: v.string(),
+  stepKind: SetupStepKind,
+  status: SetupStepStatus,
+  sortOrder: v.number(),
+  blocking: v.boolean(),
+  requiresUserAction: v.boolean(),
+  provider: v.optional(Provider),
+  payload: v.optional(v.any()),
+  result: v.optional(v.any()),
+  errorSummary: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+});
+
+const SetupRecommendationSummaryV = v.object({
+  id: v.id('setup_recommendations'),
+  recommendationType: SetupRecommendationType,
+  status: SetupRecommendationStatus,
+  confidence: v.optional(v.number()),
+  title: v.string(),
+  detail: v.optional(v.string()),
+  payload: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+const SetupEventSummaryV = v.object({
+  id: v.id('setup_events'),
+  level: EventLevel,
+  eventType: v.string(),
+  message: v.string(),
+  payload: v.optional(v.any()),
+  createdAt: v.number(),
+});
+
+const SetupJobSummaryV = v.object({
+  id: v.id('setup_jobs'),
+  guildLinkId: v.id('guild_links'),
+  discordGuildId: v.string(),
+  mode: SetupJobMode,
+  triggerSource: SetupJobTriggerSource,
+  status: SetupJobStatus,
+  currentPhase: SetupJobPhase,
+  activeStepKey: v.optional(v.string()),
+  blockingReason: v.optional(v.string()),
+  summary: v.optional(v.any()),
+  latestEventAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+  cancelledAt: v.optional(v.number()),
+  failedAt: v.optional(v.number()),
+  lastResumedAt: v.optional(v.number()),
+});
+
+const SetupJobDetailV = v.object({
+  job: SetupJobSummaryV,
+  steps: v.array(SetupStepSummaryV),
+  recommendations: v.array(SetupRecommendationSummaryV),
+  events: v.array(SetupEventSummaryV),
+  activeMigrationJobId: v.union(v.id('migration_jobs'), v.null()),
+});
+
+const MigrationJobSummaryV = v.object({
+  id: v.id('migration_jobs'),
+  setupJobId: v.optional(v.id('setup_jobs')),
+  guildLinkId: v.id('guild_links'),
+  discordGuildId: v.string(),
+  mode: MigrationMode,
+  status: MigrationJobStatus,
+  currentPhase: MigrationPhase,
+  sourceBotKey: v.optional(v.string()),
+  sourceGuildId: v.optional(v.string()),
+  blockingReason: v.optional(v.string()),
+  summary: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+  cancelledAt: v.optional(v.number()),
+  failedAt: v.optional(v.number()),
+});
+
+const MigrationEventSummaryV = v.object({
+  id: v.id('migration_events'),
+  phase: v.optional(MigrationPhase),
+  level: EventLevel,
+  eventType: v.string(),
+  message: v.string(),
+  payload: v.optional(v.any()),
+  createdAt: v.number(),
+});
+
+const MigrationSourceSummaryV = v.object({
+  id: v.id('migration_sources'),
+  sourceKey: v.string(),
+  sourceType: MigrationSourceType,
+  capabilityMode: MigrationCapabilityMode,
+  status: MigrationSourceStatus,
+  displayName: v.optional(v.string()),
+  payload: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+const MigrationRoleMappingSummaryV = v.object({
+  id: v.id('migration_role_mappings'),
+  provider: v.optional(Provider),
+  sourceRoleId: v.optional(v.string()),
+  sourceRoleName: v.string(),
+  targetProductId: v.optional(v.string()),
+  targetProductName: v.optional(v.string()),
+  targetRoleId: v.optional(v.string()),
+  targetRoleName: v.optional(v.string()),
+  matchStrategy: MigrationMatchStrategy,
+  confidence: v.optional(v.number()),
+  status: MigrationRoleMappingStatus,
+  reviewNote: v.optional(v.string()),
+  payload: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+const MigrationGrantSummaryV = v.object({
+  id: v.id('migration_grants'),
+  discordUserId: v.string(),
+  roleId: v.string(),
+  roleName: v.optional(v.string()),
+  productId: v.optional(v.string()),
+  status: MigrationGrantStatus,
+  provenance: v.optional(v.any()),
+  expiresAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  promotedAt: v.optional(v.number()),
+  revokedAt: v.optional(v.number()),
+});
+
+const MigrationJobDetailV = v.object({
+  job: MigrationJobSummaryV,
+  sources: v.array(MigrationSourceSummaryV),
+  roleMappings: v.array(MigrationRoleMappingSummaryV),
+  grants: v.array(MigrationGrantSummaryV),
+  events: v.array(MigrationEventSummaryV),
+});
+
+async function getOwnedGuildLinkOrThrow(
+  ctx: Pick<MutationCtx, 'db'>,
+  guildLinkId: Id<'guild_links'>,
+  authUserId: string
+): Promise<Doc<'guild_links'>> {
+  const guildLink = await ctx.db.get(guildLinkId);
+  if (!guildLink) {
+    throw new ConvexError('Guild link not found');
+  }
+  if (guildLink.authUserId !== authUserId) {
+    throw new ConvexError('Unauthorized');
+  }
+  return guildLink;
+}
+
+async function createSetupSteps(
+  ctx: Pick<MutationCtx, 'db'>,
+  args: {
+    setupJobId: Id<'setup_jobs'>;
+    authUserId: string;
+    guildLinkId: Id<'guild_links'>;
+    discordGuildId: string;
+    now: number;
+  }
+) {
+  await Promise.all(
+    DEFAULT_SETUP_FLOW.map((step, index) =>
+      ctx.db.insert('setup_job_steps', {
+        setupJobId: args.setupJobId,
+        authUserId: args.authUserId,
+        guildLinkId: args.guildLinkId,
+        discordGuildId: args.discordGuildId,
+        phase: step.phase,
+        stepKey: step.stepKey,
+        label: step.label,
+        stepKind: step.stepKind,
+        status: index === 0 ? 'in_progress' : 'pending',
+        sortOrder: index,
+        blocking: step.requiresUserAction,
+        requiresUserAction: step.requiresUserAction,
+        createdAt: args.now,
+        updatedAt: args.now,
+        startedAt: index === 0 ? args.now : undefined,
+      })
+    )
+  );
+}
+
+async function appendAuditEvent(
+  ctx: Pick<MutationCtx, 'db'>,
+  args: {
+    authUserId: string;
+    eventType:
+      | 'setup.job.created'
+      | 'setup.job.resumed'
+      | 'setup.job.status.updated'
+      | 'migration.job.created'
+      | 'migration.job.status.updated';
+    metadata?: Record<string, unknown>;
+  }
+) {
+  await ctx.db.insert('audit_events', {
+    authUserId: args.authUserId,
+    eventType: args.eventType,
+    actorType: 'admin',
+    metadata: args.metadata,
+    createdAt: Date.now(),
+  });
+}
+
+async function createOrResumeSetupJobImpl(
+  ctx: Pick<MutationCtx, 'db'>,
+  args: {
+    authUserId: string;
+    guildLinkId: Id<'guild_links'>;
+    mode: 'automatic_setup' | 'migration';
+    triggerSource: 'dashboard' | 'discord_setup' | 'discord_autosetup' | 'api';
+  }
+) {
+  const guildLink = await getOwnedGuildLinkOrThrow(ctx, args.guildLinkId, args.authUserId);
+  const existing = await ctx.db
+    .query('setup_jobs')
+    .withIndex('by_guild_link', (q) => q.eq('guildLinkId', args.guildLinkId))
+    .order('desc')
+    .first();
+
+  if (existing && existing.mode === args.mode && !TERMINAL_SETUP_STATUSES.has(existing.status)) {
+    const now = Date.now();
+    await ctx.db.patch(existing._id, {
+      triggerSource: args.triggerSource,
+      lastResumedAt: now,
+      updatedAt: now,
+    });
+    await appendAuditEvent(ctx, {
+      authUserId: args.authUserId,
+      eventType: 'setup.job.resumed',
+      metadata: {
+        setupJobId: existing._id,
+        guildLinkId: args.guildLinkId,
+        triggerSource: args.triggerSource,
+      },
+    });
+    return { setupJobId: existing._id, created: false as const };
+  }
+
+  const now = Date.now();
+  const setupJobId = await ctx.db.insert('setup_jobs', {
+    authUserId: args.authUserId,
+    guildLinkId: args.guildLinkId,
+    discordGuildId: guildLink.discordGuildId,
+    mode: args.mode,
+    triggerSource: args.triggerSource,
+    status: 'running',
+    currentPhase: 'connect_store',
+    activeStepKey: 'connect-store',
+    createdAt: now,
+    updatedAt: now,
+    startedAt: now,
+  });
+
+  await createSetupSteps(ctx, {
+    setupJobId,
+    authUserId: args.authUserId,
+    guildLinkId: args.guildLinkId,
+    discordGuildId: guildLink.discordGuildId,
+    now,
+  });
+
+  await appendAuditEvent(ctx, {
+    authUserId: args.authUserId,
+    eventType: 'setup.job.created',
+    metadata: {
+      setupJobId,
+      guildLinkId: args.guildLinkId,
+      mode: args.mode,
+      triggerSource: args.triggerSource,
+    },
+  });
+
+  return { setupJobId, created: true as const };
+}
+
+async function createMigrationJobImpl(
+  ctx: Pick<MutationCtx, 'db'>,
+  args: {
+    authUserId: string;
+    guildLinkId: Id<'guild_links'>;
+    setupJobId?: Id<'setup_jobs'>;
+    mode:
+      | 'adopt_existing_roles'
+      | 'import_verified_users'
+      | 'bridge_from_current_roles'
+      | 'cross_server_bridge';
+    sourceBotKey?: string;
+    sourceGuildId?: string;
+  }
+) {
+  const guildLink = await getOwnedGuildLinkOrThrow(ctx, args.guildLinkId, args.authUserId);
+  if (args.setupJobId) {
+    const setupJob = await ctx.db.get(args.setupJobId);
+    if (!setupJob || setupJob.authUserId !== args.authUserId) {
+      throw new ConvexError('Setup job not found');
+    }
+  }
+
+  const now = Date.now();
+  const migrationJobId = await ctx.db.insert('migration_jobs', {
+    authUserId: args.authUserId,
+    setupJobId: args.setupJobId,
+    guildLinkId: args.guildLinkId,
+    discordGuildId: guildLink.discordGuildId,
+    mode: args.mode,
+    status: 'running',
+    currentPhase: 'analyze',
+    sourceBotKey: args.sourceBotKey,
+    sourceGuildId: args.sourceGuildId,
+    createdAt: now,
+    updatedAt: now,
+    startedAt: now,
+  });
+
+  await appendAuditEvent(ctx, {
+    authUserId: args.authUserId,
+    eventType: 'migration.job.created',
+    metadata: {
+      migrationJobId,
+      setupJobId: args.setupJobId,
+      guildLinkId: args.guildLinkId,
+      mode: args.mode,
+    },
+  });
+
+  return { migrationJobId };
+}
+
+export const createOrResumeSetupJob = mutation({
+  args: {
+    guildLinkId: v.id('guild_links'),
+    mode: SetupJobMode,
+    triggerSource: SetupJobTriggerSource,
+  },
+  returns: v.object({
+    setupJobId: v.id('setup_jobs'),
+    created: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const authUser = await getAuthenticatedAuthUser(ctx);
+    if (!authUser) {
+      throw new ConvexError('Unauthenticated');
+    }
+    return createOrResumeSetupJobImpl(ctx, {
+      authUserId: authUser.authUserId,
+      guildLinkId: args.guildLinkId,
+      mode: args.mode,
+      triggerSource: args.triggerSource,
+    });
+  },
+});
+
+export const createOrResumeSetupJobForOwner = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    guildLinkId: v.id('guild_links'),
+    mode: SetupJobMode,
+    triggerSource: SetupJobTriggerSource,
+  },
+  returns: v.object({
+    setupJobId: v.id('setup_jobs'),
+    created: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    return createOrResumeSetupJobImpl(ctx, args);
+  },
+});
+
+export const listMySetupJobs = query({
+  args: {
+    guildLinkId: v.optional(v.id('guild_links')),
+    includeCompleted: v.optional(v.boolean()),
+  },
+  returns: v.array(SetupJobSummaryV),
+  handler: async (ctx, args) => {
+    const authUser = await getAuthenticatedAuthUser(ctx);
+    if (!authUser) {
+      return [];
+    }
+
+    const jobs = args.guildLinkId
+      ? await (() => {
+          const guildLinkId = args.guildLinkId;
+          return ctx.db
+            .query('setup_jobs')
+            .withIndex('by_guild_link', (q) => q.eq('guildLinkId', guildLinkId))
+            .order('desc')
+            .take(50);
+        })()
+      : await ctx.db
+          .query('setup_jobs')
+          .withIndex('by_auth_user', (q) => q.eq('authUserId', authUser.authUserId))
+          .order('desc')
+          .take(50);
+
+    return jobs
+      .filter((job) => job.authUserId === authUser.authUserId)
+      .filter((job) => args.includeCompleted || !TERMINAL_SETUP_STATUSES.has(job.status))
+      .map((job) => ({
+        id: job._id,
+        guildLinkId: job.guildLinkId,
+        discordGuildId: job.discordGuildId,
+        mode: job.mode,
+        triggerSource: job.triggerSource,
+        status: job.status,
+        currentPhase: job.currentPhase,
+        activeStepKey: job.activeStepKey,
+        blockingReason: job.blockingReason,
+        summary: job.summary,
+        latestEventAt: job.latestEventAt,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        cancelledAt: job.cancelledAt,
+        failedAt: job.failedAt,
+        lastResumedAt: job.lastResumedAt,
+      }));
+  },
+});
+
+export const getSetupJob = query({
+  args: {
+    setupJobId: v.id('setup_jobs'),
+  },
+  returns: v.union(v.null(), SetupJobDetailV),
+  handler: async (ctx, args) => {
+    const authUser = await getAuthenticatedAuthUser(ctx);
+    if (!authUser) {
+      return null;
+    }
+
+    const job = await ctx.db.get(args.setupJobId);
+    if (!job || job.authUserId !== authUser.authUserId) {
+      return null;
+    }
+
+    const [steps, recommendations, events, activeMigrationJob] = await Promise.all([
+      ctx.db
+        .query('setup_job_steps')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', args.setupJobId))
+        .order('asc')
+        .collect(),
+      ctx.db
+        .query('setup_recommendations')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', args.setupJobId))
+        .order('asc')
+        .collect(),
+      ctx.db
+        .query('setup_events')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', args.setupJobId))
+        .order('desc')
+        .take(50),
+      ctx.db
+        .query('migration_jobs')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', args.setupJobId))
+        .order('desc')
+        .first(),
+    ]);
+
+    return {
+      job: {
+        id: job._id,
+        guildLinkId: job.guildLinkId,
+        discordGuildId: job.discordGuildId,
+        mode: job.mode,
+        triggerSource: job.triggerSource,
+        status: job.status,
+        currentPhase: job.currentPhase,
+        activeStepKey: job.activeStepKey,
+        blockingReason: job.blockingReason,
+        summary: job.summary,
+        latestEventAt: job.latestEventAt,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        cancelledAt: job.cancelledAt,
+        failedAt: job.failedAt,
+        lastResumedAt: job.lastResumedAt,
+      },
+      steps: steps.map((step) => ({
+        id: step._id,
+        phase: step.phase,
+        stepKey: step.stepKey,
+        label: step.label,
+        stepKind: step.stepKind,
+        status: step.status,
+        sortOrder: step.sortOrder,
+        blocking: step.blocking,
+        requiresUserAction: step.requiresUserAction,
+        provider: step.provider,
+        payload: step.payload,
+        result: step.result,
+        errorSummary: step.errorSummary,
+        createdAt: step.createdAt,
+        updatedAt: step.updatedAt,
+        startedAt: step.startedAt,
+        completedAt: step.completedAt,
+      })),
+      recommendations: recommendations.map((recommendation) => ({
+        id: recommendation._id,
+        recommendationType: recommendation.recommendationType,
+        status: recommendation.status,
+        confidence: recommendation.confidence,
+        title: recommendation.title,
+        detail: recommendation.detail,
+        payload: recommendation.payload,
+        createdAt: recommendation.createdAt,
+        updatedAt: recommendation.updatedAt,
+      })),
+      events: events.map((event) => ({
+        id: event._id,
+        level: event.level,
+        eventType: event.eventType,
+        message: event.message,
+        payload: event.payload,
+        createdAt: event.createdAt,
+      })),
+      activeMigrationJobId: activeMigrationJob?._id ?? null,
+    };
+  },
+});
+
+export const getMySetupJobForGuild = query({
+  args: {
+    guildId: v.string(),
+  },
+  returns: v.union(v.null(), SetupJobDetailV),
+  handler: async (ctx, args) => {
+    const authUser = await getAuthenticatedAuthUser(ctx);
+    if (!authUser) {
+      return null;
+    }
+
+    const job = await ctx.db
+      .query('setup_jobs')
+      .withIndex('by_auth_user_guild', (q) =>
+        q.eq('authUserId', authUser.authUserId).eq('discordGuildId', args.guildId)
+      )
+      .order('desc')
+      .first();
+
+    if (!job) {
+      return null;
+    }
+
+    const [steps, recommendations, events, activeMigrationJob] = await Promise.all([
+      ctx.db
+        .query('setup_job_steps')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', job._id))
+        .order('asc')
+        .collect(),
+      ctx.db
+        .query('setup_recommendations')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', job._id))
+        .order('asc')
+        .collect(),
+      ctx.db
+        .query('setup_events')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', job._id))
+        .order('desc')
+        .take(50),
+      ctx.db
+        .query('migration_jobs')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', job._id))
+        .order('desc')
+        .first(),
+    ]);
+
+    return {
+      job: {
+        id: job._id,
+        guildLinkId: job.guildLinkId,
+        discordGuildId: job.discordGuildId,
+        mode: job.mode,
+        triggerSource: job.triggerSource,
+        status: job.status,
+        currentPhase: job.currentPhase,
+        activeStepKey: job.activeStepKey,
+        blockingReason: job.blockingReason,
+        summary: job.summary,
+        latestEventAt: job.latestEventAt,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        cancelledAt: job.cancelledAt,
+        failedAt: job.failedAt,
+        lastResumedAt: job.lastResumedAt,
+      },
+      steps: steps.map((step) => ({
+        id: step._id,
+        phase: step.phase,
+        stepKey: step.stepKey,
+        label: step.label,
+        stepKind: step.stepKind,
+        status: step.status,
+        sortOrder: step.sortOrder,
+        blocking: step.blocking,
+        requiresUserAction: step.requiresUserAction,
+        provider: step.provider,
+        payload: step.payload,
+        result: step.result,
+        errorSummary: step.errorSummary,
+        createdAt: step.createdAt,
+        updatedAt: step.updatedAt,
+        startedAt: step.startedAt,
+        completedAt: step.completedAt,
+      })),
+      recommendations: recommendations.map((recommendation) => ({
+        id: recommendation._id,
+        recommendationType: recommendation.recommendationType,
+        status: recommendation.status,
+        confidence: recommendation.confidence,
+        title: recommendation.title,
+        detail: recommendation.detail,
+        payload: recommendation.payload,
+        createdAt: recommendation.createdAt,
+        updatedAt: recommendation.updatedAt,
+      })),
+      events: events.map((event) => ({
+        id: event._id,
+        level: event.level,
+        eventType: event.eventType,
+        message: event.message,
+        payload: event.payload,
+        createdAt: event.createdAt,
+      })),
+      activeMigrationJobId: activeMigrationJob?._id ?? null,
+    };
+  },
+});
+
+export const createOrResumeSetupJobByGuild = mutation({
+  args: {
+    guildId: v.string(),
+    mode: SetupJobMode,
+    triggerSource: SetupJobTriggerSource,
+  },
+  returns: v.object({
+    setupJobId: v.id('setup_jobs'),
+    created: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const authUser = await getAuthenticatedAuthUser(ctx);
+    if (!authUser) {
+      throw new ConvexError('Unauthenticated');
+    }
+
+    const guildLink = await ctx.db
+      .query('guild_links')
+      .withIndex('by_discord_guild', (q) => q.eq('discordGuildId', args.guildId))
+      .first();
+    if (!guildLink || guildLink.authUserId !== authUser.authUserId) {
+      throw new ConvexError('Guild link not found');
+    }
+
+    return createOrResumeSetupJobImpl(ctx, {
+      authUserId: authUser.authUserId,
+      guildLinkId: guildLink._id,
+      mode: args.mode,
+      triggerSource: args.triggerSource,
+    });
+  },
+});
+
+export const updateSetupJobState = mutation({
+  args: {
+    apiSecret: v.string(),
+    setupJobId: v.id('setup_jobs'),
+    status: v.optional(SetupJobStatus),
+    currentPhase: v.optional(SetupJobPhase),
+    activeStepKey: v.optional(v.union(v.string(), v.null())),
+    blockingReason: v.optional(v.union(v.string(), v.null())),
+    summary: v.optional(v.any()),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const job = await ctx.db.get(args.setupJobId);
+    if (!job) {
+      throw new ConvexError('Setup job not found');
+    }
+
+    const now = Date.now();
+    const patch: Record<string, unknown> = {
+      updatedAt: now,
+    };
+    if (args.status !== undefined) {
+      patch.status = args.status;
+      if (args.status === 'completed') patch.completedAt = now;
+      if (args.status === 'failed') patch.failedAt = now;
+      if (args.status === 'cancelled') patch.cancelledAt = now;
+    }
+    if (args.currentPhase !== undefined) patch.currentPhase = args.currentPhase;
+    if (args.activeStepKey !== undefined) patch.activeStepKey = args.activeStepKey ?? undefined;
+    if (args.blockingReason !== undefined) patch.blockingReason = args.blockingReason ?? undefined;
+    if (args.summary !== undefined) patch.summary = args.summary;
+
+    await ctx.db.patch(args.setupJobId, patch);
+    await appendAuditEvent(ctx, {
+      authUserId: job.authUserId,
+      eventType: 'setup.job.status.updated',
+      metadata: {
+        setupJobId: args.setupJobId,
+        status: args.status,
+        currentPhase: args.currentPhase,
+      },
+    });
+    return { success: true };
+  },
+});
+
+export const upsertSetupStep = mutation({
+  args: {
+    apiSecret: v.string(),
+    setupJobId: v.id('setup_jobs'),
+    stepKey: v.string(),
+    phase: SetupJobPhase,
+    label: v.string(),
+    stepKind: SetupStepKind,
+    status: SetupStepStatus,
+    sortOrder: v.number(),
+    blocking: v.boolean(),
+    requiresUserAction: v.boolean(),
+    provider: v.optional(Provider),
+    payload: v.optional(v.any()),
+    result: v.optional(v.any()),
+    errorSummary: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const job = await ctx.db.get(args.setupJobId);
+    if (!job) {
+      throw new ConvexError('Setup job not found');
+    }
+
+    const existing = await ctx.db
+      .query('setup_job_steps')
+      .withIndex('by_setup_job_step', (q) =>
+        q.eq('setupJobId', args.setupJobId).eq('stepKey', args.stepKey)
+      )
+      .first();
+    const now = Date.now();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        phase: args.phase,
+        label: args.label,
+        stepKind: args.stepKind,
+        status: args.status,
+        sortOrder: args.sortOrder,
+        blocking: args.blocking,
+        requiresUserAction: args.requiresUserAction,
+        provider: args.provider,
+        payload: args.payload,
+        result: args.result,
+        errorSummary: args.errorSummary ?? undefined,
+        updatedAt: now,
+        startedAt:
+          args.status === 'in_progress' && existing.startedAt === undefined
+            ? now
+            : existing.startedAt,
+        completedAt:
+          args.status === 'completed' || args.status === 'failed' || args.status === 'skipped'
+            ? now
+            : existing.completedAt,
+      });
+    } else {
+      await ctx.db.insert('setup_job_steps', {
+        setupJobId: args.setupJobId,
+        authUserId: job.authUserId,
+        guildLinkId: job.guildLinkId,
+        discordGuildId: job.discordGuildId,
+        phase: args.phase,
+        stepKey: args.stepKey,
+        label: args.label,
+        stepKind: args.stepKind,
+        status: args.status,
+        sortOrder: args.sortOrder,
+        blocking: args.blocking,
+        requiresUserAction: args.requiresUserAction,
+        provider: args.provider,
+        payload: args.payload,
+        result: args.result,
+        errorSummary: args.errorSummary ?? undefined,
+        createdAt: now,
+        updatedAt: now,
+        startedAt: args.status === 'in_progress' ? now : undefined,
+        completedAt:
+          args.status === 'completed' || args.status === 'failed' || args.status === 'skipped'
+            ? now
+            : undefined,
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+export const upsertSetupRecommendation = mutation({
+  args: {
+    apiSecret: v.string(),
+    setupJobId: v.id('setup_jobs'),
+    recommendationType: SetupRecommendationType,
+    title: v.string(),
+    status: SetupRecommendationStatus,
+    confidence: v.optional(v.number()),
+    detail: v.optional(v.string()),
+    payload: v.optional(v.any()),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const job = await ctx.db.get(args.setupJobId);
+    if (!job) {
+      throw new ConvexError('Setup job not found');
+    }
+
+    const now = Date.now();
+    const existing = await ctx.db
+      .query('setup_recommendations')
+      .withIndex('by_setup_job', (q) => q.eq('setupJobId', args.setupJobId))
+      .collect();
+    const match = existing.find(
+      (recommendation) =>
+        recommendation.recommendationType === args.recommendationType &&
+        recommendation.title === args.title
+    );
+
+    if (match) {
+      await ctx.db.patch(match._id, {
+        status: args.status,
+        confidence: args.confidence,
+        detail: args.detail,
+        payload: args.payload,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert('setup_recommendations', {
+        setupJobId: args.setupJobId,
+        authUserId: job.authUserId,
+        guildLinkId: job.guildLinkId,
+        discordGuildId: job.discordGuildId,
+        recommendationType: args.recommendationType,
+        status: args.status,
+        confidence: args.confidence,
+        title: args.title,
+        detail: args.detail,
+        payload: args.payload,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+export const appendSetupEvent = mutation({
+  args: {
+    apiSecret: v.string(),
+    setupJobId: v.id('setup_jobs'),
+    level: EventLevel,
+    eventType: v.string(),
+    message: v.string(),
+    payload: v.optional(v.any()),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const job = await ctx.db.get(args.setupJobId);
+    if (!job) {
+      throw new ConvexError('Setup job not found');
+    }
+
+    const now = Date.now();
+    await ctx.db.insert('setup_events', {
+      setupJobId: args.setupJobId,
+      authUserId: job.authUserId,
+      guildLinkId: job.guildLinkId,
+      discordGuildId: job.discordGuildId,
+      level: args.level,
+      eventType: args.eventType,
+      message: args.message,
+      payload: args.payload,
+      createdAt: now,
+    });
+    await ctx.db.patch(args.setupJobId, {
+      latestEventAt: now,
+      updatedAt: now,
+    });
+    return { success: true };
+  },
+});
+
+export const createMigrationJob = mutation({
+  args: {
+    guildLinkId: v.id('guild_links'),
+    setupJobId: v.optional(v.id('setup_jobs')),
+    mode: MigrationMode,
+    sourceBotKey: v.optional(v.string()),
+    sourceGuildId: v.optional(v.string()),
+  },
+  returns: v.object({
+    migrationJobId: v.id('migration_jobs'),
+  }),
+  handler: async (ctx, args) => {
+    const authUser = await getAuthenticatedAuthUser(ctx);
+    if (!authUser) {
+      throw new ConvexError('Unauthenticated');
+    }
+    return createMigrationJobImpl(ctx, {
+      authUserId: authUser.authUserId,
+      guildLinkId: args.guildLinkId,
+      setupJobId: args.setupJobId,
+      mode: args.mode,
+      sourceBotKey: args.sourceBotKey,
+      sourceGuildId: args.sourceGuildId,
+    });
+  },
+});
+
+export const createMigrationJobForOwner = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    guildLinkId: v.id('guild_links'),
+    setupJobId: v.optional(v.id('setup_jobs')),
+    mode: MigrationMode,
+    sourceBotKey: v.optional(v.string()),
+    sourceGuildId: v.optional(v.string()),
+  },
+  returns: v.object({
+    migrationJobId: v.id('migration_jobs'),
+  }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    return createMigrationJobImpl(ctx, args);
+  },
+});
+
+export const getMigrationJob = query({
+  args: {
+    migrationJobId: v.id('migration_jobs'),
+  },
+  returns: v.union(v.null(), MigrationJobDetailV),
+  handler: async (ctx, args) => {
+    const authUser = await getAuthenticatedAuthUser(ctx);
+    if (!authUser) {
+      return null;
+    }
+
+    const job = await ctx.db.get(args.migrationJobId);
+    if (!job || job.authUserId !== authUser.authUserId) {
+      return null;
+    }
+
+    const [sources, roleMappings, grants, events] = await Promise.all([
+      ctx.db
+        .query('migration_sources')
+        .withIndex('by_migration_job', (q) => q.eq('migrationJobId', args.migrationJobId))
+        .order('asc')
+        .collect(),
+      ctx.db
+        .query('migration_role_mappings')
+        .withIndex('by_migration_job', (q) => q.eq('migrationJobId', args.migrationJobId))
+        .order('asc')
+        .collect(),
+      ctx.db
+        .query('migration_grants')
+        .withIndex('by_migration_job', (q) => q.eq('migrationJobId', args.migrationJobId))
+        .order('asc')
+        .take(500),
+      ctx.db
+        .query('migration_events')
+        .withIndex('by_migration_job', (q) => q.eq('migrationJobId', args.migrationJobId))
+        .order('desc')
+        .take(50),
+    ]);
+
+    return {
+      job: {
+        id: job._id,
+        setupJobId: job.setupJobId,
+        guildLinkId: job.guildLinkId,
+        discordGuildId: job.discordGuildId,
+        mode: job.mode,
+        status: job.status,
+        currentPhase: job.currentPhase,
+        sourceBotKey: job.sourceBotKey,
+        sourceGuildId: job.sourceGuildId,
+        blockingReason: job.blockingReason,
+        summary: job.summary,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        cancelledAt: job.cancelledAt,
+        failedAt: job.failedAt,
+      },
+      sources: sources.map((source) => ({
+        id: source._id,
+        sourceKey: source.sourceKey,
+        sourceType: source.sourceType,
+        capabilityMode: source.capabilityMode,
+        status: source.status,
+        displayName: source.displayName,
+        payload: source.payload,
+        createdAt: source.createdAt,
+        updatedAt: source.updatedAt,
+      })),
+      roleMappings: roleMappings.map((mapping) => ({
+        id: mapping._id,
+        provider: mapping.provider,
+        sourceRoleId: mapping.sourceRoleId,
+        sourceRoleName: mapping.sourceRoleName,
+        targetProductId: mapping.targetProductId,
+        targetProductName: mapping.targetProductName,
+        targetRoleId: mapping.targetRoleId,
+        targetRoleName: mapping.targetRoleName,
+        matchStrategy: mapping.matchStrategy,
+        confidence: mapping.confidence,
+        status: mapping.status,
+        reviewNote: mapping.reviewNote,
+        payload: mapping.payload,
+        createdAt: mapping.createdAt,
+        updatedAt: mapping.updatedAt,
+      })),
+      grants: grants.map((grant) => ({
+        id: grant._id,
+        discordUserId: grant.discordUserId,
+        roleId: grant.roleId,
+        roleName: grant.roleName,
+        productId: grant.productId,
+        status: grant.status,
+        provenance: grant.provenance,
+        expiresAt: grant.expiresAt,
+        createdAt: grant.createdAt,
+        updatedAt: grant.updatedAt,
+        promotedAt: grant.promotedAt,
+        revokedAt: grant.revokedAt,
+      })),
+      events: events.map((event) => ({
+        id: event._id,
+        phase: event.phase,
+        level: event.level,
+        eventType: event.eventType,
+        message: event.message,
+        payload: event.payload,
+        createdAt: event.createdAt,
+      })),
+    };
+  },
+});
+
+export const upsertMigrationSource = mutation({
+  args: {
+    apiSecret: v.string(),
+    migrationJobId: v.id('migration_jobs'),
+    sourceKey: v.string(),
+    sourceType: MigrationSourceType,
+    capabilityMode: MigrationCapabilityMode,
+    status: MigrationSourceStatus,
+    displayName: v.optional(v.string()),
+    payload: v.optional(v.any()),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const job = await ctx.db.get(args.migrationJobId);
+    if (!job) {
+      throw new ConvexError('Migration job not found');
+    }
+
+    const existing = await ctx.db
+      .query('migration_sources')
+      .withIndex('by_migration_job', (q) => q.eq('migrationJobId', args.migrationJobId))
+      .collect();
+    const match = existing.find((source) => source.sourceKey === args.sourceKey);
+    const now = Date.now();
+
+    if (match) {
+      await ctx.db.patch(match._id, {
+        sourceType: args.sourceType,
+        capabilityMode: args.capabilityMode,
+        status: args.status,
+        displayName: args.displayName,
+        payload: args.payload,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert('migration_sources', {
+        migrationJobId: args.migrationJobId,
+        authUserId: job.authUserId,
+        guildLinkId: job.guildLinkId,
+        sourceKey: args.sourceKey,
+        sourceType: args.sourceType,
+        capabilityMode: args.capabilityMode,
+        status: args.status,
+        displayName: args.displayName,
+        payload: args.payload,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+export const updateMigrationJobState = mutation({
+  args: {
+    apiSecret: v.string(),
+    migrationJobId: v.id('migration_jobs'),
+    status: v.optional(MigrationJobStatus),
+    currentPhase: v.optional(MigrationPhase),
+    blockingReason: v.optional(v.union(v.string(), v.null())),
+    summary: v.optional(v.any()),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const job = await ctx.db.get(args.migrationJobId);
+    if (!job) {
+      throw new ConvexError('Migration job not found');
+    }
+
+    const now = Date.now();
+    const patch: Record<string, unknown> = { updatedAt: now };
+    if (args.status !== undefined) {
+      patch.status = args.status;
+      if (args.status === 'completed') patch.completedAt = now;
+      if (args.status === 'failed') patch.failedAt = now;
+      if (args.status === 'cancelled') patch.cancelledAt = now;
+    }
+    if (args.currentPhase !== undefined) patch.currentPhase = args.currentPhase;
+    if (args.blockingReason !== undefined) patch.blockingReason = args.blockingReason ?? undefined;
+    if (args.summary !== undefined) patch.summary = args.summary;
+
+    await ctx.db.patch(args.migrationJobId, patch);
+    await appendAuditEvent(ctx, {
+      authUserId: job.authUserId,
+      eventType: 'migration.job.status.updated',
+      metadata: {
+        migrationJobId: args.migrationJobId,
+        status: args.status,
+        currentPhase: args.currentPhase,
+      },
+    });
+    return { success: true };
+  },
+});
+
+export const upsertMigrationRoleMapping = mutation({
+  args: {
+    apiSecret: v.string(),
+    migrationJobId: v.id('migration_jobs'),
+    provider: v.optional(Provider),
+    sourceRoleId: v.optional(v.string()),
+    sourceRoleName: v.string(),
+    targetProductId: v.optional(v.string()),
+    targetProductName: v.optional(v.string()),
+    targetRoleId: v.optional(v.string()),
+    targetRoleName: v.optional(v.string()),
+    matchStrategy: MigrationMatchStrategy,
+    confidence: v.optional(v.number()),
+    status: MigrationRoleMappingStatus,
+    reviewNote: v.optional(v.string()),
+    payload: v.optional(v.any()),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const job = await ctx.db.get(args.migrationJobId);
+    if (!job) {
+      throw new ConvexError('Migration job not found');
+    }
+
+    const existing = await ctx.db
+      .query('migration_role_mappings')
+      .withIndex('by_migration_job', (q) => q.eq('migrationJobId', args.migrationJobId))
+      .collect();
+    const match = existing.find(
+      (mapping) =>
+        mapping.sourceRoleId === args.sourceRoleId && mapping.sourceRoleName === args.sourceRoleName
+    );
+    const now = Date.now();
+
+    if (match) {
+      await ctx.db.patch(match._id, {
+        provider: args.provider,
+        targetProductId: args.targetProductId,
+        targetProductName: args.targetProductName,
+        targetRoleId: args.targetRoleId,
+        targetRoleName: args.targetRoleName,
+        matchStrategy: args.matchStrategy,
+        confidence: args.confidence,
+        status: args.status,
+        reviewNote: args.reviewNote,
+        payload: args.payload,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert('migration_role_mappings', {
+        migrationJobId: args.migrationJobId,
+        authUserId: job.authUserId,
+        guildLinkId: job.guildLinkId,
+        discordGuildId: job.discordGuildId,
+        provider: args.provider,
+        sourceRoleId: args.sourceRoleId,
+        sourceRoleName: args.sourceRoleName,
+        targetProductId: args.targetProductId,
+        targetProductName: args.targetProductName,
+        targetRoleId: args.targetRoleId,
+        targetRoleName: args.targetRoleName,
+        matchStrategy: args.matchStrategy,
+        confidence: args.confidence,
+        status: args.status,
+        reviewNote: args.reviewNote,
+        payload: args.payload,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+export const upsertMigrationGrant = mutation({
+  args: {
+    apiSecret: v.string(),
+    migrationJobId: v.id('migration_jobs'),
+    discordUserId: v.string(),
+    roleId: v.string(),
+    roleName: v.optional(v.string()),
+    productId: v.optional(v.string()),
+    status: MigrationGrantStatus,
+    provenance: v.optional(v.any()),
+    expiresAt: v.optional(v.number()),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const job = await ctx.db.get(args.migrationJobId);
+    if (!job) {
+      throw new ConvexError('Migration job not found');
+    }
+
+    const existing = await ctx.db
+      .query('migration_grants')
+      .withIndex('by_migration_job', (q) => q.eq('migrationJobId', args.migrationJobId))
+      .collect();
+    const match = existing.find(
+      (grant) => grant.discordUserId === args.discordUserId && grant.roleId === args.roleId
+    );
+    const now = Date.now();
+
+    if (match) {
+      await ctx.db.patch(match._id, {
+        roleName: args.roleName,
+        productId: args.productId,
+        status: args.status,
+        provenance: args.provenance,
+        expiresAt: args.expiresAt,
+        updatedAt: now,
+        promotedAt:
+          args.status === 'canonical' && match.status !== 'canonical' ? now : match.promotedAt,
+        revokedAt: args.status === 'revoked' ? now : undefined,
+      });
+    } else {
+      await ctx.db.insert('migration_grants', {
+        migrationJobId: args.migrationJobId,
+        authUserId: job.authUserId,
+        guildLinkId: job.guildLinkId,
+        discordGuildId: job.discordGuildId,
+        discordUserId: args.discordUserId,
+        roleId: args.roleId,
+        roleName: args.roleName,
+        productId: args.productId,
+        status: args.status,
+        provenance: args.provenance,
+        expiresAt: args.expiresAt,
+        createdAt: now,
+        updatedAt: now,
+        promotedAt: args.status === 'canonical' ? now : undefined,
+        revokedAt: args.status === 'revoked' ? now : undefined,
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+export const appendMigrationEvent = mutation({
+  args: {
+    apiSecret: v.string(),
+    migrationJobId: v.id('migration_jobs'),
+    phase: v.optional(MigrationPhase),
+    level: EventLevel,
+    eventType: v.string(),
+    message: v.string(),
+    payload: v.optional(v.any()),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const job = await ctx.db.get(args.migrationJobId);
+    if (!job) {
+      throw new ConvexError('Migration job not found');
+    }
+
+    await ctx.db.insert('migration_events', {
+      migrationJobId: args.migrationJobId,
+      authUserId: job.authUserId,
+      guildLinkId: job.guildLinkId,
+      discordGuildId: job.discordGuildId,
+      phase: args.phase,
+      level: args.level,
+      eventType: args.eventType,
+      message: args.message,
+      payload: args.payload,
+      createdAt: Date.now(),
+    });
+    return { success: true };
+  },
+});

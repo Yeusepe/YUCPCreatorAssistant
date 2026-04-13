@@ -47,9 +47,7 @@ export const checkAndIncrement = internalMutation({
     // Find or create the counter for the current window.
     const existing = await ctx.db
       .query('http_rate_limits')
-      .withIndex('by_key_window', (q) =>
-        q.eq('key', args.key).eq('windowStart', windowStart)
-      )
+      .withIndex('by_key_window', (q) => q.eq('key', args.key).eq('windowStart', windowStart))
       .first();
 
     if (!existing) {

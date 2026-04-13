@@ -393,7 +393,6 @@ export const getArtifactBySourceMessage = query({
   },
 });
 
-
 /**
  * List download_routes for a creator with optional guildId/enabled filters and pagination.
  */

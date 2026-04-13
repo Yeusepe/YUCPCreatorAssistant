@@ -22,9 +22,7 @@ export function projectWorkspaceCapabilities(args: {
   storedCapabilities: CapabilityState[];
 }): CapabilityState[] {
   const includedKeys = new Set(
-    args.includedCapabilityKeys
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
+    args.includedCapabilityKeys.map((entry) => entry.trim()).filter((entry) => entry.length > 0)
   );
   const projectedStatus = normalizeEntitlementStatus(args.entitlementStatus);
   const allKeys = new Set<string>(includedKeys);

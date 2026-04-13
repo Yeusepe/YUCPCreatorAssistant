@@ -1,12 +1,12 @@
 import { ConvexError, v } from 'convex/values';
 import { components } from './_generated/api';
 import { type QueryCtx, query } from './_generated/server';
+import { requireApiSecret } from './lib/apiAuth';
 import { getAuthenticatedAuthUser } from './lib/authUser';
 import {
   buildBetterAuthUserLookupWhere,
   buildBetterAuthUserProviderLookupWhere,
 } from './lib/betterAuthAdapter';
-import { requireApiSecret } from './lib/apiAuth';
 
 const ViewerValue = v.object({
   authUserId: v.string(),
@@ -50,8 +50,13 @@ function getNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function normalizeBetterAuthUserId(user: BetterAuthUserRecord | null, fallbackId: string): string | null {
-  return getNonEmptyString(user?.id) ?? getNonEmptyString(user?._id) ?? getNonEmptyString(fallbackId);
+function normalizeBetterAuthUserId(
+  user: BetterAuthUserRecord | null,
+  fallbackId: string
+): string | null {
+  return (
+    getNonEmptyString(user?.id) ?? getNonEmptyString(user?._id) ?? getNonEmptyString(fallbackId)
+  );
 }
 
 async function resolveDiscordUserId(ctx: QueryCtx, authUserId: string): Promise<string | null> {

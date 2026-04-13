@@ -35,10 +35,14 @@ async function getSecrets(): Promise<Record<string, string>> {
   const secrets = await fetchInfisicalSecrets();
   if (Object.keys(secrets).length === 0) {
     if (isProd) {
-      console.error('infisical-convex-run: FATAL - No secrets returned from Infisical in production.');
+      console.error(
+        'infisical-convex-run: FATAL - No secrets returned from Infisical in production.'
+      );
       process.exit(1);
     }
-    console.warn('infisical-convex-run: No secrets from Infisical, continuing with process env only');
+    console.warn(
+      'infisical-convex-run: No secrets from Infisical, continuing with process env only'
+    );
   }
   return secrets;
 }
@@ -50,7 +54,9 @@ async function runMode(secrets: Record<string, string>): Promise<void> {
     ...secrets,
   };
 
-  console.log(`infisical-convex-run: injecting ${Object.keys(secrets).length} secrets → ${cmd} ${args.join(' ')}`);
+  console.log(
+    `infisical-convex-run: injecting ${Object.keys(secrets).length} secrets → ${cmd} ${args.join(' ')}`
+  );
 
   const proc = Bun.spawn({
     cmd: [cmd, ...args],
@@ -89,7 +95,8 @@ async function syncMode(secrets: Record<string, string>): Promise<void> {
   const changes: { name: string; value: string }[] = [];
   for (const name of CONVEX_ENV_VARS) {
     const envKey = name === 'BACKFILL_API_URL' && isProd ? 'BACKFILL_API_URL_PROD' : name;
-    const localOverride = !isProd && DEV_ENV_OVERRIDE_KEYS.has(name) ? process.env[envKey] : undefined;
+    const localOverride =
+      !isProd && DEV_ENV_OVERRIDE_KEYS.has(name) ? process.env[envKey] : undefined;
     const value = localOverride ?? secrets[envKey] ?? process.env[envKey];
     if (value) changes.push({ name, value });
   }

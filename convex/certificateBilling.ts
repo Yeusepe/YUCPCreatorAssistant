@@ -1,6 +1,6 @@
 import { ConvexError, v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import {
   internalMutation,
   internalQuery,
@@ -734,13 +734,15 @@ async function resolveCertificateBillingForAuthUser(ctx: QueryCtx, authUserId: s
     planKey: isLiveBillingStatus(winner.status) ? winner.planKey : undefined,
     productId: isLiveBillingStatus(winner.status) ? winner.productId : undefined,
     deviceCap: isLiveBillingStatus(winner.status) ? winner.deviceCap : undefined,
-    signQuotaPerPeriod:
-      isLiveBillingStatus(winner.status) ? winner.signQuotaPerPeriod ?? undefined : undefined,
+    signQuotaPerPeriod: isLiveBillingStatus(winner.status)
+      ? (winner.signQuotaPerPeriod ?? undefined)
+      : undefined,
     auditRetentionDays: isLiveBillingStatus(winner.status) ? winner.auditRetentionDays : undefined,
     supportTier: isLiveBillingStatus(winner.status) ? winner.supportTier : undefined,
-    currentPeriodEnd:
-      isLiveBillingStatus(winner.status) ? winner.currentPeriodEnd ?? undefined : undefined,
-    graceUntil: isLiveBillingStatus(winner.status) ? winner.graceUntil ?? undefined : undefined,
+    currentPeriodEnd: isLiveBillingStatus(winner.status)
+      ? (winner.currentPeriodEnd ?? undefined)
+      : undefined,
+    graceUntil: isLiveBillingStatus(winner.status) ? (winner.graceUntil ?? undefined) : undefined,
     reason: winner.allowSigning ? undefined : 'Certificate subscription required',
   };
 }

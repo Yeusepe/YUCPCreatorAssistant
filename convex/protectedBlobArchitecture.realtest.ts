@@ -10,8 +10,7 @@ const packageId = 'pkg-protected-ticket';
 const packageVersion = '1.0.0';
 const contentHash = 'c'.repeat(64);
 const protectedAssetId = '46c90a22a12b44fe88fcd9be626bdedb';
-const machineFingerprint =
-  'a604eb0948054b9acb9f40da80a6a4c8e711b98c59e54a11089fea3a2b77dc1c';
+const machineFingerprint = 'a604eb0948054b9acb9f40da80a6a4c8e711b98c59e54a11089fea3a2b77dc1c';
 const projectId = '0123456789abcdef0123456789abcdef';
 const creatorAuthUserId = 'auth-protected-ticket';
 const publisherId = 'publisher-protected-ticket';
@@ -152,7 +151,8 @@ describe('protected blob package-first architecture', () => {
 
   function mockRuntimeArtifact() {
     globalThis.fetch = (async (input) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       if (
         url ===
         'https://coupling.internal/v1/runtime-artifacts/manifest?artifactKey=coupling-runtime'
@@ -256,7 +256,9 @@ describe('protected blob package-first architecture', () => {
       projectId,
       issueCount: 2,
     });
-    expect((storedUnlocks[0]?.lastIssuedAt ?? 0) >= (storedUnlocks[0]?.firstUnlockedAt ?? 0)).toBe(true);
+    expect((storedUnlocks[0]?.lastIssuedAt ?? 0) >= (storedUnlocks[0]?.firstUnlockedAt ?? 0)).toBe(
+      true
+    );
   });
 
   it('records coupling trace records for package-owned protected blobs', async () => {

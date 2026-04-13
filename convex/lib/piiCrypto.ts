@@ -8,8 +8,8 @@
  * Encryption secret: ENCRYPTION_SECRET (Convex dashboard env var).
  */
 
-import { encryptForPurpose } from './vrchat/crypto';
 import { PII_PURPOSES } from './credentialKeys';
+import { encryptForPurpose } from './vrchat/crypto';
 
 export type PiiPurpose = (typeof PII_PURPOSES)[keyof typeof PII_PURPOSES];
 

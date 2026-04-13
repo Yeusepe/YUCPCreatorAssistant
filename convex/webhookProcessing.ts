@@ -11,12 +11,12 @@
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import { requireApiSecret } from './lib/apiAuth';
+import { isAuthenticatedEvent } from './webhookIngestion';
 import { processGumroadEvent } from './webhooks/gumroad';
 import { processJinxxyEvent } from './webhooks/jinxxy';
 import { processLemonEvent } from './webhooks/lemonsqueezy';
 import { processPayhipEvent } from './webhooks/payhip';
-import { requireApiSecret } from './lib/apiAuth';
-import { isAuthenticatedEvent } from './webhookIngestion';
 
 /**
  * Get IDs of pending webhook events for processing.

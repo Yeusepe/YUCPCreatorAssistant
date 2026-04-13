@@ -26,7 +26,9 @@ describe('packageRegistry', () => {
       yucpUserId: 'auth-user-1',
     });
 
-    expect(packages.map((entry: Doc<'package_registry'>) => [entry.packageId, entry.packageName])).toEqual([
+    expect(
+      packages.map((entry: Doc<'package_registry'>) => [entry.packageId, entry.packageName])
+    ).toEqual([
       ['pkg.gamma', 'Gamma Tools'],
       ['pkg.alpha', 'Alpha Suite'],
     ]);
@@ -84,10 +86,13 @@ describe('packageRegistry', () => {
       packageId: 'pkg.archived',
     });
 
-    const forensicsPackages = await t.query(api.couplingForensics.listOwnedPackageSummariesForAuthUser, {
-      apiSecret: 'test-secret',
-      authUserId: 'auth-user-1',
-    });
+    const forensicsPackages = await t.query(
+      api.couplingForensics.listOwnedPackageSummariesForAuthUser,
+      {
+        apiSecret: 'test-secret',
+        authUserId: 'auth-user-1',
+      }
+    );
 
     expect(forensicsPackages.packages).toEqual([
       {
@@ -138,7 +143,8 @@ describe('packageRegistry', () => {
       registered: false,
       conflict: false,
       archived: true,
-      reason: 'Archived packages cannot be updated. Restore the package before signing or changing it.',
+      reason:
+        'Archived packages cannot be updated. Restore the package before signing or changing it.',
     });
 
     const registration = await t.query(internal.packageRegistry.getRegistration, {

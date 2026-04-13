@@ -208,7 +208,9 @@ describe('revokeEntitlement lifecycle', () => {
     expect(revokeResult.previousStatus).toBe('active');
 
     // Verify DB: status changed to 'refunded' (refund reason → refunded status)
-    const entitlement = (await t.run((ctx) => ctx.db.get(grantResult.entitlementId))) as Doc<'entitlements'> | null;
+    const entitlement = (await t.run((ctx) =>
+      ctx.db.get(grantResult.entitlementId)
+    )) as Doc<'entitlements'> | null;
     expect(entitlement?.status).toBe('refunded');
     expect(entitlement?.revokedAt).toBeDefined();
   });

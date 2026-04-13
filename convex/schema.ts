@@ -5,7 +5,9 @@
  *
  * Creator-scoped tables (require authUserId — Better Auth user ID):
  * - creator_profiles, bindings, verification_sessions, entitlements, guild_links,
- *   role_rules, unity_installations, runtime_assertions, outbox_jobs, audit_events
+ *   role_rules, unity_installations, runtime_assertions, outbox_jobs, audit_events,
+ *   setup_jobs, setup_job_steps, setup_recommendations, setup_events, migration_jobs,
+ *   migration_sources, migration_role_mappings, migration_grants, migration_events
  *
  * Platform-level tables (no authUserId):
  * - subjects, external_accounts, buyer_provider_links, provider_customers,
@@ -194,6 +196,165 @@ const OutboxJobType = v.union(
   v.literal('verify_prompt_refresh')
 );
 
+/** Automatic setup orchestration mode */
+const SetupJobMode = v.union(v.literal('automatic_setup'), v.literal('migration'));
+
+/** Automatic setup launch source */
+const SetupJobTriggerSource = v.union(
+  v.literal('dashboard'),
+  v.literal('discord_setup'),
+  v.literal('discord_autosetup'),
+  v.literal('api')
+);
+
+/** Automatic setup job status */
+const SetupJobStatus = v.union(
+  v.literal('pending'),
+  v.literal('running'),
+  v.literal('waiting_for_user'),
+  v.literal('blocked'),
+  v.literal('completed'),
+  v.literal('failed'),
+  v.literal('cancelled')
+);
+
+/** Automatic setup job phases from the redesign doc */
+const SetupJobPhase = v.union(
+  v.literal('connect_store'),
+  v.literal('scan_server'),
+  v.literal('generate_plan'),
+  v.literal('review_exceptions'),
+  v.literal('apply_setup'),
+  v.literal('shadow_migration'),
+  v.literal('confirm_cutover')
+);
+
+/** Automatic setup step status */
+const SetupStepStatus = v.union(
+  v.literal('pending'),
+  v.literal('in_progress'),
+  v.literal('waiting_for_user'),
+  v.literal('completed'),
+  v.literal('failed'),
+  v.literal('skipped'),
+  v.literal('cancelled')
+);
+
+/** Automatic setup step kind */
+const SetupStepKind = v.union(
+  v.literal('provider_connection'),
+  v.literal('server_scan'),
+  v.literal('recommendation'),
+  v.literal('review'),
+  v.literal('apply'),
+  v.literal('migration'),
+  v.literal('cutover')
+);
+
+/** Automatic setup recommendation type */
+const SetupRecommendationType = v.union(
+  v.literal('provider_connection'),
+  v.literal('role_adoption'),
+  v.literal('role_creation'),
+  v.literal('verify_surface_reuse'),
+  v.literal('verify_surface_creation'),
+  v.literal('migration_action')
+);
+
+/** Automatic setup recommendation lifecycle */
+const SetupRecommendationStatus = v.union(
+  v.literal('proposed'),
+  v.literal('applied'),
+  v.literal('dismissed'),
+  v.literal('superseded')
+);
+
+/** Automatic setup / migration event severity */
+const SetupEventLevel = v.union(
+  v.literal('info'),
+  v.literal('success'),
+  v.literal('warning'),
+  v.literal('error')
+);
+
+/** Migration center entry modes */
+const MigrationMode = v.union(
+  v.literal('adopt_existing_roles'),
+  v.literal('import_verified_users'),
+  v.literal('bridge_from_current_roles'),
+  v.literal('cross_server_bridge')
+);
+
+/** Migration job status */
+const MigrationJobStatus = v.union(
+  v.literal('pending'),
+  v.literal('running'),
+  v.literal('waiting_for_user'),
+  v.literal('blocked'),
+  v.literal('completed'),
+  v.literal('failed'),
+  v.literal('cancelled')
+);
+
+/** Migration cutover phase */
+const MigrationPhase = v.union(
+  v.literal('analyze'),
+  v.literal('shadow'),
+  v.literal('bridged'),
+  v.literal('enforced'),
+  v.literal('rollback')
+);
+
+/** Migration source type */
+const MigrationSourceType = v.union(
+  v.literal('verification_bot'),
+  v.literal('server_export'),
+  v.literal('manual_snapshot')
+);
+
+/** Migration source capability */
+const MigrationCapabilityMode = v.union(
+  v.literal('full_export'),
+  v.literal('partial_export'),
+  v.literal('analysis_only'),
+  v.literal('manual_review')
+);
+
+/** Migration source import status */
+const MigrationSourceStatus = v.union(
+  v.literal('detected'),
+  v.literal('connected'),
+  v.literal('imported'),
+  v.literal('failed')
+);
+
+/** Role mapping strategy from the redesign doc */
+const MigrationMatchStrategy = v.union(
+  v.literal('exact_name'),
+  v.literal('alias'),
+  v.literal('permalink'),
+  v.literal('fuzzy'),
+  v.literal('duplicate_group'),
+  v.literal('source_bot_hint'),
+  v.literal('manual')
+);
+
+/** Migration role mapping state */
+const MigrationRoleMappingStatus = v.union(
+  v.literal('auto_matched'),
+  v.literal('suggested'),
+  v.literal('unresolved'),
+  v.literal('adopted'),
+  v.literal('ignored')
+);
+
+/** Migration entitlement grant state */
+const MigrationGrantStatus = v.union(
+  v.literal('canonical'),
+  v.literal('provisional_migration'),
+  v.literal('revoked')
+);
+
 /** Webhook event status */
 const WebhookEventStatus = v.union(
   v.literal('pending'),
@@ -319,7 +480,12 @@ const AuditEventType = v.union(
   v.literal('protected.materialization.grant.redeemed'),
   v.literal('protected.materialization.grant.receipted'),
   v.literal('protected.materialization.grant.revoked'),
-  v.literal('coupling.lookup.performed')
+  v.literal('coupling.lookup.performed'),
+  v.literal('setup.job.created'),
+  v.literal('setup.job.resumed'),
+  v.literal('setup.job.status.updated'),
+  v.literal('migration.job.created'),
+  v.literal('migration.job.status.updated')
 );
 
 const ProtectedMaterializationGrantTraceStatus = v.union(
@@ -890,6 +1056,224 @@ const audit_events = defineTable({
   .index('by_actor', ['actorType', 'actorId'])
   .index('by_correlation', ['correlationId'])
   .index('by_created', ['createdAt']);
+
+/**
+ * Setup Jobs - Durable orchestration records for dashboard-first automatic setup.
+ * Drives the doc-aligned flow from Connect store through Confirm cutover.
+ */
+const setup_jobs = defineTable({
+  authUserId: v.string(),
+  guildLinkId: v.id('guild_links'),
+  discordGuildId: v.string(),
+  mode: SetupJobMode,
+  triggerSource: SetupJobTriggerSource,
+  status: SetupJobStatus,
+  currentPhase: SetupJobPhase,
+  activeStepKey: v.optional(v.string()),
+  blockingReason: v.optional(v.string()),
+  summary: v.optional(v.any()),
+  latestEventAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+  cancelledAt: v.optional(v.number()),
+  failedAt: v.optional(v.number()),
+  lastResumedAt: v.optional(v.number()),
+})
+  .index('by_auth_user', ['authUserId'])
+  .index('by_auth_user_guild', ['authUserId', 'discordGuildId'])
+  .index('by_auth_user_status', ['authUserId', 'status'])
+  .index('by_guild_link', ['guildLinkId'])
+  .index('by_guild_link_status', ['guildLinkId', 'status']);
+
+/**
+ * Setup Job Steps - Per-phase execution detail for setup jobs.
+ */
+const setup_job_steps = defineTable({
+  setupJobId: v.id('setup_jobs'),
+  authUserId: v.string(),
+  guildLinkId: v.id('guild_links'),
+  discordGuildId: v.string(),
+  phase: SetupJobPhase,
+  stepKey: v.string(),
+  label: v.string(),
+  stepKind: SetupStepKind,
+  status: SetupStepStatus,
+  sortOrder: v.number(),
+  blocking: v.boolean(),
+  requiresUserAction: v.boolean(),
+  provider: v.optional(Provider),
+  payload: v.optional(v.any()),
+  result: v.optional(v.any()),
+  errorSummary: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+})
+  .index('by_setup_job', ['setupJobId'])
+  .index('by_setup_job_step', ['setupJobId', 'stepKey'])
+  .index('by_setup_job_status', ['setupJobId', 'status'])
+  .index('by_auth_user', ['authUserId']);
+
+/**
+ * Setup Recommendations - Machine-generated actions and review items for setup jobs.
+ */
+const setup_recommendations = defineTable({
+  setupJobId: v.id('setup_jobs'),
+  authUserId: v.string(),
+  guildLinkId: v.id('guild_links'),
+  discordGuildId: v.string(),
+  recommendationType: SetupRecommendationType,
+  status: SetupRecommendationStatus,
+  confidence: v.optional(v.number()),
+  title: v.string(),
+  detail: v.optional(v.string()),
+  payload: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_setup_job', ['setupJobId'])
+  .index('by_setup_job_status', ['setupJobId', 'status'])
+  .index('by_auth_user', ['authUserId']);
+
+/**
+ * Setup Events - Append-only event stream for setup job status and background actions.
+ */
+const setup_events = defineTable({
+  setupJobId: v.id('setup_jobs'),
+  authUserId: v.string(),
+  guildLinkId: v.id('guild_links'),
+  discordGuildId: v.string(),
+  level: SetupEventLevel,
+  eventType: v.string(),
+  message: v.string(),
+  payload: v.optional(v.any()),
+  createdAt: v.number(),
+})
+  .index('by_setup_job', ['setupJobId'])
+  .index('by_auth_user', ['authUserId'])
+  .index('by_guild_link', ['guildLinkId']);
+
+/**
+ * Migration Jobs - Durable migration runs under the same orchestration system as setup.
+ */
+const migration_jobs = defineTable({
+  authUserId: v.string(),
+  setupJobId: v.optional(v.id('setup_jobs')),
+  guildLinkId: v.id('guild_links'),
+  discordGuildId: v.string(),
+  mode: MigrationMode,
+  status: MigrationJobStatus,
+  currentPhase: MigrationPhase,
+  sourceBotKey: v.optional(v.string()),
+  sourceGuildId: v.optional(v.string()),
+  blockingReason: v.optional(v.string()),
+  summary: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+  cancelledAt: v.optional(v.number()),
+  failedAt: v.optional(v.number()),
+})
+  .index('by_auth_user', ['authUserId'])
+  .index('by_setup_job', ['setupJobId'])
+  .index('by_guild_link', ['guildLinkId'])
+  .index('by_auth_user_status', ['authUserId', 'status']);
+
+/**
+ * Migration Sources - Detected legacy systems and their import capability.
+ */
+const migration_sources = defineTable({
+  migrationJobId: v.id('migration_jobs'),
+  authUserId: v.string(),
+  guildLinkId: v.id('guild_links'),
+  sourceKey: v.string(),
+  sourceType: MigrationSourceType,
+  capabilityMode: MigrationCapabilityMode,
+  status: MigrationSourceStatus,
+  displayName: v.optional(v.string()),
+  payload: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_migration_job', ['migrationJobId'])
+  .index('by_source_key', ['sourceKey'])
+  .index('by_auth_user', ['authUserId']);
+
+/**
+ * Migration Role Mappings - Product to role recommendations and operator decisions.
+ */
+const migration_role_mappings = defineTable({
+  migrationJobId: v.id('migration_jobs'),
+  authUserId: v.string(),
+  guildLinkId: v.id('guild_links'),
+  discordGuildId: v.string(),
+  provider: v.optional(Provider),
+  sourceRoleId: v.optional(v.string()),
+  sourceRoleName: v.string(),
+  targetProductId: v.optional(v.string()),
+  targetProductName: v.optional(v.string()),
+  targetRoleId: v.optional(v.string()),
+  targetRoleName: v.optional(v.string()),
+  matchStrategy: MigrationMatchStrategy,
+  confidence: v.optional(v.number()),
+  status: MigrationRoleMappingStatus,
+  reviewNote: v.optional(v.string()),
+  payload: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_migration_job', ['migrationJobId'])
+  .index('by_migration_job_status', ['migrationJobId', 'status'])
+  .index('by_source_role', ['migrationJobId', 'sourceRoleId'])
+  .index('by_auth_user', ['authUserId']);
+
+/**
+ * Migration Grants - Tracks provisional and canonical entitlements during cutover.
+ */
+const migration_grants = defineTable({
+  migrationJobId: v.id('migration_jobs'),
+  authUserId: v.string(),
+  guildLinkId: v.id('guild_links'),
+  discordGuildId: v.string(),
+  discordUserId: v.string(),
+  roleId: v.string(),
+  roleName: v.optional(v.string()),
+  productId: v.optional(v.string()),
+  status: MigrationGrantStatus,
+  provenance: v.optional(v.any()),
+  expiresAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  promotedAt: v.optional(v.number()),
+  revokedAt: v.optional(v.number()),
+})
+  .index('by_migration_job', ['migrationJobId'])
+  .index('by_discord_user', ['discordGuildId', 'discordUserId'])
+  .index('by_status_expires', ['status', 'expiresAt'])
+  .index('by_auth_user', ['authUserId']);
+
+/**
+ * Migration Events - Append-only migration event log for analysis and cutover.
+ */
+const migration_events = defineTable({
+  migrationJobId: v.id('migration_jobs'),
+  authUserId: v.string(),
+  guildLinkId: v.id('guild_links'),
+  discordGuildId: v.string(),
+  phase: v.optional(MigrationPhase),
+  level: SetupEventLevel,
+  eventType: v.string(),
+  message: v.string(),
+  payload: v.optional(v.any()),
+  createdAt: v.number(),
+})
+  .index('by_migration_job', ['migrationJobId'])
+  .index('by_auth_user', ['authUserId'])
+  .index('by_guild_link', ['guildLinkId']);
 
 /**
  * Product Catalog - Global registry of products
@@ -2210,6 +2594,15 @@ export default defineSchema({
   runtime_assertions,
   outbox_jobs,
   audit_events,
+  setup_jobs,
+  setup_job_steps,
+  setup_recommendations,
+  setup_events,
+  migration_jobs,
+  migration_sources,
+  migration_role_mappings,
+  migration_grants,
+  migration_events,
   product_catalog,
   manual_licenses,
   purchase_facts,

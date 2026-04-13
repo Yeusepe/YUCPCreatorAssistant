@@ -5,8 +5,8 @@
  * No per-provider field names are needed here.
  */
 
-import { v } from 'convex/values';
 import { providerLabel } from '@yucp/providers/providerMetadata';
+import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { mutation, query } from './_generated/server';
@@ -380,7 +380,9 @@ export const getConnectionStatus = query({
         .collect(),
       ctx.db
         .query('collaborator_connections')
-        .withIndex('by_owner_status', (q) => q.eq('ownerAuthUserId', args.authUserId).eq('status', 'active'))
+        .withIndex('by_owner_status', (q) =>
+          q.eq('ownerAuthUserId', args.authUserId).eq('status', 'active')
+        )
         .collect(),
     ]);
 

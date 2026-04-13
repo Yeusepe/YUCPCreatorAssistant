@@ -59,8 +59,8 @@
  *   Spotify /v1/me     https://developer.spotify.com/documentation/web-api/reference/get-current-users-profile
  */
 
-import { httpRouter } from 'convex/server';
 import { PROVIDER_REGISTRY, PROVIDER_REGISTRY_BY_KEY } from '@yucp/providers/providerMetadata';
+import { httpRouter } from 'convex/server';
 import { api, components, internal } from './_generated/api';
 import { httpAction } from './_generated/server';
 import { authComponent, createAuth } from './auth';
@@ -667,12 +667,14 @@ http.route({
     const ownDuration = performance.now() - ownStart;
 
     // Tag own products with owner=null
-    const allProducts: PublicProductRecord[] = ownProducts.map((p: (typeof ownProducts)[number]) => ({
-      ...p,
-      owner: null,
-      configured: true,
-      live: false,
-    }));
+    const allProducts: PublicProductRecord[] = ownProducts.map(
+      (p: (typeof ownProducts)[number]) => ({
+        ...p,
+        owner: null,
+        configured: true,
+        live: false,
+      })
+    );
 
     // ── Collaborator products ─────────────────────────────────────────────────
     // If the creator has linked Discord, check for collaborator connections
@@ -1714,9 +1716,12 @@ http.route({
       return errorResponse('grant is required', 400);
     }
 
-    const result = await ctx.runMutation(internal.yucpLicenses.receiptProtectedMaterializationGrant, {
-      grant: body.grant,
-    });
+    const result = await ctx.runMutation(
+      internal.yucpLicenses.receiptProtectedMaterializationGrant,
+      {
+        grant: body.grant,
+      }
+    );
 
     if (!result.success) {
       return jsonResponse({ error: result.error }, 422);

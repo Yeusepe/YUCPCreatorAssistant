@@ -1,8 +1,8 @@
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
-import { ProviderV } from './lib/providers';
 import { requireApiSecret } from './lib/apiAuth';
+import { ProviderV } from './lib/providers';
 
 export const upsertCatalogMapping = mutation({
   args: {

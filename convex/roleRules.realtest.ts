@@ -51,7 +51,9 @@ describe('role rules CRUD and isolation', () => {
 
     expect(result.ruleId).toBeDefined();
 
-    const rule = (await t.run(async (ctx) => ctx.db.get(result.ruleId))) as Doc<'role_rules'> | null;
+    const rule = (await t.run(async (ctx) =>
+      ctx.db.get(result.ruleId)
+    )) as Doc<'role_rules'> | null;
     expect(rule?.productId).toBe('gumroad:prod1');
     expect(rule?.verifiedRoleId).toBe('role-111');
     expect(rule?.guildId).toBe('guild-A');

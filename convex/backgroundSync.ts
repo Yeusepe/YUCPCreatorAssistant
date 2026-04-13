@@ -7,8 +7,8 @@
  * 3. Retroactive product rule: When a new role rule is added, create role_sync jobs for all users with entitlements
  */
 
-import { ConvexError, v } from 'convex/values';
 import { PROVIDER_KEYS } from '@yucp/providers/providerMetadata';
+import { ConvexError, v } from 'convex/values';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import {

@@ -49,22 +49,16 @@ describe('certificateBillingSync ingestUsageEvent', () => {
   it('uses a unique external id for each signature.recorded event', async () => {
     process.env.POLAR_ACCESS_TOKEN = 'test-polar-access-token';
 
-    await ingestUsageEvent._handler(
-      {} as never,
-      {
-        authUserId: 'auth-user-1',
-        workspaceKey: 'creator-profile:profile-1',
-        certNonce: 'cert-123',
-      }
-    );
-    await ingestUsageEvent._handler(
-      {} as never,
-      {
-        authUserId: 'auth-user-1',
-        workspaceKey: 'creator-profile:profile-1',
-        certNonce: 'cert-123',
-      }
-    );
+    await ingestUsageEvent._handler({} as never, {
+      authUserId: 'auth-user-1',
+      workspaceKey: 'creator-profile:profile-1',
+      certNonce: 'cert-123',
+    });
+    await ingestUsageEvent._handler({} as never, {
+      authUserId: 'auth-user-1',
+      workspaceKey: 'creator-profile:profile-1',
+      certNonce: 'cert-123',
+    });
 
     expect(ingestCalls).toHaveLength(2);
 
@@ -121,7 +115,10 @@ describe('certificateBillingSync ingestUsageEvent', () => {
 
     const result = await syncCatalog._handler(
       {
-        runMutation: async (fn: { _handler?: unknown; name?: string }, args: Record<string, unknown>) => {
+        runMutation: async (
+          fn: { _handler?: unknown; name?: string },
+          args: Record<string, unknown>
+        ) => {
           runMutationCalls.push({ name: fn.name ?? 'mutation', args });
         },
       } as never,
@@ -207,7 +204,10 @@ describe('certificateBillingSync ingestUsageEvent', () => {
 
     const result = await syncCatalog._handler(
       {
-        runMutation: async (fn: { _handler?: unknown; name?: string }, args: Record<string, unknown>) => {
+        runMutation: async (
+          fn: { _handler?: unknown; name?: string },
+          args: Record<string, unknown>
+        ) => {
           runMutationCalls.push({ name: fn.name ?? 'mutation', args });
         },
       } as never,

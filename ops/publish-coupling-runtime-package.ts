@@ -9,8 +9,8 @@
  *   bun run convex:publish:coupling-runtime-package -- --prod --push
  */
 
-import { cpSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { cpSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -162,7 +162,7 @@ function generatePackFileBytes(blobSize = 4096): Buffer {
   const buf = Buffer.alloc(total, 0);
 
   buf.write('XGQW1', 0, 'ascii'); // magic [0..4]; [5..7] = 0
-  buf.writeUInt32LE(1, 8);        // version
+  buf.writeUInt32LE(1, 8); // version
   buf.writeUInt32LE(blobSize, 12); // blob_len
   // [16..47] = 0 (reserved)
   const blob = randomBytes(blobSize);
@@ -228,7 +228,7 @@ function buildRuntimePackageZip(): string {
   const escapedStage = stageRoot.replace(/'/g, "''");
   const escapedZip = zipPath.replace(/'/g, "''");
   const command = [
-    "Add-Type -AssemblyName System.IO.Compression.FileSystem",
+    'Add-Type -AssemblyName System.IO.Compression.FileSystem',
     `[System.IO.Compression.ZipFile]::CreateFromDirectory('${escapedStage}', '${escapedZip}', [System.IO.Compression.CompressionLevel]::Optimal, $false)`,
   ].join('; ');
   const proc = Bun.spawnSync(['powershell', '-NoProfile', '-NonInteractive', '-Command', command], {
@@ -246,7 +246,10 @@ function buildRuntimePackageZip(): string {
   return zipPath;
 }
 
-async function uploadRuntimePackageIfNeeded(options: PublishOptions, sourcePath: string): Promise<string> {
+async function uploadRuntimePackageIfNeeded(
+  options: PublishOptions,
+  sourcePath: string
+): Promise<string> {
   if (options.storageId) {
     return options.storageId;
   }
@@ -314,7 +317,9 @@ async function activateRuntimePackage(
 
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
-    throw new Error(`couplingRuntime:publishUploadedRuntimePackage failed with exit code ${exitCode}`);
+    throw new Error(
+      `couplingRuntime:publishUploadedRuntimePackage failed with exit code ${exitCode}`
+    );
   }
 
   console.log(`[publish-coupling-runtime-package] activated storageId=${storageId}`);
@@ -348,9 +353,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   }
 
   const usingExistingStorageId = Boolean(values.storageId?.trim());
-  const builtSourcePath = !usingExistingStorageId && !values.sourcePath?.trim()
-    ? buildRuntimePackageZip()
-    : '';
+  const builtSourcePath =
+    !usingExistingStorageId && !values.sourcePath?.trim() ? buildRuntimePackageZip() : '';
   const sourcePath = values.sourcePath?.trim() || builtSourcePath;
   if (!usingExistingStorageId && !existsSync(sourcePath)) {
     throw new Error(`Coupling runtime package source not found: ${sourcePath}`);
@@ -376,9 +380,16 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
   try {
     console.log(`[publish-coupling-runtime-package] version=${version}`);
-    console.log(`[publish-coupling-runtime-package] deployment=${options.prod ? 'prod' : 'current'}`);
+    console.log(
+      `[publish-coupling-runtime-package] deployment=${options.prod ? 'prod' : 'current'}`
+    );
     const storageId = await uploadRuntimePackageIfNeeded(options, sourcePath);
-    await activateRuntimePackage(options, storageId, sourcePath, usingExistingStorageId && options.push);
+    await activateRuntimePackage(
+      options,
+      storageId,
+      sourcePath,
+      usingExistingStorageId && options.push
+    );
   } finally {
     if (builtSourcePath) {
       rmSync(resolve(builtSourcePath, '..'), { recursive: true, force: true });

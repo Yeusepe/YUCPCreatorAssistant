@@ -1,4 +1,6 @@
 import type { Id } from '../_generated/dataModel';
+import { PII_PURPOSES } from '../lib/credentialKeys';
+import { encryptPii } from '../lib/piiCrypto';
 import {
   findSubjectByEmailHash,
   normalizeEmail,
@@ -6,8 +8,6 @@ import {
   revokeEntitlementForPurchaseFact,
   sha256Hex,
 } from './_helpers';
-import { PII_PURPOSES } from '../lib/credentialKeys';
-import { encryptPii } from '../lib/piiCrypto';
 
 /**
  * Upsert a Payhip product entry into `provider_catalog_mappings`.
