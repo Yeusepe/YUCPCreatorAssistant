@@ -65,6 +65,11 @@ const SetupRecommendationStatus = v.union(
   v.literal('superseded'),
   v.literal('requires_attention')
 );
+const SetupRolePlanMode = v.union(v.literal('create_or_adopt'), v.literal('adopt_only'));
+const SetupVerificationMessageMode = v.union(
+  v.literal('reuse_existing'),
+  v.literal('leave_unchanged')
+);
 const EventLevel = v.union(
   v.literal('info'),
   v.literal('success'),
@@ -131,9 +136,131 @@ const MigrationGrantStatus = v.union(
   v.literal('provisional_migration'),
   v.literal('revoked')
 );
+const MigrationUnmatchedProductBehavior = v.union(v.literal('review'), v.literal('ignore'));
+const MigrationCutoverStyle = v.union(
+  v.literal('switch_when_ready'),
+  v.literal('parallel_run')
+);
 const Provider = ProviderV;
 
 const TERMINAL_SETUP_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+type SetupPreferences = {
+  rolePlanMode: 'create_or_adopt' | 'adopt_only';
+  verificationMessageMode: 'reuse_existing' | 'leave_unchanged';
+};
+
+type MigrationPreferences = {
+  unmatchedProductBehavior: 'review' | 'ignore';
+  cutoverStyle: 'switch_when_ready' | 'parallel_run';
+};
+
+type SetupSummaryShape = {
+  providerConnectionCount?: number;
+  roleRuleCount?: number;
+  verifyPromptPresent?: boolean;
+  proposedRecommendationCount?: number;
+  appliedRecommendationCount?: number;
+  preferences?: SetupPreferences;
+};
+
+type MigrationSummaryShape = {
+  productCount?: number;
+  guildRoleCount?: number;
+  autoMatchedCount?: number;
+  unresolvedCount?: number;
+  ignoredCount?: number;
+  unmatchedGuildRoleCount?: number;
+  preferences?: MigrationPreferences;
+};
+
+function getDefaultSetupPreferences(verifyPromptPresent: boolean): SetupPreferences {
+  return {
+    rolePlanMode: 'create_or_adopt',
+    verificationMessageMode: verifyPromptPresent ? 'reuse_existing' : 'leave_unchanged',
+  };
+}
+
+function normalizeSetupPreferences(
+  preferences: Partial<SetupPreferences> | undefined,
+  verifyPromptPresent: boolean
+): SetupPreferences {
+  const defaults = getDefaultSetupPreferences(verifyPromptPresent);
+  const rolePlanMode =
+    preferences?.rolePlanMode === 'adopt_only' ? 'adopt_only' : defaults.rolePlanMode;
+  const verificationMessageMode =
+    verifyPromptPresent && preferences?.verificationMessageMode === 'reuse_existing'
+      ? 'reuse_existing'
+      : defaults.verificationMessageMode;
+
+  return {
+    rolePlanMode,
+    verificationMessageMode,
+  };
+}
+
+function getSetupPreferencesFromSummary(
+  summary: unknown,
+  verifyPromptPresent: boolean
+): SetupPreferences {
+  const rawSummary = (summary ?? {}) as SetupSummaryShape;
+  return normalizeSetupPreferences(rawSummary.preferences, verifyPromptPresent);
+}
+
+function buildSetupSummary<TSummary extends Partial<SetupSummaryShape>>(
+  summary: TSummary | undefined,
+  preferences: SetupPreferences
+): TSummary & { preferences: SetupPreferences } {
+  return {
+    ...((summary ?? {}) as TSummary),
+    preferences,
+  };
+}
+
+function getDefaultMigrationPreferences(
+  mode: 'adopt_existing_roles' | 'import_verified_users' | 'bridge_from_current_roles'
+): MigrationPreferences {
+  return {
+    unmatchedProductBehavior: 'review',
+    cutoverStyle: mode === 'bridge_from_current_roles' ? 'parallel_run' : 'switch_when_ready',
+  };
+}
+
+function normalizeMigrationPreferences(
+  preferences:
+    | Partial<MigrationPreferences>
+    | undefined,
+  mode: 'adopt_existing_roles' | 'import_verified_users' | 'bridge_from_current_roles'
+): MigrationPreferences {
+  const defaults = getDefaultMigrationPreferences(mode);
+  return {
+    unmatchedProductBehavior:
+      preferences?.unmatchedProductBehavior === 'ignore'
+        ? 'ignore'
+        : defaults.unmatchedProductBehavior,
+    cutoverStyle:
+      preferences?.cutoverStyle === 'parallel_run' ? 'parallel_run' : defaults.cutoverStyle,
+  };
+}
+
+function buildMigrationSummary<TSummary extends Partial<MigrationSummaryShape>>(
+  summary: TSummary | undefined,
+  preferences: MigrationPreferences
+): TSummary & { preferences: MigrationPreferences } {
+  return {
+    ...((summary ?? {}) as TSummary),
+    preferences,
+  };
+}
+
+function getRolePlanEntryDefaultAction(
+  payload: { proposedRoleId?: string },
+  rolePlanMode: SetupPreferences['rolePlanMode']
+): 'create_role' | 'adopt_role' | 'skip' {
+  if (payload.proposedRoleId) {
+    return 'adopt_role';
+  }
+  return rolePlanMode === 'adopt_only' ? 'skip' : 'create_role';
+}
 const DEFAULT_SETUP_FLOW: ReadonlyArray<{
   phase:
     | 'connect_store'
@@ -448,6 +575,7 @@ async function seedInitialSetupRecommendations(
     setupJobId: Id<'setup_jobs'>;
     authUserId: string;
     guildLink: Doc<'guild_links'>;
+    preferences: SetupPreferences;
     now: number;
   }
 ) {
@@ -473,9 +601,7 @@ async function seedInitialSetupRecommendations(
     recommendationType:
       | 'provider_connection'
       | 'role_adoption'
-      | 'role_creation'
-      | 'verify_surface_reuse'
-      | 'verify_surface_creation';
+      | 'role_creation';
     title: string;
     detail?: string;
     status: 'proposed' | 'applied';
@@ -517,31 +643,14 @@ async function seedInitialSetupRecommendations(
   } else {
     recommendations.push({
       recommendationType: 'role_creation',
-      title: 'Create product roles from the recommended plan',
+      title:
+        args.preferences.rolePlanMode === 'adopt_only'
+          ? 'Only use roles that already exist'
+          : 'Create product roles from the recommended plan',
       detail:
-        'No role rules exist yet, so the automatic setup job will create them after store scan.',
-      status: 'proposed',
-    });
-  }
-
-  if (args.guildLink.verifyPromptMessage) {
-    recommendations.push({
-      recommendationType: 'verify_surface_reuse',
-      title: 'Reuse the current verify prompt',
-      detail:
-        'The server already has a saved verify prompt message that can be adopted by the new setup flow.',
-      status: 'applied',
-      payload: {
-        channelId: args.guildLink.verifyPromptMessage.channelId,
-        messageId: args.guildLink.verifyPromptMessage.messageId,
-      },
-    });
-  } else {
-    recommendations.push({
-      recommendationType: 'verify_surface_creation',
-      title: 'Create a dedicated verify surface',
-      detail:
-        'No saved verify prompt is linked yet, so the setup job will provision one during apply setup.',
+        args.preferences.rolePlanMode === 'adopt_only'
+          ? 'Setup will prefer roles that already exist in Discord. Products without a matching role will stay skipped until you choose what to do.'
+          : 'No role rules exist yet, so the automatic setup job will create them after store scan.',
       status: 'proposed',
     });
   }
@@ -575,17 +684,26 @@ async function seedInitialSetupRecommendations(
     createdAt: args.now,
   });
 
-  const summary = {
-    providerConnectionCount: activeSetupConnections.length,
-    roleRuleCount: enabledRoleRules.length,
-    verifyPromptPresent: Boolean(args.guildLink.verifyPromptMessage),
-    proposedRecommendationCount: recommendations.filter(
-      (recommendation) => recommendation.status === 'proposed'
-    ).length,
-    appliedRecommendationCount: recommendations.filter(
-      (recommendation) => recommendation.status === 'applied'
-    ).length,
-  };
+  const summary: SetupSummaryShape & {
+    providerConnectionCount: number;
+    roleRuleCount: number;
+    verifyPromptPresent: boolean;
+    proposedRecommendationCount: number;
+    appliedRecommendationCount: number;
+  } = buildSetupSummary(
+    {
+      providerConnectionCount: activeSetupConnections.length,
+      roleRuleCount: enabledRoleRules.length,
+      verifyPromptPresent: Boolean(args.guildLink.verifyPromptMessage),
+      proposedRecommendationCount: recommendations.filter(
+        (recommendation) => recommendation.status === 'proposed'
+      ).length,
+      appliedRecommendationCount: recommendations.filter(
+        (recommendation) => recommendation.status === 'applied'
+      ).length,
+    },
+    args.preferences
+  );
 
   await ctx.db.patch(args.setupJobId, {
     latestEventAt: args.now,
@@ -653,6 +771,7 @@ async function synchronizeSetupJobLifecycle(
       verifyPromptPresent: boolean;
       proposedRecommendationCount: number;
       appliedRecommendationCount: number;
+      preferences?: SetupPreferences;
     };
   }
 ) {
@@ -735,6 +854,8 @@ async function synchronizeSetupJobLifecycle(
     authUserId: args.setupJobAuthUserId,
     guildLinkId: args.setupJobGuildLinkId,
     guildId: args.setupJobDiscordGuildId,
+    rolePlanMode:
+      args.recommendationSummary.preferences?.rolePlanMode ?? getDefaultSetupPreferences(false).rolePlanMode,
   });
 }
 
@@ -745,6 +866,7 @@ async function enqueueSetupApplyOutboxJob(
     authUserId: string;
     guildLinkId: Id<'guild_links'>;
     guildId: string;
+    verificationMessageMode?: 'reuse_existing' | 'leave_unchanged';
     skipRoleProvisioning?: boolean;
     skipVerifyPrompt?: boolean;
   }
@@ -753,6 +875,9 @@ async function enqueueSetupApplyOutboxJob(
     setupJobId: args.setupJobId,
     guildLinkId: args.guildLinkId,
     guildId: args.guildId,
+    ...(args.verificationMessageMode
+      ? { verificationMessageMode: args.verificationMessageMode }
+      : {}),
     ...(args.skipRoleProvisioning ? { skipRoleProvisioning: true } : {}),
     ...(args.skipVerifyPrompt ? { skipVerifyPrompt: true } : {}),
   };
@@ -801,6 +926,7 @@ async function enqueueSetupGeneratePlanOutboxJob(
     authUserId: string;
     guildLinkId: Id<'guild_links'>;
     guildId: string;
+    rolePlanMode: 'create_or_adopt' | 'adopt_only';
   }
 ) {
   const idempotencyKey = `setup_generate_plan:${args.setupJobId}`;
@@ -818,6 +944,7 @@ async function enqueueSetupGeneratePlanOutboxJob(
     setupJobId: args.setupJobId,
     guildLinkId: args.guildLinkId,
     guildId: args.guildId,
+    rolePlanMode: args.rolePlanMode,
   };
 
   if (existing) {
@@ -855,6 +982,7 @@ async function enqueueMigrationAnalyzeOutboxJob(
     guildLinkId: Id<'guild_links'>;
     guildId: string;
     mode: 'adopt_existing_roles' | 'import_verified_users' | 'bridge_from_current_roles';
+    preferences: MigrationPreferences;
     sourceBotKey?: string;
     sourceGuildId?: string;
   }
@@ -871,6 +999,8 @@ async function enqueueMigrationAnalyzeOutboxJob(
     guildLinkId: args.guildLinkId,
     guildId: args.guildId,
     mode: args.mode,
+    unmatchedProductBehavior: args.preferences.unmatchedProductBehavior,
+    cutoverStyle: args.preferences.cutoverStyle,
     sourceBotKey: args.sourceBotKey,
     sourceGuildId: args.sourceGuildId,
   };
@@ -931,9 +1061,11 @@ async function createOrResumeSetupJobImpl(
     guildLinkId: Id<'guild_links'>;
     mode: 'automatic_setup' | 'migration';
     triggerSource: 'dashboard' | 'discord_setup' | 'discord_autosetup' | 'api';
+    preferences?: Partial<SetupPreferences>;
   }
 ) {
   const guildLink = await getOwnedGuildLinkOrThrow(ctx, args.guildLinkId, args.authUserId);
+  const setupPreferences = normalizeSetupPreferences(args.preferences, Boolean(guildLink.verifyPromptMessage));
   const existing = await ctx.db
     .query('setup_jobs')
     .withIndex('by_guild_link', (q) => q.eq('guildLinkId', args.guildLinkId))
@@ -944,6 +1076,7 @@ async function createOrResumeSetupJobImpl(
     const now = Date.now();
     await ctx.db.patch(existing._id, {
       triggerSource: args.triggerSource,
+      summary: buildSetupSummary(existing.summary as SetupSummaryShape | undefined, setupPreferences),
       lastResumedAt: now,
       updatedAt: now,
     });
@@ -988,6 +1121,10 @@ async function createOrResumeSetupJobImpl(
             verifyPromptPresent: !!guildLink.verifyPromptMessage,
             proposedRecommendationCount: 1,
             appliedRecommendationCount: enabledRules.length > 0 ? 1 : 0,
+            preferences: getSetupPreferencesFromSummary(
+              existing.summary,
+              Boolean(guildLink.verifyPromptMessage)
+            ),
           },
         });
       }
@@ -1006,6 +1143,7 @@ async function createOrResumeSetupJobImpl(
     status: 'pending',
     currentPhase: 'connect_store',
     activeStepKey: 'connect-store',
+    summary: buildSetupSummary(undefined, setupPreferences),
     createdAt: now,
     updatedAt: now,
     startedAt: now,
@@ -1022,6 +1160,7 @@ async function createOrResumeSetupJobImpl(
     setupJobId,
     authUserId: args.authUserId,
     guildLink,
+    preferences: setupPreferences,
     now,
   });
   await synchronizeSetupJobLifecycle(ctx, {
@@ -1057,6 +1196,7 @@ async function createMigrationJobImpl(
       | 'import_verified_users'
       | 'bridge_from_current_roles'
       | 'cross_server_bridge';
+    preferences?: Partial<MigrationPreferences>;
     sourceBotKey?: string;
     sourceGuildId?: string;
   }
@@ -1070,6 +1210,10 @@ async function createMigrationJobImpl(
   }
 
   const now = Date.now();
+  const migrationPreferences =
+    args.mode === 'cross_server_bridge'
+      ? getDefaultMigrationPreferences('bridge_from_current_roles')
+      : normalizeMigrationPreferences(args.preferences, args.mode);
   const migrationJobId = await ctx.db.insert('migration_jobs', {
     authUserId: args.authUserId,
     setupJobId: args.setupJobId,
@@ -1080,6 +1224,7 @@ async function createMigrationJobImpl(
     currentPhase: 'analyze',
     sourceBotKey: args.sourceBotKey,
     sourceGuildId: args.sourceGuildId,
+    summary: buildMigrationSummary(undefined, migrationPreferences),
     createdAt: now,
     updatedAt: now,
     startedAt: now,
@@ -1136,6 +1281,7 @@ async function createMigrationJobImpl(
       guildLinkId: args.guildLinkId,
       guildId: guildLink.discordGuildId,
       mode: args.mode,
+      preferences: migrationPreferences,
       sourceBotKey: args.sourceBotKey,
       sourceGuildId: args.sourceGuildId,
     });
@@ -1166,6 +1312,12 @@ export const createOrResumeSetupJob = mutation({
     guildLinkId: v.id('guild_links'),
     mode: SetupJobMode,
     triggerSource: SetupJobTriggerSource,
+    preferences: v.optional(
+      v.object({
+        rolePlanMode: SetupRolePlanMode,
+        verificationMessageMode: SetupVerificationMessageMode,
+      })
+    ),
   },
   returns: v.object({
     setupJobId: v.id('setup_jobs'),
@@ -1181,6 +1333,7 @@ export const createOrResumeSetupJob = mutation({
       guildLinkId: args.guildLinkId,
       mode: args.mode,
       triggerSource: args.triggerSource,
+      preferences: args.preferences,
     });
   },
 });
@@ -1192,6 +1345,12 @@ export const createOrResumeSetupJobForOwner = mutation({
     guildLinkId: v.id('guild_links'),
     mode: SetupJobMode,
     triggerSource: SetupJobTriggerSource,
+    preferences: v.optional(
+      v.object({
+        rolePlanMode: SetupRolePlanMode,
+        verificationMessageMode: SetupVerificationMessageMode,
+      })
+    ),
   },
   returns: v.object({
     setupJobId: v.id('setup_jobs'),
@@ -1210,6 +1369,12 @@ export const createOrResumeSetupJobForOwnerByGuild = mutation({
     guildId: v.string(),
     mode: SetupJobMode,
     triggerSource: SetupJobTriggerSource,
+    preferences: v.optional(
+      v.object({
+        rolePlanMode: SetupRolePlanMode,
+        verificationMessageMode: SetupVerificationMessageMode,
+      })
+    ),
   },
   returns: v.object({
     setupJobId: v.id('setup_jobs'),
@@ -1226,6 +1391,7 @@ export const createOrResumeSetupJobForOwnerByGuild = mutation({
       guildLinkId: guildLink._id,
       mode: args.mode,
       triggerSource: args.triggerSource,
+      preferences: args.preferences,
     });
   },
 });
@@ -1657,6 +1823,12 @@ export const createOrResumeSetupJobByGuild = mutation({
     guildId: v.string(),
     mode: SetupJobMode,
     triggerSource: SetupJobTriggerSource,
+    preferences: v.optional(
+      v.object({
+        rolePlanMode: SetupRolePlanMode,
+        verificationMessageMode: SetupVerificationMessageMode,
+      })
+    ),
   },
   returns: v.object({
     setupJobId: v.id('setup_jobs'),
@@ -1678,6 +1850,7 @@ export const createOrResumeSetupJobByGuild = mutation({
       guildLinkId: guildLink._id,
       mode: args.mode,
       triggerSource: args.triggerSource,
+      preferences: args.preferences,
     });
   },
 });
@@ -1727,25 +1900,23 @@ export const applyRecommendedSetupByGuild = mutation({
 
     const now = Date.now();
 
+    const setupPreferences = getSetupPreferencesFromSummary(
+      job.summary,
+      Boolean(guildLink.verifyPromptMessage)
+    );
+
     // Dismiss any recommendations the user explicitly unchecked.
     const dismissedIds = args.dismissedIds ?? [];
-    const dismissedTypes = new Set<string>();
     if (dismissedIds.length > 0) {
       await Promise.all(
         dismissedIds.map(async (recId) => {
           const rec = await ctx.db.get(recId);
           if (rec && rec.setupJobId === job._id && rec.status === 'proposed') {
-            dismissedTypes.add(rec.recommendationType);
             await ctx.db.patch(recId, { status: 'dismissed', updatedAt: now });
           }
         })
       );
     }
-
-    // Skip verify prompt if user dismissed the surface recommendation.
-    // Role provisioning is handled per-entry via role_plan_entry overrides.
-    const skipVerifyPrompt =
-      dismissedTypes.has('verify_surface_creation') || dismissedTypes.has('verify_surface_reuse');
 
     await Promise.all([
       upsertSetupStepRecord(ctx, {
@@ -1786,7 +1957,8 @@ export const applyRecommendedSetupByGuild = mutation({
       authUserId: job.authUserId,
       guildLinkId: guildLink._id,
       guildId: guildLink.discordGuildId,
-      skipVerifyPrompt: skipVerifyPrompt || undefined,
+      verificationMessageMode: setupPreferences.verificationMessageMode,
+      skipVerifyPrompt: setupPreferences.verificationMessageMode !== 'reuse_existing' || undefined,
     });
 
     return { setupJobId: job._id, queued: true };
@@ -1828,12 +2000,14 @@ export const applyRecommendedSetupForOwnerByGuild = mutation({
       return { setupJobId: job._id, queued: false };
     }
 
-    const summary = (job.summary ?? {}) as {
-      providerConnectionCount?: number;
-    };
+    const summary = (job.summary ?? {}) as SetupSummaryShape;
     if ((summary.providerConnectionCount ?? 0) === 0) {
       throw new ConvexError('Connect at least one storefront before applying setup.');
     }
+    const setupPreferences = getSetupPreferencesFromSummary(
+      job.summary,
+      Boolean(guildLink.verifyPromptMessage)
+    );
 
     const now = Date.now();
     await Promise.all([
@@ -1875,6 +2049,8 @@ export const applyRecommendedSetupForOwnerByGuild = mutation({
       authUserId: job.authUserId,
       guildLinkId: guildLink._id,
       guildId: guildLink.discordGuildId,
+      verificationMessageMode: setupPreferences.verificationMessageMode,
+      skipVerifyPrompt: setupPreferences.verificationMessageMode !== 'reuse_existing' || undefined,
     });
 
     return { setupJobId: job._id, queued: true };
@@ -1970,6 +2146,81 @@ export const overrideRolePlanEntry = mutation({
       },
       updatedAt: Date.now(),
     });
+    return { success: true };
+  },
+});
+
+export const updateSetupPreferencesByGuild = mutation({
+  args: {
+    guildId: v.string(),
+    preferences: v.object({
+      rolePlanMode: SetupRolePlanMode,
+      verificationMessageMode: SetupVerificationMessageMode,
+    }),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    const authUser = await getAuthenticatedAuthUser(ctx);
+    if (!authUser) {
+      throw new ConvexError('Unauthenticated');
+    }
+
+    const guildLink = await getOwnedGuildLinkByDiscordGuildId(ctx, {
+      authUserId: authUser.authUserId,
+      guildId: args.guildId,
+    });
+    const job = await ctx.db
+      .query('setup_jobs')
+      .withIndex('by_auth_user_guild', (q) =>
+        q.eq('authUserId', authUser.authUserId).eq('discordGuildId', args.guildId)
+      )
+      .order('desc')
+      .first();
+
+    if (!job) {
+      throw new ConvexError('Start the setup job before updating setup choices.');
+    }
+
+    const preferences = normalizeSetupPreferences(
+      args.preferences,
+      Boolean(guildLink.verifyPromptMessage)
+    );
+    const now = Date.now();
+    await ctx.db.patch(job._id, {
+      summary: buildSetupSummary(job.summary as SetupSummaryShape | undefined, preferences),
+      updatedAt: now,
+    });
+
+    const rolePlanEntries = await ctx.db
+      .query('setup_recommendations')
+      .withIndex('by_setup_job', (q) => q.eq('setupJobId', job._id))
+      .filter((q) => q.eq(q.field('recommendationType'), 'role_plan_entry'))
+      .collect();
+
+    await Promise.all(
+      rolePlanEntries.map(async (entry) => {
+        const payload = (entry.payload ?? {}) as {
+          action?: 'create_role' | 'adopt_role' | 'skip';
+          proposedRoleId?: string;
+          userOverride?: unknown;
+        };
+        if (payload.userOverride) {
+          return;
+        }
+        const nextAction = getRolePlanEntryDefaultAction(payload, preferences.rolePlanMode);
+        if (payload.action === nextAction) {
+          return;
+        }
+        await ctx.db.patch(entry._id, {
+          payload: {
+            ...payload,
+            action: nextAction,
+          },
+          updatedAt: now,
+        });
+      })
+    );
+
     return { success: true };
   },
 });
@@ -2226,6 +2477,12 @@ export const createMigrationJob = mutation({
     guildLinkId: v.id('guild_links'),
     setupJobId: v.optional(v.id('setup_jobs')),
     mode: MigrationMode,
+    preferences: v.optional(
+      v.object({
+        unmatchedProductBehavior: MigrationUnmatchedProductBehavior,
+        cutoverStyle: MigrationCutoverStyle,
+      })
+    ),
     sourceBotKey: v.optional(v.string()),
     sourceGuildId: v.optional(v.string()),
   },
@@ -2255,6 +2512,12 @@ export const createMigrationJobForOwner = mutation({
     guildLinkId: v.id('guild_links'),
     setupJobId: v.optional(v.id('setup_jobs')),
     mode: MigrationMode,
+    preferences: v.optional(
+      v.object({
+        unmatchedProductBehavior: MigrationUnmatchedProductBehavior,
+        cutoverStyle: MigrationCutoverStyle,
+      })
+    ),
     sourceBotKey: v.optional(v.string()),
     sourceGuildId: v.optional(v.string()),
   },
@@ -2272,6 +2535,12 @@ export const createMigrationJobByGuild = mutation({
     guildId: v.string(),
     setupJobId: v.optional(v.id('setup_jobs')),
     mode: MigrationMode,
+    preferences: v.optional(
+      v.object({
+        unmatchedProductBehavior: MigrationUnmatchedProductBehavior,
+        cutoverStyle: MigrationCutoverStyle,
+      })
+    ),
     sourceBotKey: v.optional(v.string()),
     sourceGuildId: v.optional(v.string()),
   },
@@ -2294,6 +2563,7 @@ export const createMigrationJobByGuild = mutation({
       guildLinkId: guildLink._id,
       setupJobId: args.setupJobId,
       mode: args.mode,
+      preferences: args.preferences,
       sourceBotKey: args.sourceBotKey,
       sourceGuildId: args.sourceGuildId,
     });

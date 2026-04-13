@@ -36,7 +36,7 @@ const STEP_DESCRIPTION: Record<string, string> = {
   review_exceptions:
     'Here is exactly what YUCP will do when you click Apply. Read through each change, then confirm at the bottom of the page.',
   apply_setup:
-    'YUCP is creating roles and setting up the verification message in your Discord server. This usually takes under a minute.',
+    'YUCP is creating roles and updating your existing verification message only if you asked it to. This usually takes under a minute.',
   shadow_migration:
     'YUCP is running silent checks to make sure existing members keep their access during the switch.',
   confirm_cutover:
@@ -54,6 +54,30 @@ type MigrationModeKey =
   | 'adopt_existing_roles'
   | 'import_verified_users'
   | 'bridge_from_current_roles';
+
+type SetupPreferences = {
+  rolePlanMode: 'create_or_adopt' | 'adopt_only';
+  verificationMessageMode: 'reuse_existing' | 'leave_unchanged';
+};
+
+type MigrationPreferences = {
+  unmatchedProductBehavior: 'review' | 'ignore';
+  cutoverStyle: 'switch_when_ready' | 'parallel_run';
+};
+
+type SetupSummaryData = {
+  providerConnectionCount?: number;
+  roleRuleCount?: number;
+  verifyPromptPresent?: boolean;
+  preferences?: Partial<SetupPreferences>;
+};
+
+type MigrationSummaryData = {
+  autoMatchedCount?: number;
+  unresolvedCount?: number;
+  ignoredCount?: number;
+  preferences?: Partial<MigrationPreferences>;
+};
 
 const MIGRATION_MODE_INFO: Record<MigrationModeKey, { title: string; description: string }> = {
   adopt_existing_roles: {
@@ -97,6 +121,52 @@ const MIGRATION_MAPPING_STATUS_LABEL: Record<string, string> = {
 };
 
 const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+
+function getDefaultSetupPreferences(hasExistingVerifyPrompt: boolean): SetupPreferences {
+  return {
+    rolePlanMode: 'create_or_adopt',
+    verificationMessageMode: hasExistingVerifyPrompt ? 'reuse_existing' : 'leave_unchanged',
+  };
+}
+
+function readSetupPreferences(
+  summary: unknown,
+  hasExistingVerifyPrompt: boolean
+): SetupPreferences {
+  const defaults = getDefaultSetupPreferences(hasExistingVerifyPrompt);
+  const value = (summary ?? {}) as SetupSummaryData;
+  return {
+    rolePlanMode:
+      value.preferences?.rolePlanMode === 'adopt_only' ? 'adopt_only' : defaults.rolePlanMode,
+    verificationMessageMode:
+      hasExistingVerifyPrompt && value.preferences?.verificationMessageMode === 'reuse_existing'
+        ? 'reuse_existing'
+        : defaults.verificationMessageMode,
+  };
+}
+
+function getDefaultMigrationPreferences(mode: MigrationModeKey | null): MigrationPreferences {
+  return {
+    unmatchedProductBehavior: 'review',
+    cutoverStyle: mode === 'bridge_from_current_roles' ? 'parallel_run' : 'switch_when_ready',
+  };
+}
+
+function readMigrationPreferences(
+  summary: unknown,
+  mode: MigrationModeKey | null
+): MigrationPreferences {
+  const defaults = getDefaultMigrationPreferences(mode);
+  const value = (summary ?? {}) as MigrationSummaryData;
+  return {
+    unmatchedProductBehavior:
+      value.preferences?.unmatchedProductBehavior === 'ignore'
+        ? 'ignore'
+        : defaults.unmatchedProductBehavior,
+    cutoverStyle:
+      value.preferences?.cutoverStyle === 'parallel_run' ? 'parallel_run' : defaults.cutoverStyle,
+  };
+}
 
 function formatDate(value: number | null): string {
   return value ? DATE_FORMATTER.format(value) : 'Not yet recorded';
@@ -174,23 +244,291 @@ export function deriveSetupLandingState({
   return 'new';
 }
 
+function SetupPreferencesPanel({
+  preferences,
+  hasExistingVerifyPrompt,
+  onChange,
+  isSaving,
+}: {
+  preferences: SetupPreferences;
+  hasExistingVerifyPrompt: boolean;
+  onChange?: (preferences: SetupPreferences) => void;
+  isSaving?: boolean;
+}) {
+  return (
+    <div className="mt-5 rounded-[14px] border border-zinc-200 bg-zinc-50/90 p-4 dark:border-white/10 dark:bg-white/5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-zinc-900 dark:text-white">Setup choices</p>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+            Pick how much YUCP should do automatically before you apply the plan.
+          </p>
+        </div>
+        {isSaving ? (
+          <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Saving...</span>
+        ) : null}
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+            Roles for unmatched products
+          </legend>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border border-zinc-200 bg-white px-3 py-3 text-sm dark:border-white/10 dark:bg-zinc-900/70">
+            <input
+              type="radio"
+              name="setup-role-plan-mode"
+              className="mt-1"
+              checked={preferences.rolePlanMode === 'create_or_adopt'}
+              onChange={() =>
+                onChange?.({
+                  ...preferences,
+                  rolePlanMode: 'create_or_adopt',
+                })
+              }
+            />
+            <span>
+              <span className="block font-semibold text-zinc-900 dark:text-white">
+                Create missing roles when needed
+              </span>
+              <span className="mt-1 block text-zinc-600 dark:text-zinc-300">
+                YUCP will create a new role when it cannot find a good existing match.
+              </span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border border-zinc-200 bg-white px-3 py-3 text-sm dark:border-white/10 dark:bg-zinc-900/70">
+            <input
+              type="radio"
+              name="setup-role-plan-mode"
+              className="mt-1"
+              checked={preferences.rolePlanMode === 'adopt_only'}
+              onChange={() =>
+                onChange?.({
+                  ...preferences,
+                  rolePlanMode: 'adopt_only',
+                })
+              }
+            />
+            <span>
+              <span className="block font-semibold text-zinc-900 dark:text-white">
+                Only use roles that already exist
+              </span>
+              <span className="mt-1 block text-zinc-600 dark:text-zinc-300">
+                Products without a matching role stay skipped until you choose what to do.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+            Verification message
+          </legend>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border border-zinc-200 bg-white px-3 py-3 text-sm dark:border-white/10 dark:bg-zinc-900/70">
+            <input
+              type="radio"
+              name="setup-verification-mode"
+              className="mt-1"
+              checked={preferences.verificationMessageMode === 'leave_unchanged'}
+              onChange={() =>
+                onChange?.({
+                  ...preferences,
+                  verificationMessageMode: 'leave_unchanged',
+                })
+              }
+            />
+            <span>
+              <span className="block font-semibold text-zinc-900 dark:text-white">
+                Leave verification message unchanged
+              </span>
+              <span className="mt-1 block text-zinc-600 dark:text-zinc-300">
+                Automatic channel creation is off. You can connect or create the verification
+                message manually later.
+              </span>
+            </span>
+          </label>
+          <label
+            className={[
+              'flex items-start gap-3 rounded-[12px] border px-3 py-3 text-sm',
+              hasExistingVerifyPrompt
+                ? 'cursor-pointer border-zinc-200 bg-white dark:border-white/10 dark:bg-zinc-900/70'
+                : 'border-zinc-200 bg-zinc-100/70 opacity-60 dark:border-white/10 dark:bg-white/5',
+            ].join(' ')}
+          >
+            <input
+              type="radio"
+              name="setup-verification-mode"
+              className="mt-1"
+              checked={preferences.verificationMessageMode === 'reuse_existing'}
+              disabled={!hasExistingVerifyPrompt}
+              onChange={() =>
+                onChange?.({
+                  ...preferences,
+                  verificationMessageMode: 'reuse_existing',
+                })
+              }
+            />
+            <span>
+              <span className="block font-semibold text-zinc-900 dark:text-white">
+                Reuse the current verification message
+              </span>
+              <span className="mt-1 block text-zinc-600 dark:text-zinc-300">
+                {hasExistingVerifyPrompt
+                  ? 'YUCP will refresh the saved verification message instead of creating a new channel.'
+                  : 'This option becomes available after you connect a verification message to this server.'}
+              </span>
+            </span>
+          </label>
+        </fieldset>
+      </div>
+    </div>
+  );
+}
+
+function MigrationPreferencesPanel({
+  preferences,
+  onChange,
+}: {
+  preferences: MigrationPreferences;
+  onChange: (preferences: MigrationPreferences) => void;
+}) {
+  return (
+    <div className="rounded-[14px] border border-zinc-200 bg-zinc-50/90 p-4 dark:border-white/10 dark:bg-white/5">
+      <p className="text-sm font-semibold text-zinc-900 dark:text-white">Migration choices</p>
+      <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+        Decide how cautious YUCP should be while it reviews your existing server.
+      </p>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+            Products without a clear role match
+          </legend>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border border-zinc-200 bg-white px-3 py-3 text-sm dark:border-white/10 dark:bg-zinc-900/70">
+            <input
+              type="radio"
+              name="migration-unmatched-products"
+              className="mt-1"
+              checked={preferences.unmatchedProductBehavior === 'review'}
+              onChange={() =>
+                onChange({
+                  ...preferences,
+                  unmatchedProductBehavior: 'review',
+                })
+              }
+            />
+            <span>
+              <span className="block font-semibold text-zinc-900 dark:text-white">
+                Keep them in manual review
+              </span>
+              <span className="mt-1 block text-zinc-600 dark:text-zinc-300">
+                YUCP pauses so you can decide how each unmatched product should behave.
+              </span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border border-zinc-200 bg-white px-3 py-3 text-sm dark:border-white/10 dark:bg-zinc-900/70">
+            <input
+              type="radio"
+              name="migration-unmatched-products"
+              className="mt-1"
+              checked={preferences.unmatchedProductBehavior === 'ignore'}
+              onChange={() =>
+                onChange({
+                  ...preferences,
+                  unmatchedProductBehavior: 'ignore',
+                })
+              }
+            />
+            <span>
+              <span className="block font-semibold text-zinc-900 dark:text-white">
+                Ignore them for now
+              </span>
+              <span className="mt-1 block text-zinc-600 dark:text-zinc-300">
+                YUCP leaves unmatched products out of this migration so the rest can move forward.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+            Cutover style
+          </legend>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border border-zinc-200 bg-white px-3 py-3 text-sm dark:border-white/10 dark:bg-zinc-900/70">
+            <input
+              type="radio"
+              name="migration-cutover-style"
+              className="mt-1"
+              checked={preferences.cutoverStyle === 'switch_when_ready'}
+              onChange={() =>
+                onChange({
+                  ...preferences,
+                  cutoverStyle: 'switch_when_ready',
+                })
+              }
+            />
+            <span>
+              <span className="block font-semibold text-zinc-900 dark:text-white">
+                Switch once the review looks good
+              </span>
+              <span className="mt-1 block text-zinc-600 dark:text-zinc-300">
+                YUCP prepares the migration plan and lets you switch after reviewing the matches.
+              </span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border border-zinc-200 bg-white px-3 py-3 text-sm dark:border-white/10 dark:bg-zinc-900/70">
+            <input
+              type="radio"
+              name="migration-cutover-style"
+              className="mt-1"
+              checked={preferences.cutoverStyle === 'parallel_run'}
+              onChange={() =>
+                onChange({
+                  ...preferences,
+                  cutoverStyle: 'parallel_run',
+                })
+              }
+            />
+            <span>
+              <span className="block font-semibold text-zinc-900 dark:text-white">
+                Run YUCP alongside the current bot first
+              </span>
+              <span className="mt-1 block text-zinc-600 dark:text-zinc-300">
+                YUCP keeps the old bot in place while you compare results before the final switch.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+      </div>
+    </div>
+  );
+}
+
 // ─── SetupStartView ──────────────────────────────────────────────────────────
 
 function SetupStartView({
   connectedStoreCount,
+  hasExistingVerifyPrompt,
   onStart,
   isStarting,
   onStartMigration,
   isStartingMigration,
 }: {
   connectedStoreCount: number;
-  onStart: () => void;
+  hasExistingVerifyPrompt: boolean;
+  onStart: (preferences: SetupPreferences) => void;
   isStarting: boolean;
-  onStartMigration: (mode: MigrationModeKey) => void;
+  onStartMigration: (mode: MigrationModeKey, preferences: MigrationPreferences) => void;
   isStartingMigration: boolean;
 }) {
   const [showMigration, setShowMigration] = useState(false);
   const [selectedMode, setSelectedMode] = useState<MigrationModeKey | null>(null);
+  const [setupPreferences, setSetupPreferences] = useState<SetupPreferences>(() =>
+    getDefaultSetupPreferences(hasExistingVerifyPrompt)
+  );
+  const [migrationPreferences, setMigrationPreferences] = useState<MigrationPreferences>(() =>
+    getDefaultMigrationPreferences(null)
+  );
 
   return (
     <>
@@ -230,10 +568,17 @@ function SetupStartView({
               3. Apply and you&apos;re done
             </p>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-              YUCP creates any missing roles and sets up the verification message for your server.
+              YUCP creates any missing roles and can reuse your current verification message if you
+              choose that.
             </p>
           </div>
         </div>
+
+        <SetupPreferencesPanel
+          preferences={setupPreferences}
+          hasExistingVerifyPrompt={hasExistingVerifyPrompt}
+          onChange={setSetupPreferences}
+        />
 
         <div className="mt-5 rounded-[14px] border border-zinc-200 bg-zinc-50/90 p-4 dark:border-white/10 dark:bg-white/5">
           <p className="text-sm font-semibold text-zinc-900 dark:text-white">
@@ -266,7 +611,12 @@ function SetupStartView({
         ) : null}
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
-          <YucpButton yucp="primary" pill isLoading={isStarting} onPress={onStart}>
+          <YucpButton
+            yucp="primary"
+            pill
+            isLoading={isStarting}
+            onPress={() => onStart(setupPreferences)}
+          >
             {isStarting ? 'Starting...' : 'Start setup'}
           </YucpButton>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Takes about 5 minutes.</p>
@@ -312,7 +662,10 @@ function SetupStartView({
                   <li key={mode}>
                     <button
                       type="button"
-                      onClick={() => setSelectedMode(mode)}
+                      onClick={() => {
+                        setSelectedMode(mode);
+                        setMigrationPreferences(getDefaultMigrationPreferences(mode));
+                      }}
                       aria-pressed={isSelected}
                       className={[
                         'w-full rounded-[14px] border p-4 text-left transition',
@@ -347,6 +700,11 @@ function SetupStartView({
               })}
             </ul>
 
+            <MigrationPreferencesPanel
+              preferences={migrationPreferences}
+              onChange={setMigrationPreferences}
+            />
+
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <YucpButton
                 yucp="primary"
@@ -354,7 +712,7 @@ function SetupStartView({
                 isDisabled={selectedMode === null}
                 isLoading={isStartingMigration}
                 onPress={() => {
-                  if (selectedMode) onStartMigration(selectedMode);
+                  if (selectedMode) onStartMigration(selectedMode, migrationPreferences);
                 }}
               >
                 {isStartingMigration ? 'Starting migration...' : 'Start migration'}
@@ -365,6 +723,7 @@ function SetupStartView({
                 onClick={() => {
                   setShowMigration(false);
                   setSelectedMode(null);
+                  setMigrationPreferences(getDefaultMigrationPreferences(null));
                 }}
               >
                 Cancel
@@ -424,6 +783,16 @@ function RolePlanEntryRow({
   const effectiveAction = ep.userOverride?.action ?? ep.action;
   const effectiveRoleId = ep.userOverride?.targetRoleId ?? ep.proposedRoleId;
   const availableRoles = ep.availableGuildRoles ?? [];
+  const selectedRoleName =
+    availableRoles.find((role) => role.id === effectiveRoleId)?.name ??
+    ep.userOverride?.targetRoleName ??
+    ep.proposedRoleName;
+  const detailText =
+    effectiveAction === 'adopt_role'
+      ? `Use the existing "${selectedRoleName}" role.`
+      : effectiveAction === 'create_role'
+        ? `Create a new role named "${ep.userOverride?.targetRoleName ?? ep.proposedRoleName}".`
+        : 'This product will be skipped until you choose a Discord role for it.';
 
   function handleSelectChange(value: string) {
     if (value === '__skip__') {
@@ -454,14 +823,7 @@ function RolePlanEntryRow({
           <p className="mt-1.5 text-sm font-semibold text-zinc-900 dark:text-white">
             {ep.productName}
           </p>
-          {rec.detail && effectiveAction !== 'skip' ? (
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{rec.detail}</p>
-          ) : null}
-          {effectiveAction === 'skip' ? (
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              This product will be skipped.
-            </p>
-          ) : null}
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{detailText}</p>
         </div>
         <div className="sm:w-64">
           <label
@@ -492,9 +854,13 @@ function RolePlanEntryRow({
 
 function RecommendationList({
   recommendations,
+  setupPreferences,
+  hasExistingVerifyPrompt,
+  onUpdateSetupPreferences,
   onApply,
   onOverrideRolePlanEntry,
   isApplying,
+  isSavingConfiguration,
 }: {
   recommendations: {
     id: string;
@@ -504,6 +870,9 @@ function RecommendationList({
     detail?: string | null;
     payload?: unknown;
   }[];
+  setupPreferences: SetupPreferences;
+  hasExistingVerifyPrompt: boolean;
+  onUpdateSetupPreferences: (preferences: SetupPreferences) => void;
   onApply: (dismissedIds: string[]) => void;
   onOverrideRolePlanEntry: (
     recId: string,
@@ -511,9 +880,14 @@ function RecommendationList({
     targetRoleId?: string
   ) => void;
   isApplying: boolean;
+  isSavingConfiguration: boolean;
 }) {
   const proposed = recommendations.filter(
-    (r) => r.status === 'proposed' && r.recommendationType !== 'role_plan_entry'
+    (r) =>
+      r.status === 'proposed' &&
+      r.recommendationType !== 'role_plan_entry' &&
+      r.recommendationType !== 'verify_surface_creation' &&
+      r.recommendationType !== 'verify_surface_reuse'
   );
   const planEntries = recommendations.filter(
     (r) =>
@@ -521,7 +895,11 @@ function RecommendationList({
       r.recommendationType === 'role_plan_entry'
   );
   const applied = recommendations.filter(
-    (r) => r.status === 'applied' && r.recommendationType !== 'role_plan_entry'
+    (r) =>
+      r.status === 'applied' &&
+      r.recommendationType !== 'role_plan_entry' &&
+      r.recommendationType !== 'verify_surface_creation' &&
+      r.recommendationType !== 'verify_surface_reuse'
   );
 
   // Track which proposed recommendations are checked (included). Default: all checked.
@@ -540,6 +918,13 @@ function RecommendationList({
 
   return (
     <div className="mt-5 flex flex-col gap-3">
+      <SetupPreferencesPanel
+        preferences={setupPreferences}
+        hasExistingVerifyPrompt={hasExistingVerifyPrompt}
+        onChange={onUpdateSetupPreferences}
+        isSaving={isSavingConfiguration}
+      />
+
       {planEntries.length > 0 ? (
         <div className="flex flex-col gap-2">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
@@ -694,6 +1079,11 @@ function RecommendationList({
           after setup completes.
         </p>
       </div>
+      {isSavingConfiguration ? (
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          Saving your latest setup choices...
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -703,14 +1093,23 @@ function RecommendationList({
 function SetupActiveView({
   setupJob,
   connectedStoreCount,
+  setupPreferences,
+  hasExistingVerifyPrompt,
   onResume,
   isResuming,
   onApply,
   isApplying,
+  onUpdateSetupPreferences,
+  isSavingConfiguration,
   onOverrideRolePlanEntry,
 }: {
   setupJob: {
-    job: { status: string; currentPhase: string; blockingReason?: string | null };
+    job: {
+      status: string;
+      currentPhase: string;
+      blockingReason?: string | null;
+      summary?: unknown;
+    };
     steps: { id: string; status: string; label: string }[];
     recommendations: {
       id: string;
@@ -723,10 +1122,14 @@ function SetupActiveView({
     activeMigrationJobId?: string | null;
   };
   connectedStoreCount: number;
+  setupPreferences: SetupPreferences;
+  hasExistingVerifyPrompt: boolean;
   onResume: () => void;
   isResuming: boolean;
   onApply: (dismissedIds: string[]) => void;
   isApplying: boolean;
+  onUpdateSetupPreferences: (preferences: SetupPreferences) => void;
+  isSavingConfiguration: boolean;
   onOverrideRolePlanEntry: (
     recId: string,
     action: 'create_role' | 'adopt_role' | 'skip',
@@ -823,9 +1226,13 @@ function SetupActiveView({
       {canApply ? (
         <RecommendationList
           recommendations={setupJob.recommendations}
+          setupPreferences={setupPreferences}
+          hasExistingVerifyPrompt={hasExistingVerifyPrompt}
+          onUpdateSetupPreferences={onUpdateSetupPreferences}
           onApply={onApply}
           onOverrideRolePlanEntry={onOverrideRolePlanEntry}
           isApplying={isApplying}
+          isSavingConfiguration={isSavingConfiguration}
         />
       ) : null}
     </section>
@@ -1112,6 +1519,7 @@ function MigrationActiveView({
       currentPhase: string;
       blockingReason?: string | null;
       sourceBotKey?: string | null;
+      summary?: unknown;
     };
     sources: { id: string; sourceKey: string; displayName?: string | null; status: string }[];
     roleMappings: {
@@ -1125,6 +1533,13 @@ function MigrationActiveView({
   const { job, sources, roleMappings } = migrationJob;
   const phaseLabel = MIGRATION_PHASE_LABEL[job.currentPhase] ?? job.currentPhase;
   const modeLabel = MIGRATION_MODE_LABEL[job.mode] ?? job.mode;
+  const migrationModeKey =
+    job.mode === 'adopt_existing_roles' ||
+    job.mode === 'import_verified_users' ||
+    job.mode === 'bridge_from_current_roles'
+      ? job.mode
+      : null;
+  const migrationPreferences = readMigrationPreferences(job.summary, migrationModeKey);
   const isWaiting = job.status === 'waiting_for_user';
   const isRunning = job.status === 'running';
   const isBlocked = job.status === 'blocked' || job.status === 'failed';
@@ -1231,6 +1646,32 @@ function MigrationActiveView({
         </div>
       ) : null}
 
+      <div className="mt-5 rounded-[14px] border border-zinc-200 bg-zinc-50/90 p-4 dark:border-white/10 dark:bg-white/5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+          Migration choices
+        </p>
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          <div>
+            <p className="text-sm font-semibold text-zinc-900 dark:text-white">
+              Unmatched products
+            </p>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+              {migrationPreferences.unmatchedProductBehavior === 'ignore'
+                ? 'Products without a clear role match are being ignored for now.'
+                : 'Products without a clear role match stay in manual review.'}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-zinc-900 dark:text-white">Cutover style</p>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+              {migrationPreferences.cutoverStyle === 'parallel_run'
+                ? 'YUCP will run alongside your current bot before the final switch.'
+                : 'YUCP will prepare the switch as soon as your review looks good.'}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {roleMappings.length > 0 ? (
         <div className="mt-5 flex flex-col gap-2">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
@@ -1301,17 +1742,19 @@ function DashboardSetupRoute() {
   const createOrResumeSetupJob = useConvexMutation(api.setupJobs.createOrResumeSetupJobByGuild);
   const applyRecommendedSetup = useConvexMutation(api.setupJobs.applyRecommendedSetupByGuild);
   const createMigrationJob = useConvexMutation(api.setupJobs.createMigrationJobByGuild);
+  const updateSetupPreferences = useConvexMutation(api.setupJobs.updateSetupPreferencesByGuild);
   const overrideRolePlanEntry = useConvexMutation(api.setupJobs.overrideRolePlanEntry);
 
   const [isResuming, setIsResuming] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [isStartingMigration, setIsStartingMigration] = useState(false);
+  const [isSavingConfiguration, setIsSavingConfiguration] = useState(false);
 
   const connectedStoreCount = (home?.userAccounts ?? []).filter(
     (account) => account.connectionType !== 'verification'
   ).length;
 
-  async function handleStartOrResume() {
+  async function handleStartOrResume(preferences?: SetupPreferences) {
     if (!activeGuildId) return;
     setIsResuming(true);
     try {
@@ -1319,6 +1762,7 @@ function DashboardSetupRoute() {
         guildId: activeGuildId,
         mode: 'automatic_setup',
         triggerSource: 'dashboard',
+        ...(preferences ? { preferences } : {}),
       });
       toast.success(result.created ? 'Setup started' : 'Setup resumed', {
         description: result.created
@@ -1346,7 +1790,7 @@ function DashboardSetupRoute() {
       });
       toast.success('Setup changes are on the way', {
         description:
-          'YUCP is now creating any missing roles, saving product mappings, and updating the verification message.',
+          'YUCP is now creating any missing roles, saving product mappings, and reusing your existing verification message only if you chose that.',
       });
     } catch (error) {
       toast.error('Could not apply setup changes', {
@@ -1365,6 +1809,7 @@ function DashboardSetupRoute() {
     action: 'create_role' | 'adopt_role' | 'skip',
     targetRoleId?: string
   ) {
+    setIsSavingConfiguration(true);
     try {
       await overrideRolePlanEntry({
         recommendationId: recId as Id<'setup_recommendations'>,
@@ -1375,14 +1820,34 @@ function DashboardSetupRoute() {
       toast.error('Could not save role mapping', {
         description: 'Your change may not have been saved. Please try again.',
       });
+    } finally {
+      setIsSavingConfiguration(false);
     }
   }
 
-  async function handleStartMigration(mode: MigrationModeKey) {
+  async function handleUpdateSetupPreferences(preferences: SetupPreferences) {
+    if (!activeGuildId) return;
+    setIsSavingConfiguration(true);
+    try {
+      await updateSetupPreferences({
+        guildId: activeGuildId,
+        preferences,
+      });
+    } catch (error) {
+      toast.error('Could not save setup choices', {
+        description:
+          error instanceof Error ? error.message : 'YUCP could not save your setup choices.',
+      });
+    } finally {
+      setIsSavingConfiguration(false);
+    }
+  }
+
+  async function handleStartMigration(mode: MigrationModeKey, preferences: MigrationPreferences) {
     if (!activeGuildId) return;
     setIsStartingMigration(true);
     try {
-      await createMigrationJob({ guildId: activeGuildId, mode });
+      await createMigrationJob({ guildId: activeGuildId, mode, preferences });
       toast.success('Migration started', {
         description:
           'YUCP is analyzing your server and matching your existing roles to your store products.',
@@ -1443,12 +1908,21 @@ function DashboardSetupRoute() {
   }
 
   const landingState = deriveSetupLandingState({ setupJob, setupSummary, migrationJob });
+  const hasExistingVerifyPrompt = Boolean(
+    setupSummary?.verificationPromptLive ||
+      ((setupJob?.job.summary ?? {}) as SetupSummaryData).verifyPromptPresent
+  );
+  const activeSetupPreferences = readSetupPreferences(
+    setupJob?.job.summary,
+    hasExistingVerifyPrompt
+  );
 
   return (
     <div className="flex flex-col gap-5 pb-16">
       {landingState === 'new' ? (
         <SetupStartView
           connectedStoreCount={connectedStoreCount}
+          hasExistingVerifyPrompt={hasExistingVerifyPrompt}
           onStart={handleStartOrResume}
           isStarting={isResuming}
           onStartMigration={handleStartMigration}
@@ -1460,10 +1934,14 @@ function DashboardSetupRoute() {
         <SetupActiveView
           setupJob={setupJob}
           connectedStoreCount={connectedStoreCount}
+          setupPreferences={activeSetupPreferences}
+          hasExistingVerifyPrompt={hasExistingVerifyPrompt}
           onResume={handleStartOrResume}
           isResuming={isResuming}
           onApply={handleApply}
           isApplying={isApplying}
+          onUpdateSetupPreferences={handleUpdateSetupPreferences}
+          isSavingConfiguration={isSavingConfiguration}
           onOverrideRolePlanEntry={handleOverrideRolePlanEntry}
         />
       ) : null}
@@ -1474,7 +1952,12 @@ function DashboardSetupRoute() {
           setupSummary={setupSummary}
           onRunAgain={handleStartOrResume}
           isRunningAgain={isResuming}
-          onStartMigration={() => void handleStartMigration('adopt_existing_roles')}
+          onStartMigration={() =>
+            void handleStartMigration(
+              'adopt_existing_roles',
+              getDefaultMigrationPreferences('adopt_existing_roles')
+            )
+          }
         />
       ) : null}
 

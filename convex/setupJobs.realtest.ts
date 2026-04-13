@@ -100,6 +100,12 @@ describe('setup jobs orchestration', () => {
       status: 'waiting_for_user',
       currentPhase: 'connect_store',
       activeStepKey: 'connect-store',
+      summary: {
+        preferences: {
+          rolePlanMode: 'create_or_adopt',
+          verificationMessageMode: 'leave_unchanged',
+        },
+      },
     });
     expect(steps.map((step) => step.stepKey)).toEqual([
       'connect-store',
@@ -112,11 +118,10 @@ describe('setup jobs orchestration', () => {
     ]);
     expect(steps[0]?.status).toBe('waiting_for_user');
     expect(steps.slice(1).every((step) => step.status === 'pending')).toBe(true);
-    expect(recommendations).toHaveLength(3);
+    expect(recommendations).toHaveLength(2);
     expect(recommendations.map((recommendation) => recommendation.recommendationType)).toEqual([
       'provider_connection',
       'role_creation',
-      'verify_surface_creation',
     ]);
     expect(auditEvents).toHaveLength(1);
   });
@@ -216,12 +221,22 @@ describe('setup jobs orchestration', () => {
       status: 'running',
       currentPhase: 'analyze',
       sourceBotKey: 'legacy-bot',
+      summary: {
+        preferences: {
+          unmatchedProductBehavior: 'review',
+          cutoverStyle: 'switch_when_ready',
+        },
+      },
     });
     expect(sources.map((source) => source.sourceKey)).toEqual(
       expect.arrayContaining(['existing-discord-state', 'manual-review-fallback', 'legacy-bot'])
     );
     expect(outboxJob?.jobType).toBe('migration_analyze');
     expect(outboxJob?.status).toBe('pending');
+    expect(outboxJob?.payload).toMatchObject({
+      unmatchedProductBehavior: 'review',
+      cutoverStyle: 'switch_when_ready',
+    });
   });
 
   it('loads and resumes a setup job through the guild-scoped entrypoints', async () => {
@@ -299,5 +314,9 @@ describe('setup jobs orchestration', () => {
     expect(applyStep?.status).toBe('in_progress');
     expect(outboxJob?.jobType).toBe('setup_apply');
     expect(outboxJob?.status).toBe('pending');
+    expect(outboxJob?.payload).toMatchObject({
+      verificationMessageMode: 'leave_unchanged',
+      skipVerifyPrompt: true,
+    });
   });
 });

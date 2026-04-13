@@ -19,14 +19,7 @@ import {
 import type { ProviderKey } from '@yucp/providers/types';
 import { createStructuredLogger, type StructuredLogger } from '@yucp/shared';
 import { ConvexHttpClient } from 'convex/browser';
-import {
-  ChannelType,
-  Client,
-  GuildMember,
-  OverwriteType,
-  PermissionFlagsBits,
-  RESTJSONErrorCodes,
-} from 'discord.js';
+import { Client, GuildMember, RESTJSONErrorCodes } from 'discord.js';
 import { api } from '../../../../convex/_generated/api';
 import { listProviderProducts } from '../lib/internalRpc';
 import { sendDashboardNotification } from '../lib/notifications';
@@ -91,6 +84,7 @@ export interface SetupApplyPayload {
   setupJobId: Id<'setup_jobs'>;
   guildLinkId: Id<'guild_links'>;
   guildId: string;
+  verificationMessageMode?: 'reuse_existing' | 'leave_unchanged';
   /** When true, skip the verify prompt creation or reuse step. */
   skipVerifyPrompt?: boolean;
 }
@@ -99,6 +93,7 @@ export interface SetupGeneratePlanPayload {
   setupJobId: Id<'setup_jobs'>;
   guildLinkId: Id<'guild_links'>;
   guildId: string;
+  rolePlanMode?: 'create_or_adopt' | 'adopt_only';
 }
 
 export interface MigrationAnalyzePayload {
@@ -106,6 +101,8 @@ export interface MigrationAnalyzePayload {
   guildLinkId: Id<'guild_links'>;
   guildId: string;
   mode: 'adopt_existing_roles' | 'import_verified_users' | 'bridge_from_current_roles';
+  unmatchedProductBehavior?: 'review' | 'ignore';
+  cutoverStyle?: 'switch_when_ready' | 'parallel_run';
   sourceBotKey?: string;
   sourceGuildId?: string;
 }
@@ -202,6 +199,16 @@ function sanitizeSetupRoleName(name: string): string {
       .trim()
       .slice(0, 100) || 'Verified'
   );
+}
+
+function getDefaultRolePlanAction(args: {
+  proposedRoleId?: string;
+  rolePlanMode?: 'create_or_adopt' | 'adopt_only';
+}): 'create_role' | 'adopt_role' | 'skip' {
+  if (args.proposedRoleId) {
+    return 'adopt_role';
+  }
+  return args.rolePlanMode === 'adopt_only' ? 'skip' : 'create_role';
 }
 
 /** Role sync result */
@@ -821,7 +828,10 @@ export class RoleSyncService {
         return normalizeSetupName(role.name) === normalizeSetupName(product.name);
       });
 
-      const action = matchingRole ? ('adopt_role' as const) : ('create_role' as const);
+      const action = getDefaultRolePlanAction({
+        proposedRoleId: matchingRole?.id,
+        rolePlanMode: payload.rolePlanMode,
+      });
       const title = `${product.name} (${product.provider})`;
 
       await this.convexClient.mutation(api.setupJobs.upsertSetupRecommendation, {
@@ -832,7 +842,9 @@ export class RoleSyncService {
         status: 'proposed',
         detail: matchingRole
           ? `Adopt the existing "${matchingRole.name}" role.`
-          : `Create a new role named "${sanitizeSetupRoleName(product.name)}".`,
+          : action === 'skip'
+            ? `No matching Discord role was found. This product will stay skipped until you choose a role or create one in review.`
+            : `Create a new role named "${sanitizeSetupRoleName(product.name)}".`,
         payload: {
           productId: product.id,
           productName: product.name,
@@ -877,6 +889,11 @@ export class RoleSyncService {
       const matchedRoleIds = new Set<string>();
       let autoMatchedCount = 0;
       let unresolvedCount = 0;
+      let ignoredCount = 0;
+      const unmatchedProductBehavior = payload.unmatchedProductBehavior ?? 'review';
+      const cutoverStyle =
+        payload.cutoverStyle ??
+        (payload.mode === 'bridge_from_current_roles' ? 'parallel_run' : 'switch_when_ready');
 
       for (const product of products) {
         const matchingRole = guildRolesSummary.find(
@@ -908,7 +925,13 @@ export class RoleSyncService {
           continue;
         }
 
-        unresolvedCount++;
+        const unresolvedStatus =
+          unmatchedProductBehavior === 'ignore' ? ('ignored' as const) : ('unresolved' as const);
+        if (unresolvedStatus === 'ignored') {
+          ignoredCount++;
+        } else {
+          unresolvedCount++;
+        }
         await this.convexClient.mutation(api.setupJobs.upsertMigrationRoleMapping, {
           apiSecret: this.apiSecret,
           migrationJobId: payload.migrationJobId,
@@ -917,8 +940,11 @@ export class RoleSyncService {
           targetProductId: product.id,
           targetProductName: product.name,
           matchStrategy: 'manual',
-          status: 'unresolved',
-          reviewNote: `No existing Discord role matched "${product.name}" automatically.`,
+          status: unresolvedStatus,
+          reviewNote:
+            unresolvedStatus === 'ignored'
+              ? `No existing Discord role matched "${product.name}" automatically. Ignored for now based on your migration settings.`
+              : `No existing Discord role matched "${product.name}" automatically.`,
           payload: {
             availableGuildRoles: guildRolesSummary,
             proposedRoleName: sanitizeSetupRoleName(product.name),
@@ -932,14 +958,19 @@ export class RoleSyncService {
         guildRoleCount: guildRolesSummary.length,
         autoMatchedCount,
         unresolvedCount,
+        ignoredCount,
         unmatchedGuildRoleCount: Math.max(guildRolesSummary.length - matchedRoleIds.size, 0),
+        preferences: {
+          unmatchedProductBehavior,
+          cutoverStyle,
+        },
       };
       const nextPhase =
         products.length === 0
           ? 'bridged'
           : unresolvedCount > 0
             ? 'bridged'
-            : payload.mode === 'bridge_from_current_roles'
+            : cutoverStyle === 'parallel_run' || payload.mode === 'bridge_from_current_roles'
               ? 'shadow'
               : 'enforced';
       const blockingReason =
@@ -947,7 +978,7 @@ export class RoleSyncService {
           ? 'No active store products were available to analyze. Reconnect a store, then run migration again.'
           : unresolvedCount > 0
             ? 'Review the unresolved role matches below before switching from your current bot.'
-            : payload.mode === 'bridge_from_current_roles'
+            : cutoverStyle === 'parallel_run' || payload.mode === 'bridge_from_current_roles'
               ? 'YUCP has matched your existing roles. Keep your current bot installed while you review the results below.'
               : null;
 
@@ -971,7 +1002,7 @@ export class RoleSyncService {
           message:
             products.length === 0
               ? 'Migration analysis completed, but no active store products were available to map.'
-              : `Migration analysis found ${autoMatchedCount} automatic role match${autoMatchedCount === 1 ? '' : 'es'} and ${unresolvedCount} product${unresolvedCount === 1 ? '' : 's'} that still need review.`,
+              : `Migration analysis found ${autoMatchedCount} automatic role match${autoMatchedCount === 1 ? '' : 'es'}, ${unresolvedCount} product${unresolvedCount === 1 ? '' : 's'} that still need review, and ${ignoredCount} ignored product${ignoredCount === 1 ? '' : 's'}.`,
           payload: summary,
         }),
         this.convexClient.mutation(api.setupJobs.updateMigrationJobState, {
@@ -1207,7 +1238,7 @@ export class RoleSyncService {
         }
       }
 
-      if (!payload.skipVerifyPrompt) {
+      if (!payload.skipVerifyPrompt && payload.verificationMessageMode === 'reuse_existing') {
         this.logger.info('Setup apply: starting verify prompt step', {
           guildId: payload.guildId,
           authUserId: job.authUserId,
@@ -1250,7 +1281,7 @@ export class RoleSyncService {
             status: 'applied',
             detail: reusedVerifyPrompt
               ? 'The saved verify prompt was still valid and has been kept in place.'
-              : 'Created a verify channel and posted the current verification prompt.',
+              : 'Updated the existing verification prompt in Discord.',
             payload: verifyResult,
           });
         } else {
@@ -1258,16 +1289,16 @@ export class RoleSyncService {
             apiSecret: this.apiSecret,
             setupJobId: payload.setupJobId,
             recommendationType: 'verify_surface_creation',
-            title: 'Create a verify channel manually',
+            title: 'Reconnect your verification message',
             status: 'requires_attention',
             detail:
-              `The bot could not create the verify channel automatically (${verifyError ?? 'unknown error'}). ` +
-              'Create a channel named "verify" in your server, then go to Server Setup and click "Retry verify channel setup" to post the verification prompt.',
+              `YUCP could not reuse the saved verification message (${verifyError ?? 'unknown error'}). ` +
+              'Automatic channel creation is off. Connect an existing verification message again, or create one manually after setup.',
             payload: { error: verifyError },
           });
         }
       } else {
-        this.logger.info('Setup apply: skipping verify prompt step (user dismissed)', {
+        this.logger.info('Setup apply: leaving verification message unchanged', {
           guildId: payload.guildId,
           authUserId: job.authUserId,
         });
@@ -2117,67 +2148,9 @@ export class RoleSyncService {
       await this.clearVerifyPromptMessage(args.guildLinkId);
     }
 
-    this.logger.info('Setup apply: creating verify channel', {
-      guildId: args.guildId,
-      botHighestRole: guild.members.me?.roles.highest
-        ? `${guild.members.me.roles.highest.name} (pos ${guild.members.me.roles.highest.position})`
-        : 'none',
-      mfaLevel: guild.mfaLevel,
-    });
-
-    // Pre-flight permission check: channel creation + overwrite require MANAGE_CHANNELS and MANAGE_ROLES.
-    const botMember = guild.members.me;
-    if (botMember) {
-      const perms = botMember.permissions;
-      if (!perms.has(PermissionFlagsBits.Administrator)) {
-        const missing: string[] = [];
-        if (!perms.has(PermissionFlagsBits.ManageChannels)) missing.push('Manage Channels');
-        if (!perms.has(PermissionFlagsBits.ManageRoles)) missing.push('Manage Roles');
-        if (missing.length > 0) {
-          throw new Error(
-            `The bot is missing required permissions to create the verify channel: ${missing.join(', ')}. ` +
-              'Go to Server Settings, open the Roles tab, select the YUCP role, and enable these permissions.'
-          );
-        }
-      }
-    }
-
-    const verifyChannel = await guild.channels.create({
-      name: 'verify',
-      type: ChannelType.GuildText,
-      reason: 'Automatic setup apply',
-      permissionOverwrites: [
-        {
-          id: guild.id,
-          type: OverwriteType.Role,
-          deny: [PermissionFlagsBits.SendMessages],
-        },
-      ],
-    });
-    const message = await verifyChannel.send({
-      embeds: [embed],
-      components: [row],
-    });
-
-    await this.convexClient.mutation(api.guildLinks.saveVerifyPromptMessage, {
-      apiSecret: this.apiSecret,
-      authUserId: args.authUserId,
-      guildLinkId: args.guildLinkId,
-      channelId: verifyChannel.id,
-      messageId: message.id,
-      titleOverride: link.verifyPromptMessage?.titleOverride,
-      descriptionOverride: link.verifyPromptMessage?.descriptionOverride,
-      buttonTextOverride: link.verifyPromptMessage?.buttonTextOverride,
-      color: link.verifyPromptMessage?.color,
-      imageUrl: link.verifyPromptMessage?.imageUrl,
-    });
-
-    return {
-      reused: false,
-      created: true,
-      channelId: verifyChannel.id,
-      messageId: message.id,
-    };
+    throw new Error(
+      'No reusable verification message is connected for this server. Automatic channel creation is disabled.'
+    );
   }
 
   // ============================================================================

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,6 +37,8 @@ vi.mock('../../../../../../convex/_generated/api', () => ({
       createOrResumeSetupJobByGuild: 'createOrResumeSetupJobByGuild',
       applyRecommendedSetupByGuild: 'applyRecommendedSetupByGuild',
       createMigrationJobByGuild: 'createMigrationJobByGuild',
+      updateSetupPreferencesByGuild: 'updateSetupPreferencesByGuild',
+      overrideRolePlanEntry: 'overrideRolePlanEntry',
     },
   },
 }));
@@ -108,14 +110,15 @@ function mockSetupRouteQueries(args: {
   const values = [args.setupJob, args.setupSummary, args.migrationJob];
   let callIndex = 0;
   useQueryMock.mockImplementation(() => {
-    const value = values[callIndex % values.length];
+    const fallback = values[callIndex % values.length];
     callIndex += 1;
-    return value;
+    return fallback;
   });
 }
 
 describe('dashboard setup route', () => {
   beforeEach(() => {
+    cleanup();
     useQueryMock.mockReset();
     useMutationMock.mockReset();
     useMutationMock.mockReturnValue(vi.fn());
@@ -141,6 +144,8 @@ describe('dashboard setup route', () => {
 
     expect(screen.getByText('Set up product verification for this server')).toBeInTheDocument();
     expect(screen.getByText(/Before you begin, make sure you have/)).toBeInTheDocument();
+    expect(screen.getByText('Setup choices')).toBeInTheDocument();
+    expect(screen.getByText(/Automatic channel creation is off/)).toBeInTheDocument();
     expect(screen.getByText('Start setup')).toBeInTheDocument();
     expect(screen.getByText('Switching from another bot?')).toBeInTheDocument();
   });
@@ -151,6 +156,12 @@ describe('dashboard setup route', () => {
         job: {
           status: 'waiting_for_user',
           currentPhase: 'review_exceptions',
+          summary: {
+            preferences: {
+              rolePlanMode: 'create_or_adopt',
+              verificationMessageMode: 'leave_unchanged',
+            },
+          },
         },
         steps: [
           { id: 'step-1', label: 'Connect store', status: 'completed' },
@@ -162,13 +173,6 @@ describe('dashboard setup route', () => {
             status: 'proposed',
             recommendationType: 'role_creation',
             title: 'Create subscriber role',
-            detail: null,
-          },
-          {
-            id: 'rec-2',
-            status: 'proposed',
-            recommendationType: 'verify_surface_creation',
-            title: 'Create a dedicated verify surface',
             detail: null,
           },
         ],
@@ -191,7 +195,8 @@ describe('dashboard setup route', () => {
 
     expect(screen.getByText('Review your setup plan')).toBeInTheDocument();
     expect(screen.getByText('Step 3 of 3')).toBeInTheDocument();
-    expect(screen.getByText('Apply 2 changes')).toBeInTheDocument();
+    expect(screen.getByText('Setup choices')).toBeInTheDocument();
+    expect(screen.getByText('Apply 1 change')).toBeInTheDocument();
     expect(screen.getByText('What will happen when you click Apply')).toBeInTheDocument();
   });
 
@@ -255,6 +260,12 @@ describe('dashboard setup route', () => {
           currentPhase: 'enforced',
           blockingReason: null,
           sourceBotKey: 'legacy-bot',
+          summary: {
+            preferences: {
+              unmatchedProductBehavior: 'ignore',
+              cutoverStyle: 'parallel_run',
+            },
+          },
         },
         sources: [
           {
@@ -286,6 +297,8 @@ describe('dashboard setup route', () => {
     expect(screen.getByText('Everything looks good')).toBeInTheDocument();
     expect(screen.queryByText('Running automatically')).not.toBeInTheDocument();
     expect(screen.getByText('Existing Discord state snapshot')).toBeInTheDocument();
+    expect(screen.getByText('Migration choices')).toBeInTheDocument();
+    expect(screen.getByText(/ignored for now/i)).toBeInTheDocument();
     expect(screen.getByText('Supporter')).toBeInTheDocument();
   });
 });
