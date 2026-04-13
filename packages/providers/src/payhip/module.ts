@@ -18,6 +18,9 @@ export const PAYHIP_PURPOSES = {
 } as const satisfies ProviderPurposes;
 
 export const PAYHIP_DISPLAY_META = {
+  dashboardSetupExperience: 'guided',
+  dashboardSetupHint:
+    'Provide the account API key first. Product secret keys can be added as follow-up review items.',
   label: 'Payhip',
   icon: 'PayHip.png',
   color: '#00d1b2',

@@ -405,6 +405,156 @@ async function createSetupSteps(
   );
 }
 
+async function seedInitialSetupRecommendations(
+  ctx: Pick<MutationCtx, 'db'>,
+  args: {
+    setupJobId: Id<'setup_jobs'>;
+    authUserId: string;
+    guildLink: Doc<'guild_links'>;
+    now: number;
+  }
+) {
+  const [providerConnections, roleRules] = await Promise.all([
+    ctx.db
+      .query('provider_connections')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
+      .collect(),
+    ctx.db
+      .query('role_rules')
+      .withIndex('by_auth_user_guild', (q) =>
+        q.eq('authUserId', args.authUserId).eq('guildId', args.guildLink.discordGuildId)
+      )
+      .collect(),
+  ]);
+
+  const activeSetupConnections = providerConnections.filter(
+    (connection) =>
+      connection.status !== 'disconnected' && connection.connectionType !== 'verification'
+  );
+  const enabledRoleRules = roleRules.filter((roleRule) => roleRule.enabled);
+  const recommendations: Array<{
+    recommendationType:
+      | 'provider_connection'
+      | 'role_adoption'
+      | 'role_creation'
+      | 'verify_surface_reuse'
+      | 'verify_surface_creation';
+    title: string;
+    detail?: string;
+    status: 'proposed' | 'applied';
+    payload?: Record<string, unknown>;
+  }> = [];
+
+  if (activeSetupConnections.length === 0) {
+    recommendations.push({
+      recommendationType: 'provider_connection',
+      title: 'Connect a storefront',
+      detail: 'Start by linking at least one store so the setup engine can discover products.',
+      status: 'proposed',
+      payload: {
+        connectedCount: 0,
+      },
+    });
+  } else {
+    recommendations.push({
+      recommendationType: 'provider_connection',
+      title: 'Reuse existing storefront connections',
+      detail: `${String(activeSetupConnections.length)} connected storefront${activeSetupConnections.length === 1 ? '' : 's'} detected for this creator.`,
+      status: 'applied',
+      payload: {
+        providerKeys: activeSetupConnections.map((connection) => connection.provider),
+      },
+    });
+  }
+
+  if (enabledRoleRules.length > 0) {
+    recommendations.push({
+      recommendationType: 'role_adoption',
+      title: 'Reuse existing role rules',
+      detail: `${String(enabledRoleRules.length)} enabled role rule${enabledRoleRules.length === 1 ? '' : 's'} already exist for this server.`,
+      status: 'applied',
+      payload: {
+        ruleCount: enabledRoleRules.length,
+      },
+    });
+  } else {
+    recommendations.push({
+      recommendationType: 'role_creation',
+      title: 'Create product roles from the recommended plan',
+      detail:
+        'No role rules exist yet, so the automatic setup job will create them after store scan.',
+      status: 'proposed',
+    });
+  }
+
+  if (args.guildLink.verifyPromptMessage) {
+    recommendations.push({
+      recommendationType: 'verify_surface_reuse',
+      title: 'Reuse the current verify prompt',
+      detail:
+        'The server already has a saved verify prompt message that can be adopted by the new setup flow.',
+      status: 'applied',
+      payload: {
+        channelId: args.guildLink.verifyPromptMessage.channelId,
+        messageId: args.guildLink.verifyPromptMessage.messageId,
+      },
+    });
+  } else {
+    recommendations.push({
+      recommendationType: 'verify_surface_creation',
+      title: 'Create a dedicated verify surface',
+      detail:
+        'No saved verify prompt is linked yet, so the setup job will provision one during apply setup.',
+      status: 'proposed',
+    });
+  }
+
+  await Promise.all(
+    recommendations.map((recommendation) =>
+      ctx.db.insert('setup_recommendations', {
+        setupJobId: args.setupJobId,
+        authUserId: args.authUserId,
+        guildLinkId: args.guildLink._id,
+        discordGuildId: args.guildLink.discordGuildId,
+        recommendationType: recommendation.recommendationType,
+        status: recommendation.status,
+        title: recommendation.title,
+        detail: recommendation.detail,
+        payload: recommendation.payload,
+        createdAt: args.now,
+        updatedAt: args.now,
+      })
+    )
+  );
+
+  await ctx.db.insert('setup_events', {
+    setupJobId: args.setupJobId,
+    authUserId: args.authUserId,
+    guildLinkId: args.guildLink._id,
+    discordGuildId: args.guildLink.discordGuildId,
+    level: 'info',
+    eventType: 'setup.job.seeded',
+    message: 'Automatic setup analyzed existing connections, role rules, and verify surface state.',
+    createdAt: args.now,
+  });
+
+  await ctx.db.patch(args.setupJobId, {
+    latestEventAt: args.now,
+    summary: {
+      providerConnectionCount: activeSetupConnections.length,
+      roleRuleCount: enabledRoleRules.length,
+      verifyPromptPresent: Boolean(args.guildLink.verifyPromptMessage),
+      proposedRecommendationCount: recommendations.filter(
+        (recommendation) => recommendation.status === 'proposed'
+      ).length,
+      appliedRecommendationCount: recommendations.filter(
+        (recommendation) => recommendation.status === 'applied'
+      ).length,
+    },
+    updatedAt: args.now,
+  });
+}
+
 async function appendAuditEvent(
   ctx: Pick<MutationCtx, 'db'>,
   args: {
@@ -484,6 +634,12 @@ async function createOrResumeSetupJobImpl(
     discordGuildId: guildLink.discordGuildId,
     now,
   });
+  await seedInitialSetupRecommendations(ctx, {
+    setupJobId,
+    authUserId: args.authUserId,
+    guildLink,
+    now,
+  });
 
   await appendAuditEvent(ctx, {
     authUserId: args.authUserId,
@@ -550,6 +706,23 @@ async function createMigrationJobImpl(
   });
 
   return { migrationJobId };
+}
+
+async function getOwnedGuildLinkByDiscordGuildId(
+  ctx: Pick<MutationCtx, 'db'>,
+  args: {
+    authUserId: string;
+    guildId: string;
+  }
+) {
+  const guildLink = await ctx.db
+    .query('guild_links')
+    .withIndex('by_discord_guild', (q) => q.eq('discordGuildId', args.guildId))
+    .first();
+  if (!guildLink || guildLink.authUserId !== args.authUserId) {
+    throw new ConvexError('Guild link not found');
+  }
+  return guildLink;
 }
 
 export const createOrResumeSetupJob = mutation({
@@ -860,6 +1033,115 @@ export const getMySetupJobForGuild = query({
   },
 });
 
+export const getSetupJobForOwnerByGuild = query({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    guildId: v.string(),
+  },
+  returns: v.union(v.null(), SetupJobDetailV),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+
+    const job = await ctx.db
+      .query('setup_jobs')
+      .withIndex('by_auth_user_guild', (q) =>
+        q.eq('authUserId', args.authUserId).eq('discordGuildId', args.guildId)
+      )
+      .order('desc')
+      .first();
+
+    if (!job) {
+      return null;
+    }
+
+    const [steps, recommendations, events, activeMigrationJob] = await Promise.all([
+      ctx.db
+        .query('setup_job_steps')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', job._id))
+        .order('asc')
+        .collect(),
+      ctx.db
+        .query('setup_recommendations')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', job._id))
+        .order('asc')
+        .collect(),
+      ctx.db
+        .query('setup_events')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', job._id))
+        .order('desc')
+        .take(50),
+      ctx.db
+        .query('migration_jobs')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', job._id))
+        .order('desc')
+        .first(),
+    ]);
+
+    return {
+      job: {
+        id: job._id,
+        guildLinkId: job.guildLinkId,
+        discordGuildId: job.discordGuildId,
+        mode: job.mode,
+        triggerSource: job.triggerSource,
+        status: job.status,
+        currentPhase: job.currentPhase,
+        activeStepKey: job.activeStepKey,
+        blockingReason: job.blockingReason,
+        summary: job.summary,
+        latestEventAt: job.latestEventAt,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        cancelledAt: job.cancelledAt,
+        failedAt: job.failedAt,
+        lastResumedAt: job.lastResumedAt,
+      },
+      steps: steps.map((step) => ({
+        id: step._id,
+        phase: step.phase,
+        stepKey: step.stepKey,
+        label: step.label,
+        stepKind: step.stepKind,
+        status: step.status,
+        sortOrder: step.sortOrder,
+        blocking: step.blocking,
+        requiresUserAction: step.requiresUserAction,
+        provider: step.provider,
+        payload: step.payload,
+        result: step.result,
+        errorSummary: step.errorSummary,
+        createdAt: step.createdAt,
+        updatedAt: step.updatedAt,
+        startedAt: step.startedAt,
+        completedAt: step.completedAt,
+      })),
+      recommendations: recommendations.map((recommendation) => ({
+        id: recommendation._id,
+        recommendationType: recommendation.recommendationType,
+        status: recommendation.status,
+        confidence: recommendation.confidence,
+        title: recommendation.title,
+        detail: recommendation.detail,
+        payload: recommendation.payload,
+        createdAt: recommendation.createdAt,
+        updatedAt: recommendation.updatedAt,
+      })),
+      events: events.map((event) => ({
+        id: event._id,
+        level: event.level,
+        eventType: event.eventType,
+        message: event.message,
+        payload: event.payload,
+        createdAt: event.createdAt,
+      })),
+      activeMigrationJobId: activeMigrationJob?._id ?? null,
+    };
+  },
+});
+
 export const createOrResumeSetupJobByGuild = mutation({
   args: {
     guildId: v.string(),
@@ -876,16 +1158,41 @@ export const createOrResumeSetupJobByGuild = mutation({
       throw new ConvexError('Unauthenticated');
     }
 
-    const guildLink = await ctx.db
-      .query('guild_links')
-      .withIndex('by_discord_guild', (q) => q.eq('discordGuildId', args.guildId))
-      .first();
-    if (!guildLink || guildLink.authUserId !== authUser.authUserId) {
-      throw new ConvexError('Guild link not found');
-    }
+    const guildLink = await getOwnedGuildLinkByDiscordGuildId(ctx, {
+      authUserId: authUser.authUserId,
+      guildId: args.guildId,
+    });
 
     return createOrResumeSetupJobImpl(ctx, {
       authUserId: authUser.authUserId,
+      guildLinkId: guildLink._id,
+      mode: args.mode,
+      triggerSource: args.triggerSource,
+    });
+  },
+});
+
+export const createOrResumeSetupJobForOwnerByGuild = mutation({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    guildId: v.string(),
+    mode: SetupJobMode,
+    triggerSource: SetupJobTriggerSource,
+  },
+  returns: v.object({
+    setupJobId: v.id('setup_jobs'),
+    created: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    const guildLink = await getOwnedGuildLinkByDiscordGuildId(ctx, {
+      authUserId: args.authUserId,
+      guildId: args.guildId,
+    });
+
+    return createOrResumeSetupJobImpl(ctx, {
+      authUserId: args.authUserId,
       guildLinkId: guildLink._id,
       mode: args.mode,
       triggerSource: args.triggerSource,

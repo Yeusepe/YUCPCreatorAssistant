@@ -3,6 +3,7 @@ import { useMutation as useConvexMutation, useQuery as useConvexQuery } from 'co
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DashboardAuthRequiredState } from '@/components/dashboard/AuthRequiredState';
 import { DashboardGridSkeleton } from '@/components/dashboard/DashboardSkeletons';
+import { AutomaticSetupPanel } from '@/components/dashboard/panels/AutomaticSetupPanel';
 import { ConnectedPlatformsPanel } from '@/components/dashboard/panels/ConnectedPlatformsPanel';
 import { DangerZonePanel } from '@/components/dashboard/panels/DangerZonePanel';
 import {
@@ -304,6 +305,12 @@ function DashboardIndex() {
             onAuthError={markSessionExpired}
           />
         </div>
+
+        {guildId ? (
+          <div className="col-span-12">
+            <AutomaticSetupPanel guildId={guildId} />
+          </div>
+        ) : null}
 
         {/* Server settings + recent activity */}
         <div className="col-span-12 lg:col-span-8">

@@ -49,12 +49,16 @@ describe('setup jobs orchestration', () => {
 
     expect(result.created).toBe(true);
 
-    const { job, steps, auditEvents } = await t.run(async (ctx) => {
+    const { job, steps, recommendations, auditEvents } = await t.run(async (ctx) => {
       const job = await ctx.db.get(result.setupJobId);
       const steps = await ctx.db
         .query('setup_job_steps')
         .withIndex('by_setup_job', (q) => q.eq('setupJobId', result.setupJobId))
         .order('asc')
+        .collect();
+      const recommendations = await ctx.db
+        .query('setup_recommendations')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', result.setupJobId))
         .collect();
       const auditEvents = await ctx.db
         .query('audit_events')
@@ -62,7 +66,7 @@ describe('setup jobs orchestration', () => {
           q.eq('authUserId', authUserId).eq('eventType', 'setup.job.created')
         )
         .collect();
-      return { job, steps, auditEvents };
+      return { job, steps, recommendations, auditEvents };
     });
 
     expect(job).toMatchObject({
@@ -86,6 +90,12 @@ describe('setup jobs orchestration', () => {
     ]);
     expect(steps[0]?.status).toBe('in_progress');
     expect(steps.slice(1).every((step) => step.status === 'pending')).toBe(true);
+    expect(recommendations).toHaveLength(3);
+    expect(recommendations.map((recommendation) => recommendation.recommendationType)).toEqual([
+      'provider_connection',
+      'role_creation',
+      'verify_surface_creation',
+    ]);
     expect(auditEvents).toHaveLength(1);
   });
 
@@ -174,27 +184,27 @@ describe('setup jobs orchestration', () => {
     });
   });
 
-  it('loads and resumes a setup job through the guild-scoped dashboard entrypoints', async () => {
+  it('loads and resumes a setup job through the guild-scoped entrypoints', async () => {
     const t = makeTestConvex();
     const authUserId = 'auth-setup-guild-scope';
-    const guildLinkId = await seedGuildLink(t, {
+    await seedGuildLink(t, {
       authUserId,
       discordGuildId: 'guild-setup-guild-scope',
     });
 
-    const created = await t.mutation(api.setupJobs.createOrResumeSetupJobForOwner, {
+    const created = await t.mutation(api.setupJobs.createOrResumeSetupJobForOwnerByGuild, {
       apiSecret: API_SECRET,
       authUserId,
-      guildLinkId,
+      guildId: 'guild-setup-guild-scope',
       mode: 'automatic_setup',
       triggerSource: 'dashboard',
     });
 
-    const detail = await t.run(async (ctx) =>
-      ctx.runQuery(api.setupJobs.getMySetupJobForGuild, {
-        guildId: 'guild-setup-guild-scope',
-      }, { identity: { subject: authUserId, sessionId: 'session-guild-scope' } as never })
-    );
+    const detail = await t.query(api.setupJobs.getSetupJobForOwnerByGuild, {
+      apiSecret: API_SECRET,
+      authUserId,
+      guildId: 'guild-setup-guild-scope',
+    });
 
     expect(detail?.job.id).toBe(created.setupJobId);
     expect(detail?.job.discordGuildId).toBe('guild-setup-guild-scope');

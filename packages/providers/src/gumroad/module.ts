@@ -19,6 +19,8 @@ export const GUMROAD_PURPOSES = {
 } as const satisfies ProviderPurposes;
 
 export const GUMROAD_DISPLAY_META = {
+  dashboardSetupExperience: 'automatic',
+  dashboardSetupHint: 'OAuth redirect plus managed webhook setup can continue automatically.',
   label: 'Gumroad',
   icon: 'Gumorad.png',
   color: '#ff90e8',

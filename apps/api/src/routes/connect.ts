@@ -86,6 +86,8 @@ interface DashboardShellResponse {
   home?: {
     providers: Array<{
       key: string;
+      setupExperience: 'automatic' | 'guided' | 'manual';
+      setupHint: string;
       label?: string;
       icon?: string;
       iconBg?: string;

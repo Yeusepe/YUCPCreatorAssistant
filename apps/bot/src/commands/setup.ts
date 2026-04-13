@@ -105,7 +105,7 @@ export async function runSetupStart(
       {
         name: '3. Return to Discord',
         value:
-          'After the dashboard is set up, finish any role and channel automation back here with `/creator-admin autosetup` if you need it.',
+          'Use the Automatic Setup panel in the dashboard to launch the durable setup job. Discord is now just the launcher and status surface.',
         inline: false,
       }
     );
@@ -179,7 +179,8 @@ export async function runSetupStartUnconfigured(
       },
       {
         name: '3. Return to Discord',
-        value: 'After setup, run `/creator-admin autosetup` to finish role and channel automation.',
+        value:
+          'After sign-in, use the Automatic Setup panel in the dashboard to launch the durable setup flow for this server.',
         inline: false,
       }
     );

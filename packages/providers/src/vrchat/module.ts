@@ -15,6 +15,9 @@ export const VRCHAT_PURPOSES = {
 } as const satisfies ProviderPurposes;
 
 export const VRCHAT_DISPLAY_META = {
+  dashboardSetupExperience: 'guided',
+  dashboardSetupHint:
+    'VRChat needs a credential handoff before the setup job can scan listings and resume.',
   label: 'VRChat®',
   icon: 'VRC.png',
   color: '#00b48c',

@@ -15,6 +15,8 @@ export const JINXXY_PURPOSES = {
 } as const satisfies ProviderPurposes;
 
 export const JINXXY_DISPLAY_META = {
+  dashboardSetupExperience: 'guided',
+  dashboardSetupHint: 'Paste one API key, then YUCP can scan products and continue automatically.',
   label: 'Jinxxy™',
   icon: 'Jinxxy.png',
   color: '#9146FF',

@@ -19,6 +19,8 @@ import {
   type StringSelectMenuInteraction,
 } from 'discord.js';
 
+const createSetupSessionTokenMock = mock(() => Promise.resolve('setup-token-123'));
+
 // Controls what listProviderProducts returns for ALL providers in a test.
 // Changed between tests before the call to handleAutosetupModeSelect.
 let mockProductsResult: { products: Array<{ id: string; name: string }>; error?: string } = {
@@ -28,6 +30,7 @@ let mockProductsResult: { products: Array<{ id: string; name: string }>; error?:
 
 // Mock internalRpc BEFORE importing the command (bun:test hoists mock.module).
 mock.module('../../src/lib/internalRpc', () => ({
+  createSetupSessionToken: createSetupSessionTokenMock,
   listProviderProducts: mock((_provider: string, _authUserId: string) =>
     Promise.resolve({ ...mockProductsResult })
   ),
@@ -41,11 +44,19 @@ mock.module('../../src/lib/posthog', () => ({
   track: mock(() => {}),
 }));
 
+mock.module('../../../../convex/_generated/api', () => ({
+  api: {
+    setupJobs: {
+      createOrResumeSetupJobForOwner: 'setupJobs:createOrResumeSetupJobForOwner',
+    },
+  },
+}));
+
 mock.module('../../src/lib/apiUrls', () => ({
   getApiUrls: mock(() => ({
-    apiPublic: process.env.API_BASE_URL,
-    apiInternal: process.env.API_INTERNAL_URL ?? process.env.API_BASE_URL,
-    webPublic: process.env.FRONTEND_URL ?? process.env.VERIFY_BASE_URL ?? process.env.API_BASE_URL,
+    apiPublic: 'https://api.example.com',
+    apiInternal: 'https://api-internal.example.com',
+    webPublic: 'https://app.example.com',
   })),
 }));
 
@@ -63,7 +74,7 @@ const BASE_CTX = {
 
 const MOCK_CONVEX = {
   query: mock(() => Promise.resolve({})),
-  mutation: mock(() => Promise.resolve(undefined)),
+  mutation: mock(() => Promise.resolve({ setupJobId: 'setup_job_123', created: true })),
   action: mock(() => Promise.resolve(undefined)),
 } as unknown as ConvexHttpClient;
 
@@ -115,6 +126,35 @@ function lastReplyContent(editReply: ReturnType<typeof mock>): string {
   const calls = editReply.mock.calls;
   return JSON.stringify(calls[calls.length - 1][0]);
 }
+
+describe('autosetup launcher', () => {
+  it('creates or resumes the durable setup job and returns a dashboard link', async () => {
+    const interaction = mockStartInteraction('user_launch_1');
+
+    await handleAutosetupStart(
+      interaction as unknown as ChatInputCommandInteraction,
+      MOCK_CONVEX,
+      TEST_API_SECRET,
+      BASE_CTX
+    );
+
+    expect((MOCK_CONVEX.mutation as ReturnType<typeof mock>).mock.calls[0]?.[1]).toEqual({
+      apiSecret: TEST_API_SECRET,
+      authUserId: BASE_CTX.authUserId,
+      guildLinkId: BASE_CTX.guildLinkId,
+      mode: 'automatic_setup',
+      triggerSource: 'discord_autosetup',
+    });
+    expect(createSetupSessionTokenMock).toHaveBeenCalled();
+
+    const [payload] = (interaction.editReply as ReturnType<typeof mock>).mock.calls[0] as [any];
+    const serializedPayload = JSON.stringify(payload);
+    expect(serializedPayload).toContain('Automatic setup started');
+    expect(serializedPayload).toContain(
+      'https://app.example.com/dashboard?tenant_id=auth_autosetup_test&guild_id=guild_autosetup_test#s=setup-token-123'
+    );
+  });
+});
 
 // ─── migrate flow ─────────────────────────────────────────────────────────────
 

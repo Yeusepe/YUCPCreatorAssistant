@@ -117,6 +117,8 @@ export interface BuyerVerificationAdapter<
 }
 
 export interface ConnectDisplayMeta {
+  readonly dashboardSetupExperience: 'automatic' | 'guided' | 'manual';
+  readonly dashboardSetupHint: string;
   readonly label: string;
   readonly icon: string;
   readonly color: string;

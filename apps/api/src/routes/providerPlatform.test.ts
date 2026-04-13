@@ -586,6 +586,8 @@ describe('provider platform routes', () => {
 
       const REQUIRED = [
         'key',
+        'setupExperience',
+        'setupHint',
         'label',
         'icon',
         'iconBg',

@@ -15,6 +15,8 @@ export interface ConnectedAccountProviderDisplay {
 
 export interface DashboardProviderDisplay {
   readonly key: string;
+  readonly setupExperience: 'automatic' | 'guided' | 'manual';
+  readonly setupHint: string;
   readonly label: string;
   readonly icon: string;
   readonly iconBg: string;
@@ -47,6 +49,8 @@ function buildDashboardProviderDisplay(
   if (
     !runtimeSurface.dashboardConnectPath ||
     !runtimeSurface.dashboardConnectParamStyle ||
+    !runtimeSurface.dashboardSetupExperience ||
+    !runtimeSurface.dashboardSetupHint ||
     !runtimeSurface.dashboardIconBg ||
     !runtimeSurface.dashboardQuickStartBg ||
     !runtimeSurface.dashboardQuickStartBorder ||
@@ -57,6 +61,8 @@ function buildDashboardProviderDisplay(
 
   return {
     key: runtimeSurface.providerKey,
+    setupExperience: runtimeSurface.dashboardSetupExperience,
+    setupHint: runtimeSurface.dashboardSetupHint,
     label: runtimeSurface.label,
     icon: runtimeSurface.icon,
     iconBg: runtimeSurface.dashboardIconBg,
