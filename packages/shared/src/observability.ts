@@ -2,11 +2,40 @@ import { type Attributes, SpanKind, SpanStatusCode, type Tracer, trace } from '@
 
 export type ObservableValue = string | number | boolean | undefined | null;
 export type ObservableAttributes = Record<string, ObservableValue>;
+export type OperationOutcome = 'success' | 'redirect' | 'client_error' | 'server_error' | 'error';
 
 export function toSpanAttributes(input: ObservableAttributes): Attributes {
   return Object.fromEntries(
     Object.entries(input).filter(([, value]) => value !== undefined && value !== null)
   ) as Attributes;
+}
+
+function spanKindToOperationKind(kind: SpanKind): string {
+  switch (kind) {
+    case SpanKind.CLIENT:
+      return 'client';
+    case SpanKind.SERVER:
+      return 'server';
+    case SpanKind.PRODUCER:
+      return 'producer';
+    case SpanKind.CONSUMER:
+      return 'consumer';
+    default:
+      return 'internal';
+  }
+}
+
+export function classifyHttpOperationOutcome(statusCode: number): OperationOutcome {
+  if (statusCode >= 500) {
+    return 'server_error';
+  }
+  if (statusCode >= 400) {
+    return 'client_error';
+  }
+  if (statusCode >= 300) {
+    return 'redirect';
+  }
+  return 'success';
 }
 
 export function setActiveSpanAttributes(attributes: ObservableAttributes): void {
@@ -33,14 +62,22 @@ export async function withObservedSpan<T>(
     name,
     {
       kind,
-      attributes: toSpanAttributes(attributes),
+      attributes: toSpanAttributes({
+        'app.operation.name': name,
+        'app.operation.kind': spanKindToOperationKind(kind),
+        ...attributes,
+      }),
     },
     async (span) => {
       try {
-        return await run();
+        const result = await run();
+        span.setAttribute('app.operation.outcome', 'success');
+        return result;
       } catch (error) {
+        span.setAttribute('app.operation.outcome', 'error');
         if (error instanceof Error) {
           span.recordException(error);
+          span.setAttribute('error.type', error.name);
           span.setStatus({
             code: SpanStatusCode.ERROR,
             message: error.message,

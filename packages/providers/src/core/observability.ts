@@ -18,6 +18,7 @@ export function withProviderRequestSpan<T>(
     tracer,
     `provider.${provider}.${method.toLowerCase()}`,
     {
+      'app.operation.type': 'provider.request',
       provider,
       'http.request.method': method,
       'url.path': sanitizePath(path),

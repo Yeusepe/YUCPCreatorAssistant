@@ -1,5 +1,5 @@
 import HyperDX from '@hyperdx/browser';
-import { type Attributes, type Context, context, trace } from '@opentelemetry/api';
+import { type Attributes, type Context, context, SpanStatusCode, trace } from '@opentelemetry/api';
 import { resolveHyperdxConfig } from '@yucp/shared';
 import { authClient } from '@/lib/auth-client';
 import {
@@ -225,7 +225,11 @@ export function startHyperdxBrowserSpan(
   }
 
   const span = trace.getTracer('yucp-web').startSpan(name, {
-    attributes: toBrowserSpanAttributes(attributes),
+    attributes: toBrowserSpanAttributes({
+      'app.operation.type': 'web.browser.operation',
+      'app.operation.name': name,
+      ...attributes,
+    }),
   });
 
   return {
@@ -234,6 +238,7 @@ export function startHyperdxBrowserSpan(
       if (Object.keys(resolvedAttributes).length > 0) {
         span.setAttributes(resolvedAttributes);
       }
+      span.setAttribute('app.operation.outcome', 'success');
       span.end();
     },
     fail(
@@ -246,7 +251,13 @@ export function startHyperdxBrowserSpan(
       }
       if (error instanceof Error) {
         span.recordException(error);
+        span.setAttribute('error.type', error.name);
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: error.message,
+        });
       }
+      span.setAttribute('app.operation.outcome', 'error');
       span.end();
     },
   };
@@ -360,7 +371,11 @@ export function recordHyperdxNavigationTrace(
     name,
     {
       startTime: toAbsoluteTime(0),
-      attributes: toBrowserSpanAttributes(attributes),
+      attributes: toBrowserSpanAttributes({
+        'app.operation.type': 'web.navigation',
+        'app.operation.name': name,
+        ...attributes,
+      }),
     },
     context.active()
   );
@@ -372,6 +387,8 @@ export function recordHyperdxNavigationTrace(
       {
         startTime: toAbsoluteTime(phase.startMs),
         attributes: toBrowserSpanAttributes({
+          'app.operation.type': 'web.navigation.phase',
+          'app.operation.name': `${name}.${phase.name}`,
           ...attributes,
           phase: phase.name,
           durationMs: phase.durationMs,
@@ -382,6 +399,7 @@ export function recordHyperdxNavigationTrace(
     span.end(toAbsoluteTime(phase.endMs));
   }
 
+  rootSpan.setAttribute('app.operation.outcome', 'success');
   rootSpan.end(toAbsoluteTime(totalMs));
 }
 

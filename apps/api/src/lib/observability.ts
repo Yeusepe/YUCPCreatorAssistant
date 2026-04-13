@@ -9,6 +9,7 @@ import {
 } from '@opentelemetry/api';
 import {
   applyNodeHyperdxDefaults,
+  classifyHttpOperationOutcome,
   detectServerObservabilityRuntime,
   setActiveSpanAttributes,
   toSpanAttributes,
@@ -80,9 +81,15 @@ export async function withApiSpan<T>(
   return withObservedSpan(
     tracer,
     name,
-    attributes,
+    {
+      'app.operation.type': 'api.operation',
+      ...attributes,
+    },
     async () => {
-      annotateApiSpan(attributes);
+      annotateApiSpan({
+        'app.operation.type': 'api.operation',
+        ...attributes,
+      });
       return run();
     },
     kind
@@ -108,12 +115,14 @@ export async function withApiRequestSpan<T>(
           'url.full': url.toString(),
           'url.path': url.pathname,
           'http.route': url.pathname,
+          'app.operation.type': 'api.request',
           'user_agent.original': request.headers.get('user-agent') ?? undefined,
           requestId,
         }),
       },
       async (span) => {
         annotateApiSpan({
+          'app.operation.type': 'api.request',
           requestId,
           route: url.pathname,
           method: request.method,
@@ -123,6 +132,7 @@ export async function withApiRequestSpan<T>(
           const result = await run();
           if (result instanceof Response) {
             span.setAttribute('http.response.status_code', result.status);
+            span.setAttribute('app.operation.outcome', classifyHttpOperationOutcome(result.status));
             if (result.status >= 500) {
               span.setStatus({ code: SpanStatusCode.ERROR });
             }

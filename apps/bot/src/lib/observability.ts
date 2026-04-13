@@ -65,9 +65,15 @@ export async function withBotSpan<T>(
   return withObservedSpan(
     tracer,
     name,
-    attributes,
+    {
+      'app.operation.type': 'bot.operation',
+      ...attributes,
+    },
     async () => {
-      annotateBotSpan(attributes);
+      annotateBotSpan({
+        'app.operation.type': 'bot.operation',
+        ...attributes,
+      });
       return run();
     },
     kind
@@ -82,6 +88,7 @@ export async function withBotStageSpan<T>(
   return withBotSpan(
     `bot.stage.${stage}`,
     {
+      'app.operation.type': 'bot.stage',
       stage,
       ...attributes,
     },

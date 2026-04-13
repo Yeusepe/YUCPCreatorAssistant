@@ -55,11 +55,31 @@ export async function withWebServerSpan<T>(
   initWebServerObservability(process.env);
 
   if (trace.getActiveSpan()) {
-    return withObservedSpan(tracer, name, attributes, run, kind);
+    return withObservedSpan(
+      tracer,
+      name,
+      {
+        'app.operation.type': 'web.server.operation',
+        ...attributes,
+      },
+      run,
+      kind
+    );
   }
 
   const parentContext = propagation.extract(ROOT_CONTEXT, getIncomingRequestCarrier());
-  return context.with(parentContext, () => withObservedSpan(tracer, name, attributes, run, kind));
+  return context.with(parentContext, () =>
+    withObservedSpan(
+      tracer,
+      name,
+      {
+        'app.operation.type': 'web.server.operation',
+        ...attributes,
+      },
+      run,
+      kind
+    )
+  );
 }
 
 export async function withWebServerRequestSpan<T>(
@@ -70,7 +90,16 @@ export async function withWebServerRequestSpan<T>(
   initWebServerObservability(process.env);
   const parentContext = propagation.extract(ROOT_CONTEXT, getIncomingRequestCarrier());
   return context.with(parentContext, () =>
-    withObservedSpan(tracer, name, attributes, run, SpanKind.SERVER)
+    withObservedSpan(
+      tracer,
+      name,
+      {
+        'app.operation.type': 'web.server.request',
+        ...attributes,
+      },
+      run,
+      SpanKind.SERVER
+    )
   );
 }
 
