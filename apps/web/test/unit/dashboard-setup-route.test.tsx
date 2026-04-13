@@ -1,9 +1,16 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn(() => vi.fn());
+const toastSuccessMock = vi.fn();
+const toastErrorMock = vi.fn();
+const createOrResumeSetupJobMock = vi.fn();
+const applyRecommendedSetupMock = vi.fn();
+const createMigrationJobMock = vi.fn();
+const updateSetupPreferencesMock = vi.fn();
+const overrideRolePlanEntryMock = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -48,7 +55,7 @@ vi.mock('@/components/dashboard/AuthRequiredState', () => ({
 }));
 
 vi.mock('@/components/ui/Toast', () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn() }),
+  useToast: () => ({ success: toastSuccessMock, error: toastErrorMock }),
 }));
 
 vi.mock('@/components/ui/YucpButton', () => ({
@@ -121,7 +128,34 @@ describe('dashboard setup route', () => {
     cleanup();
     useQueryMock.mockReset();
     useMutationMock.mockReset();
-    useMutationMock.mockReturnValue(vi.fn());
+    toastSuccessMock.mockReset();
+    toastErrorMock.mockReset();
+    createOrResumeSetupJobMock.mockReset();
+    applyRecommendedSetupMock.mockReset();
+    createMigrationJobMock.mockReset();
+    updateSetupPreferencesMock.mockReset();
+    overrideRolePlanEntryMock.mockReset();
+    createOrResumeSetupJobMock.mockResolvedValue({ created: true });
+    applyRecommendedSetupMock.mockResolvedValue(undefined);
+    createMigrationJobMock.mockResolvedValue(undefined);
+    updateSetupPreferencesMock.mockResolvedValue(undefined);
+    overrideRolePlanEntryMock.mockResolvedValue(undefined);
+    useMutationMock.mockImplementation((mutation) => {
+      switch (mutation) {
+        case 'createOrResumeSetupJobByGuild':
+          return createOrResumeSetupJobMock;
+        case 'applyRecommendedSetupByGuild':
+          return applyRecommendedSetupMock;
+        case 'createMigrationJobByGuild':
+          return createMigrationJobMock;
+        case 'updateSetupPreferencesByGuild':
+          return updateSetupPreferencesMock;
+        case 'overrideRolePlanEntry':
+          return overrideRolePlanEntryMock;
+        default:
+          return vi.fn();
+      }
+    });
   });
 
   it('shows a beginner-friendly start page for a new server', () => {
@@ -225,6 +259,35 @@ describe('dashboard setup route', () => {
     expect(screen.getByText('Update setup')).toBeInTheDocument();
     expect(screen.getByText('Add another store')).toBeInTheDocument();
     expect(screen.getByText('Update role mappings')).toBeInTheDocument();
+  });
+
+  it('restarts setup from maintenance without sending the button event as preferences', async () => {
+    useMutationMock.mockReturnValue(createOrResumeSetupJobMock);
+    mockSetupRouteQueries({
+      setupJob: null,
+      setupSummary: {
+        enabledRoleRuleCount: 4,
+        verificationPromptLive: true,
+        lastCompletedSetupAt: Date.UTC(2026, 3, 12),
+      },
+      migrationJob: null,
+    });
+
+    const Component = DashboardSetupRoute.options.component;
+    if (!Component) {
+      throw new Error('Dashboard setup route component is not defined');
+    }
+
+    render(<Component />);
+    fireEvent.click(screen.getByText('Update setup'));
+
+    await waitFor(() =>
+      expect(createOrResumeSetupJobMock).toHaveBeenCalledWith({
+        guildId: 'guild-123',
+        mode: 'automatic_setup',
+        triggerSource: 'dashboard',
+      })
+    );
   });
 
   it('shows a needs-attention view with fix guidance when setup is blocked', () => {

@@ -3,13 +3,16 @@ import type { ReactNode } from 'react';
 
 export type YucpButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'discord';
 
-export interface YucpButtonProps extends Omit<ButtonRootProps, 'variant' | 'ref' | 'children'> {
+export interface YucpButtonProps
+  extends Omit<ButtonRootProps, 'variant' | 'ref' | 'children' | 'onPress'> {
   /** YUCP semantic variant */
   yucp?: YucpButtonVariant;
   /** If true, renders as pill (for standalone primary CTAs). Default: false (rounded rect for inline). */
   pill?: boolean;
   /** Shows a loading spinner and disables the button while true. */
   isLoading?: boolean;
+  /** Semantic action callback. YUCP buttons do not forward the raw press event. */
+  onPress?: () => void;
   children?: ReactNode;
 }
 
@@ -33,6 +36,7 @@ export function YucpButton({
   yucp = 'primary',
   pill = false,
   isLoading = false,
+  onPress,
   className,
   children,
   isDisabled,
@@ -57,6 +61,7 @@ export function YucpButton({
       variant={variant}
       isDisabled={isDisabled || isLoading}
       className={[legacyClass, radiusClass, loadingClass, className].filter(Boolean).join(' ')}
+      onPress={onPress ? () => onPress() : undefined}
       {...props}
     >
       {content}

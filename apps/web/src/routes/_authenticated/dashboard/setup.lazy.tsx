@@ -121,6 +121,13 @@ const MIGRATION_MAPPING_STATUS_LABEL: Record<string, string> = {
 };
 
 const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+const DASHBOARD_PILL_LINK_CLASS = 'btn-ghost rounded-full';
+const CHOICE_CARD_BASE_CLASS =
+  'w-full rounded-[16px] border p-4 text-left transition-colors transition-shadow';
+const CHOICE_CARD_SELECTED_CLASS =
+  'border-sky-200 bg-sky-50/90 shadow-[0_10px_28px_rgba(14,165,233,0.12)] dark:border-sky-500/30 dark:bg-sky-500/10';
+const CHOICE_CARD_UNSELECTED_CLASS =
+  'border-zinc-200 bg-zinc-50/90 hover:border-zinc-300 hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:border-white/20 dark:hover:bg-white/10';
 
 function getDefaultSetupPreferences(hasExistingVerifyPrompt: boolean): SetupPreferences {
   return {
@@ -639,13 +646,9 @@ function SetupStartView({
             </p>
           </div>
           {!showMigration ? (
-            <button
-              type="button"
-              className="inline-flex shrink-0 items-center rounded-full border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/5"
-              onClick={() => setShowMigration(true)}
-            >
+            <YucpButton yucp="secondary" pill onPress={() => setShowMigration(true)}>
               Start migration
-            </button>
+            </YucpButton>
           ) : null}
         </div>
 
@@ -668,19 +671,14 @@ function SetupStartView({
                       }}
                       aria-pressed={isSelected}
                       className={[
-                        'w-full rounded-[14px] border p-4 text-left transition',
-                        isSelected
-                          ? 'border-zinc-950 bg-zinc-950 dark:border-white dark:bg-white'
-                          : 'border-zinc-200 bg-zinc-50/90 hover:bg-zinc-100/70 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10',
+                        CHOICE_CARD_BASE_CLASS,
+                        isSelected ? CHOICE_CARD_SELECTED_CLASS : CHOICE_CARD_UNSELECTED_CLASS,
                       ].join(' ')}
                     >
                       <p
-                        className={[
-                          'text-sm font-semibold',
-                          isSelected
-                            ? 'text-white dark:text-zinc-950'
-                            : 'text-zinc-900 dark:text-white',
-                        ].join(' ')}
+                        className={['text-sm font-semibold', 'text-zinc-900 dark:text-white'].join(
+                          ' '
+                        )}
                       >
                         {info.title}
                       </p>
@@ -688,7 +686,7 @@ function SetupStartView({
                         className={[
                           'mt-1 text-sm',
                           isSelected
-                            ? 'text-zinc-300 dark:text-zinc-700'
+                            ? 'text-sky-700 dark:text-sky-100'
                             : 'text-zinc-600 dark:text-zinc-300',
                         ].join(' ')}
                       >
@@ -705,7 +703,7 @@ function SetupStartView({
               onChange={setMigrationPreferences}
             />
 
-            <div className="mt-1 flex flex-wrap items-center gap-3">
+            <div className="inline-btn-row mt-1 flex-wrap items-center">
               <YucpButton
                 yucp="primary"
                 pill
@@ -719,7 +717,7 @@ function SetupStartView({
               </YucpButton>
               <button
                 type="button"
-                className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                className={DASHBOARD_PILL_LINK_CLASS}
                 onClick={() => {
                   setShowMigration(false);
                   setSelectedMode(null);
@@ -976,7 +974,7 @@ function RecommendationList({
                         className={[
                           'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border',
                           isChecked
-                            ? 'border-zinc-950 bg-zinc-950 dark:border-white dark:bg-white'
+                            ? 'border-sky-500 bg-sky-500 dark:border-sky-400 dark:bg-sky-400'
                             : 'border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-800',
                         ].join(' ')}
                         aria-hidden="true"
@@ -1169,12 +1167,12 @@ function SetupActiveView({
 
         <div className="flex shrink-0 flex-wrap gap-2">
           {storeReady ? (
-            <YucpButton yucp="primary" pill isLoading={isResuming} onPress={onResume}>
+            <YucpButton yucp="primary" pill isLoading={isResuming} onPress={() => onResume()}>
               {isResuming ? 'Continuing...' : 'Continue to next step'}
             </YucpButton>
           ) : null}
           {!isAutomatic && !canApply && !storeReady ? (
-            <YucpButton yucp="primary" pill isLoading={isResuming} onPress={onResume}>
+            <YucpButton yucp="primary" pill isLoading={isResuming} onPress={() => onResume()}>
               {isResuming ? 'Resuming...' : 'Continue'}
             </YucpButton>
           ) : null}
@@ -1191,11 +1189,7 @@ function SetupActiveView({
             Continue.
           </p>
           <div className="mt-3">
-            <Link
-              to="/dashboard/integrations"
-              search={(prev) => prev}
-              className="inline-flex items-center rounded-full bg-zinc-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
-            >
+            <Link to="/dashboard/integrations" search={(prev) => prev} className="btn-primary">
               Go to store connections
             </Link>
           </div>
@@ -1277,7 +1271,12 @@ function SetupMaintenanceView({
             </p>
           </div>
           <div className="shrink-0">
-            <YucpButton yucp="secondary" pill isLoading={isRunningAgain} onPress={onRunAgain}>
+            <YucpButton
+              yucp="secondary"
+              pill
+              isLoading={isRunningAgain}
+              onPress={() => onRunAgain()}
+            >
               {isRunningAgain ? 'Starting...' : 'Update setup'}
             </YucpButton>
           </div>
@@ -1325,26 +1324,22 @@ function SetupMaintenanceView({
           Update your setup at any time, add a new store, adjust which roles products give, or check
           the verification message.
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="inline-btn-row mt-4 flex-wrap">
           <Link
             to="/dashboard/integrations"
             search={(prev) => prev}
-            className="inline-flex items-center rounded-full border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/5"
+            className={DASHBOARD_PILL_LINK_CLASS}
           >
             Add another store
           </Link>
           <Link
             to="/dashboard/server-rules"
             search={(prev) => prev}
-            className="inline-flex items-center rounded-full border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/5"
+            className={DASHBOARD_PILL_LINK_CLASS}
           >
             Update role mappings
           </Link>
-          <button
-            type="button"
-            className="inline-flex items-center rounded-full border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/5"
-            onClick={onStartMigration}
-          >
+          <button type="button" className={DASHBOARD_PILL_LINK_CLASS} onClick={onStartMigration}>
             Adopt roles from another bot
           </button>
         </div>
@@ -1490,14 +1485,14 @@ function NeedsAttentionView({
       ) : null}
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <YucpButton yucp="primary" pill isLoading={isResuming} onPress={onResume}>
+        <YucpButton yucp="primary" pill isLoading={isResuming} onPress={() => onResume()}>
           {isResuming ? 'Starting...' : 'I fixed it - try again'}
         </YucpButton>
         {category === 'no_store' ? (
           <Link
             to="/dashboard/integrations"
             search={(prev) => prev}
-            className="inline-flex items-center rounded-full border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/5"
+            className={DASHBOARD_PILL_LINK_CLASS}
           >
             Connect a store
           </Link>

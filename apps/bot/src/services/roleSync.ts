@@ -25,6 +25,12 @@ import { listProviderProducts } from '../lib/internalRpc';
 import { sendDashboardNotification } from '../lib/notifications';
 import { withBotSpan, withBotStageSpan } from '../lib/observability';
 import { canBotManageRole } from '../lib/roleHierarchy';
+import {
+  buildMigrationEmptyCatalogEventMessage,
+  buildMigrationEmptyCatalogReason,
+  type SetupCatalogSummary,
+  summarizeSetupCatalogResults,
+} from '../lib/setupCatalog';
 import { buildVerifyPromptMessage, getEnabledProviders } from '../lib/verifyPrompt';
 import { buildVerifyPromptAccessPreview } from '../lib/verifyPromptAccess';
 
@@ -880,7 +886,8 @@ export class RoleSyncService {
       const guild = await this.discordClient.guilds.fetch(payload.guildId);
       await guild.roles.fetch();
 
-      const products = await this.fetchSetupProducts(job.authUserId);
+      const catalog = await this.fetchSetupCatalog(job.authUserId);
+      const { products } = catalog;
       const guildRolesSummary = guild.roles.cache
         .filter((role) => !role.managed && role.id !== guild.id && role.name !== '@everyone')
         .map((role) => ({ id: role.id, name: role.name, position: role.position }))
@@ -975,7 +982,7 @@ export class RoleSyncService {
               : 'enforced';
       const blockingReason =
         products.length === 0
-          ? 'No active store products were available to analyze. Reconnect a store, then run migration again.'
+          ? buildMigrationEmptyCatalogReason(catalog)
           : unresolvedCount > 0
             ? 'Review the unresolved role matches below before switching from your current bot.'
             : cutoverStyle === 'parallel_run' || payload.mode === 'bridge_from_current_roles'
@@ -1001,7 +1008,7 @@ export class RoleSyncService {
           eventType: 'migration.analysis.completed',
           message:
             products.length === 0
-              ? 'Migration analysis completed, but no active store products were available to map.'
+              ? buildMigrationEmptyCatalogEventMessage(catalog)
               : `Migration analysis found ${autoMatchedCount} automatic role match${autoMatchedCount === 1 ? '' : 'es'}, ${unresolvedCount} product${unresolvedCount === 1 ? '' : 's'} that still need review, and ${ignoredCount} ignored product${ignoredCount === 1 ? '' : 's'}.`,
           payload: summary,
         }),
@@ -2046,7 +2053,7 @@ export class RoleSyncService {
     });
   }
 
-  private async fetchSetupProducts(authUserId: string): Promise<SetupProduct[]> {
+  private async fetchSetupCatalog(authUserId: string): Promise<SetupCatalogSummary> {
     const results = await Promise.all(
       CATALOG_SYNC_PROVIDER_KEYS.map(async (providerKey) => {
         const result = await listProviderProducts(providerKey, authUserId);
@@ -2057,16 +2064,24 @@ export class RoleSyncService {
             error: result.error,
           });
         }
-        return result.products.map((product) => ({
-          id: product.id,
-          name: product.name,
+        return {
           provider: providerKey,
-          productUrl: product.productUrl,
-        }));
+          products: result.products.map((product) => ({
+            id: product.id,
+            name: product.name,
+            productUrl: product.productUrl,
+          })),
+          error: result.error,
+        };
       })
     );
 
-    return results.flat();
+    return summarizeSetupCatalogResults(results);
+  }
+
+  private async fetchSetupProducts(authUserId: string): Promise<SetupProduct[]> {
+    const catalog = await this.fetchSetupCatalog(authUserId);
+    return catalog.products;
   }
 
   private async ensureSetupVerifyPrompt(args: {
