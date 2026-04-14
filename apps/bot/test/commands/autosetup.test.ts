@@ -20,7 +20,11 @@ import {
 } from 'discord.js';
 
 const createSetupSessionTokenMock = mock(() => Promise.resolve('setup-token-123'));
-let mockApiUrls = {
+let mockApiUrls: {
+  apiPublic: string;
+  apiInternal: string;
+  webPublic?: string;
+} = {
   apiPublic: 'https://api.example.com',
   apiInternal: 'https://api-internal.example.com',
   webPublic: 'https://app.example.com',

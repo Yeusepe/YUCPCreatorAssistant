@@ -910,10 +910,15 @@ function RecommendationList({
   useEffect(() => {
     setChecked((prev) => {
       const next: Record<string, boolean> = {};
+      let changed = Object.keys(prev).length !== proposed.length;
       for (const recommendation of proposed) {
-        next[recommendation.id] = prev[recommendation.id] ?? true;
+        const value = prev[recommendation.id] ?? true;
+        next[recommendation.id] = value;
+        if (prev[recommendation.id] !== value) {
+          changed = true;
+        }
       }
-      return next;
+      return changed ? next : prev;
     });
   }, [proposed]);
 

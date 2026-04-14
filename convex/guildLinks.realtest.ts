@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { api } from './_generated/api';
-import { internal } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { makeTestConvex } from './testHelpers';
 

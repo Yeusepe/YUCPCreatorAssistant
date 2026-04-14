@@ -340,10 +340,12 @@ describe('setup jobs orchestration', () => {
     );
     expect(rolePlanEntries).toHaveLength(2);
     expect(
-      rolePlanEntries.find((recommendation) => recommendation.payload?.productId === 'prod-1')?.detail
+      rolePlanEntries.find((recommendation) => recommendation.payload?.productId === 'prod-1')
+        ?.detail
     ).toBe('Updated first product detail.');
     expect(
-      rolePlanEntries.find((recommendation) => recommendation.payload?.productId === 'prod-2')?.detail
+      rolePlanEntries.find((recommendation) => recommendation.payload?.productId === 'prod-2')
+        ?.detail
     ).toBe('Create a new Supporter role for the second product.');
   });
 

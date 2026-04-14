@@ -883,10 +883,13 @@ export class RoleSyncService {
     }
 
     try {
-      const activeGuildLink = await this.convexClient.query(api.guildLinks.getVerifyPromptMessageForBot, {
-        apiSecret: this.apiSecret,
-        guildLinkId: payload.guildLinkId,
-      });
+      const activeGuildLink = await this.convexClient.query(
+        api.guildLinks.getVerifyPromptMessageForBot,
+        {
+          apiSecret: this.apiSecret,
+          guildLinkId: payload.guildLinkId,
+        }
+      );
       if (!activeGuildLink) {
         this.logger.info('Skipping migration analysis for disconnected guild link', {
           guildId: payload.guildId,
@@ -1065,10 +1068,13 @@ export class RoleSyncService {
     }
 
     try {
-      const activeGuildLink = await this.convexClient.query(api.guildLinks.getVerifyPromptMessageForBot, {
-        apiSecret: this.apiSecret,
-        guildLinkId: payload.guildLinkId,
-      });
+      const activeGuildLink = await this.convexClient.query(
+        api.guildLinks.getVerifyPromptMessageForBot,
+        {
+          apiSecret: this.apiSecret,
+          guildLinkId: payload.guildLinkId,
+        }
+      );
       if (!activeGuildLink) {
         this.logger.info('Skipping setup apply for disconnected guild link', {
           guildId: payload.guildId,

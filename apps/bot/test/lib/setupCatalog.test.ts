@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
-  buildMigrationEmptyCatalogReason,
   buildMigrationEmptyCatalogEventMessage,
+  buildMigrationEmptyCatalogReason,
   summarizeSetupCatalogResults,
 } from '../../src/lib/setupCatalog';
 

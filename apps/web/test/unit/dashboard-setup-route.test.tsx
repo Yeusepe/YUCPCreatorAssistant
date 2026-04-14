@@ -291,12 +291,13 @@ describe('dashboard setup route', () => {
   });
 
   it('passes the active setup job id when starting migration from the setup route', async () => {
+    useMutationMock.mockReturnValue(createMigrationJobMock);
     mockSetupRouteQueries({
       setupJob: {
         job: {
           id: 'setup-job-123',
-          status: 'waiting_for_user',
-          currentPhase: 'review_exceptions',
+          status: 'completed',
+          currentPhase: 'confirm_cutover',
           summary: {
             preferences: {
               rolePlanMode: 'create_or_adopt',
@@ -309,9 +310,9 @@ describe('dashboard setup route', () => {
         activeMigrationJobId: null,
       },
       setupSummary: {
-        enabledRoleRuleCount: 0,
-        verificationPromptLive: false,
-        lastCompletedSetupAt: null,
+        enabledRoleRuleCount: 2,
+        verificationPromptLive: true,
+        lastCompletedSetupAt: Date.UTC(2026, 3, 12),
       },
       migrationJob: null,
     });
@@ -322,21 +323,18 @@ describe('dashboard setup route', () => {
     }
 
     render(<Component />);
-    fireEvent.click(screen.getByText('Start migration'));
-    fireEvent.click(screen.getByText('Adopt Existing Roles'));
-    fireEvent.click(screen.getAllByText('Start migration')[1]!);
+    fireEvent.click(screen.getByRole('button', { name: 'Adopt roles from another bot' }));
 
-    await waitFor(() =>
-      expect(createMigrationJobMock).toHaveBeenCalledWith({
-        guildId: 'guild-123',
-        setupJobId: 'setup-job-123',
-        mode: 'adopt_existing_roles',
-        preferences: {
-          unmatchedProductBehavior: 'review',
-          cutoverStyle: 'switch_when_ready',
-        },
-      })
-    );
+    await waitFor(() => expect(createMigrationJobMock).toHaveBeenCalledTimes(1));
+    expect(createMigrationJobMock.mock.calls[0]?.[0]).toMatchObject({
+      guildId: 'guild-123',
+      setupJobId: 'setup-job-123',
+      mode: 'adopt_existing_roles',
+      preferences: {
+        unmatchedProductBehavior: 'review',
+        cutoverStyle: 'switch_when_ready',
+      },
+    });
   });
 
   it('reconciles the apply selection when the proposed recommendation list changes', async () => {

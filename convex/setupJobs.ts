@@ -137,10 +137,7 @@ const MigrationGrantStatus = v.union(
   v.literal('revoked')
 );
 const MigrationUnmatchedProductBehavior = v.union(v.literal('review'), v.literal('ignore'));
-const MigrationCutoverStyle = v.union(
-  v.literal('switch_when_ready'),
-  v.literal('parallel_run')
-);
+const MigrationCutoverStyle = v.union(v.literal('switch_when_ready'), v.literal('parallel_run'));
 const Provider = ProviderV;
 
 const TERMINAL_SETUP_STATUSES = new Set(['completed', 'failed', 'cancelled']);
@@ -226,9 +223,7 @@ function getDefaultMigrationPreferences(
 }
 
 function normalizeMigrationPreferences(
-  preferences:
-    | Partial<MigrationPreferences>
-    | undefined,
+  preferences: Partial<MigrationPreferences> | undefined,
   mode: 'adopt_existing_roles' | 'import_verified_users' | 'bridge_from_current_roles'
 ): MigrationPreferences {
   const defaults = getDefaultMigrationPreferences(mode);
@@ -598,10 +593,7 @@ async function seedInitialSetupRecommendations(
   );
   const enabledRoleRules = roleRules.filter((roleRule) => roleRule.enabled);
   const recommendations: Array<{
-    recommendationType:
-      | 'provider_connection'
-      | 'role_adoption'
-      | 'role_creation';
+    recommendationType: 'provider_connection' | 'role_adoption' | 'role_creation';
     title: string;
     detail?: string;
     status: 'proposed' | 'applied';
@@ -855,7 +847,8 @@ async function synchronizeSetupJobLifecycle(
     guildLinkId: args.setupJobGuildLinkId,
     guildId: args.setupJobDiscordGuildId,
     rolePlanMode:
-      args.recommendationSummary.preferences?.rolePlanMode ?? getDefaultSetupPreferences(false).rolePlanMode,
+      args.recommendationSummary.preferences?.rolePlanMode ??
+      getDefaultSetupPreferences(false).rolePlanMode,
   });
 }
 
@@ -1065,7 +1058,10 @@ async function createOrResumeSetupJobImpl(
   }
 ) {
   const guildLink = await getOwnedGuildLinkOrThrow(ctx, args.guildLinkId, args.authUserId);
-  const setupPreferences = normalizeSetupPreferences(args.preferences, Boolean(guildLink.verifyPromptMessage));
+  const setupPreferences = normalizeSetupPreferences(
+    args.preferences,
+    Boolean(guildLink.verifyPromptMessage)
+  );
   const existing = await ctx.db
     .query('setup_jobs')
     .withIndex('by_guild_link', (q) => q.eq('guildLinkId', args.guildLinkId))
@@ -1076,7 +1072,10 @@ async function createOrResumeSetupJobImpl(
     const now = Date.now();
     await ctx.db.patch(existing._id, {
       triggerSource: args.triggerSource,
-      summary: buildSetupSummary(existing.summary as SetupSummaryShape | undefined, setupPreferences),
+      summary: buildSetupSummary(
+        existing.summary as SetupSummaryShape | undefined,
+        setupPreferences
+      ),
       lastResumedAt: now,
       updatedAt: now,
     });

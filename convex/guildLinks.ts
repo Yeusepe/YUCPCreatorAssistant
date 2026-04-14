@@ -405,11 +405,12 @@ export const hardDisconnectGuild = mutation({
       }
     }
 
-    const migrationJobs = (await ctx.db
-      .query('migration_jobs')
-      .withIndex('by_auth_user', (q) => q.eq('authUserId', link.authUserId))
-      .collect())
-      .filter((migrationJob) => migrationJob.discordGuildId === guildId);
+    const migrationJobs = (
+      await ctx.db
+        .query('migration_jobs')
+        .withIndex('by_auth_user', (q) => q.eq('authUserId', link.authUserId))
+        .collect()
+    ).filter((migrationJob) => migrationJob.discordGuildId === guildId);
     for (const migrationJob of migrationJobs) {
       if (migrationJob.status !== 'completed' && migrationJob.status !== 'cancelled') {
         await ctx.db.patch(migrationJob._id, {

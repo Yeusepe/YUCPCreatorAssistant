@@ -1,7 +1,10 @@
 import { describe, expect, it, mock } from 'bun:test';
 
 const createConnectTokenMock = mock(() => Promise.resolve('connect-token-123'));
-let mockApiUrls = {
+let mockApiUrls: {
+  apiPublic: string;
+  webPublic?: string;
+} = {
   apiPublic: 'https://api.example.com',
   webPublic: 'https://app.example.com',
 };
