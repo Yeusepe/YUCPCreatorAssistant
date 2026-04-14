@@ -20,6 +20,11 @@ import {
 } from 'discord.js';
 
 const createSetupSessionTokenMock = mock(() => Promise.resolve('setup-token-123'));
+let mockApiUrls = {
+  apiPublic: 'https://api.example.com',
+  apiInternal: 'https://api-internal.example.com',
+  webPublic: 'https://app.example.com',
+};
 
 // Controls what listProviderProducts returns for ALL providers in a test.
 // Changed between tests before the call to handleAutosetupModeSelect.
@@ -53,11 +58,7 @@ mock.module('../../../../convex/_generated/api', () => ({
 }));
 
 mock.module('../../src/lib/apiUrls', () => ({
-  getApiUrls: mock(() => ({
-    apiPublic: 'https://api.example.com',
-    apiInternal: 'https://api-internal.example.com',
-    webPublic: 'https://app.example.com',
-  })),
+  getApiUrls: mock(() => ({ ...mockApiUrls })),
 }));
 
 import type { Id } from '../../../../convex/_generated/dataModel';
@@ -128,7 +129,34 @@ function lastReplyContent(editReply: ReturnType<typeof mock>): string {
 }
 
 describe('autosetup launcher', () => {
+  it('shows a recoverable error instead of building a setup link on the API origin', async () => {
+    mockApiUrls = {
+      apiPublic: 'https://api.example.com',
+      apiInternal: 'https://api-internal.example.com',
+      webPublic: undefined,
+    };
+    const interaction = mockStartInteraction('user_launch_missing_frontend');
+
+    await handleAutosetupStart(
+      interaction as unknown as ChatInputCommandInteraction,
+      MOCK_CONVEX,
+      TEST_API_SECRET,
+      BASE_CTX
+    );
+
+    const serializedPayload = JSON.stringify(
+      (interaction.editReply as ReturnType<typeof mock>).mock.calls[0]?.[0]
+    );
+    expect(serializedPayload).toContain('Could not create a secure dashboard link');
+    expect(serializedPayload).not.toContain('https://api.example.com/dashboard/setup');
+  });
+
   it('creates or resumes the durable setup job and returns a dashboard link', async () => {
+    mockApiUrls = {
+      apiPublic: 'https://api.example.com',
+      apiInternal: 'https://api-internal.example.com',
+      webPublic: 'https://app.example.com',
+    };
     const interaction = mockStartInteraction('user_launch_1');
 
     await handleAutosetupStart(

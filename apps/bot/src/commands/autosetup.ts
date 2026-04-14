@@ -236,17 +236,15 @@ async function fetchAllProducts(
 
 function buildDashboardSetupUrl(params: {
   webPublic?: string;
-  apiPublic?: string;
   authUserId: string;
   guildId: string;
   setupToken: string;
 }): string | null {
-  const baseUrl = params.webPublic ?? params.apiPublic;
-  if (!baseUrl) {
+  if (!params.webPublic) {
     return null;
   }
 
-  return `${baseUrl}/dashboard/setup?tenant_id=${params.authUserId}&guild_id=${params.guildId}#s=${encodeURIComponent(params.setupToken)}`;
+  return `${params.webPublic}/dashboard/setup?tenant_id=${params.authUserId}&guild_id=${params.guildId}#s=${encodeURIComponent(params.setupToken)}`;
 }
 
 /** Entry: /creator-admin autosetup */
@@ -294,11 +292,10 @@ export async function handleAutosetupStart(
     guildId: ctx.guildId,
     discordUserId: interaction.user.id,
   });
-  const { apiPublic, webPublic } = getApiUrls();
+  const { webPublic } = getApiUrls();
   const dashboardUrl = setupToken
     ? buildDashboardSetupUrl({
         webPublic,
-        apiPublic,
         authUserId: ctx.authUserId,
         guildId: ctx.guildId,
         setupToken,

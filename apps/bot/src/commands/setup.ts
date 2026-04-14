@@ -135,13 +135,13 @@ export async function runSetupStartUnconfigured(
 ): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const { webPublic, apiPublic } = getApiUrls();
-  const linkBase = webPublic ?? apiPublic;
+  const { webPublic } = getApiUrls();
+  const linkBase = webPublic;
 
   if (!linkBase) {
     await interaction.editReply({
       content:
-        'This server is not yet configured. Visit the Creator Portal to set it up (API_BASE_URL not configured).',
+        'This server is not yet configured. Visit the Creator Portal to set it up once the frontend URL is configured.',
     });
     return;
   }

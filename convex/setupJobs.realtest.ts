@@ -266,6 +266,87 @@ describe('setup jobs orchestration', () => {
     expect(detail?.steps).toHaveLength(7);
   });
 
+  it('keeps duplicate same-name provider products as separate role-plan recommendations', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-setup-duplicate-products';
+    const guildLinkId = await seedGuildLink(t, {
+      authUserId,
+      discordGuildId: 'guild-setup-duplicate-products',
+    });
+
+    const { setupJobId } = await t.mutation(api.setupJobs.createOrResumeSetupJobForOwner, {
+      apiSecret: API_SECRET,
+      authUserId,
+      guildLinkId,
+      mode: 'automatic_setup',
+      triggerSource: 'dashboard',
+    });
+
+    await t.mutation(api.setupJobs.upsertSetupRecommendation, {
+      apiSecret: API_SECRET,
+      setupJobId,
+      recommendationType: 'role_plan_entry',
+      status: 'proposed',
+      confidence: 0.95,
+      title: 'Supporter (gumroad)',
+      detail: 'Adopt the existing "Supporter" role.',
+      payload: {
+        productId: 'prod-1',
+        productName: 'Supporter',
+        provider: 'gumroad',
+        action: 'adopt_role',
+      },
+    });
+    await t.mutation(api.setupJobs.upsertSetupRecommendation, {
+      apiSecret: API_SECRET,
+      setupJobId,
+      recommendationType: 'role_plan_entry',
+      status: 'proposed',
+      confidence: 0.9,
+      title: 'Supporter (gumroad)',
+      detail: 'Create a new Supporter role for the second product.',
+      payload: {
+        productId: 'prod-2',
+        productName: 'Supporter',
+        provider: 'gumroad',
+        action: 'create_role',
+      },
+    });
+    await t.mutation(api.setupJobs.upsertSetupRecommendation, {
+      apiSecret: API_SECRET,
+      setupJobId,
+      recommendationType: 'role_plan_entry',
+      status: 'proposed',
+      confidence: 0.99,
+      title: 'Supporter (gumroad)',
+      detail: 'Updated first product detail.',
+      payload: {
+        productId: 'prod-1',
+        productName: 'Supporter',
+        provider: 'gumroad',
+        action: 'adopt_role',
+      },
+    });
+
+    const recommendations = await t.run(async (ctx) =>
+      ctx.db
+        .query('setup_recommendations')
+        .withIndex('by_setup_job', (q) => q.eq('setupJobId', setupJobId))
+        .collect()
+    );
+
+    const rolePlanEntries = recommendations.filter(
+      (recommendation) => recommendation.recommendationType === 'role_plan_entry'
+    );
+    expect(rolePlanEntries).toHaveLength(2);
+    expect(
+      rolePlanEntries.find((recommendation) => recommendation.payload?.productId === 'prod-1')?.detail
+    ).toBe('Updated first product detail.');
+    expect(
+      rolePlanEntries.find((recommendation) => recommendation.payload?.productId === 'prod-2')?.detail
+    ).toBe('Create a new Supporter role for the second product.');
+  });
+
   it('queues setup apply work after recommendations are ready', async () => {
     const t = makeTestConvex();
     const authUserId = 'auth-setup-apply';

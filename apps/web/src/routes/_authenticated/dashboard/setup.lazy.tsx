@@ -1,6 +1,6 @@
 import { createLazyFileRoute, Link } from '@tanstack/react-router';
 import { useMutation as useConvexMutation, useQuery as useConvexQuery } from 'convex/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DashboardAuthRequiredState } from '@/components/dashboard/AuthRequiredState';
 import { useToast } from '@/components/ui/Toast';
 import { YucpButton } from '@/components/ui/YucpButton';
@@ -907,8 +907,18 @@ function RecommendationList({
     return initial;
   });
 
-  const selectedCount = Object.values(checked).filter(Boolean).length;
-  const dismissedIds = proposed.filter((r) => !checked[r.id]).map((r) => r.id);
+  useEffect(() => {
+    setChecked((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const recommendation of proposed) {
+        next[recommendation.id] = prev[recommendation.id] ?? true;
+      }
+      return next;
+    });
+  }, [proposed]);
+
+  const selectedCount = proposed.filter((r) => checked[r.id] ?? true).length;
+  const dismissedIds = proposed.filter((r) => !(checked[r.id] ?? true)).map((r) => r.id);
 
   function toggle(id: string) {
     setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -1842,7 +1852,12 @@ function DashboardSetupRoute() {
     if (!activeGuildId) return;
     setIsStartingMigration(true);
     try {
-      await createMigrationJob({ guildId: activeGuildId, mode, preferences });
+      await createMigrationJob({
+        guildId: activeGuildId,
+        setupJobId: setupJob?.job.id,
+        mode,
+        preferences,
+      });
       toast.success('Migration started', {
         description:
           'YUCP is analyzing your server and matching your existing roles to your store products.',

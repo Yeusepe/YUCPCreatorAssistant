@@ -883,6 +883,19 @@ export class RoleSyncService {
     }
 
     try {
+      const activeGuildLink = await this.convexClient.query(api.guildLinks.getVerifyPromptMessageForBot, {
+        apiSecret: this.apiSecret,
+        guildLinkId: payload.guildLinkId,
+      });
+      if (!activeGuildLink) {
+        this.logger.info('Skipping migration analysis for disconnected guild link', {
+          guildId: payload.guildId,
+          migrationJobId: payload.migrationJobId,
+          guildLinkId: payload.guildLinkId,
+        });
+        return;
+      }
+
       const guild = await this.discordClient.guilds.fetch(payload.guildId);
       await guild.roles.fetch();
 
@@ -1052,6 +1065,19 @@ export class RoleSyncService {
     }
 
     try {
+      const activeGuildLink = await this.convexClient.query(api.guildLinks.getVerifyPromptMessageForBot, {
+        apiSecret: this.apiSecret,
+        guildLinkId: payload.guildLinkId,
+      });
+      if (!activeGuildLink) {
+        this.logger.info('Skipping setup apply for disconnected guild link', {
+          guildId: payload.guildId,
+          setupJobId: payload.setupJobId,
+          guildLinkId: payload.guildLinkId,
+        });
+        return;
+      }
+
       const guild = await this.discordClient.guilds.fetch(payload.guildId);
       await Promise.all([guild.roles.fetch(), guild.channels.fetch(), guild.members.fetchMe()]);
       this.logger.info('Setup apply: guild fetched', {

@@ -385,6 +385,8 @@ export const hardDisconnectGuild = mutation({
       await ctx.db.delete(artifact._id);
     }
 
+    const now = Date.now();
+
     // Cancel any non-terminal setup_jobs for this guild so the setup page
     // shows a fresh 'new' state after the creator reconnects the server.
     const setupJobs = await ctx.db
@@ -397,9 +399,40 @@ export const hardDisconnectGuild = mutation({
       if (setupJob.status !== 'completed' && setupJob.status !== 'cancelled') {
         await ctx.db.patch(setupJob._id, {
           status: 'cancelled',
-          cancelledAt: Date.now(),
-          updatedAt: Date.now(),
+          cancelledAt: now,
+          updatedAt: now,
         });
+      }
+    }
+
+    const migrationJobs = (await ctx.db
+      .query('migration_jobs')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', link.authUserId))
+      .collect())
+      .filter((migrationJob) => migrationJob.discordGuildId === guildId);
+    for (const migrationJob of migrationJobs) {
+      if (migrationJob.status !== 'completed' && migrationJob.status !== 'cancelled') {
+        await ctx.db.patch(migrationJob._id, {
+          status: 'cancelled',
+          cancelledAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    const pendingSetupAndMigrationJobs = await ctx.db
+      .query('outbox_jobs')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', link.authUserId))
+      .collect();
+    for (const job of pendingSetupAndMigrationJobs) {
+      if (
+        job.status === 'pending' &&
+        job.targetGuildId === guildId &&
+        (job.jobType === 'setup_generate_plan' ||
+          job.jobType === 'setup_apply' ||
+          job.jobType === 'migration_analyze')
+      ) {
+        await ctx.db.delete(job._id);
       }
     }
 

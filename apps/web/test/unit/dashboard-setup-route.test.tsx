@@ -290,6 +290,136 @@ describe('dashboard setup route', () => {
     );
   });
 
+  it('passes the active setup job id when starting migration from the setup route', async () => {
+    mockSetupRouteQueries({
+      setupJob: {
+        job: {
+          id: 'setup-job-123',
+          status: 'waiting_for_user',
+          currentPhase: 'review_exceptions',
+          summary: {
+            preferences: {
+              rolePlanMode: 'create_or_adopt',
+              verificationMessageMode: 'leave_unchanged',
+            },
+          },
+        },
+        steps: [],
+        recommendations: [],
+        activeMigrationJobId: null,
+      },
+      setupSummary: {
+        enabledRoleRuleCount: 0,
+        verificationPromptLive: false,
+        lastCompletedSetupAt: null,
+      },
+      migrationJob: null,
+    });
+
+    const Component = DashboardSetupRoute.options.component;
+    if (!Component) {
+      throw new Error('Dashboard setup route component is not defined');
+    }
+
+    render(<Component />);
+    fireEvent.click(screen.getByText('Start migration'));
+    fireEvent.click(screen.getByText('Adopt Existing Roles'));
+    fireEvent.click(screen.getAllByText('Start migration')[1]!);
+
+    await waitFor(() =>
+      expect(createMigrationJobMock).toHaveBeenCalledWith({
+        guildId: 'guild-123',
+        setupJobId: 'setup-job-123',
+        mode: 'adopt_existing_roles',
+        preferences: {
+          unmatchedProductBehavior: 'review',
+          cutoverStyle: 'switch_when_ready',
+        },
+      })
+    );
+  });
+
+  it('reconciles the apply selection when the proposed recommendation list changes', async () => {
+    const values: [unknown, unknown, unknown] = [
+      {
+        job: {
+          id: 'setup-job-123',
+          status: 'waiting_for_user',
+          currentPhase: 'review_exceptions',
+          summary: {
+            preferences: {
+              rolePlanMode: 'create_or_adopt',
+              verificationMessageMode: 'leave_unchanged',
+            },
+          },
+        },
+        steps: [],
+        recommendations: [
+          {
+            id: 'rec-1',
+            status: 'proposed',
+            recommendationType: 'role_creation',
+            title: 'Create Alpha role',
+            detail: null,
+          },
+          {
+            id: 'rec-2',
+            status: 'proposed',
+            recommendationType: 'role_creation',
+            title: 'Create Beta role',
+            detail: null,
+          },
+        ],
+        activeMigrationJobId: null,
+      },
+      {
+        enabledRoleRuleCount: 0,
+        verificationPromptLive: false,
+        lastCompletedSetupAt: null,
+      },
+      null,
+    ];
+    let callIndex = 0;
+    useQueryMock.mockImplementation(() => {
+      const fallback = values[callIndex % values.length];
+      callIndex += 1;
+      return fallback;
+    });
+
+    const Component = DashboardSetupRoute.options.component;
+    if (!Component) {
+      throw new Error('Dashboard setup route component is not defined');
+    }
+
+    const rendered = render(<Component />);
+    fireEvent.click(screen.getByText('Create Alpha role'));
+    expect(screen.getByText('Apply 1 change')).toBeInTheDocument();
+
+    values[0] = {
+      ...(values[0] as Record<string, unknown>),
+      recommendations: [
+        {
+          id: 'rec-3',
+          status: 'proposed',
+          recommendationType: 'role_creation',
+          title: 'Create Gamma role',
+          detail: null,
+        },
+        {
+          id: 'rec-4',
+          status: 'proposed',
+          recommendationType: 'role_creation',
+          title: 'Create Delta role',
+          detail: null,
+        },
+      ],
+    };
+
+    rendered.rerender(<Component />);
+
+    expect(screen.getByText('Apply 2 changes')).toBeInTheDocument();
+  });
+
   it('shows a needs-attention view with fix guidance when setup is blocked', () => {
     const landingState = deriveSetupLandingState({
       setupJob: {

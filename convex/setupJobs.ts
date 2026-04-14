@@ -2376,6 +2376,25 @@ export const upsertSetupStep = mutation({
   },
 });
 
+function getSetupRecommendationIdentity(args: {
+  recommendationType: string;
+  title: string;
+  payload?: unknown;
+}): string {
+  const payload =
+    args.payload && typeof args.payload === 'object'
+      ? (args.payload as { productId?: unknown; provider?: unknown })
+      : undefined;
+  if (
+    args.recommendationType === 'role_plan_entry' &&
+    typeof payload?.productId === 'string' &&
+    typeof payload?.provider === 'string'
+  ) {
+    return `${args.recommendationType}:${payload.provider}:${payload.productId}`;
+  }
+  return `${args.recommendationType}:${args.title}`;
+}
+
 export const upsertSetupRecommendation = mutation({
   args: {
     apiSecret: v.string(),
@@ -2400,10 +2419,14 @@ export const upsertSetupRecommendation = mutation({
       .query('setup_recommendations')
       .withIndex('by_setup_job', (q) => q.eq('setupJobId', args.setupJobId))
       .collect();
+    const identity = getSetupRecommendationIdentity(args);
     const match = existing.find(
       (recommendation) =>
-        recommendation.recommendationType === args.recommendationType &&
-        recommendation.title === args.title
+        getSetupRecommendationIdentity({
+          recommendationType: recommendation.recommendationType,
+          title: recommendation.title,
+          payload: recommendation.payload,
+        }) === identity
     );
 
     if (match) {

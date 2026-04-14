@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
   buildMigrationEmptyCatalogReason,
+  buildMigrationEmptyCatalogEventMessage,
   summarizeSetupCatalogResults,
 } from '../../src/lib/setupCatalog';
 
@@ -40,5 +41,31 @@ describe('setup catalog helpers', () => {
     expect(reason).toContain('active products');
     expect(reason).toContain('reconnect');
     expect(reason).toContain('already connected');
+  });
+
+  it('explains when provider catalog reads fail for reasons other than session expiry', () => {
+    const summary = summarizeSetupCatalogResults([
+      {
+        provider: 'payhip',
+        products: [],
+        error: 'provider_unavailable',
+      },
+      {
+        provider: 'gumroad',
+        products: [],
+        error: 'rate_limited',
+      },
+    ]);
+
+    const reason = buildMigrationEmptyCatalogReason(summary);
+    const eventMessage = buildMigrationEmptyCatalogEventMessage(summary);
+
+    expect(reason).toContain('Payhip');
+    expect(reason).toContain('Gumroad');
+    expect(reason).toContain('could not read');
+    expect(reason).not.toContain('did not find any active products');
+    expect(eventMessage).toContain('Payhip');
+    expect(eventMessage).toContain('Gumroad');
+    expect(eventMessage).toContain('errors');
   });
 });
