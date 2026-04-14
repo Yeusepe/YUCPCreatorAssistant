@@ -41,7 +41,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { getApiUrls } from '../lib/apiUrls';
 import { E, Emoji } from '../lib/emojis';
-import { listProviderProducts } from '../lib/internalRpc';
+import { createSetupSessionToken, listProviderProducts } from '../lib/internalRpc';
 import { track } from '../lib/posthog';
 import { canBotManageRole } from '../lib/roleHierarchy';
 import { VERIFY_PROMPT_FOOTER_TEXT } from '../lib/verifyPrompt';
@@ -234,11 +234,24 @@ async function fetchAllProducts(
   };
 }
 
+function buildDashboardSetupUrl(params: {
+  webPublic?: string;
+  authUserId: string;
+  guildId: string;
+  setupToken: string;
+}): string | null {
+  if (!params.webPublic) {
+    return null;
+  }
+
+  return `${params.webPublic}/dashboard/setup?tenant_id=${params.authUserId}&guild_id=${params.guildId}#s=${encodeURIComponent(params.setupToken)}`;
+}
+
 /** Entry: /creator-admin autosetup */
 export async function handleAutosetupStart(
   interaction: ChatInputCommandInteraction,
-  _convex: ConvexHttpClient,
-  _apiSecret: string,
+  convex: ConvexHttpClient,
+  apiSecret: string,
   ctx: { authUserId: string; guildLinkId: Id<'guild_links'>; guildId: string }
 ): Promise<void> {
   cleanExpiredSessions();
@@ -266,50 +279,70 @@ export async function handleAutosetupStart(
     expiresAt: Date.now() + 10 * 60 * 1000,
   });
 
+  const launchResult = await convex.mutation(api.setupJobs.createOrResumeSetupJobForOwner, {
+    apiSecret,
+    authUserId: ctx.authUserId,
+    guildLinkId: ctx.guildLinkId,
+    mode: 'automatic_setup',
+    triggerSource: 'discord_autosetup',
+  });
+
+  const setupToken = await createSetupSessionToken({
+    authUserId: ctx.authUserId,
+    guildId: ctx.guildId,
+    discordUserId: interaction.user.id,
+  });
+  const { webPublic } = getApiUrls();
+  const dashboardUrl = setupToken
+    ? buildDashboardSetupUrl({
+        webPublic,
+        authUserId: ctx.authUserId,
+        guildId: ctx.guildId,
+        setupToken,
+      })
+    : null;
+
+  if (!dashboardUrl) {
+    await interaction.editReply({
+      flags: MessageFlags.IsComponentsV2,
+      components: [
+        errorContainer(
+          'Could not create a secure dashboard link for automatic setup. Run `/creator-admin autosetup` again in a moment.'
+        ),
+      ],
+    });
+    return;
+  }
+
   const container = new ContainerBuilder().setAccentColor(0x5865f2);
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(`## ${E.Wrench} Autosetup`)
+    new TextDisplayBuilder().setContent(
+      `## ${E.Wrench} ${launchResult.created ? 'Automatic setup started' : 'Automatic setup resumed'}`
+    )
   );
   container.addSeparatorComponents(
     new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
   );
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `Choose what you need. Each option guides you through the setup step by step.\n\n${hasManageRoles ? '' : `${E.Wrench} **Note:** The bot needs **Manage Roles** for role creation.\n`}${hasManageChannels ? '' : `${E.Wrench} **Note:** The bot needs **Manage Channels** for channel creation.\n`}`
+      `The old Discord wizard has been replaced with the durable dashboard setup job. YUCP will keep the plan, progress, and migration state in sync there.\n\n${hasManageRoles ? '' : `${E.Wrench} **Note:** The bot still needs **Manage Roles** before the apply step can create or adopt roles.\n`}${hasManageChannels ? '' : `${E.Wrench} **Note:** The bot still needs **Manage Channels** before the apply step can create or reuse a verify channel.\n`}`
     )
   );
   container.addSeparatorComponents(
     new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
   );
-
-  const select = new StringSelectMenuBuilder()
-    .setCustomId(`${AUTOSETUP_PREFIX}mode:${ctx.authUserId}`)
-    .setPlaceholder('Select setup mode...')
-    .addOptions(
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Full setup')
-        .setDescription('Create roles for products, verify channel, and spawn verify button')
-        .setValue('full')
-        .setEmoji(Emoji.Assistant),
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Roles only')
-        .setDescription('Create roles for your products and map them (channels already set up)')
-        .setValue('roles_only')
-        .setEmoji(Emoji.PersonKey),
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Channels only')
-        .setDescription('Create verify channel and spawn button (roles already exist)')
-        .setValue('channels_only')
-        .setEmoji(Emoji.Library),
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Migrate from another bot')
-        .setDescription('Map your existing roles to products')
-        .setValue('migrate')
-        .setEmoji(Emoji.Refresh)
-    );
-
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `1. **Connect store** and confirm existing storefront access.\n2. **Review the recommended plan** for role adoption, role creation, and verify surface reuse.\n3. **Apply setup** and continue into shadow migration from the same job.`
+    )
+  );
   container.addActionRowComponents(
-    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setStyle(ButtonStyle.Link)
+        .setLabel(launchResult.created ? 'Open Automatic Setup' : 'Resume Automatic Setup')
+        .setURL(dashboardUrl)
+    )
   );
 
   await interaction.editReply({
@@ -320,6 +353,7 @@ export async function handleAutosetupStart(
   track(interaction.user.id, 'autosetup_started', {
     authUserId: ctx.authUserId,
     guildId: ctx.guildId,
+    setupJobCreated: launchResult.created,
   });
 }
 

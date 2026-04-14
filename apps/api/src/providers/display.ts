@@ -14,6 +14,8 @@ export interface ProviderDisplaySummary {
 
 export interface DashboardProviderSummary {
   readonly key: string;
+  readonly setupExperience: 'automatic' | 'guided' | 'manual';
+  readonly setupHint: string;
   readonly label: string;
   readonly icon: string;
   readonly iconBg: string;
@@ -35,6 +37,8 @@ function buildRuntimeConnectSurface(provider: { id: string; displayMeta?: Connec
   return {
     providerKey: provider.id,
     label: displayMeta.label,
+    dashboardSetupExperience: displayMeta.dashboardSetupExperience,
+    dashboardSetupHint: displayMeta.dashboardSetupHint,
     icon: displayMeta.icon,
     color: displayMeta.color,
     description: displayMeta.description,

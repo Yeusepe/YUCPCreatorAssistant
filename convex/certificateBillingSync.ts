@@ -5,10 +5,10 @@ import { action, internalAction, internalMutation, internalQuery } from './_gene
 import { requireApiSecret } from './lib/apiAuth';
 import {
   type CertificateBillingCatalogBenefit,
+  type CertificateBillingCatalogProduct,
   normalizeCertificateBillingCatalogBenefit,
   normalizeCertificateBillingCatalogProduct,
   POLAR_CERTIFICATE_BILLING_DOMAIN,
-  type CertificateBillingCatalogProduct,
 } from './lib/certificateBillingCatalog';
 import { getCertificateBillingConfig } from './lib/certificateBillingConfig';
 import {

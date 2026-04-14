@@ -253,7 +253,7 @@ describe('processWebhookEvent pipeline', () => {
 
     const event = (await t.run(async (ctx) => ctx.db.get(eventId))) as Doc<'webhook_events'> | null;
     expect(event?.status).toBe('processed');
-    // No subject linked — purchase_fact exists but no entitlement
+    // No subject linked, purchase_fact exists but no entitlement
     const facts = await t.run(async (ctx) => ctx.db.query('purchase_facts').collect());
     expect(facts).toHaveLength(1);
     expect(facts[0].subjectId).toBeUndefined();
@@ -454,7 +454,11 @@ describe('verificationMethod trust model', () => {
       provider: 'gumroad',
       providerEventId: 'sale_route_token_reset',
       eventType: 'sale',
-      rawPayload: { sale_id: 'rt-reset-001', product_id: 'prod-reset', email: 'buyer-reset@example.com' },
+      rawPayload: {
+        sale_id: 'rt-reset-001',
+        product_id: 'prod-reset',
+        email: 'buyer-reset@example.com',
+      },
       signatureValid: false,
       verificationMethod: 'route-token',
     });
@@ -469,7 +473,9 @@ describe('verificationMethod trust model', () => {
       })
     );
 
-    const processed = (await t.run(async (ctx) => ctx.db.get(eventId))) as Doc<'webhook_events'> | null;
+    const processed = (await t.run(async (ctx) =>
+      ctx.db.get(eventId)
+    )) as Doc<'webhook_events'> | null;
     expect(processed?.status).toBe('processed');
 
     // Now reset for reprocessing

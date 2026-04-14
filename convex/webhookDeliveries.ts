@@ -1,5 +1,5 @@
 /**
- * Webhook Deliveries — per-event delivery attempt tracking with retry state.
+ * Webhook Deliveries, per-event delivery attempt tracking with retry state.
  *
  * Delivery lifecycle: pending → in_progress → delivered | failed → dead_letter
  * Exponential backoff schedule: 30s, 5min, 30min, 2h, 8h.
@@ -28,11 +28,9 @@ export const listPending = internalQuery({
     const now = Date.now();
     const pending = await ctx.db
       .query('webhook_deliveries')
-      .withIndex('by_status_retry', q => q.eq('status', 'pending'))
+      .withIndex('by_status_retry', (q) => q.eq('status', 'pending'))
       .collect();
-    return pending
-      .filter(d => d.nextRetryAt === undefined || d.nextRetryAt <= now)
-      .slice(0, 20);
+    return pending.filter((d) => d.nextRetryAt === undefined || d.nextRetryAt <= now).slice(0, 20);
   },
 });
 
@@ -162,18 +160,18 @@ export const listBySubscription = query({
 
     let deliveries = await ctx.db
       .query('webhook_deliveries')
-      .withIndex('by_subscription', q => q.eq('subscriptionId', args.subscriptionId))
+      .withIndex('by_subscription', (q) => q.eq('subscriptionId', args.subscriptionId))
       .order('desc')
       .collect();
 
     if (args.status !== undefined) {
-      deliveries = deliveries.filter(d => d.status === args.status);
+      deliveries = deliveries.filter((d) => d.status === args.status);
     }
 
     const pageSize = Math.min(args.limit ?? 50, 100);
     let startIdx = 0;
     if (args.cursor) {
-      const idx = deliveries.findIndex(d => d._id === args.cursor);
+      const idx = deliveries.findIndex((d) => d._id === args.cursor);
       if (idx !== -1) startIdx = idx + 1;
     }
 

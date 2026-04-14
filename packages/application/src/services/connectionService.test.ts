@@ -10,6 +10,8 @@ import { ConnectionService } from './connectionService';
 const providerDisplays: readonly DashboardConnectionProviderDisplay[] = [
   {
     key: 'gumroad',
+    setupExperience: 'automatic',
+    setupHint: 'OAuth redirect plus managed webhook setup can continue automatically.',
     label: 'Gumroad',
     icon: 'shopping-bag',
     iconBg: '#f97316',

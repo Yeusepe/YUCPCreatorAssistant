@@ -62,8 +62,8 @@ describe('VrchatWebClient.getAvatarById', () => {
   });
 
   it('returns null when the response body has no name field', async () => {
-    const fetchMock = mock(async () =>
-      new Response(JSON.stringify({ id: 'avtr_noname' }), { status: 200 })
+    const fetchMock = mock(
+      async () => new Response(JSON.stringify({ id: 'avtr_noname' }), { status: 200 })
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 

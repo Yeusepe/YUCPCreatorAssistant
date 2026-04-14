@@ -15,6 +15,8 @@ export const ITCHIO_PURPOSES = {
 } as const satisfies ProviderPurposes;
 
 export const ITCHIO_DISPLAY_META = {
+  dashboardSetupExperience: 'automatic',
+  dashboardSetupHint: 'OAuth sign-in is the only manual handoff before the setup job resumes.',
   label: 'itch.io',
   icon: 'ItchIo.png',
   color: '#fa5c5c',

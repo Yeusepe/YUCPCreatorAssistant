@@ -8,8 +8,6 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { v } from 'convex/values';
-
 // Import shared types and helpers
 import {
   calculateGracePeriodEnd,
@@ -30,6 +28,7 @@ import {
   mapReasonToStatus,
   type Provider,
 } from '@yucp/shared/entitlement';
+import { v } from 'convex/values';
 
 // ============================================================================
 // VALIDATOR SCHEMA TESTS

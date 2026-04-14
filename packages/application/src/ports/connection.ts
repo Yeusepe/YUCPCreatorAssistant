@@ -1,5 +1,7 @@
 export interface DashboardConnectionProviderDisplay {
   readonly key: string;
+  readonly setupExperience: 'automatic' | 'guided' | 'manual';
+  readonly setupHint: string;
   readonly label: string;
   readonly icon: string;
   readonly iconBg: string;

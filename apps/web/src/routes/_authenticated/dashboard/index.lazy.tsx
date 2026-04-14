@@ -11,6 +11,7 @@ import {
 } from '@/components/dashboard/panels/OnboardingProgressPanel';
 import { RecentActivityPanel } from '@/components/dashboard/panels/RecentActivityPanel';
 import { ServerSettingsPanel } from '@/components/dashboard/panels/ServerSettingsPanel';
+import { SetupJourneyCard } from '@/components/dashboard/panels/SetupJourneyCard';
 import { StatsOverviewPanel } from '@/components/dashboard/panels/StatsOverviewPanel';
 import { StoreIntegrationsPanel } from '@/components/dashboard/panels/StoreIntegrationsPanel';
 import { useToast } from '@/components/ui/Toast';
@@ -177,7 +178,7 @@ function DashboardIndex() {
     setTotalPlatforms(total);
   }, []);
 
-  // Onboarding dismiss — always start as false to match SSR, then read localStorage after mount
+  // Onboarding dismiss, always start as false to match SSR, then read localStorage after mount
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [onboardingPreferencesReady, setOnboardingPreferencesReady] = useState(false);
   // Always start with default state (SSR-safe), then sync from localStorage after mount
@@ -304,6 +305,12 @@ function DashboardIndex() {
             onAuthError={markSessionExpired}
           />
         </div>
+
+        {guildId ? (
+          <div className="col-span-12">
+            <SetupJourneyCard />
+          </div>
+        ) : null}
 
         {/* Server settings + recent activity */}
         <div className="col-span-12 lg:col-span-8">

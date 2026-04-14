@@ -6,6 +6,8 @@ function createPort(): ProviderPlatformPort {
   const runtimeSurfaces = [
     {
       providerKey: 'gumroad',
+      dashboardSetupExperience: 'automatic' as const,
+      dashboardSetupHint: 'OAuth redirect plus managed webhook setup can continue automatically.',
       label: 'Gumroad',
       icon: 'gumroad.png',
       color: '#ff90e8',
@@ -19,6 +21,9 @@ function createPort(): ProviderPlatformPort {
     },
     {
       providerKey: 'vrchat',
+      dashboardSetupExperience: 'guided' as const,
+      dashboardSetupHint:
+        'VRChat needs a credential handoff before the setup job can scan listings and resume.',
       label: 'VRChat',
       icon: 'vrchat.png',
       color: '#1d4ed8',
@@ -59,6 +64,8 @@ describe('ProviderPlatformService', () => {
     expect(service.listDashboardProviderDisplays()).toEqual([
       {
         key: 'gumroad',
+        setupExperience: 'automatic',
+        setupHint: 'OAuth redirect plus managed webhook setup can continue automatically.',
         label: 'Gumroad',
         icon: 'gumroad.png',
         iconBg: '#fff0fb',
@@ -70,6 +77,9 @@ describe('ProviderPlatformService', () => {
       },
       {
         key: 'vrchat',
+        setupExperience: 'guided',
+        setupHint:
+          'VRChat needs a credential handoff before the setup job can scan listings and resume.',
         label: 'VRChat',
         icon: 'vrchat.png',
         iconBg: '#dbeafe',

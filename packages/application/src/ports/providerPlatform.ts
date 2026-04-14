@@ -1,5 +1,7 @@
 export interface ProviderRuntimeConnectSurface {
   readonly providerKey: string;
+  readonly dashboardSetupExperience?: 'automatic' | 'guided' | 'manual';
+  readonly dashboardSetupHint?: string;
   readonly label: string;
   readonly icon: string;
   readonly color: string;

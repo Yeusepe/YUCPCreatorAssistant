@@ -236,10 +236,7 @@ export class VrchatWebClient {
    * Returns the avatar name, or null if the avatar is inaccessible (e.g. 404, 401).
    * Requires an authenticated VRChat session.
    */
-  async getAvatarById(
-    session: VrchatSessionTokens,
-    avatarId: string
-  ): Promise<string | null> {
+  async getAvatarById(session: VrchatSessionTokens, avatarId: string): Promise<string | null> {
     const { response, data } = await request(`/avatars/${encodeURIComponent(avatarId)}`, {
       method: 'GET',
       headers: {
@@ -251,7 +248,11 @@ export class VrchatWebClient {
       return null;
     }
 
-    if (!data || typeof data !== 'object' || typeof (data as Record<string, unknown>).name !== 'string') {
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      typeof (data as Record<string, unknown>).name !== 'string'
+    ) {
       return null;
     }
 

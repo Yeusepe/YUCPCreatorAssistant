@@ -1,6 +1,6 @@
+import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'bun:test';
 
 const httpSource = readFileSync(resolve(__dirname, './http.ts'), 'utf8');
 const licensesSource = readFileSync(resolve(__dirname, './yucpLicenses.ts'), 'utf8');

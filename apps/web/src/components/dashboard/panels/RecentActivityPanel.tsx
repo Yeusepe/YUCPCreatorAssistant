@@ -24,6 +24,16 @@ const EVENT_DESCRIPTIONS: Record<string, (metadata?: Record<string, unknown>) =>
   'binding.created': () => 'Account linked',
   'binding.revoked': () => 'Account unlinked',
   'creator.policy.updated': () => 'Settings updated',
+  'setup.job.created': () => 'Automatic setup started',
+  'setup.job.resumed': () => 'Automatic setup resumed',
+  'setup.job.status.updated': (metadata) => {
+    const phase = metadata?.currentPhase;
+    return phase
+      ? `Automatic setup moved to ${String(phase).replace(/_/g, ' ')}`
+      : 'Automatic setup updated';
+  },
+  'migration.job.created': () => 'Migration plan started',
+  'migration.job.status.updated': () => 'Migration plan updated',
 };
 
 function humanizeEventType(eventType: string): string {

@@ -59,8 +59,8 @@
  *   Spotify /v1/me     https://developer.spotify.com/documentation/web-api/reference/get-current-users-profile
  */
 
-import { httpRouter } from 'convex/server';
 import { PROVIDER_REGISTRY, PROVIDER_REGISTRY_BY_KEY } from '@yucp/providers/providerMetadata';
+import { httpRouter } from 'convex/server';
 import { api, components, internal } from './_generated/api';
 import { httpAction } from './_generated/server';
 import { authComponent, createAuth } from './auth';
@@ -597,7 +597,7 @@ http.route({
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!token) return errorResponse('Authorization: Bearer <access_token> required', 401);
 
-    // /v1/me is an identity endpoint — any valid token (any scope) should
+    // /v1/me is an identity endpoint, any valid token (any scope) should
     // identify the caller. Use the minimum scope so narrowly-scoped tokens
     // (e.g. verification:read only) can still introspect their own identity.
     const tokenResult = await verifyOAuthToken(token, siteUrl, 'verification:read');
@@ -667,12 +667,14 @@ http.route({
     const ownDuration = performance.now() - ownStart;
 
     // Tag own products with owner=null
-    const allProducts: PublicProductRecord[] = ownProducts.map((p: (typeof ownProducts)[number]) => ({
-      ...p,
-      owner: null,
-      configured: true,
-      live: false,
-    }));
+    const allProducts: PublicProductRecord[] = ownProducts.map(
+      (p: (typeof ownProducts)[number]) => ({
+        ...p,
+        owner: null,
+        configured: true,
+        live: false,
+      })
+    );
 
     // ── Collaborator products ─────────────────────────────────────────────────
     // If the creator has linked Discord, check for collaborator connections
@@ -1498,7 +1500,7 @@ http.route({
       return errorResponse('Missing required fields', 400);
     }
 
-    // c74: Validate packageId format — only safe characters, bounded length.
+    // c74: Validate packageId format, only safe characters, bounded length.
     if (!/^[a-z0-9\-_./:]{1,128}$/.test(packageId)) {
       return errorResponse('Invalid packageId format', 400);
     }
@@ -1557,7 +1559,7 @@ http.route({
       return errorResponse('Package not found or not owned by the specified creator', 403);
     }
 
-    // c64: Consume nonce before issuing JWT — prevents replay of identical requests.
+    // c64: Consume nonce before issuing JWT, prevents replay of identical requests.
     await ctx.runMutation(internal.yucpLicenses.checkAndConsumeNonce, { nonce });
 
     // Issue machine-fingerprint-bound license JWT
@@ -1714,9 +1716,12 @@ http.route({
       return errorResponse('grant is required', 400);
     }
 
-    const result = await ctx.runMutation(internal.yucpLicenses.receiptProtectedMaterializationGrant, {
-      grant: body.grant,
-    });
+    const result = await ctx.runMutation(
+      internal.yucpLicenses.receiptProtectedMaterializationGrant,
+      {
+        grant: body.grant,
+      }
+    );
 
     if (!result.success) {
       return jsonResponse({ error: result.error }, 422);
@@ -1729,7 +1734,7 @@ http.route({
   }),
 });
 
-// POST /v1/licenses/revoke-grant — revoke a protected materialization grant (admin/CONVEX_API_SECRET)
+// POST /v1/licenses/revoke-grant, revoke a protected materialization grant (admin/CONVEX_API_SECRET)
 // NOTE: revocation is forward-looking only. It cannot claw back already-materialized plaintext.
 http.route({
   method: 'POST',

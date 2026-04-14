@@ -29,9 +29,7 @@ export function buildTrustedBrowserOrigins({
   additionalOrigins?: ReadonlyArray<string | null | undefined>;
 }>): string[] {
   const all = [siteUrl, frontendUrl, ...additionalOrigins];
-  const configured = all
-    .map((v) => normalizeOrigin(v))
-    .filter((o): o is string => Boolean(o));
+  const configured = all.map((v) => normalizeOrigin(v)).filter((o): o is string => Boolean(o));
 
   const hasLoopbackOrigin =
     configured.length === 0 ||
@@ -40,6 +38,8 @@ export function buildTrustedBrowserOrigins({
       return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
     });
 
-  const origins = hasLoopbackOrigin ? [...configured, ...LOCAL_BROWSER_ORIGIN_PATTERNS] : configured;
+  const origins = hasLoopbackOrigin
+    ? [...configured, ...LOCAL_BROWSER_ORIGIN_PATTERNS]
+    : configured;
   return Array.from(new Set(origins));
 }

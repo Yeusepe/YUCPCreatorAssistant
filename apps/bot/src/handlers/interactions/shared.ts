@@ -13,21 +13,21 @@ export async function getNotConfiguredMessage(
 ): Promise<string> {
   if (forAdmin) {
     const { apiInternal, apiPublic, webPublic } = getApiUrls();
-    const linkBase = webPublic ?? apiPublic;
+    const linkBase = webPublic;
     if (linkBase) {
       try {
         if (apiInternal ?? apiPublic) {
           const token = await createConnectToken({ discordUserId, guildId });
           if (token) {
-            return `This server is not configured. [Sign in to configure](${linkBase}/dashboard?guild_id=${guildId}#token=${token})`;
+            return `This server is not configured. [Sign in to configure](${linkBase}/dashboard/setup?guild_id=${guildId}#token=${token})`;
           }
         }
       } catch (e) {
         logger.error('Failed to generate secure connect token', { error: e });
       }
-      return `This server is not configured. [Sign in to configure](${linkBase}/dashboard?guild_id=${guildId})`;
+      return `This server is not configured. [Sign in to configure](${linkBase}/dashboard/setup?guild_id=${guildId})`;
     }
-    return 'This server is not configured. Please sign in to configure (API_BASE_URL not set).';
+    return 'This server is not configured. Please sign in to configure once the Creator Portal frontend URL is set.';
   }
   return "This server isn't set up for verification yet. Ask a server admin to configure it in the Creator Portal.";
 }

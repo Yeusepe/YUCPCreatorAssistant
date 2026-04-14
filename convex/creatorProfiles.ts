@@ -264,7 +264,6 @@ export const getDiscordUserIdFromAuthUser = internalQuery({
   },
 });
 
-
 /**
  * Get creator profile by authUserId. Alias for public API surface.
  */

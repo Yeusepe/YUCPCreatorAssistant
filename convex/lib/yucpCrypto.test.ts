@@ -2,12 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import * as ed from '@noble/ed25519';
 import * as yucpCrypto from './yucpCrypto';
 
-const {
-  base64ToBytes,
-  bytesToBase64,
-  canonicalizePackageCertificate,
-  signPackageCertificateData,
-} = yucpCrypto;
+const { base64ToBytes, bytesToBase64, canonicalizePackageCertificate, signPackageCertificateData } =
+  yucpCrypto;
 
 type PackageCertificateData = yucpCrypto.PackageCertificateData;
 
@@ -41,10 +37,7 @@ describe('yucpCrypto package certificate compatibility', () => {
       notAfter: '2026-04-24T00:00:00.000Z',
     };
 
-    const signature = await signPackageCertificateData(
-      certificate,
-      bytesToBase64(rootPrivateKey)
-    );
+    const signature = await signPackageCertificateData(certificate, bytesToBase64(rootPrivateKey));
 
     await expect(
       ed.verifyAsync(

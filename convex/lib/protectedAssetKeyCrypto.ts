@@ -21,5 +21,9 @@ export async function encryptProtectedBlobContentKey(contentKeyBase64: string): 
 }
 
 export async function decryptProtectedBlobContentKey(ciphertext: string): Promise<string> {
-  return decryptForPurpose(ciphertext, getEncryptionSecret(), PROTECTED_ASSET_KEY_PURPOSES.blobContentKey);
+  return decryptForPurpose(
+    ciphertext,
+    getEncryptionSecret(),
+    PROTECTED_ASSET_KEY_PURPOSES.blobContentKey
+  );
 }

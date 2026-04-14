@@ -42,8 +42,13 @@ function getNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function normalizeBetterAuthUserId(user: BetterAuthUserRecord | null, fallbackId: string): string | null {
-  return getNonEmptyString(user?.id) ?? getNonEmptyString(user?._id) ?? getNonEmptyString(fallbackId);
+function normalizeBetterAuthUserId(
+  user: BetterAuthUserRecord | null,
+  fallbackId: string
+): string | null {
+  return (
+    getNonEmptyString(user?.id) ?? getNonEmptyString(user?._id) ?? getNonEmptyString(fallbackId)
+  );
 }
 
 /**

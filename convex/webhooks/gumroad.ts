@@ -1,3 +1,5 @@
+import { PII_PURPOSES } from '../lib/credentialKeys';
+import { encryptPii } from '../lib/piiCrypto';
 import {
   findSubjectByEmailHash,
   normalizeEmail,
@@ -5,8 +7,6 @@ import {
   revokeEntitlementForPurchaseFact,
   sha256Hex,
 } from './_helpers';
-import { PII_PURPOSES } from '../lib/credentialKeys';
-import { encryptPii } from '../lib/piiCrypto';
 
 export async function processGumroadEvent(
   ctx: any,

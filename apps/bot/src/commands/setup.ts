@@ -47,14 +47,9 @@ export async function runSetupStart(
 ): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const { apiPublic, webPublic } = getApiUrls();
-  if (!apiPublic) {
-    throw new Error('API_BASE_URL is not configured for the bot service');
-  }
+  const { webPublic } = getApiUrls();
   if (!webPublic) {
-    throw new Error(
-      'FRONTEND_URL, VERIFY_BASE_URL, or API_BASE_URL must be configured for the bot service'
-    );
+    throw new Error('FRONTEND_URL or VERIFY_BASE_URL must be configured for the bot service');
   }
 
   const apiBase = webPublic;
@@ -81,12 +76,12 @@ export async function runSetupStart(
     return;
   }
 
-  const dashboardUrl = `${apiBase}/dashboard?tenant_id=${ctx.authUserId}&guild_id=${ctx.guildId}#s=${encodeURIComponent(setupToken)}`;
+  const dashboardUrl = `${apiBase}/dashboard/setup?tenant_id=${ctx.authUserId}&guild_id=${ctx.guildId}#s=${encodeURIComponent(setupToken)}`;
 
   const embed = new EmbedBuilder()
     .setTitle(`${E.Wrench} Creator Setup`)
     .setDescription(
-      'Open the setup dashboard to connect your stores, review your server settings, and finish onboarding in one place.'
+      'Open the setup flow to connect your stores, review what YUCP found, and finish onboarding in one place.'
     )
     .setColor(0x5865f2)
     .addFields(
@@ -97,24 +92,21 @@ export async function runSetupStart(
         inline: false,
       },
       {
-        name: '2. Review Server Options',
+        name: '2. Review the setup plan',
         value:
-          'Adjust verification settings, collaborator access, and any store-specific configuration from the same page.',
+          'See the recommended roles, verification surface, and migration notes in one dedicated flow before you apply anything.',
         inline: false,
       },
       {
-        name: '3. Return to Discord',
+        name: '3. Apply and monitor',
         value:
-          'After the dashboard is set up, finish any role and channel automation back here with `/creator-admin autosetup` if you need it.',
+          'Launch the durable setup job from that page, then use Discord as your launcher and status surface.',
         inline: false,
       }
     );
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setLabel('Open Setup Dashboard')
-      .setStyle(ButtonStyle.Link)
-      .setURL(dashboardUrl)
+    new ButtonBuilder().setLabel('Open Setup Flow').setStyle(ButtonStyle.Link).setURL(dashboardUrl)
   );
 
   await interaction.editReply({
@@ -138,22 +130,22 @@ export async function runSetupStartUnconfigured(
 ): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const { webPublic, apiPublic } = getApiUrls();
-  const linkBase = webPublic ?? apiPublic;
+  const { webPublic } = getApiUrls();
+  const linkBase = webPublic;
 
   if (!linkBase) {
     await interaction.editReply({
       content:
-        'This server is not yet configured. Visit the Creator Portal to set it up (API_BASE_URL not configured).',
+        'This server is not yet configured. Visit the Creator Portal to set it up once the frontend URL is configured.',
     });
     return;
   }
 
-  let dashboardUrl = `${linkBase}/dashboard?guild_id=${guildId}`;
+  let dashboardUrl = `${linkBase}/dashboard/setup?guild_id=${guildId}`;
   try {
     const token = await createConnectToken({ discordUserId: interaction.user.id, guildId });
     if (token) {
-      dashboardUrl = `${linkBase}/dashboard?guild_id=${guildId}#token=${token}`;
+      dashboardUrl = `${linkBase}/dashboard/setup?guild_id=${guildId}#token=${token}`;
     }
   } catch (_) {
     // Use URL without token as fallback
@@ -178,8 +170,9 @@ export async function runSetupStartUnconfigured(
         inline: false,
       },
       {
-        name: '3. Return to Discord',
-        value: 'After setup, run `/creator-admin autosetup` to finish role and channel automation.',
+        name: '3. Follow the setup flow',
+        value:
+          'After sign-in, stay on the dedicated setup page to connect your storefronts, review the plan, and apply setup for this server.',
         inline: false,
       }
     );

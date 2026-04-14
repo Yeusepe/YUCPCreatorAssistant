@@ -2,8 +2,8 @@
  * Shared helper functions for role_rules mutations and queries.
  */
 
-export { requireApiSecret } from '../apiAuth';
 export { sha256Hex } from '@yucp/shared/crypto';
+export { requireApiSecret } from '../apiAuth';
 
 export function normalizeProductUrl(url: string): string {
   try {

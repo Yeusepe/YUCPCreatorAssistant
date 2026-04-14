@@ -14,8 +14,8 @@
 
 import { v } from 'convex/values';
 import { internalMutation, mutation, query } from './_generated/server';
-import { VerificationModeV } from './lib/providers';
 import { requireApiSecret } from './lib/apiAuth';
+import { VerificationModeV } from './lib/providers';
 
 // ============================================================================
 // CONSTANTS
@@ -620,7 +620,6 @@ export function generateState(): string {
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
-
 
 /**
  * List verification sessions for a creator with optional filters and pagination.

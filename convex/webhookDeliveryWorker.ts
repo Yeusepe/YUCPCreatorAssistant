@@ -1,5 +1,5 @@
 /**
- * Webhook Delivery Worker — processes pending webhook deliveries.
+ * Webhook Delivery Worker, processes pending webhook deliveries.
  *
  * For each pending delivery the worker:
  *   1. Marks the delivery in_progress
@@ -12,8 +12,8 @@
  */
 
 import { v } from 'convex/values';
-import { internalAction } from './_generated/server';
 import { internal } from './_generated/api';
+import { internalAction } from './_generated/server';
 
 // ---------------------------------------------------------------------------
 // Crypto helpers
@@ -25,13 +25,9 @@ async function decryptSecret(
   purpose: string
 ): Promise<string> {
   const encoder = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    'HKDF',
-    false,
-    ['deriveKey']
-  );
+  const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(secret), 'HKDF', false, [
+    'deriveKey',
+  ]);
   const key = await crypto.subtle.deriveKey(
     { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encoder.encode(purpose) },
     keyMaterial,
@@ -39,7 +35,7 @@ async function decryptSecret(
     false,
     ['decrypt']
   );
-  const combined = Uint8Array.from(atob(ciphertextB64), c => c.charCodeAt(0));
+  const combined = Uint8Array.from(atob(ciphertextB64), (c) => c.charCodeAt(0));
   const iv = combined.slice(0, 12);
   const data = combined.slice(12);
   const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
@@ -57,7 +53,7 @@ async function computeHmacSha256(payload: string, secret: string): Promise<strin
   );
   const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
   return Array.from(new Uint8Array(sig))
-    .map(b => b.toString(16).padStart(2, '0'))
+    .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
@@ -78,10 +74,7 @@ export const processWebhookDeliveries = internalAction({
       throw new Error('ENCRYPTION_SECRET is required for delivery worker');
     }
 
-    const deliveries = (await ctx.runQuery(
-      internal.webhookDeliveries.listPending,
-      {}
-    )) as Array<{
+    const deliveries = (await ctx.runQuery(internal.webhookDeliveries.listPending, {})) as Array<{
       _id: string;
       subscriptionId: string;
       eventId: string;
@@ -98,10 +91,9 @@ export const processWebhookDeliveries = internalAction({
           deliveryId: delivery._id as any,
         });
 
-        const subscription = (await ctx.runQuery(
-          internal.webhookSubscriptions.getByIdInternal,
-          { subscriptionId: delivery.subscriptionId as any }
-        )) as {
+        const subscription = (await ctx.runQuery(internal.webhookSubscriptions.getByIdInternal, {
+          subscriptionId: delivery.subscriptionId as any,
+        })) as {
           url: string;
           signingSecretEnc: string;
           enabled: boolean;
@@ -118,7 +110,7 @@ export const processWebhookDeliveries = internalAction({
         }
 
         if (!subscription.enabled) {
-          // Subscription was disabled after this delivery was queued — drop it so the
+          // Subscription was disabled after this delivery was queued, drop it so the
           // creator's disable action takes effect even for already-queued jobs.
           await ctx.runMutation(internal.webhookDeliveries.markFailed, {
             deliveryId: delivery._id as any,
@@ -226,7 +218,7 @@ export const processWebhookDeliveries = internalAction({
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         failed++;
-        errors.push(`Delivery ${delivery._id}: unexpected error — ${errMsg}`);
+        errors.push(`Delivery ${delivery._id}: unexpected error, ${errMsg}`);
       }
     }
 

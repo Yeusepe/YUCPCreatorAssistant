@@ -300,7 +300,10 @@ export function normalizeCertificateBillingCatalogProduct(
   const hasRecognizedEntitlements = normalizedBenefits.some((benefit) =>
     hasRecognizedEntitlementMetadata(benefit)
   );
-  if (!hasExplicitCertificateDomain && (!hasRecognizedEntitlements || recurringPriceIds.length === 0)) {
+  if (
+    !hasExplicitCertificateDomain &&
+    (!hasRecognizedEntitlements || recurringPriceIds.length === 0)
+  ) {
     return null;
   }
   const highlights = Array.from(

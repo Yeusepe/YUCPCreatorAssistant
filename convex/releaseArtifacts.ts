@@ -51,7 +51,10 @@ export const getActiveArtifact = internalQuery({
 
     const active = rows
       .filter((row) => row.channel === args.channel && row.platform === args.platform)
-      .sort((left, right) => (right.activatedAt ?? right.createdAt) - (left.activatedAt ?? left.createdAt))[0];
+      .sort(
+        (left, right) =>
+          (right.activatedAt ?? right.createdAt) - (left.activatedAt ?? left.createdAt)
+      )[0];
 
     return toSignedReleaseArtifact(active);
   },
@@ -85,7 +88,11 @@ export const publishArtifact = internalMutation({
       .collect();
 
     for (const row of existing) {
-      if (row.channel === args.channel && row.platform === args.platform && row.status === 'active') {
+      if (
+        row.channel === args.channel &&
+        row.platform === args.platform &&
+        row.status === 'active'
+      ) {
         await ctx.db.patch(row._id, {
           status: 'inactive',
           updatedAt: now,

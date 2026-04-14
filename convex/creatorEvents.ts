@@ -1,20 +1,20 @@
 /**
- * Creator Events — internal event stream for the Public API v2 webhook system.
+ * Creator Events, internal event stream for the Public API v2 webhook system.
  *
  * Stores platform-emitted events (purchases, entitlement grants, etc.) and
  * fans them out to matching webhook subscriptions.
  */
 
 import { v } from 'convex/values';
-import { internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { internal } from './_generated/api';
+import { internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { requireApiSecret } from './lib/apiAuth';
 
 // ---------------------------------------------------------------------------
 // Internal mutations & queries
 // ---------------------------------------------------------------------------
 
-/** Insert a creator_events record. No fan-out — call fanOutToSubscriptions separately. */
+/** Insert a creator_events record. No fan-out, call fanOutToSubscriptions separately. */
 export const emitEvent = internalMutation({
   args: {
     apiSecret: v.string(),
@@ -56,13 +56,13 @@ export const fanOutToSubscriptions = internalMutation({
   handler: async (ctx, args) => {
     const subscriptions = await ctx.db
       .query('webhook_subscriptions')
-      .withIndex('by_auth_user_enabled', q =>
+      .withIndex('by_auth_user_enabled', (q) =>
         q.eq('authUserId', args.authUserId).eq('enabled', true)
       )
       .collect();
 
     const matching = subscriptions.filter(
-      sub => sub.events.length === 0 || sub.events.includes(args.eventType)
+      (sub) => sub.events.length === 0 || sub.events.includes(args.eventType)
     );
 
     const now = Date.now();
@@ -83,7 +83,7 @@ export const fanOutToSubscriptions = internalMutation({
   },
 });
 
-/** Get event by ID without authUserId check — for the delivery worker only. */
+/** Get event by ID without authUserId check, for the delivery worker only. */
 export const getByIdInternal = internalQuery({
   args: {
     eventId: v.id('creator_events'),
@@ -124,18 +124,18 @@ export const listByAuthUser = query({
     if (args.eventType !== undefined) {
       events = await ctx.db
         .query('creator_events')
-        .withIndex('by_auth_user_type', q =>
+        .withIndex('by_auth_user_type', (q) =>
           q.eq('authUserId', args.authUserId).eq('eventType', args.eventType!)
         )
         .order('desc')
         .collect();
       if (args.resourceId !== undefined) {
-        events = events.filter(e => e.resourceId === args.resourceId);
+        events = events.filter((e) => e.resourceId === args.resourceId);
       }
     } else if (args.resourceId !== undefined) {
       events = await ctx.db
         .query('creator_events')
-        .withIndex('by_auth_user_resource', q =>
+        .withIndex('by_auth_user_resource', (q) =>
           q.eq('authUserId', args.authUserId).eq('resourceId', args.resourceId!)
         )
         .order('desc')
@@ -143,7 +143,7 @@ export const listByAuthUser = query({
     } else {
       events = await ctx.db
         .query('creator_events')
-        .withIndex('by_auth_user', q => q.eq('authUserId', args.authUserId))
+        .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
         .order('desc')
         .collect();
     }
@@ -151,7 +151,7 @@ export const listByAuthUser = query({
     const pageSize = Math.min(args.limit ?? 50, 100);
     let startIdx = 0;
     if (args.cursor) {
-      const idx = events.findIndex(e => e._id === args.cursor);
+      const idx = events.findIndex((e) => e._id === args.cursor);
       if (idx !== -1) startIdx = idx + 1;
     }
 

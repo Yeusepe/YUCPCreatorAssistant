@@ -18,6 +18,6 @@ describe('/v1/certificates issuance contract', () => {
 
   it('returns the raw issuance error in the 500 response for temporary debugging', () => {
     expect(httpSource).toContain("const raw = err instanceof Error ? err.message : ''");
-    expect(httpSource).toContain("return errorResponse(raw || String(err), 500)");
+    expect(httpSource).toContain('return errorResponse(raw || String(err), 500)');
   });
 });

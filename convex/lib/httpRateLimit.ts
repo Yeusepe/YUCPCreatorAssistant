@@ -47,9 +47,7 @@ export const checkAndIncrement = internalMutation({
     // Find or create the counter for the current window.
     const existing = await ctx.db
       .query('http_rate_limits')
-      .withIndex('by_key_window', (q) =>
-        q.eq('key', args.key).eq('windowStart', windowStart)
-      )
+      .withIndex('by_key_window', (q) => q.eq('key', args.key).eq('windowStart', windowStart))
       .first();
 
     if (!existing) {
@@ -58,7 +56,7 @@ export const checkAndIncrement = internalMutation({
     }
 
     if (existing.count >= args.limit) {
-      return true; // exceeded — do NOT increment further
+      return true; // exceeded, do NOT increment further
     }
 
     await ctx.db.patch(existing._id, { count: existing.count + 1 });

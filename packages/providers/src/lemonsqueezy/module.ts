@@ -15,6 +15,9 @@ export const LEMONSQUEEZY_PURPOSES = {
 } as const satisfies ProviderPurposes;
 
 export const LEMONSQUEEZY_DISPLAY_META = {
+  dashboardSetupExperience: 'guided',
+  dashboardSetupHint:
+    'Provide an API token and store selection once, then the setup job can manage the rest.',
   label: 'Lemon Squeezy',
   icon: 'LemonSqueezy.png',
   color: '#ffd35a',

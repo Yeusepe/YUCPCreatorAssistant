@@ -89,6 +89,7 @@ import type * as purgeOrphans from "../purgeOrphans.js";
 import type * as releaseArtifacts from "../releaseArtifacts.js";
 import type * as role_rules from "../role_rules.js";
 import type * as seedYucpOAuthClient from "../seedYucpOAuthClient.js";
+import type * as setupJobs from "../setupJobs.js";
 import type * as signingLog from "../signingLog.js";
 import type * as subjects from "../subjects.js";
 import type * as tenantHelpers from "../tenantHelpers.js";
@@ -199,6 +200,7 @@ declare const fullApi: ApiFromModules<{
   releaseArtifacts: typeof releaseArtifacts;
   role_rules: typeof role_rules;
   seedYucpOAuthClient: typeof seedYucpOAuthClient;
+  setupJobs: typeof setupJobs;
   signingLog: typeof signingLog;
   subjects: typeof subjects;
   tenantHelpers: typeof tenantHelpers;

@@ -5,8 +5,8 @@
  * No per-provider field names are needed here.
  */
 
-import { v } from 'convex/values';
 import { providerLabel } from '@yucp/providers/providerMetadata';
+import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { mutation, query } from './_generated/server';
@@ -323,7 +323,7 @@ export const getWebhookCredentialByRouteId = query({
 
 /**
  * Generic: mark a connection's webhook as configured.
- * Replaces markPayhipWebhookConfigured — works for any provider.
+ * Replaces markPayhipWebhookConfigured, works for any provider.
  */
 export const markWebhookConfigured = mutation({
   args: {
@@ -380,7 +380,9 @@ export const getConnectionStatus = query({
         .collect(),
       ctx.db
         .query('collaborator_connections')
-        .withIndex('by_owner_status', (q) => q.eq('ownerAuthUserId', args.authUserId).eq('status', 'active'))
+        .withIndex('by_owner_status', (q) =>
+          q.eq('ownerAuthUserId', args.authUserId).eq('status', 'active')
+        )
         .collect(),
     ]);
 
@@ -922,7 +924,7 @@ export const updateTenantSetting = mutation({
 /**
  * Generic: upsert a provider connection with credentials.
  * Each connect plugin calls this with its own credential keys.
- * No per-provider field names needed — all credentials go through provider_credentials table.
+ * No per-provider field names needed, all credentials go through provider_credentials table.
  */
 export const upsertProviderConnection = mutation({
   args: {
@@ -1118,7 +1120,7 @@ export const upsertVrchatConnection = mutation({
 });
 
 /**
- * Mark a provider connection as degraded — the credential exists but is no
+ * Mark a provider connection as degraded, the credential exists but is no
  * longer functional (e.g. VRChat session expired, API key revoked).
  * The creator is notified to reconnect via the dashboard.
  */
