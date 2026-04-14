@@ -63,19 +63,16 @@ function createService(discordClientOverrides?: Partial<Client>) {
   });
 }
 
-function createJob(
-  overrides: Partial<OutboxJob> & Pick<OutboxJob, 'jobType' | 'payload'>
-): OutboxJob {
+function createJob(overrides: { jobType: OutboxJob['jobType']; payload: unknown }): OutboxJob {
   return {
     _id: 'job-123' as never,
     authUserId: 'auth-user-123',
     jobType: overrides.jobType,
-    payload: overrides.payload,
+    payload: overrides.payload as OutboxJob['payload'],
     status: 'pending',
     retryCount: 0,
     maxRetries: 5,
-    ...overrides,
-  };
+  } as OutboxJob;
 }
 
 describe('role sync service regressions', () => {
@@ -123,7 +120,7 @@ describe('role sync service regressions', () => {
       })
     );
 
-    expect(updateJobStatusMock.mock.calls).toEqual([
+    expect(updateJobStatusMock.mock.calls as unknown as Array<unknown[]>).toEqual([
       ['job-123', 'in_progress'],
       ['job-123', 'dead_letter', 'Bot lacks permission to manage roles'],
     ]);
@@ -169,7 +166,7 @@ describe('role sync service regressions', () => {
       })
     );
 
-    expect(updateJobStatusMock.mock.calls).toEqual([
+    expect(updateJobStatusMock.mock.calls as unknown as Array<unknown[]>).toEqual([
       ['job-123', 'in_progress'],
       ['job-123', 'dead_letter', 'Bot lacks permission to manage roles'],
     ]);
@@ -186,7 +183,7 @@ describe('role sync service regressions', () => {
       } as never,
     });
 
-    queryMock.mockResolvedValue(null);
+    (queryMock as unknown as { mockResolvedValue(value: unknown): void }).mockResolvedValue(null);
 
     await (
       service as unknown as {
@@ -268,7 +265,10 @@ describe('role sync service regressions', () => {
       } as never,
     });
 
-    queryMock
+    const queryMockWithValues = queryMock as unknown as {
+      mockResolvedValueOnce(value: unknown): typeof queryMockWithValues;
+    };
+    queryMockWithValues
       .mockResolvedValueOnce({ channelId: 'verify-channel', messageId: 'verify-message' })
       .mockResolvedValueOnce([
         {
@@ -312,13 +312,13 @@ describe('role sync service regressions', () => {
 
     expect(roleCreateMock).not.toHaveBeenCalled();
     expect(
-      mutationMock.mock.calls.some(([, args]) =>
-        Boolean(args && typeof args === 'object' && 'providerProductRef' in args)
+      (mutationMock.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>).some(
+        ([, args]) => Boolean(args && typeof args === 'object' && 'providerProductRef' in args)
       )
     ).toBe(false);
     expect(
-      mutationMock.mock.calls.some(([, args]) =>
-        Boolean(args && typeof args === 'object' && 'verifiedRoleId' in args)
+      (mutationMock.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>).some(
+        ([, args]) => Boolean(args && typeof args === 'object' && 'verifiedRoleId' in args)
       )
     ).toBe(false);
   });
@@ -365,7 +365,11 @@ describe('role sync service regressions', () => {
     });
 
     let mutationInvocation = 0;
-    mutationMock.mockImplementation(async () => {
+    (
+      mutationMock as unknown as {
+        mockImplementation(fn: () => Promise<unknown>): void;
+      }
+    ).mockImplementation(async () => {
       mutationInvocation += 1;
       if (mutationInvocation === 1) {
         return {
@@ -380,7 +384,10 @@ describe('role sync service regressions', () => {
       }
       return undefined;
     });
-    queryMock
+    const queryRetryMock = queryMock as unknown as {
+      mockResolvedValueOnce(value: unknown): typeof queryRetryMock;
+    };
+    queryRetryMock
       .mockResolvedValueOnce({ channelId: 'verify-channel', messageId: 'verify-message' })
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
@@ -417,7 +424,9 @@ describe('role sync service regressions', () => {
     );
 
     expect(roleCreateMock).not.toHaveBeenCalled();
-    expect(mutationMock.mock.calls[1]?.[1]).toMatchObject({
+    expect(
+      (mutationMock.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>)[1]?.[1]
+    ).toMatchObject({
       verifiedRoleId: 'role-created-1',
     });
   });
