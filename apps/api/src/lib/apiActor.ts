@@ -22,10 +22,7 @@ export async function createAuthUserActorBinding(input: {
   scopes?: readonly string[];
   keyId?: string;
 }): Promise<ApiActorBinding> {
-  return await createApiActorBinding(
-    createAuthUserApiActor(input),
-    getInternalServiceAuthSecret()
-  );
+  return await createApiActorBinding(createAuthUserApiActor(input), getInternalServiceAuthSecret());
 }
 
 export async function createApiServiceActorBinding(input: {
@@ -33,8 +30,5 @@ export async function createApiServiceActorBinding(input: {
   scopes: readonly string[];
   authUserId?: string;
 }): Promise<ApiActorBinding> {
-  return await createApiActorBinding(
-    createServiceApiActor(input),
-    getInternalServiceAuthSecret()
-  );
+  return await createApiActorBinding(createServiceApiActor(input), getInternalServiceAuthSecret());
 }

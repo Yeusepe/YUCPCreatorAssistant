@@ -34,7 +34,11 @@ export function getPinnedYucpRoots(): readonly YucpPinnedRoot[] {
 }
 
 export function getPrimaryPinnedYucpRoot(): YucpPinnedRoot {
-  return getPinnedYucpRoots()[0]!;
+  const [primaryRoot] = getPinnedYucpRoots();
+  if (!primaryRoot) {
+    throw new Error('No pinned YUCP roots configured');
+  }
+  return primaryRoot;
 }
 
 export function getPinnedYucpRootByKeyId(keyId: string | null | undefined): YucpPinnedRoot | null {
@@ -43,8 +47,9 @@ export function getPinnedYucpRootByKeyId(keyId: string | null | undefined): Yucp
   }
 
   return (
-    getPinnedYucpRoots().find((root) => root.keyId === keyId.trim() && root.algorithm === 'Ed25519') ??
-    null
+    getPinnedYucpRoots().find(
+      (root) => root.keyId === keyId.trim() && root.algorithm === 'Ed25519'
+    ) ?? null
   );
 }
 

@@ -17,12 +17,10 @@ const DEFAULT_BOT_SERVICE_SCOPES = [
   'verification-sessions:service',
 ] as const;
 
-let cachedDefaultBotActor:
-  | {
-      binding: ApiActorBinding;
-      expiresAt: number;
-    }
-  | null = null;
+let cachedDefaultBotActor: {
+  binding: ApiActorBinding;
+  expiresAt: number;
+} | null = null;
 
 function describeFunctionReference(functionReference: unknown): string {
   try {
@@ -75,6 +73,14 @@ async function getDefaultBotActorBinding(): Promise<ApiActorBinding | undefined>
   return binding;
 }
 
+export async function getRequiredBotActorBinding(): Promise<ApiActorBinding> {
+  const actor = await getDefaultBotActorBinding();
+  if (!actor) {
+    throw new Error('INTERNAL_SERVICE_AUTH_SECRET is required for protected bot Convex calls');
+  }
+  return actor;
+}
+
 function mergeActorArg(args: unknown, actor: ApiActorBinding): unknown {
   if (!args || typeof args !== 'object' || Array.isArray(args)) {
     return { actor };
@@ -107,7 +113,10 @@ export function createBotConvexClient(convexUrl: string): ConvexHttpClient {
     const actor = shouldAttachActor(functionReference, args)
       ? await getDefaultBotActorBinding()
       : undefined;
-    return await rawQuery(functionReference as never, actor ? (mergeActorArg(args, actor) as never) : (args as never));
+    return await rawQuery(
+      functionReference as never,
+      actor ? (mergeActorArg(args, actor) as never) : (args as never)
+    );
   }) as typeof client.query;
 
   client.mutation = (async (functionReference: unknown, args?: unknown) => {
@@ -124,7 +133,10 @@ export function createBotConvexClient(convexUrl: string): ConvexHttpClient {
     const actor = shouldAttachActor(functionReference, args)
       ? await getDefaultBotActorBinding()
       : undefined;
-    return await rawAction(functionReference as never, actor ? (mergeActorArg(args, actor) as never) : (args as never));
+    return await rawAction(
+      functionReference as never,
+      actor ? (mergeActorArg(args, actor) as never) : (args as never)
+    );
   }) as typeof client.action;
 
   return client;

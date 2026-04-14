@@ -1,5 +1,5 @@
-import { api } from '../../../../../convex/_generated/api';
 import type { ApiActorBinding } from '@yucp/shared/apiActor';
+import { api } from '../../../../../convex/_generated/api';
 import { createAuthUserActorBinding } from '../../lib/apiActor';
 import { getConvexClientFromUrl } from '../../lib/convex';
 import { logger } from '../../lib/logger';

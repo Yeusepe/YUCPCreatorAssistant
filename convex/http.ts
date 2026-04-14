@@ -60,11 +60,13 @@
  */
 
 import { PROVIDER_REGISTRY, PROVIDER_REGISTRY_BY_KEY } from '@yucp/providers/providerMetadata';
+import { getPinnedYucpJwkSet } from '@yucp/shared/yucpTrust';
 import { httpRouter } from 'convex/server';
 import { api, components, internal } from './_generated/api';
 import { httpAction } from './_generated/server';
 import { authComponent, createAuth } from './auth';
 import { buildPublicJwks } from './betterAuth/jwks';
+import { createServiceActorBinding } from './lib/apiActor';
 import {
   buildBetterAuthUserLookupWhere,
   buildBetterAuthUserProviderLookupWhere,
@@ -74,7 +76,6 @@ import { isSigningRequestTimestampFresh, verifySigningProof } from './lib/certif
 import { buildPublicAuthIssuer, resolveConfiguredPublicApiBaseUrl } from './lib/publicAuthIssuer';
 import { type PublicProductRecord } from './lib/publicProducts';
 import { constantTimeEqual } from './lib/vrchat/crypto';
-import { getPinnedYucpJwkSet } from '@yucp/shared/yucpTrust';
 import {
   base64ToBytes,
   type CertEnvelope,
@@ -1048,10 +1049,16 @@ http.route({
     const tokenResult = await verifyOAuthToken(token, siteUrl, 'cert:issue');
     if (!tokenResult.ok) return errorResponse(tokenResult.error, 401);
     const { yucpUserId } = tokenResult;
+    const actor = await createServiceActorBinding({
+      service: 'convex-http',
+      scopes: ['creator:delegate'],
+      authUserId: yucpUserId,
+    });
 
     // Look up the user's subject to get their Discord ID (secondary identity anchor)
     const subjectResult = await ctx.runQuery(api.subjects.getSubjectByAuthId, {
       apiSecret: process.env.CONVEX_API_SECRET ?? '',
+      actor,
       authUserId: yucpUserId,
     });
     const discordUserId = subjectResult?.found
@@ -1231,7 +1238,9 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     let signingRoot: Awaited<ReturnType<typeof getPinnedSigningRoot>>;
     try {
-      signingRoot = await getPinnedSigningRoot(process.env.YUCP_KEY_ID ?? process.env.YUCP_ROOT_KEY_ID ?? null);
+      signingRoot = await getPinnedSigningRoot(
+        process.env.YUCP_KEY_ID ?? process.env.YUCP_ROOT_KEY_ID ?? null
+      );
     } catch {
       return errorResponse('Service not configured', 503);
     }
@@ -1841,7 +1850,8 @@ http.route({
     }
     const rateLimitResponse = await applyHttpRateLimit(ctx, request, 'materialization-redeem', {
       limit: 60,
-      message: 'Too many protected materialization redemption requests. Please wait before retrying.',
+      message:
+        'Too many protected materialization redemption requests. Please wait before retrying.',
       identity: body.grant,
     });
     if (rateLimitResponse) return rateLimitResponse;

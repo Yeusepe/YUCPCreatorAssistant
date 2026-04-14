@@ -1,4 +1,3 @@
-import { convexTest } from 'convex-test';
 import type { ApiActorBinding } from '@yucp/shared/apiActor';
 import {
   createApiActorBinding,
@@ -6,17 +5,20 @@ import {
   isApiActorProtectedFunction,
 } from '@yucp/shared/apiActor';
 import { getFunctionName } from 'convex/server';
-import type { Id } from './_generated/dataModel';
+import { convexTest } from 'convex-test';
+import type { Doc, Id } from './_generated/dataModel';
 import schema from './schema';
 
 export type ConvexTestInstance = ReturnType<typeof convexTest>;
+type ConvexTestModuleMap = Record<string, () => Promise<unknown>>;
+type ImportMetaWithGlob = ImportMeta & {
+  glob: (pattern: string) => ConvexTestModuleMap;
+};
 
-let cachedTestActor:
-  | {
-      binding: ApiActorBinding;
-      expiresAt: number;
-    }
-  | null = null;
+let cachedTestActor: {
+  binding: ApiActorBinding;
+  expiresAt: number;
+} | null = null;
 
 function describeFunctionReference(functionReference: unknown): string {
   try {
@@ -96,9 +98,7 @@ function shouldAttachActor(functionReference: unknown, args: unknown): boolean {
 
 export function makeTestConvex(options: { injectActor?: boolean } = {}) {
   // import.meta.glob is a Vite-specific API required by convex-test.
-  // The `any` cast avoids needing vite/client types in this package.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const testInstance = convexTest(schema, (import.meta as any).glob('./**/*.ts'));
+  const testInstance = convexTest(schema, (import.meta as ImportMetaWithGlob).glob('./**/*.ts'));
   if (options.injectActor === false) {
     return testInstance;
   }
@@ -108,12 +108,19 @@ export function makeTestConvex(options: { injectActor?: boolean } = {}) {
   const rawAction = testInstance.action.bind(testInstance);
 
   testInstance.query = (async (functionReference: unknown, args?: unknown) => {
-    const actor = shouldAttachActor(functionReference, args) ? await getTestActorBinding() : undefined;
-    return await rawQuery(functionReference as never, actor ? (mergeActorArg(args, actor) as never) : (args as never));
+    const actor = shouldAttachActor(functionReference, args)
+      ? await getTestActorBinding()
+      : undefined;
+    return await rawQuery(
+      functionReference as never,
+      actor ? (mergeActorArg(args, actor) as never) : (args as never)
+    );
   }) as typeof testInstance.query;
 
   testInstance.mutation = (async (functionReference: unknown, args?: unknown) => {
-    const actor = shouldAttachActor(functionReference, args) ? await getTestActorBinding() : undefined;
+    const actor = shouldAttachActor(functionReference, args)
+      ? await getTestActorBinding()
+      : undefined;
     return await rawMutation(
       functionReference as never,
       actor ? (mergeActorArg(args, actor) as never) : (args as never)
@@ -121,8 +128,13 @@ export function makeTestConvex(options: { injectActor?: boolean } = {}) {
   }) as typeof testInstance.mutation;
 
   testInstance.action = (async (functionReference: unknown, args?: unknown) => {
-    const actor = shouldAttachActor(functionReference, args) ? await getTestActorBinding() : undefined;
-    return await rawAction(functionReference as never, actor ? (mergeActorArg(args, actor) as never) : (args as never));
+    const actor = shouldAttachActor(functionReference, args)
+      ? await getTestActorBinding()
+      : undefined;
+    return await rawAction(
+      functionReference as never,
+      actor ? (mergeActorArg(args, actor) as never) : (args as never)
+    );
   }) as typeof testInstance.action;
 
   return testInstance;
@@ -184,7 +196,7 @@ export async function seedEntitlement(
   overrides: {
     authUserId?: string;
     productId?: string;
-    sourceProvider?: string;
+    sourceProvider?: Doc<'entitlements'>['sourceProvider'];
     sourceReference?: string;
     status?: 'active' | 'revoked' | 'expired' | 'refunded' | 'disputed';
   } = {}
@@ -194,7 +206,7 @@ export async function seedEntitlement(
       authUserId: overrides.authUserId ?? `auth-test-${Date.now()}`,
       subjectId,
       productId: overrides.productId ?? `product-test-${Date.now()}`,
-      sourceProvider: (overrides.sourceProvider as any) ?? 'gumroad',
+      sourceProvider: overrides.sourceProvider ?? 'gumroad',
       sourceReference: overrides.sourceReference ?? `ref-${Date.now()}`,
       status: overrides.status ?? 'active',
       grantedAt: Date.now(),

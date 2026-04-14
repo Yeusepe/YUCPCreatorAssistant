@@ -1,5 +1,9 @@
-import type { ApiActor, ApiActorBinding } from '@yucp/shared/apiActor';
-import { verifyApiActorBinding } from '@yucp/shared/apiActor';
+import type { ApiActor, ApiActorBinding, ApiActorScope } from '@yucp/shared/apiActor';
+import {
+  createApiActorBinding,
+  createServiceApiActor,
+  verifyApiActorBinding,
+} from '@yucp/shared/apiActor';
 import { ConvexError, v } from 'convex/values';
 
 export const ApiActorBindingV = v.object({
@@ -72,4 +76,14 @@ export async function requireServiceActor(
   requiredScopes: readonly string[]
 ): Promise<ApiActor> {
   return assertServiceActor(await requireApiActor(actorBinding), requiredScopes);
+}
+
+export async function createServiceActorBinding(input: {
+  service: string;
+  scopes: readonly ApiActorScope[];
+  authUserId?: string;
+  now?: number;
+  ttlMs?: number;
+}): Promise<ApiActorBinding> {
+  return await createApiActorBinding(createServiceApiActor(input), getInternalServiceAuthSecret());
 }

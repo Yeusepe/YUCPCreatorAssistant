@@ -61,6 +61,10 @@ function getNonEmptyString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function getFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
 function normalizeScopes(scopes: readonly string[]): string[] {
   return [...new Set(scopes.map((scope) => scope.trim()).filter(Boolean))].sort();
 }
@@ -94,7 +98,8 @@ function fromBase64Url(value: string): Uint8Array | null {
 
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
   const padding = normalized.length % 4;
-  const padded = padding === 0 ? normalized : normalized.padEnd(normalized.length + (4 - padding), '=');
+  const padded =
+    padding === 0 ? normalized : normalized.padEnd(normalized.length + (4 - padding), '=');
 
   try {
     return base64ToBytes(padded);
@@ -158,13 +163,13 @@ export function parseApiActorPayload(payload: string): ApiActor | null {
 
   const version = record.version;
   const kind = record.kind;
-  const issuedAt = record.issuedAt;
-  const expiresAt = record.expiresAt;
+  const issuedAt = getFiniteNumber(record.issuedAt);
+  const expiresAt = getFiniteNumber(record.expiresAt);
 
   if (
     version !== API_ACTOR_VERSION ||
-    !Number.isFinite(issuedAt) ||
-    !Number.isFinite(expiresAt) ||
+    issuedAt === undefined ||
+    expiresAt === undefined ||
     issuedAt > expiresAt
   ) {
     return null;
@@ -173,10 +178,7 @@ export function parseApiActorPayload(payload: string): ApiActor | null {
   if (kind === 'auth_user') {
     const authUserId = getNonEmptyString(record.authUserId);
     const source = record.source;
-    if (
-      !authUserId ||
-      (source !== 'api_key' && source !== 'oauth' && source !== 'session')
-    ) {
+    if (!authUserId || (source !== 'api_key' && source !== 'oauth' && source !== 'session')) {
       return null;
     }
 
@@ -218,9 +220,7 @@ export function parseApiActorPayload(payload: string): ApiActor | null {
 
 export function serializeApiActorPayload(actor: ApiActor): string {
   const normalized = normalizeApiActor(actor);
-  return toBase64Url(
-    new TextEncoder().encode(JSON.stringify(canonicalizeValue(normalized)))
-  );
+  return toBase64Url(new TextEncoder().encode(JSON.stringify(canonicalizeValue(normalized))));
 }
 
 async function signApiActorValue(secret: string, value: string): Promise<string> {
@@ -289,7 +289,7 @@ export function createAuthUserApiActor(input: {
     kind: 'auth_user',
     authUserId: input.authUserId,
     source: input.source,
-    scopes: input.scopes ?? [],
+    scopes: Array.from(input.scopes ?? []),
     issuedAt: now,
     expiresAt: now + (input.ttlMs ?? API_ACTOR_TTL_MS),
     keyId: input.keyId,
@@ -308,7 +308,7 @@ export function createServiceApiActor(input: {
     version: API_ACTOR_VERSION,
     kind: 'service',
     service: input.service,
-    scopes: input.scopes,
+    scopes: Array.from(input.scopes),
     issuedAt: now,
     expiresAt: now + (input.ttlMs ?? API_ACTOR_TTL_MS),
     authUserId: input.authUserId,
