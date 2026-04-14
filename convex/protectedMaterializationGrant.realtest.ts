@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { setPinnedYucpRootsForTests } from '@yucp/shared/yucpTrust';
 import { internal } from './_generated/api';
 import { buildCreatorProfileWorkspaceKey } from './lib/certificateBillingConfig';
 import { unsealProtectedMaterializationGrant } from './lib/protectedMaterializationGrant';
@@ -30,11 +31,23 @@ describe('protected materialization grant issuance', () => {
   beforeEach(async () => {
     rootPrivateKey = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64');
     process.env.YUCP_ROOT_PRIVATE_KEY = rootPrivateKey;
-    process.env.YUCP_ROOT_PUBLIC_KEY = await getPublicKeyFromPrivate(rootPrivateKey);
+    const rootPublicKey = await getPublicKeyFromPrivate(rootPrivateKey);
+    process.env.YUCP_ROOT_PUBLIC_KEY = rootPublicKey;
     process.env.YUCP_ROOT_KEY_ID = 'yucp-root';
     process.env.ENCRYPTION_SECRET = 'test-encryption-secret-for-protected-materialization-grant';
     process.env.POLAR_ACCESS_TOKEN = 'test-polar-access-token';
     process.env.POLAR_WEBHOOK_SECRET = 'test-polar-webhook-secret';
+    setPinnedYucpRootsForTests([
+      {
+        keyId: 'yucp-root',
+        algorithm: 'Ed25519',
+        publicKeyBase64: rootPublicKey,
+      },
+    ]);
+  });
+
+  afterEach(() => {
+    setPinnedYucpRootsForTests(null);
   });
 
   async function seedPackageRegistration(t: ReturnType<typeof makeTestConvex>) {

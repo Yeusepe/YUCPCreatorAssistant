@@ -37,6 +37,7 @@ export interface Verification {
 
 export * from './authOrigins';
 export * from './authRedirects';
+export * from './apiActor';
 // Binding module exports
 export * from './binding';
 export * from './convexSiteUrl';
@@ -62,4 +63,5 @@ export * from './observability';
 export * from './product';
 export * from './productParsers';
 export * from './publicAuthority';
+export * from './yucpTrust';
 export * from './verificationSupport';

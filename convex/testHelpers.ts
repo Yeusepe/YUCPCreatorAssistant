@@ -1,14 +1,127 @@
 import { convexTest } from 'convex-test';
+import type { ApiActorBinding } from '@yucp/shared/apiActor';
+import {
+  createApiActorBinding,
+  createServiceApiActor,
+  isApiActorProtectedFunction,
+} from '@yucp/shared/apiActor';
+import { getFunctionName } from 'convex/server';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 export type ConvexTestInstance = ReturnType<typeof convexTest>;
 
-export function makeTestConvex() {
+let cachedTestActor:
+  | {
+      binding: ApiActorBinding;
+      expiresAt: number;
+    }
+  | null = null;
+
+function describeFunctionReference(functionReference: unknown): string {
+  try {
+    return getFunctionName(functionReference as never);
+  } catch {
+    // Fall through to ad hoc inspection for simple string mocks.
+  }
+  if (typeof functionReference === 'string') {
+    return functionReference;
+  }
+  if (!functionReference || typeof functionReference !== 'object') {
+    return 'unknown';
+  }
+
+  const candidate = functionReference as {
+    name?: unknown;
+    _name?: unknown;
+    functionName?: unknown;
+    canonicalReference?: unknown;
+  };
+
+  if (typeof candidate.name === 'string') return candidate.name;
+  if (typeof candidate._name === 'string') return candidate._name;
+  if (typeof candidate.functionName === 'string') return candidate.functionName;
+  if (typeof candidate.canonicalReference === 'string') return candidate.canonicalReference;
+  return 'unknown';
+}
+
+async function getTestActorBinding(): Promise<ApiActorBinding> {
+  const secret = process.env.INTERNAL_SERVICE_AUTH_SECRET ?? 'test-internal-service-secret';
+  const now = Date.now();
+  if (cachedTestActor && cachedTestActor.expiresAt > now + 30_000) {
+    return cachedTestActor.binding;
+  }
+
+  const actor = createServiceApiActor({
+    service: 'convex-test',
+    scopes: [
+      'creator:delegate',
+      'downloads:service',
+      'entitlements:service',
+      'manual-licenses:service',
+      'subjects:service',
+      'verification-intents:service',
+      'verification-sessions:service',
+    ],
+    now,
+  });
+  const binding = await createApiActorBinding(actor, secret);
+  cachedTestActor = {
+    binding,
+    expiresAt: actor.expiresAt,
+  };
+  return binding;
+}
+
+function mergeActorArg(args: unknown, actor: ApiActorBinding): unknown {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    return { actor };
+  }
+
+  return {
+    ...(args as Record<string, unknown>),
+    actor,
+  };
+}
+
+export function makeTestConvex(options: { injectActor?: boolean } = {}) {
   // import.meta.glob is a Vite-specific API required by convex-test.
   // The `any` cast avoids needing vite/client types in this package.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return convexTest(schema, (import.meta as any).glob('./**/*.ts'));
+  const testInstance = convexTest(schema, (import.meta as any).glob('./**/*.ts'));
+  if (options.injectActor === false) {
+    return testInstance;
+  }
+
+  const rawQuery = testInstance.query.bind(testInstance);
+  const rawMutation = testInstance.mutation.bind(testInstance);
+  const rawAction = testInstance.action.bind(testInstance);
+
+  testInstance.query = (async (functionReference: unknown, args?: unknown) => {
+    const actor = isApiActorProtectedFunction(describeFunctionReference(functionReference))
+      ? await getTestActorBinding()
+      : undefined;
+    return await rawQuery(functionReference as never, actor ? (mergeActorArg(args, actor) as never) : (args as never));
+  }) as typeof testInstance.query;
+
+  testInstance.mutation = (async (functionReference: unknown, args?: unknown) => {
+    const actor = isApiActorProtectedFunction(describeFunctionReference(functionReference))
+      ? await getTestActorBinding()
+      : undefined;
+    return await rawMutation(
+      functionReference as never,
+      actor ? (mergeActorArg(args, actor) as never) : (args as never)
+    );
+  }) as typeof testInstance.mutation;
+
+  testInstance.action = (async (functionReference: unknown, args?: unknown) => {
+    const actor = isApiActorProtectedFunction(describeFunctionReference(functionReference))
+      ? await getTestActorBinding()
+      : undefined;
+    return await rawAction(functionReference as never, actor ? (mergeActorArg(args, actor) as never) : (args as never));
+  }) as typeof testInstance.action;
+
+  return testInstance;
 }
 
 // ---------------------------------------------------------------------------

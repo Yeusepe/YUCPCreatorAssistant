@@ -17,6 +17,12 @@ import {
   base64UrlEncode as base64urlEncode,
   bytesToBase64,
 } from '@yucp/shared/crypto';
+import {
+  getPinnedYucpRootByKeyId,
+  getPinnedYucpRoots,
+  getPrimaryPinnedYucpRoot,
+  type YucpPinnedRoot,
+} from '@yucp/shared/yucpTrust';
 export { base64ToBytes, bytesToBase64 };
 
 // Wire up Web Crypto SHA-512 so sign()/verify() work in Convex's JS runtime
@@ -360,9 +366,11 @@ async function signJwt(
   return `${signingInput}.${base64urlEncode(signatureBytes)}`;
 }
 
-async function verifyJwt<T extends { iss: string; aud: string; iat: number; exp: number }>(
+async function verifyJwtWithPublicKeyResolver<
+  T extends { iss: string; aud: string; iat: number; exp: number },
+>(
   jwt: string,
-  publicKeyBase64: string,
+  resolvePublicKeyBase64: (keyId: string) => string | null | undefined,
   expectedIssuer: string,
   expectedAudience: string
 ): Promise<T | null> {
@@ -374,6 +382,11 @@ async function verifyJwt<T extends { iss: string; aud: string; iat: number; exp:
     const payloadJson = new TextDecoder().decode(base64urlDecode(parts[1]));
     const header = JSON.parse(headerJson) as { alg?: string; kid?: string };
     if (header.alg !== 'EdDSA' || !header.kid) return null;
+
+    const publicKeyBase64 = resolvePublicKeyBase64(header.kid);
+    if (!publicKeyBase64) {
+      return null;
+    }
 
     const signingInput = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
     const signatureBytes = base64urlDecode(parts[2]);
@@ -391,12 +404,38 @@ async function verifyJwt<T extends { iss: string; aud: string; iat: number; exp:
   }
 }
 
+async function verifyJwt<T extends { iss: string; aud: string; iat: number; exp: number }>(
+  jwt: string,
+  publicKeyBase64: string,
+  expectedIssuer: string,
+  expectedAudience: string
+): Promise<T | null> {
+  return await verifyJwtWithPublicKeyResolver<T>(
+    jwt,
+    () => publicKeyBase64,
+    expectedIssuer,
+    expectedAudience
+  );
+}
+
 export async function verifyLicenseJwt(
   jwt: string,
   publicKeyBase64: string,
   expectedIssuer: string
 ): Promise<LicenseClaims | null> {
   return verifyJwt<LicenseClaims>(jwt, publicKeyBase64, expectedIssuer, 'yucp-license-gate');
+}
+
+export async function verifyLicenseJwtAgainstPinnedRoots(
+  jwt: string,
+  expectedIssuer: string
+): Promise<LicenseClaims | null> {
+  return await verifyJwtWithPublicKeyResolver<LicenseClaims>(
+    jwt,
+    (keyId) => getPinnedYucpRootByKeyId(keyId)?.publicKeyBase64,
+    expectedIssuer,
+    'yucp-license-gate'
+  );
 }
 
 export async function verifyProtectedUnlockJwt(
@@ -407,6 +446,18 @@ export async function verifyProtectedUnlockJwt(
   return verifyJwt<ProtectedUnlockClaims>(
     jwt,
     publicKeyBase64,
+    expectedIssuer,
+    'yucp-protected-unlock'
+  );
+}
+
+export async function verifyProtectedUnlockJwtAgainstPinnedRoots(
+  jwt: string,
+  expectedIssuer: string
+): Promise<ProtectedUnlockClaims | null> {
+  return await verifyJwtWithPublicKeyResolver<ProtectedUnlockClaims>(
+    jwt,
+    (keyId) => getPinnedYucpRootByKeyId(keyId)?.publicKeyBase64,
     expectedIssuer,
     'yucp-protected-unlock'
   );
@@ -425,6 +476,18 @@ export async function verifyProtectedInstallIntentJwt(
   );
 }
 
+export async function verifyProtectedInstallIntentJwtAgainstPinnedRoots(
+  jwt: string,
+  expectedIssuer: string
+): Promise<ProtectedInstallIntentClaims | null> {
+  return await verifyJwtWithPublicKeyResolver<ProtectedInstallIntentClaims>(
+    jwt,
+    (keyId) => getPinnedYucpRootByKeyId(keyId)?.publicKeyBase64,
+    expectedIssuer,
+    'yucp-protected-install-intent'
+  );
+}
+
 export async function verifyCouplingRuntimeJwt(
   jwt: string,
   publicKeyBase64: string,
@@ -433,6 +496,18 @@ export async function verifyCouplingRuntimeJwt(
   return verifyJwt<CouplingRuntimeClaims>(
     jwt,
     publicKeyBase64,
+    expectedIssuer,
+    'yucp-coupling-runtime'
+  );
+}
+
+export async function verifyCouplingRuntimeJwtAgainstPinnedRoots(
+  jwt: string,
+  expectedIssuer: string
+): Promise<CouplingRuntimeClaims | null> {
+  return await verifyJwtWithPublicKeyResolver<CouplingRuntimeClaims>(
+    jwt,
+    (keyId) => getPinnedYucpRootByKeyId(keyId)?.publicKeyBase64,
     expectedIssuer,
     'yucp-coupling-runtime'
   );
@@ -449,4 +524,48 @@ export async function verifyCouplingRuntimePackageJwt(
     expectedIssuer,
     'yucp-runtime-package'
   );
+}
+
+export async function verifyCouplingRuntimePackageJwtAgainstPinnedRoots(
+  jwt: string,
+  expectedIssuer: string
+): Promise<CouplingRuntimePackageClaims | null> {
+  return await verifyJwtWithPublicKeyResolver<CouplingRuntimePackageClaims>(
+    jwt,
+    (keyId) => getPinnedYucpRootByKeyId(keyId)?.publicKeyBase64,
+    expectedIssuer,
+    'yucp-runtime-package'
+  );
+}
+
+export async function resolvePinnedYucpSigningRoot(
+  privateKeyBase64: string,
+  configuredKeyId?: string | null
+): Promise<YucpPinnedRoot> {
+  const derivedPublicKey = await getPublicKeyFromPrivate(privateKeyBase64);
+  const matchingRoots = getPinnedYucpRoots().filter(
+    (root) => root.publicKeyBase64 === derivedPublicKey && root.algorithm === 'Ed25519'
+  );
+
+  if (matchingRoots.length === 0) {
+    throw new Error('YUCP_ROOT_PRIVATE_KEY does not match any pinned YUCP trust root');
+  }
+
+  const normalizedConfiguredKeyId = configuredKeyId?.trim();
+  if (!normalizedConfiguredKeyId) {
+    return (
+      matchingRoots.find((root) => root.keyId === getPrimaryPinnedYucpRoot().keyId) ?? matchingRoots[0]
+    );
+  }
+
+  const matchingConfiguredRoot = matchingRoots.find(
+    (root) => root.keyId === normalizedConfiguredKeyId
+  );
+  if (!matchingConfiguredRoot) {
+    throw new Error(
+      `Configured YUCP root key ID '${normalizedConfiguredKeyId}' is not pinned for the active trust root`
+    );
+  }
+
+  return matchingConfiguredRoot;
 }
