@@ -106,61 +106,126 @@ describe('guild_links schema compatibility', () => {
 
   it('cancels setup and migration work when a guild is disconnected', async () => {
     const t = makeTestConvex();
+    const previousApiSecret = process.env.CONVEX_API_SECRET;
     process.env.CONVEX_API_SECRET = API_SECRET;
-    const authUserId = 'auth-disconnect-cancel-work';
-    const discordGuildId = 'guild-disconnect-cancel-work';
-    const guildLinkId = await seedGuildLink(t, { authUserId, discordGuildId });
-    await seedProviderConnection(t, authUserId);
+    try {
+      const authUserId = 'auth-disconnect-cancel-work';
+      const discordGuildId = 'guild-disconnect-cancel-work';
+      const guildLinkId = await seedGuildLink(t, { authUserId, discordGuildId });
+      await seedProviderConnection(t, authUserId);
 
-    const { setupJobId } = await t.mutation(api.setupJobs.createOrResumeSetupJobForOwner, {
-      apiSecret: API_SECRET,
-      authUserId,
-      guildLinkId,
-      mode: 'automatic_setup',
-      triggerSource: 'dashboard',
-    });
-    await t.mutation(api.setupJobs.applyRecommendedSetupForOwnerByGuild, {
-      apiSecret: API_SECRET,
-      authUserId,
-      guildId: discordGuildId,
-    });
-    const { migrationJobId } = await t.mutation(api.setupJobs.createMigrationJobForOwner, {
-      apiSecret: API_SECRET,
-      authUserId,
-      guildLinkId,
-      setupJobId,
-      mode: 'adopt_existing_roles',
-    });
+      const { setupJobId } = await t.mutation(api.setupJobs.createOrResumeSetupJobForOwner, {
+        apiSecret: API_SECRET,
+        authUserId,
+        guildLinkId,
+        mode: 'automatic_setup',
+        triggerSource: 'dashboard',
+      });
+      await t.mutation(api.setupJobs.applyRecommendedSetupForOwnerByGuild, {
+        apiSecret: API_SECRET,
+        authUserId,
+        guildId: discordGuildId,
+      });
+      const { migrationJobId } = await t.mutation(api.setupJobs.createMigrationJobForOwner, {
+        apiSecret: API_SECRET,
+        authUserId,
+        guildLinkId,
+        setupJobId,
+        mode: 'adopt_existing_roles',
+      });
 
-    const result = await t.mutation(api.guildLinks.hardDisconnectGuild, {
-      apiSecret: API_SECRET,
-      authUserId,
-      discordGuildId,
-    });
+      const result = await t.mutation(api.guildLinks.hardDisconnectGuild, {
+        apiSecret: API_SECRET,
+        authUserId,
+        discordGuildId,
+      });
 
-    expect(result).toEqual({ success: true });
+      expect(result).toEqual({ success: true });
 
-    const { guildLink, setupJob, migrationJob, remainingJobs } = await t.run(async (ctx) => {
-      const guildLink = await ctx.db
-        .query('guild_links')
-        .withIndex('by_discord_guild', (q) => q.eq('discordGuildId', discordGuildId))
-        .first();
-      const setupJob = await ctx.db.get(setupJobId);
-      const migrationJob = await ctx.db.get(migrationJobId);
-      const remainingJobs = await ctx.db
-        .query('outbox_jobs')
-        .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
-        .collect();
-      return { guildLink, setupJob, migrationJob, remainingJobs };
-    });
+      const { guildLink, setupJob, migrationJob, remainingJobs } = await t.run(async (ctx) => {
+        const guildLink = await ctx.db
+          .query('guild_links')
+          .withIndex('by_discord_guild', (q) => q.eq('discordGuildId', discordGuildId))
+          .first();
+        const setupJob = await ctx.db.get(setupJobId);
+        const migrationJob = await ctx.db.get(migrationJobId);
+        const remainingJobs = await ctx.db
+          .query('outbox_jobs')
+          .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
+          .collect();
+        return { guildLink, setupJob, migrationJob, remainingJobs };
+      });
 
-    expect(guildLink).toBeNull();
-    expect(setupJob?.status).toBe('cancelled');
-    expect(migrationJob?.status).toBe('cancelled');
-    expect(
-      remainingJobs.find((job) =>
-        ['setup_apply', 'setup_generate_plan', 'migration_analyze'].includes(job.jobType)
-      )
-    ).toBeUndefined();
+      expect(guildLink).toBeNull();
+      expect(setupJob?.status).toBe('cancelled');
+      expect(migrationJob?.status).toBe('cancelled');
+      expect(
+        remainingJobs.find((job) =>
+          ['setup_apply', 'setup_generate_plan', 'migration_analyze'].includes(job.jobType)
+        )
+      ).toBeUndefined();
+    } finally {
+      process.env.CONVEX_API_SECRET = previousApiSecret;
+    }
+  });
+
+  it('preserves failed setup and migration jobs when a guild is disconnected', async () => {
+    const t = makeTestConvex();
+    const previousApiSecret = process.env.CONVEX_API_SECRET;
+    process.env.CONVEX_API_SECRET = API_SECRET;
+    try {
+      const authUserId = 'auth-disconnect-preserve-failed';
+      const discordGuildId = 'guild-disconnect-preserve-failed';
+      const guildLinkId = await seedGuildLink(t, { authUserId, discordGuildId });
+
+      const { setupJobId } = await t.mutation(api.setupJobs.createOrResumeSetupJobForOwner, {
+        apiSecret: API_SECRET,
+        authUserId,
+        guildLinkId,
+        mode: 'automatic_setup',
+        triggerSource: 'dashboard',
+      });
+      const { migrationJobId } = await t.mutation(api.setupJobs.createMigrationJobForOwner, {
+        apiSecret: API_SECRET,
+        authUserId,
+        guildLinkId,
+        setupJobId,
+        mode: 'adopt_existing_roles',
+      });
+
+      await t.run(async (ctx) => {
+        const now = Date.now();
+        await ctx.db.patch(setupJobId, {
+          status: 'failed',
+          currentPhase: 'apply_setup',
+          blockingReason: 'Setup apply failed.',
+          updatedAt: now,
+        });
+        await ctx.db.patch(migrationJobId, {
+          status: 'failed',
+          currentPhase: 'analyze',
+          blockingReason: 'Migration analysis failed.',
+          updatedAt: now,
+        });
+      });
+
+      const result = await t.mutation(api.guildLinks.hardDisconnectGuild, {
+        apiSecret: API_SECRET,
+        authUserId,
+        discordGuildId,
+      });
+
+      const { setupJob, migrationJob } = await t.run(async (ctx) => {
+        const setupJob = await ctx.db.get(setupJobId);
+        const migrationJob = await ctx.db.get(migrationJobId);
+        return { setupJob, migrationJob };
+      });
+
+      expect(result).toEqual({ success: true });
+      expect(setupJob?.status).toBe('failed');
+      expect(migrationJob?.status).toBe('failed');
+    } finally {
+      process.env.CONVEX_API_SECRET = previousApiSecret;
+    }
   });
 });

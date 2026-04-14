@@ -10,6 +10,11 @@ async function seedGuildLink(
   args: {
     authUserId: string;
     discordGuildId?: string;
+    verifyPromptMessage?: {
+      channelId: string;
+      messageId: string;
+      updatedAt: number;
+    };
   }
 ): Promise<Id<'guild_links'>> {
   return t.run(async (ctx) => {
@@ -22,6 +27,7 @@ async function seedGuildLink(
       status: 'active',
       createdAt: now,
       updatedAt: now,
+      ...(args.verifyPromptMessage ? { verifyPromptMessage: args.verifyPromptMessage } : {}),
     });
   });
 }
@@ -173,6 +179,52 @@ describe('setup jobs orchestration', () => {
     expect(resumeEvents).toHaveLength(1);
   });
 
+  it('preserves saved setup preferences when resuming without new preferences', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-setup-resume-prefs';
+    const guildLinkId = await seedGuildLink(t, {
+      authUserId,
+      discordGuildId: 'guild-setup-resume-prefs',
+      verifyPromptMessage: {
+        channelId: 'verify-channel-123',
+        messageId: 'verify-message-123',
+        updatedAt: Date.now(),
+      },
+    });
+
+    const created = await t.mutation(api.setupJobs.createOrResumeSetupJobForOwner, {
+      apiSecret: API_SECRET,
+      authUserId,
+      guildLinkId,
+      mode: 'automatic_setup',
+      triggerSource: 'dashboard',
+      preferences: {
+        rolePlanMode: 'adopt_only',
+        verificationMessageMode: 'reuse_existing',
+      },
+    });
+    const resumed = await t.mutation(api.setupJobs.createOrResumeSetupJobForOwner, {
+      apiSecret: API_SECRET,
+      authUserId,
+      guildLinkId,
+      mode: 'automatic_setup',
+      triggerSource: 'discord_setup',
+    });
+
+    const job = await t.run(async (ctx) => ctx.db.get(created.setupJobId));
+
+    expect(resumed).toEqual({
+      setupJobId: created.setupJobId,
+      created: false,
+    });
+    expect(job?.summary).toMatchObject({
+      preferences: {
+        rolePlanMode: 'adopt_only',
+        verificationMessageMode: 'reuse_existing',
+      },
+    });
+  });
+
   it('creates a linked migration job for the same guild and setup job', async () => {
     const t = makeTestConvex();
     const authUserId = 'auth-migration-create';
@@ -237,6 +289,50 @@ describe('setup jobs orchestration', () => {
       unmatchedProductBehavior: 'review',
       cutoverStyle: 'switch_when_ready',
     });
+  });
+
+  it('queues analysis work for cross-server bridge migrations', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-cross-server-bridge';
+    const guildLinkId = await seedGuildLink(t, {
+      authUserId,
+      discordGuildId: 'guild-cross-server-bridge',
+    });
+
+    const { setupJobId } = await t.mutation(api.setupJobs.createOrResumeSetupJobForOwner, {
+      apiSecret: API_SECRET,
+      authUserId,
+      guildLinkId,
+      mode: 'automatic_setup',
+      triggerSource: 'dashboard',
+    });
+
+    const result = await t.mutation(api.setupJobs.createMigrationJobForOwner, {
+      apiSecret: API_SECRET,
+      authUserId,
+      guildLinkId,
+      setupJobId,
+      mode: 'cross_server_bridge',
+      sourceGuildId: 'source-guild-123',
+    });
+
+    const { migrationJob, outboxJob } = await t.run(async (ctx) => {
+      const migrationJob = await ctx.db.get(result.migrationJobId);
+      const outboxJob = await ctx.db
+        .query('outbox_jobs')
+        .withIndex('by_idempotency', (q) =>
+          q.eq('idempotencyKey', `migration_analyze:${result.migrationJobId}`)
+        )
+        .first();
+      return { migrationJob, outboxJob };
+    });
+
+    expect(migrationJob).toMatchObject({
+      mode: 'cross_server_bridge',
+      currentPhase: 'analyze',
+    });
+    expect(outboxJob?.jobType).toBe('migration_analyze');
+    expect(outboxJob?.status).toBe('pending');
   });
 
   it('loads and resumes a setup job through the guild-scoped entrypoints', async () => {

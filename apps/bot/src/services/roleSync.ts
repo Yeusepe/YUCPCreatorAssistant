@@ -106,7 +106,11 @@ export interface MigrationAnalyzePayload {
   migrationJobId: Id<'migration_jobs'>;
   guildLinkId: Id<'guild_links'>;
   guildId: string;
-  mode: 'adopt_existing_roles' | 'import_verified_users' | 'bridge_from_current_roles';
+  mode:
+    | 'adopt_existing_roles'
+    | 'import_verified_users'
+    | 'bridge_from_current_roles'
+    | 'cross_server_bridge';
   unmatchedProductBehavior?: 'review' | 'ignore';
   cutoverStyle?: 'switch_when_ready' | 'parallel_run';
   sourceBotKey?: string;
@@ -225,6 +229,7 @@ export interface RoleSyncResult {
   rolesAdded: string[];
   rolesRemoved: string[];
   error?: string;
+  nonRetriable?: boolean;
 }
 
 /** Rate limit info from Discord API */
@@ -524,6 +529,12 @@ export class RoleSyncService {
                 message: `${roleCount} role${roleCount !== 1 ? 's' : ''} assigned${result.discordUserId ? ` to <@${result.discordUserId}>` : ''}.`,
               });
             }
+          } else if (result.nonRetriable) {
+            this.logger.warn('Job failed with non-retriable result, skipping retries', {
+              jobId: job._id,
+              error: result.error ?? 'Unknown error',
+            });
+            await this.updateJobStatus(job._id, 'dead_letter', result.error ?? 'Unknown error');
           } else {
             await this.handleJobFailure(job, result.error ?? 'Unknown error');
           }
@@ -596,6 +607,7 @@ export class RoleSyncService {
     const rolesAdded: string[] = [];
     const rolesRemoved: string[] = [];
     const errors: string[] = [];
+    let nonRetriable = false;
 
     // Process each guild's role rules
     for (const rule of roleRules) {
@@ -615,6 +627,7 @@ export class RoleSyncService {
 
           if (result.error) {
             errors.push(`${rule.guildId}: ${result.error}`);
+            nonRetriable = nonRetriable || result.nonRetriable === true;
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
@@ -638,6 +651,7 @@ export class RoleSyncService {
       rolesAdded,
       rolesRemoved,
       error: errors.length > 0 ? errors.join('; ') : undefined,
+      nonRetriable,
     };
   }
 
@@ -672,6 +686,7 @@ export class RoleSyncService {
         rolesAdded: [],
         rolesRemoved,
         error: result.error,
+        nonRetriable: result.nonRetriable,
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -804,6 +819,22 @@ export class RoleSyncService {
       throw new Error('Setup generate plan payload missing setupJobId, guildLinkId, or guildId');
     }
 
+    const activeGuildLink = await this.convexClient.query(
+      api.guildLinks.getVerifyPromptMessageForBot,
+      {
+        apiSecret: this.apiSecret,
+        guildLinkId: payload.guildLinkId,
+      }
+    );
+    if (!activeGuildLink) {
+      this.logger.info('Skipping setup plan generation for disconnected guild link', {
+        guildId: payload.guildId,
+        setupJobId: payload.setupJobId,
+        guildLinkId: payload.guildLinkId,
+      });
+      return;
+    }
+
     const guild = await this.discordClient.guilds.fetch(payload.guildId);
     await guild.roles.fetch();
 
@@ -916,7 +947,9 @@ export class RoleSyncService {
       const unmatchedProductBehavior = payload.unmatchedProductBehavior ?? 'review';
       const cutoverStyle =
         payload.cutoverStyle ??
-        (payload.mode === 'bridge_from_current_roles' ? 'parallel_run' : 'switch_when_ready');
+        (payload.mode === 'bridge_from_current_roles' || payload.mode === 'cross_server_bridge'
+          ? 'parallel_run'
+          : 'switch_when_ready');
 
       for (const product of products) {
         const matchingRole = guildRolesSummary.find(
@@ -1117,6 +1150,9 @@ export class RoleSyncService {
         setupJobId: payload.setupJobId,
       })) as Array<{
         _id: string;
+        title: string;
+        status?: 'proposed' | 'applied' | 'dismissed' | 'superseded' | 'requires_attention';
+        detail?: string | null;
         payload?: {
           productId: string;
           productName: string;
@@ -1124,6 +1160,8 @@ export class RoleSyncService {
           action: 'create_role' | 'adopt_role' | 'skip';
           proposedRoleName: string;
           proposedRoleId?: string;
+          appliedRoleId?: string;
+          appliedRuleId?: string;
           userOverride?: {
             action: 'create_role' | 'adopt_role' | 'skip';
             targetRoleId?: string;
@@ -1138,10 +1176,22 @@ export class RoleSyncService {
           if (!ep) continue;
           const effectiveAction = ep.userOverride?.action ?? ep.action;
           if (effectiveAction === 'skip') continue;
+          const product = {
+            id: ep.productId,
+            name: ep.productName,
+            provider: ep.provider as ProviderKey,
+          };
+          if (this.matchesExistingGuildRule(existingRules, product)) {
+            await this.persistSetupRolePlanEntry(entry, payload.setupJobId, {
+              ...ep,
+              appliedRoleId: ep.appliedRoleId ?? ep.userOverride?.targetRoleId ?? ep.proposedRoleId,
+            });
+            continue;
+          }
 
           let targetRoleId: string;
           if (effectiveAction === 'adopt_role') {
-            const roleId = ep.userOverride?.targetRoleId ?? ep.proposedRoleId;
+            const roleId = ep.userOverride?.targetRoleId ?? ep.appliedRoleId ?? ep.proposedRoleId;
             if (!roleId) continue;
             const hierarchyCheck = canBotManageRole(guild, roleId);
             if (!hierarchyCheck.canManage) {
@@ -1153,23 +1203,38 @@ export class RoleSyncService {
             adoptedRoleCount++;
           } else {
             const roleName = ep.userOverride?.targetRoleName ?? ep.proposedRoleName;
-            const role = await guild.roles.create({
-              name: roleName,
-              reason: 'Automatic setup apply',
-            });
+            const persistedRole =
+              ep.appliedRoleId && guild.roles.cache.get(ep.appliedRoleId)
+                ? guild.roles.cache.get(ep.appliedRoleId)
+                : null;
+            const role =
+              persistedRole ??
+              (await guild.roles.create({
+                name: roleName,
+                reason: 'Automatic setup apply',
+              }));
             const hierarchyCheck = canBotManageRole(guild, role.id);
             if (!hierarchyCheck.canManage) {
-              await role.delete('Created during setup apply but bot cannot manage it');
+              if (!persistedRole) {
+                await role.delete('Created during setup apply but bot cannot manage it');
+              }
               throw new Error(
                 `Created a role for ${ep.productName} but the bot cannot manage it: ${hierarchyCheck.reason ?? 'role hierarchy blocks automation.'}`
               );
             }
+            if (!persistedRole) {
+              await this.persistSetupRolePlanEntry(entry, payload.setupJobId, {
+                ...ep,
+                appliedRoleId: role.id,
+              });
+            }
             targetRoleId = role.id;
-            createdRoleCount++;
+            if (!persistedRole) {
+              createdRoleCount++;
+            }
           }
 
           const descriptor = getProviderDescriptor(ep.provider);
-          const product = { id: ep.productId, name: ep.productName, provider: ep.provider };
           const catalogProduct = await this.convexClient.mutation(
             api.role_rules.addProductForProvider,
             {
@@ -1184,7 +1249,7 @@ export class RoleSyncService {
             }
           );
 
-          await this.convexClient.mutation(api.role_rules.createRoleRule, {
+          const createdRule = await this.convexClient.mutation(api.role_rules.createRoleRule, {
             apiSecret: this.apiSecret,
             authUserId: job.authUserId,
             guildId: payload.guildId,
@@ -1193,6 +1258,16 @@ export class RoleSyncService {
             catalogProductId: catalogProduct.catalogProductId,
             verifiedRoleId: targetRoleId,
           });
+          await this.persistSetupRolePlanEntry(
+            entry,
+            payload.setupJobId,
+            {
+              ...ep,
+              appliedRoleId: targetRoleId,
+              appliedRuleId: createdRule.ruleId,
+            },
+            'applied'
+          );
           existingRules.push({
             productId: catalogProduct.productId,
             displayName: product.name,
@@ -1679,7 +1754,7 @@ export class RoleSyncService {
     guildId: string,
     discordUserId: string,
     roleId: string
-  ): Promise<{ added: boolean; error?: string }> {
+  ): Promise<{ added: boolean; error?: string; nonRetriable?: boolean }> {
     const guild = this.discordClient.guilds.cache.get(guildId);
 
     if (!guild) {
@@ -1693,6 +1768,7 @@ export class RoleSyncService {
       return {
         added: false,
         error: `Role hierarchy: verified role is at or above bot's role. Move the bot's role higher in Server Settings > Roles.`,
+        nonRetriable: true,
       };
     }
 
@@ -1727,6 +1803,7 @@ export class RoleSyncService {
         return {
           added: false,
           error: `Role "${role.name}" is managed by an integration and cannot be assigned by the bot. Create a new role for verification.`,
+          nonRetriable: true,
         };
       }
 
@@ -1769,6 +1846,7 @@ export class RoleSyncService {
             added: false,
             error:
               'Bot lacks permission: Grant "Manage Roles" to the bot and ensure the bot\'s role is above the verified role in Server Settings → Roles.',
+            nonRetriable: true,
           };
         }
         // 50001 Missing Access: Server Members Intent, managed role, or bot not in guild
@@ -1777,6 +1855,7 @@ export class RoleSyncService {
             added: false,
             error:
               'Missing Access (50001): Enable Server Members Intent in Developer Portal, ensure the role is not managed by an integration, and that the bot is in the guild.',
+            nonRetriable: true,
           };
         }
 
@@ -1795,7 +1874,7 @@ export class RoleSyncService {
     guildId: string,
     discordUserId: string,
     roleId: string
-  ): Promise<{ removed: boolean; error?: string }> {
+  ): Promise<{ removed: boolean; error?: string; nonRetriable?: boolean }> {
     const guild = this.discordClient.guilds.cache.get(guildId);
 
     if (!guild) {
@@ -1809,6 +1888,7 @@ export class RoleSyncService {
       return {
         removed: false,
         error: `Role hierarchy: verified role is at or above bot's role. Move the bot's role higher in Server Settings > Roles.`,
+        nonRetriable: true,
       };
     }
 
@@ -1850,7 +1930,11 @@ export class RoleSyncService {
           return { removed: true, error: 'Role no longer exists' };
         }
         if (discordError.code === RESTJSONErrorCodes.MissingPermissions) {
-          return { removed: false, error: 'Bot lacks permission to manage roles' };
+          return {
+            removed: false,
+            error: 'Bot lacks permission to manage roles',
+            nonRetriable: true,
+          };
         }
 
         return { removed: false, error: `Discord error: ${discordError.message}` };
@@ -2066,6 +2150,32 @@ export class RoleSyncService {
     );
   }
 
+  private async persistSetupRolePlanEntry(
+    entry: {
+      title: string;
+      detail?: string | null;
+      status?: 'proposed' | 'applied' | 'dismissed' | 'superseded' | 'requires_attention';
+    },
+    setupJobId: Id<'setup_jobs'>,
+    payload: Record<string, unknown>,
+    status:
+      | 'proposed'
+      | 'applied'
+      | 'dismissed'
+      | 'superseded'
+      | 'requires_attention' = entry.status ?? 'proposed'
+  ): Promise<void> {
+    await this.convexClient.mutation(api.setupJobs.upsertSetupRecommendation, {
+      apiSecret: this.apiSecret,
+      setupJobId,
+      recommendationType: 'role_plan_entry',
+      title: entry.title,
+      status,
+      detail: entry.detail ?? undefined,
+      payload,
+    });
+  }
+
   private matchesExistingGuildRule(
     existingRules: ExistingGuildProductRule[],
     product: SetupProduct
@@ -2075,8 +2185,14 @@ export class RoleSyncService {
       if (rule.enabled === false) {
         return false;
       }
-      if (rule.provider && rule.provider === product.provider && rule.productId === product.id) {
+      if (rule.provider === product.provider && rule.productId === product.id) {
         return true;
+      }
+      if (!rule.provider && rule.productId === product.id) {
+        return true;
+      }
+      if (!rule.provider) {
+        return normalizeSetupName(rule.displayName ?? '') === normalizedProductName;
       }
       return (
         rule.provider === product.provider &&

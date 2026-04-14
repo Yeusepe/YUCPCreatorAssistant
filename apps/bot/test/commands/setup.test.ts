@@ -1,8 +1,10 @@
 import { describe, expect, it, mock } from 'bun:test';
 
 const createConnectTokenMock = mock(() => Promise.resolve('connect-token-123'));
+const createSetupSessionTokenMock = mock(() => Promise.resolve('setup-token-123'));
 let mockApiUrls: {
-  apiPublic: string;
+  apiPublic?: string;
+  apiInternal?: string;
   webPublic?: string;
 } = {
   apiPublic: 'https://api.example.com',
@@ -13,7 +15,7 @@ const trackMock = mock(() => {});
 
 mock.module('../../src/lib/internalRpc', () => ({
   createConnectToken: createConnectTokenMock,
-  createSetupSessionToken: mock(() => Promise.resolve('setup-token-123')),
+  createSetupSessionToken: createSetupSessionTokenMock,
 }));
 
 mock.module('../../src/lib/apiUrls', () => ({
@@ -25,7 +27,7 @@ mock.module('../../src/lib/posthog', () => ({
 }));
 
 import type { ChatInputCommandInteraction } from 'discord.js';
-import { runSetupStartUnconfigured } from '../../src/commands/setup';
+import { runSetupStart, runSetupStartUnconfigured } from '../../src/commands/setup';
 
 function createInteraction() {
   return {
@@ -87,5 +89,52 @@ describe('setup command', () => {
     expect(payload.components?.[0]?.components?.[0]?.data?.url).toBe(
       'https://app.example.com/dashboard/setup?guild_id=1458860898234929315#token=connect-token-123'
     );
+  });
+
+  it('starts setup when only API_INTERNAL_URL and a frontend origin are configured', async () => {
+    mockApiUrls = {
+      apiInternal: 'https://api-internal.example.com',
+      webPublic: 'https://app.example.com',
+    };
+    const interaction = createInteraction();
+
+    await runSetupStart(
+      interaction as unknown as ChatInputCommandInteraction,
+      {} as never,
+      'api-secret',
+      {
+        authUserId: 'auth-user-123',
+        guildLinkId: 'guild-link-123' as never,
+        guildId: '1458860898234929315',
+      }
+    );
+
+    expect(createSetupSessionTokenMock).toHaveBeenCalled();
+    const [firstCall] = interaction.editReply.mock.calls;
+    expect(firstCall).toBeDefined();
+
+    const [rawPayload] = firstCall as unknown as [unknown];
+    expect(JSON.stringify(rawPayload)).toContain('https://app.example.com/dashboard/setup');
+  });
+
+  it('throws a frontend-specific configuration error when no browser origin exists', async () => {
+    mockApiUrls = {
+      apiInternal: 'https://api-internal.example.com',
+      webPublic: undefined,
+    };
+    const interaction = createInteraction();
+
+    await expect(
+      runSetupStart(
+        interaction as unknown as ChatInputCommandInteraction,
+        {} as never,
+        'api-secret',
+        {
+          authUserId: 'auth-user-123',
+          guildLinkId: 'guild-link-123' as never,
+          guildId: '1458860898234929315',
+        }
+      )
+    ).rejects.toThrow('FRONTEND_URL or VERIFY_BASE_URL must be configured for the bot service');
   });
 });

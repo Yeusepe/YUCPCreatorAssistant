@@ -233,7 +233,6 @@ export function deriveSetupLandingState({
   if (
     migrationJob &&
     migrationJob.job.status !== 'completed' &&
-    migrationJob.job.status !== 'failed' &&
     migrationJob.job.status !== 'cancelled'
   ) {
     return 'migration';
@@ -1936,6 +1935,7 @@ function DashboardSetupRoute() {
     <div className="flex flex-col gap-5 pb-16">
       {landingState === 'new' ? (
         <SetupStartView
+          key={activeGuildId}
           connectedStoreCount={connectedStoreCount}
           hasExistingVerifyPrompt={hasExistingVerifyPrompt}
           onStart={handleStartOrResume}

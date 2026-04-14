@@ -214,17 +214,28 @@ function buildSetupSummary<TSummary extends Partial<SetupSummaryShape>>(
 }
 
 function getDefaultMigrationPreferences(
-  mode: 'adopt_existing_roles' | 'import_verified_users' | 'bridge_from_current_roles'
+  mode:
+    | 'adopt_existing_roles'
+    | 'import_verified_users'
+    | 'bridge_from_current_roles'
+    | 'cross_server_bridge'
 ): MigrationPreferences {
   return {
     unmatchedProductBehavior: 'review',
-    cutoverStyle: mode === 'bridge_from_current_roles' ? 'parallel_run' : 'switch_when_ready',
+    cutoverStyle:
+      mode === 'bridge_from_current_roles' || mode === 'cross_server_bridge'
+        ? 'parallel_run'
+        : 'switch_when_ready',
   };
 }
 
 function normalizeMigrationPreferences(
   preferences: Partial<MigrationPreferences> | undefined,
-  mode: 'adopt_existing_roles' | 'import_verified_users' | 'bridge_from_current_roles'
+  mode:
+    | 'adopt_existing_roles'
+    | 'import_verified_users'
+    | 'bridge_from_current_roles'
+    | 'cross_server_bridge'
 ): MigrationPreferences {
   const defaults = getDefaultMigrationPreferences(mode);
   return {
@@ -974,7 +985,11 @@ async function enqueueMigrationAnalyzeOutboxJob(
     authUserId: string;
     guildLinkId: Id<'guild_links'>;
     guildId: string;
-    mode: 'adopt_existing_roles' | 'import_verified_users' | 'bridge_from_current_roles';
+    mode:
+      | 'adopt_existing_roles'
+      | 'import_verified_users'
+      | 'bridge_from_current_roles'
+      | 'cross_server_bridge';
     preferences: MigrationPreferences;
     sourceBotKey?: string;
     sourceGuildId?: string;
@@ -1058,10 +1073,6 @@ async function createOrResumeSetupJobImpl(
   }
 ) {
   const guildLink = await getOwnedGuildLinkOrThrow(ctx, args.guildLinkId, args.authUserId);
-  const setupPreferences = normalizeSetupPreferences(
-    args.preferences,
-    Boolean(guildLink.verifyPromptMessage)
-  );
   const existing = await ctx.db
     .query('setup_jobs')
     .withIndex('by_guild_link', (q) => q.eq('guildLinkId', args.guildLinkId))
@@ -1069,6 +1080,9 @@ async function createOrResumeSetupJobImpl(
     .first();
 
   if (existing && existing.mode === args.mode && !TERMINAL_SETUP_STATUSES.has(existing.status)) {
+    const setupPreferences = args.preferences
+      ? normalizeSetupPreferences(args.preferences, Boolean(guildLink.verifyPromptMessage))
+      : getSetupPreferencesFromSummary(existing.summary, Boolean(guildLink.verifyPromptMessage));
     const now = Date.now();
     await ctx.db.patch(existing._id, {
       triggerSource: args.triggerSource,
@@ -1131,6 +1145,11 @@ async function createOrResumeSetupJobImpl(
 
     return { setupJobId: existing._id, created: false as const };
   }
+
+  const setupPreferences = normalizeSetupPreferences(
+    args.preferences,
+    Boolean(guildLink.verifyPromptMessage)
+  );
 
   const now = Date.now();
   const setupJobId = await ctx.db.insert('setup_jobs', {
@@ -1209,10 +1228,7 @@ async function createMigrationJobImpl(
   }
 
   const now = Date.now();
-  const migrationPreferences =
-    args.mode === 'cross_server_bridge'
-      ? getDefaultMigrationPreferences('bridge_from_current_roles')
-      : normalizeMigrationPreferences(args.preferences, args.mode);
+  const migrationPreferences = normalizeMigrationPreferences(args.preferences, args.mode);
   const migrationJobId = await ctx.db.insert('migration_jobs', {
     authUserId: args.authUserId,
     setupJobId: args.setupJobId,
@@ -1273,18 +1289,16 @@ async function createMigrationJobImpl(
     },
   });
 
-  if (args.mode !== 'cross_server_bridge') {
-    await enqueueMigrationAnalyzeOutboxJob(ctx, {
-      migrationJobId,
-      authUserId: args.authUserId,
-      guildLinkId: args.guildLinkId,
-      guildId: guildLink.discordGuildId,
-      mode: args.mode,
-      preferences: migrationPreferences,
-      sourceBotKey: args.sourceBotKey,
-      sourceGuildId: args.sourceGuildId,
-    });
-  }
+  await enqueueMigrationAnalyzeOutboxJob(ctx, {
+    migrationJobId,
+    authUserId: args.authUserId,
+    guildLinkId: args.guildLinkId,
+    guildId: guildLink.discordGuildId,
+    mode: args.mode,
+    preferences: migrationPreferences,
+    sourceBotKey: args.sourceBotKey,
+    sourceGuildId: args.sourceGuildId,
+  });
 
   return { migrationJobId };
 }

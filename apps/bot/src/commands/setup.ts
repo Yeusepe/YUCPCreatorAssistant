@@ -47,14 +47,9 @@ export async function runSetupStart(
 ): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const { apiPublic, webPublic } = getApiUrls();
-  if (!apiPublic) {
-    throw new Error('API_BASE_URL is not configured for the bot service');
-  }
+  const { webPublic } = getApiUrls();
   if (!webPublic) {
-    throw new Error(
-      'FRONTEND_URL, VERIFY_BASE_URL, or API_BASE_URL must be configured for the bot service'
-    );
+    throw new Error('FRONTEND_URL or VERIFY_BASE_URL must be configured for the bot service');
   }
 
   const apiBase = webPublic;

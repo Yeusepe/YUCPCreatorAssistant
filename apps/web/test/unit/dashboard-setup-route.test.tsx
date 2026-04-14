@@ -11,6 +11,13 @@ const applyRecommendedSetupMock = vi.fn();
 const createMigrationJobMock = vi.fn();
 const updateSetupPreferencesMock = vi.fn();
 const overrideRolePlanEntryMock = vi.fn();
+let mockActiveGuildId = 'guild-123';
+let mockActiveTenantId = 'tenant-123';
+let mockSelectedGuild = {
+  id: 'guild-123',
+  name: 'Test Guild',
+  tenantId: 'tenant-123',
+};
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -76,8 +83,8 @@ vi.mock('@/components/ui/YucpButton', () => ({
 
 vi.mock('@/hooks/useActiveDashboardContext', () => ({
   useActiveDashboardContext: vi.fn(() => ({
-    activeGuildId: 'guild-123',
-    activeTenantId: 'tenant-123',
+    activeGuildId: mockActiveGuildId,
+    activeTenantId: mockActiveTenantId,
     isPersonalDashboard: false,
   })),
 }));
@@ -88,11 +95,7 @@ vi.mock('@/hooks/useDashboardShell', () => ({
       providers: [],
       userAccounts: [],
     },
-    selectedGuild: {
-      id: 'guild-123',
-      name: 'Test Guild',
-      tenantId: 'tenant-123',
-    },
+    selectedGuild: mockSelectedGuild,
   })),
 }));
 
@@ -140,6 +143,13 @@ describe('dashboard setup route', () => {
     createMigrationJobMock.mockResolvedValue(undefined);
     updateSetupPreferencesMock.mockResolvedValue(undefined);
     overrideRolePlanEntryMock.mockResolvedValue(undefined);
+    mockActiveGuildId = 'guild-123';
+    mockActiveTenantId = 'tenant-123';
+    mockSelectedGuild = {
+      id: 'guild-123',
+      name: 'Test Guild',
+      tenantId: 'tenant-123',
+    };
     useMutationMock.mockImplementation((mutation) => {
       switch (mutation) {
         case 'createOrResumeSetupJobByGuild':
@@ -491,5 +501,65 @@ describe('dashboard setup route', () => {
     expect(screen.getByText('Migration choices')).toBeInTheDocument();
     expect(screen.getByText(/ignored for now/i)).toBeInTheDocument();
     expect(screen.getByText('Supporter')).toBeInTheDocument();
+  });
+
+  it('keeps failed migrations on the migration view', () => {
+    const landingState = deriveSetupLandingState({
+      setupJob: null,
+      setupSummary: null,
+      migrationJob: {
+        job: {
+          mode: 'adopt_existing_roles',
+          status: 'failed',
+          currentPhase: 'analyze',
+          blockingReason: 'Migration analysis failed.',
+          sourceBotKey: null,
+          summary: {
+            preferences: {
+              unmatchedProductBehavior: 'review',
+              cutoverStyle: 'switch_when_ready',
+            },
+          },
+        },
+        sources: [],
+        roleMappings: [],
+      },
+    });
+
+    expect(landingState).toBe('migration');
+  });
+
+  it('resets the start view when the selected guild changes', () => {
+    mockSetupRouteQueries({
+      setupJob: null,
+      setupSummary: {
+        enabledRoleRuleCount: 0,
+        verificationPromptLive: false,
+        lastCompletedSetupAt: null,
+      },
+      migrationJob: null,
+    });
+
+    const Component = DashboardSetupRoute.options.component;
+    if (!Component) {
+      throw new Error('Dashboard setup route component is not defined');
+    }
+
+    const rendered = render(<Component />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start migration' }));
+    expect(screen.getByText('How do you want to migrate?')).toBeInTheDocument();
+
+    mockActiveGuildId = 'guild-456';
+    mockActiveTenantId = 'tenant-456';
+    mockSelectedGuild = {
+      id: 'guild-456',
+      name: 'Other Guild',
+      tenantId: 'tenant-456',
+    };
+
+    rendered.rerender(<Component />);
+
+    expect(screen.getByRole('button', { name: 'Start migration' })).toBeInTheDocument();
+    expect(screen.queryByText('How do you want to migrate?')).not.toBeInTheDocument();
   });
 });

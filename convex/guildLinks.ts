@@ -396,7 +396,11 @@ export const hardDisconnectGuild = mutation({
       )
       .collect();
     for (const setupJob of setupJobs) {
-      if (setupJob.status !== 'completed' && setupJob.status !== 'cancelled') {
+      if (
+        setupJob.status !== 'completed' &&
+        setupJob.status !== 'failed' &&
+        setupJob.status !== 'cancelled'
+      ) {
         await ctx.db.patch(setupJob._id, {
           status: 'cancelled',
           cancelledAt: now,
@@ -412,7 +416,11 @@ export const hardDisconnectGuild = mutation({
         .collect()
     ).filter((migrationJob) => migrationJob.discordGuildId === guildId);
     for (const migrationJob of migrationJobs) {
-      if (migrationJob.status !== 'completed' && migrationJob.status !== 'cancelled') {
+      if (
+        migrationJob.status !== 'completed' &&
+        migrationJob.status !== 'failed' &&
+        migrationJob.status !== 'cancelled'
+      ) {
         await ctx.db.patch(migrationJob._id, {
           status: 'cancelled',
           cancelledAt: now,
