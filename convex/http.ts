@@ -937,7 +937,7 @@ http.route({
       const keys = getConfiguredYucpJwkSet();
       const trustBundle = await signYucpTrustBundleJwt(
         {
-          issuer: requestUrl.origin,
+          issuer: resolveConfiguredPublicApiBaseUrl() || requestUrl.origin,
           version: Math.max(
             1,
             Number.parseInt(process.env.YUCP_TRUST_BUNDLE_VERSION ?? '1', 10) || 1

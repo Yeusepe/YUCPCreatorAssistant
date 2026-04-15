@@ -11,4 +11,9 @@ describe('yucp trust bundle HTTP contract', () => {
     expect(httpSource).toContain('signYucpTrustBundleJwt');
     expect(httpSource).toContain('getConfiguredYucpJwkSet');
   });
+
+  it('signs the trust-bundle issuer from the configured public API base URL', () => {
+    expect(httpSource).toContain('resolveConfiguredPublicApiBaseUrl()');
+    expect(httpSource).not.toContain('issuer: requestUrl.origin');
+  });
 });
