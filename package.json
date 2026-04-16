@@ -59,8 +59,8 @@
     "dev:api:infisical": "bun run --env-file=.env.infisical dev:api",
     "dev:bot": "bun run --watch apps/bot/src/index.ts",
     "dev:bot:infisical": "bun run --env-file=.env.infisical dev:bot",
-    "dev:web": "bun run --filter @yucp/web dev",
-    "dev:web:infisical": "bun run --env-file=.env.infisical --filter @yucp/web dev",
+    "dev:web": "bun run --filter @yucp/web worker:dev",
+    "dev:web:infisical": "bun run --env-file=.env.infisical --filter @yucp/web worker:dev",
     "convex:dev": "npx convex dev",
     "convex:deploy": "npx convex deploy",
     "start:api:infisical": "cross-env INFISICAL_ENV=prod bun run --filter @yucp/api start",
@@ -108,6 +108,7 @@
     "dotenv": "^17.3.1",
     "fflate": "^0.8.2",
     "h3-v2": "npm:h3@2.0.1-rc.19",
+    "jsonc-parser": "^3.3.1",
     "tar": "^7.5.13"
   },
   "patchedDependencies": {

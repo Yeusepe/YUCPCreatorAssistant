@@ -1,4 +1,4 @@
-import { redactForLogging } from '@yucp/shared/logging/redaction';
+import { redactForLogging } from '@yucp/shared';
 
 type ConvexLogLevel = 'info' | 'warn' | 'error';
 

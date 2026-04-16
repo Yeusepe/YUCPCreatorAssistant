@@ -89,6 +89,7 @@ Supports **account linking** (with webhook for real-time purchases) or **API key
 3. Run API: `bun run dev --cwd apps/api`.
 4. Run bot: `node ./apps/bot/dist/index.js` (after building).
 5. Invite the bot via the URL logged on startup or the Discord Developer Portal.
+6. For local Worker-based frontend development, run `bun run --filter @yucp/web worker:env:dev` once, then `bun run --filter @yucp/web worker:dev`. If `apps/web/.dev.vars` is absent, `worker:dev` falls back to the repo root `.env.local` and writes `apps/web/.dev.vars` for the local Worker runtime.
 
 ## Project layout
 
@@ -148,7 +149,9 @@ Full options and catalog: `apps/bot/src/commands/index.ts`.
 ## Development and testing
 
 - Lint: `bun run lint`. Typecheck: `bun run typecheck`. Tests: `bun run test` (or `bun run test:ci`).
-- Full dev stack (Convex + API + bot + HyperDX + optional tunnel): `bun run dev` or `bun run dev:infisical`.
+- Full dev stack (Convex + API + bot + HyperDX + optional tunnel): `bun run dev` or `bun run dev:infisical`. The web leg now routes through `worker:dev`, so `dev:infisical` can seed `apps/web/.dev.vars` from the loaded Infisical env instead of requiring a separate manual export first.
+- Local Cloudflare Worker frontend loop: `bun run --filter @yucp/web worker:env:dev` to write `apps/web/.dev.vars`, then `bun run --filter @yucp/web worker:dev`. When `.dev.vars` is missing, `worker:dev` seeds `apps/web/.dev.vars` from the repo root `.env.local` so workerd still receives local bindings. Use `bun run --filter @yucp/web worker:preview` for a Wrangler-local deploy-shape check.
+- Cloudflare deploy flow for `apps/web`: `bun run --filter @yucp/web worker:deploy` exports the frontend env set from Infisical, syncs Worker secrets with `wrangler secret bulk`, injects non-secret Worker `vars` through a temporary Wrangler config, and deploys. Add `-- --prod` to target the Infisical `prod` environment, and `-- --worker-env=<name>` if you use a named Wrangler environment. If this repo is not linked with `.infisical.json`, pass `-- --projectId=<infisical-project-id>` or export `INFISICAL_PROJECT_ID`, and authenticate the CLI or provide `INFISICAL_TOKEN`.
 - Local HyperDX UI: `http://localhost:8080`. OTLP endpoints: `http://localhost:4318` (HTTP) and `localhost:4317` (gRPC).
 - `bun run dev:infisical` now prefers the local ClickStack endpoints that it starts, even if Infisical already contains hosted HyperDX URLs. To actually ingest browser/API/bot telemetry, create a HyperDX ingest key in `http://localhost:8080` under Team Settings -> API Keys and store it as `HYPERDX_API_KEY` in Infisical. The API and bot derive `OTEL_EXPORTER_OTLP_HEADERS=Authorization=<key>` from that value automatically, matching ClickStack's OTEL collector auth model. Set `HYPERDX_DEV_USE_REMOTE=true` only when you intentionally want the dev supervisor to keep using the hosted HyperDX endpoints instead of the local ClickStack collector.
 - On Windows, the local ClickStack runner uses Docker **named volumes** by default. This avoids ClickHouse `Permission denied` rename failures that can happen on NTFS or OneDrive-backed bind mounts. Set `HYPERDX_DEV_VOLUME_MODE=bind` only if you explicitly want bind mounts instead.

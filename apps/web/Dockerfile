@@ -21,10 +21,8 @@ RUN bun run build
 
 ENV NODE_ENV=production
 ENV LOG_LEVEL=debug
-ENV INFISICAL_ENV=prod
-
 # Zeabur injects PORT at runtime, usually 8080.
-# serve.ts reads process.env.PORT when starting the built SSR server.
+# vite preview reads process.env.PORT through apps/web/vite.config.ts.
 EXPOSE 8080
 
-CMD ["/bin/sh", "-lc", "echo \"[web] bun=$(bun --version) node_env=${NODE_ENV} infisical_env=${INFISICAL_ENV:-unset} port=${PORT:-unset} convex_url=${CONVEX_URL:+set}\" && bun run start"]
+CMD ["/bin/sh", "-lc", "echo \"[web] bun=$(bun --version) node_env=${NODE_ENV} port=${PORT:-unset} convex_url=${CONVEX_URL:+set}\" && bun run start"]

@@ -1,8 +1,10 @@
 import { describe, expect, it, mock } from 'bun:test';
 
 mock.module(
-  '@yucp/shared/logging/redaction',
-  async () => await import('../packages/shared/src/logging/redaction.ts')
+  '@yucp/shared',
+  async () => ({
+    redactForLogging: (await import('../packages/shared/src/logging/redaction.ts')).redactForLogging,
+  })
 );
 
 const { sanitizeWebhookSubscriptionForPublicRead } = await import('./webhookSubscriptions');

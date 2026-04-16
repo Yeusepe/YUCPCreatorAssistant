@@ -3,6 +3,10 @@
 .env.local
 .env.infisical
 .env.test
+/apps/web/.dev.vars
+/apps/web/.dev.vars.local
+/apps/web/.cloudflare.deploy.vars
+/apps/web/.wrangler
 node_modules
 *.md
 !README.md

@@ -4,6 +4,7 @@ import { getInternalRpcSharedSecret } from '@yucp/shared';
 import { getToken } from '../auth-server';
 import { filterForwardedAuthCookieHeader } from './forwardedAuthCookies';
 import { getActiveWebServerTraceId, withWebServerSpan } from './observability';
+import { getWebApiBaseUrl, getWebRuntimeEnv } from './runtimeEnv';
 
 /**
  * Server-side HTTP client for calling the Bun API.
@@ -17,11 +18,11 @@ import { getActiveWebServerTraceId, withWebServerSpan } from './observability';
  */
 
 function getApiBaseUrl(): string {
-  return process.env.API_BASE_URL || 'http://localhost:3001';
+  return getWebApiBaseUrl(getWebRuntimeEnv());
 }
 
 function getInternalSecret(): string {
-  return getInternalRpcSharedSecret(process.env);
+  return getInternalRpcSharedSecret(getWebRuntimeEnv());
 }
 
 interface ServerFetchOptions {

@@ -7,8 +7,10 @@ import { resolveConvexSiteUrl } from '@yucp/shared';
 import { ConvexError } from 'convex/values';
 import { logWebError } from '@/lib/webDiagnostics';
 import { filterForwardedSessionCookieHeader } from './server/forwardedAuthCookies';
+import { getWebEnv, getWebRuntimeEnv } from './server/runtimeEnv';
 
-const convexSiteUrl = resolveConvexSiteUrl(process.env) ?? '';
+const webRuntimeEnv = getWebRuntimeEnv();
+const convexSiteUrl = resolveConvexSiteUrl(webRuntimeEnv) ?? '';
 const AUTH_COOKIE_PREFIX = 'yucp';
 
 function isConvexAuthError(error: unknown): boolean {
@@ -39,11 +41,12 @@ const AUTH_TOKEN_OPTIONS = {
  * - `getToken`: Gets JWT from session cookies (for SSR auth in beforeLoad)
  * - `fetchAuthQuery/Mutation/Action`: Call Convex functions with auth from server fns
  *
- * Env vars CONVEX_URL and CONVEX_SITE_URL come from Infisical bootstrap.
+ * Env vars CONVEX_URL and CONVEX_SITE_URL come from Worker bindings or local
+ * Worker env files during development.
  * Ref: https://labs.convex.dev/better-auth/framework-guides/tanstack-start
  */
 const authRuntime = convexBetterAuthReactStart({
-  convexUrl: process.env.CONVEX_URL ?? '',
+  convexUrl: getWebEnv('CONVEX_URL', webRuntimeEnv) ?? '',
   convexSiteUrl,
   ...AUTH_TOKEN_OPTIONS,
 });

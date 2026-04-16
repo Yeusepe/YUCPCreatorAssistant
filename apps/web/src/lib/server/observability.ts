@@ -1,7 +1,8 @@
 import { context, propagation, ROOT_CONTEXT, SpanKind, trace } from '@opentelemetry/api';
 import { getRequest, getRequestHeaders } from '@tanstack/react-start/server';
 import { withObservedSpan } from '@yucp/shared';
-import { initBunServerObservability } from '@yucp/shared/serverObservability';
+import { initServerObservability } from '@yucp/shared/serverObservability';
+import { getWebRuntimeEnv } from './runtimeEnv';
 
 const tracer = trace.getTracer('yucp-web-server');
 
@@ -22,7 +23,7 @@ export function buildIncomingTraceCarrier(headers: Headers): Record<string, stri
 }
 
 function initWebServerObservability(env: NodeJS.ProcessEnv = process.env) {
-  const resolved = initBunServerObservability({
+  const resolved = initServerObservability({
     env,
     serviceName: 'yucp-web-server',
     resourceAttributes: {
@@ -52,7 +53,7 @@ export async function withWebServerSpan<T>(
   run: () => Promise<T>,
   kind: SpanKind = SpanKind.INTERNAL
 ): Promise<T> {
-  initWebServerObservability(process.env);
+  initWebServerObservability(getWebRuntimeEnv());
 
   if (trace.getActiveSpan()) {
     return withObservedSpan(
@@ -87,7 +88,7 @@ export async function withWebServerRequestSpan<T>(
   attributes: Record<string, ObservableValue>,
   run: () => Promise<T>
 ): Promise<T> {
-  initWebServerObservability(process.env);
+  initWebServerObservability(getWebRuntimeEnv());
   const parentContext = propagation.extract(ROOT_CONTEXT, getIncomingRequestCarrier());
   return context.with(parentContext, () =>
     withObservedSpan(
