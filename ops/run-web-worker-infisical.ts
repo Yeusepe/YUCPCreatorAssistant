@@ -103,13 +103,9 @@ export function buildInfisicalLoginArgs(config: InfisicalRunConfig): string[] {
 }
 
 export function buildInfisicalRunArgs(
-  config: Pick<InfisicalRunConfig, 'projectId' | 'environment' | 'path' | 'token'>,
+  config: Pick<InfisicalRunConfig, 'projectId' | 'environment' | 'path'>,
   command: readonly string[] = DEFAULT_COMMAND
 ): string[] {
-  if (!config.token) {
-    throw new Error('INFISICAL_TOKEN is required to build the watched Infisical run command.');
-  }
-
   return [
     'infisical',
     'run',
@@ -117,7 +113,6 @@ export function buildInfisicalRunArgs(
     `--projectId=${config.projectId}`,
     `--env=${config.environment}`,
     `--path=${config.path}`,
-    `--token=${config.token}`,
     '--',
     ...command,
   ];
@@ -173,7 +168,13 @@ async function main(): Promise<void> {
   const config = resolveInfisicalRunConfig();
   const token = await resolveInfisicalToken(config);
   const child = Bun.spawn({
-    cmd: withResolvedInfisicalExecutable(buildInfisicalRunArgs({ ...config, token })),
+    cmd: withResolvedInfisicalExecutable(
+      buildInfisicalRunArgs({
+        projectId: config.projectId,
+        environment: config.environment,
+        path: config.path,
+      })
+    ),
     cwd: ROOT_DIR,
     env: {
       ...process.env,

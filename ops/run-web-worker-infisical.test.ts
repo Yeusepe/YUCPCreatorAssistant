@@ -53,7 +53,6 @@ describe('run-web-worker-infisical', () => {
           projectId: 'project-123',
           environment: 'dev',
           path: '/frontend',
-          token: 'token-123',
         },
         ['bun', 'run', '--filter', '@yucp/web', 'worker:dev']
       )
@@ -64,7 +63,6 @@ describe('run-web-worker-infisical', () => {
       '--projectId=project-123',
       '--env=dev',
       '--path=/frontend',
-      '--token=token-123',
       '--',
       'bun',
       'run',
