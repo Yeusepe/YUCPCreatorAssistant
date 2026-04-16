@@ -4,7 +4,6 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-
 import { parse as parseDotenv } from 'dotenv';
 
 const execFileAsync = promisify(execFile);

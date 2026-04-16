@@ -60,7 +60,7 @@
     "dev:bot": "bun run --watch apps/bot/src/index.ts",
     "dev:bot:infisical": "bun run --env-file=.env.infisical dev:bot",
     "dev:web": "bun run --filter @yucp/web worker:dev",
-    "dev:web:infisical": "bun run --env-file=.env.infisical --filter @yucp/web worker:dev",
+    "dev:web:infisical": "bun run --env-file=.env.infisical ops/run-web-worker-infisical.ts",
     "convex:dev": "npx convex dev",
     "convex:deploy": "npx convex deploy",
     "start:api:infisical": "cross-env INFISICAL_ENV=prod bun run --filter @yucp/api start",

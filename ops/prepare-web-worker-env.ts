@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { parse as parseDotenv } from 'dotenv';
 import {
-  REPO_ROOT_ENV_LOCAL_PATH,
-  WEB_LOCAL_ENV_PATH,
   getWebLocalEnvValues,
+  REPO_ROOT_ENV_LOCAL_PATH,
   resolveWebEnvValues,
+  WEB_LOCAL_ENV_PATH,
   writeDotenvFile,
 } from './cloudflare-web-config';
 
@@ -16,17 +16,33 @@ function normalizeSource(values: Record<string, string | undefined>): Record<str
   );
 }
 
-function main(): void {
-  if (existsSync(WEB_LOCAL_ENV_PATH)) {
-    return;
-  }
+const PROCESS_ENV_REFRESH_KEYS = [
+  'API_BASE_URL',
+  'CONVEX_SITE_URL',
+  'CONVEX_URL',
+  'FRONTEND_URL',
+  'INTERNAL_RPC_SHARED_SECRET',
+  'SITE_URL',
+] as const;
 
-  const envSource = getWebLocalEnvValues(resolveWebEnvValues(normalizeSource(process.env), { prod: false }));
-  if (Object.keys(envSource).length > 0) {
+export function hasProcessWorkerBindings(source: Record<string, string | undefined>): boolean {
+  return PROCESS_ENV_REFRESH_KEYS.some((key) => Boolean(source[key]?.trim()));
+}
+
+function main(): void {
+  const normalizedProcessEnv = normalizeSource(process.env);
+  const envSource = getWebLocalEnvValues(
+    resolveWebEnvValues(normalizedProcessEnv, { prod: false })
+  );
+  if (Object.keys(envSource).length > 0 && hasProcessWorkerBindings(normalizedProcessEnv)) {
     writeDotenvFile(WEB_LOCAL_ENV_PATH, envSource);
     console.log(
       `prepare-web-worker-env: wrote ${Object.keys(envSource).length} vars to ${WEB_LOCAL_ENV_PATH} from process.env`
     );
+    return;
+  }
+
+  if (existsSync(WEB_LOCAL_ENV_PATH)) {
     return;
   }
 

@@ -19,30 +19,51 @@ describe('production server contract', () => {
   });
 
   it('routes root web development through the Worker bootstrap path', () => {
-    const rootPackageJson = JSON.parse(readFileSync(join(REPO_ROOT_DIR, 'package.json'), 'utf8')) as {
+    const rootPackageJson = JSON.parse(
+      readFileSync(join(REPO_ROOT_DIR, 'package.json'), 'utf8')
+    ) as {
       scripts?: Record<string, string>;
     };
     const prepareScriptSource = readFileSync(
       join(REPO_ROOT_DIR, 'ops', 'prepare-web-worker-env.ts'),
       'utf8'
     );
+    const infisicalWatchSource = readFileSync(
+      join(REPO_ROOT_DIR, 'ops', 'run-web-worker-infisical.ts'),
+      'utf8'
+    );
 
     expect(rootPackageJson.scripts?.['dev:web']).toContain('worker:dev');
-    expect(rootPackageJson.scripts?.['dev:web:infisical']).toContain('worker:dev');
+    expect(rootPackageJson.scripts?.['dev:web:infisical']).toContain('run-web-worker-infisical.ts');
     expect(prepareScriptSource).toContain('process.env');
+    expect(prepareScriptSource).toContain('hasProcessWorkerBindings');
+    expect(prepareScriptSource).toContain('PROCESS_ENV_REFRESH_KEYS');
+    expect(prepareScriptSource.indexOf('process.env')).toBeLessThan(
+      prepareScriptSource.indexOf('existsSync(WEB_LOCAL_ENV_PATH)')
+    );
     expect(prepareScriptSource).toContain('REPO_ROOT_ENV_LOCAL_PATH');
+    expect(infisicalWatchSource).toContain("'infisical'");
+    expect(infisicalWatchSource).toContain("'run'");
+    expect(infisicalWatchSource).toContain('--watch');
   });
 
   it('uses wrangler and local worker env files for runtime configuration', () => {
     const viteConfigSource = readFileSync(join(APP_DIR, 'vite.config.ts'), 'utf8');
     const wranglerConfigSource = readFileSync(join(APP_DIR, 'wrangler.jsonc'), 'utf8');
+    const runtimeEnvSource = readFileSync(
+      join(APP_DIR, 'src', 'lib', 'server', 'runtimeEnv.ts'),
+      'utf8'
+    );
 
     expect(viteConfigSource).toContain('@cloudflare/vite-plugin');
     expect(viteConfigSource).toContain('.dev.vars');
     expect(viteConfigSource).toContain('.env.local');
     expect(viteConfigSource).toContain('import.meta.env.CONVEX_SITE_URL');
     expect(viteConfigSource).not.toContain('fetchInfisicalSecrets');
+    expect(runtimeEnvSource).toContain('Worker runtime started');
+    expect(runtimeEnvSource).toContain('import.meta.hot.dispose');
     expect(wranglerConfigSource).toContain('@tanstack/react-start/server-entry');
     expect(wranglerConfigSource).toContain('nodejs_compat');
+    expect(wranglerConfigSource).toContain('nodejs_compat_populate_process_env');
   });
 });

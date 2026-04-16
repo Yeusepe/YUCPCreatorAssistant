@@ -3,6 +3,21 @@ export type WebRuntimeEnv = NodeJS.ProcessEnv & {
   isProduction?: boolean;
 };
 
+const isCloudflareWorkerRuntime = 'WebSocketPair' in globalThis && !('Bun' in globalThis);
+const workerRuntimeInstanceId = isCloudflareWorkerRuntime
+  ? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  : null;
+
+if (workerRuntimeInstanceId) {
+  console.info(`[yucp/web] Worker runtime started (${workerRuntimeInstanceId})`);
+}
+
+if (import.meta.hot && workerRuntimeInstanceId) {
+  import.meta.hot.dispose(() => {
+    console.info(`[yucp/web] Worker runtime disposed (${workerRuntimeInstanceId})`);
+  });
+}
+
 function normalizeOptional(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;

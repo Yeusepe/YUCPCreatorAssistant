@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { parse, printParseErrorCode, type ParseError } from 'jsonc-parser';
+import { type ParseError, parse, printParseErrorCode } from 'jsonc-parser';
 
 export const WEB_APP_DIR = resolve(import.meta.dir, '..', 'apps', 'web');
 export const REPO_ROOT_DIR = resolve(import.meta.dir, '..');
@@ -50,6 +50,7 @@ export interface FetchWebEnvOptions {
   prod: boolean;
   infisicalPath?: string;
   projectId?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 function normalizeOptional(value: string | undefined): string | undefined {
@@ -105,7 +106,7 @@ function resolveDefaultBuildId(): string {
   return gitBuildId ?? 'dev';
 }
 
-function resolveInfisicalCommand(args: string[]): string[] {
+export function resolveInfisicalCommand(args: string[]): string[] {
   if (process.platform !== 'win32') {
     return ['infisical', ...args];
   }
@@ -186,13 +187,15 @@ export async function fetchWebEnvFromInfisical({
   prod,
   infisicalPath,
   projectId,
+  env,
 }: FetchWebEnvOptions): Promise<Record<string, string>> {
-  const resolvedProjectId = normalizeOptional(projectId ?? process.env.INFISICAL_PROJECT_ID);
+  const infisicalEnv = env ?? process.env;
+  const resolvedProjectId = normalizeOptional(projectId ?? infisicalEnv.INFISICAL_PROJECT_ID);
   const args = [
     'export',
     '--format=json',
     `--env=${prod ? 'prod' : 'dev'}`,
-    `--path=${infisicalPath ?? process.env.INFISICAL_WEB_SECRETS_PATH ?? '/'}`,
+    `--path=${infisicalPath ?? infisicalEnv.INFISICAL_WEB_SECRETS_PATH ?? '/'}`,
   ];
 
   if (resolvedProjectId) {
@@ -202,7 +205,7 @@ export async function fetchWebEnvFromInfisical({
   const proc = Bun.spawn({
     cmd: resolveInfisicalCommand(args),
     env: {
-      ...process.env,
+      ...infisicalEnv,
       INFISICAL_DISABLE_UPDATE_CHECK: 'true',
     },
     stdout: 'pipe',
