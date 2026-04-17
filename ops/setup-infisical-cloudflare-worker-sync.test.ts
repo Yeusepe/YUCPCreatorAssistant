@@ -30,7 +30,7 @@ describe('setup-infisical-cloudflare-worker-sync', () => {
     expect(config.connectionId).toBe('connection-id');
     expect(config.environment).toBe('prod');
     expect(config.secretPath).toBe('/');
-    expect(config.scriptId).toBe('yucp-creator-assistant-dashboard');
+    expect(config.scriptId).toBe('creator-assistant-dashboard');
     expect(config.autoSync).toBe(true);
   });
 
@@ -87,7 +87,7 @@ describe('setup-infisical-cloudflare-worker-sync', () => {
                 connectionId: 'connection-id',
                 environment: { slug: 'prod' },
                 folder: { path: '/' },
-                destinationConfig: { scriptId: 'yucp-creator-assistant-dashboard' },
+                destinationConfig: { scriptId: 'creator-assistant-dashboard' },
               },
             ],
           }),
@@ -133,7 +133,7 @@ describe('setup-infisical-cloudflare-worker-sync', () => {
         connectionId: 'connection-id',
         environment: 'prod',
         secretPath: '/',
-        scriptId: 'yucp-creator-assistant-dashboard',
+        scriptId: 'creator-assistant-dashboard',
         syncName: 'dashboard-sync',
         description: 'sync dashboard secrets',
         autoSync: true,
@@ -167,7 +167,7 @@ describe('setup-infisical-cloudflare-worker-sync', () => {
                 connectionId: 'other-connection',
                 environment: { slug: 'prod' },
                 folder: { path: '/' },
-                destinationConfig: { scriptId: 'yucp-creator-assistant-dashboard' },
+                destinationConfig: { scriptId: 'creator-assistant-dashboard' },
               },
             ],
           }),
@@ -212,7 +212,7 @@ describe('setup-infisical-cloudflare-worker-sync', () => {
         connectionId: 'connection-id',
         environment: 'prod',
         secretPath: '/',
-        scriptId: 'yucp-creator-assistant-dashboard',
+        scriptId: 'creator-assistant-dashboard',
         syncName: 'dashboard-sync',
         description: 'sync dashboard secrets',
         autoSync: true,

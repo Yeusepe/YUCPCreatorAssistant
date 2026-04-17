@@ -74,7 +74,7 @@ describe('production server contract', () => {
     expect(runtimeEnvSource).toContain('Worker runtime started');
     expect(runtimeEnvSource).toContain('import.meta.hot.dispose');
     expect(wranglerConfigSource).toContain('@tanstack/react-start/server-entry');
-    expect(wranglerConfigSource).toContain('"name": "yucp-creator-assistant-dashboard"');
+    expect(wranglerConfigSource).toContain('"name": "creator-assistant-dashboard"');
     expect(wranglerConfigSource).toContain('nodejs_compat');
     expect(wranglerConfigSource).toContain('nodejs_compat_populate_process_env');
   });
