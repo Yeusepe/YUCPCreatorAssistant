@@ -5,13 +5,14 @@
  * - INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET
  */
 
-export async function fetchInfisicalSecrets(): Promise<Record<string, string>> {
-  const projectId = process.env.INFISICAL_PROJECT_ID;
-  const clientId = process.env.INFISICAL_CLIENT_ID ?? process.env.INFISICAL_MACHINE_IDENTITY_ID;
-  const clientSecret =
-    process.env.INFISICAL_CLIENT_SECRET ?? process.env.INFISICAL_MACHINE_IDENTITY_SECRET;
-  const siteUrl = process.env.INFISICAL_URL ?? 'https://app.infisical.com';
-  const envName = process.env.INFISICAL_ENV ?? 'dev';
+export async function fetchInfisicalSecrets(
+  env: NodeJS.ProcessEnv = process.env
+): Promise<Record<string, string>> {
+  const projectId = env.INFISICAL_PROJECT_ID;
+  const clientId = env.INFISICAL_CLIENT_ID ?? env.INFISICAL_MACHINE_IDENTITY_ID;
+  const clientSecret = env.INFISICAL_CLIENT_SECRET ?? env.INFISICAL_MACHINE_IDENTITY_SECRET;
+  const siteUrl = env.INFISICAL_URL ?? 'https://app.infisical.com';
+  const envName = env.INFISICAL_ENV ?? 'dev';
 
   if (!projectId || !clientId || !clientSecret) {
     return {};

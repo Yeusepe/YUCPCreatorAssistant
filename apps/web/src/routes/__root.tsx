@@ -18,6 +18,15 @@ import {
   initializeHyperdxBrowser,
   setHyperdxGlobalAttributes,
 } from '@/lib/hyperdx';
+import {
+  buildPublicRuntimeEnvSource,
+  createPublicRuntimeConfigFromEnv,
+  getPublicRuntimeConfig,
+  RuntimeConfigProvider,
+  serializePublicRuntimeConfig,
+} from '@/lib/runtimeConfig';
+import { getDocumentRequestUrl } from '@/lib/server/runtimeConfig';
+import { getWebEnv, getWebRuntimeEnv } from '@/lib/server/runtimeEnv';
 import { useVersionPoller } from '@/lib/versionPoller';
 import { logRootRenderError } from '@/lib/webDiagnostics';
 
@@ -30,6 +39,9 @@ export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
   convexQueryClient: ConvexQueryClient;
 }>()({
+  loader: async () => ({
+    requestUrl: await getDocumentRequestUrl(),
+  }),
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
@@ -48,13 +60,18 @@ export const Route = createRootRouteWithContext<{
 });
 
 function RootComponent() {
+  const { requestUrl } = Route.useLoaderData();
+  const runtimeConfig = resolveDocumentRuntimeConfig(requestUrl);
+
   return (
-    <RootDocument>
-      <ToastProvider>
-        <AppEffects />
-        <Outlet />
-        <CookiePreferencesPrompt />
-      </ToastProvider>
+    <RootDocument runtimeConfig={runtimeConfig}>
+      <RuntimeConfigProvider value={runtimeConfig}>
+        <ToastProvider>
+          <AppEffects />
+          <Outlet />
+          <CookiePreferencesPrompt />
+        </ToastProvider>
+      </RuntimeConfigProvider>
     </RootDocument>
   );
 }
@@ -97,7 +114,13 @@ function AppEffects() {
   return null;
 }
 
-function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
+function RootDocument({
+  children,
+  runtimeConfig,
+}: Readonly<{
+  children: ReactNode;
+  runtimeConfig: ReturnType<typeof resolveDocumentRuntimeConfig>;
+}>) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -107,6 +130,12 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
           // biome-ignore lint/security/noDangerouslySetInnerHtml: intentional blocking inline script for theme hydration
           dangerouslySetInnerHTML={{
             __html: `try{var t=localStorage.getItem('yucp_theme');if(t==='dark'||(t===null&&matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}`,
+          }}
+        />
+        <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: the Worker injects request-scoped public runtime config for the browser bundle
+          dangerouslySetInnerHTML={{
+            __html: `window.__YUCP_PUBLIC_RUNTIME_CONFIG__=${serializePublicRuntimeConfig(runtimeConfig)};`,
           }}
         />
         <HeadContent />
@@ -120,13 +149,32 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   );
 }
 
+function resolveDocumentRuntimeConfig(requestUrl?: string) {
+  if (typeof document !== 'undefined') {
+    return getPublicRuntimeConfig();
+  }
+
+  return getPublicRuntimeConfigFromServerEnv(requestUrl);
+}
+
+function getPublicRuntimeConfigFromServerEnv(requestUrl?: string) {
+  const env = getWebRuntimeEnv();
+
+  return createPublicRuntimeConfigFromEnv(
+    buildPublicRuntimeEnvSource((key) => getWebEnv(key, env)),
+    requestUrl
+  );
+}
+
 function RootErrorComponent({ error }: { error: Error }) {
+  const requestUrl = Route.useLoaderData({ select: (data) => data.requestUrl });
+
   logRootRenderError(error, {
     route: typeof window !== 'undefined' ? window.location.pathname : undefined,
   });
 
   return (
-    <RootDocument>
+    <RootDocument runtimeConfig={resolveDocumentRuntimeConfig(requestUrl)}>
       <div
         style={{
           minHeight: '100vh',

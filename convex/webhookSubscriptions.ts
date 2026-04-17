@@ -7,7 +7,7 @@
  * by public queries.
  */
 
-import { redactForLogging } from '@yucp/shared/logging/redaction';
+import { redactForLogging } from '@yucp/shared';
 import { v } from 'convex/values';
 import { internalQuery, mutation, query } from './_generated/server';
 import { requireApiSecret } from './lib/apiAuth';

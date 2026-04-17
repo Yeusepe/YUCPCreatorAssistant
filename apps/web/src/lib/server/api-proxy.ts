@@ -1,13 +1,14 @@
 import { getInternalRpcSharedSecret } from '@yucp/shared';
 import { getToken } from '../auth-server';
 import { filterForwardedAuthCookieHeader } from './forwardedAuthCookies';
+import { getWebApiBaseUrl, getWebRuntimeEnv } from './runtimeEnv';
 
 function getApiBaseUrl(): string {
-  return process.env.API_BASE_URL || 'http://localhost:3001';
+  return getWebApiBaseUrl(getWebRuntimeEnv());
 }
 
 function getInternalSecret(): string {
-  return getInternalRpcSharedSecret(process.env);
+  return getInternalRpcSharedSecret(getWebRuntimeEnv());
 }
 
 function copyHeaderIfPresent(source: Headers, target: Headers, headerName: string) {

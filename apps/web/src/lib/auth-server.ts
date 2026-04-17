@@ -7,8 +7,8 @@ import { resolveConvexSiteUrl } from '@yucp/shared';
 import { ConvexError } from 'convex/values';
 import { logWebError } from '@/lib/webDiagnostics';
 import { filterForwardedSessionCookieHeader } from './server/forwardedAuthCookies';
+import { getWebEnv, getWebRuntimeEnv } from './server/runtimeEnv';
 
-const convexSiteUrl = resolveConvexSiteUrl(process.env) ?? '';
 const AUTH_COOKIE_PREFIX = 'yucp';
 
 function isConvexAuthError(error: unknown): boolean {
@@ -39,16 +39,39 @@ const AUTH_TOKEN_OPTIONS = {
  * - `getToken`: Gets JWT from session cookies (for SSR auth in beforeLoad)
  * - `fetchAuthQuery/Mutation/Action`: Call Convex functions with auth from server fns
  *
- * Env vars CONVEX_URL and CONVEX_SITE_URL come from Infisical bootstrap.
+ * Env vars CONVEX_URL and CONVEX_SITE_URL come from Worker bindings or local
+ * Worker env files during development.
  * Ref: https://labs.convex.dev/better-auth/framework-guides/tanstack-start
  */
-const authRuntime = convexBetterAuthReactStart({
-  convexUrl: process.env.CONVEX_URL ?? '',
-  convexSiteUrl,
-  ...AUTH_TOKEN_OPTIONS,
-});
+type AuthRuntime = ReturnType<typeof convexBetterAuthReactStart>;
 
-export const { handler, fetchAuthQuery, fetchAuthMutation, fetchAuthAction } = authRuntime;
+let cachedAuthRuntime: AuthRuntime | null = null;
+let cachedAuthRuntimeKey: string | null = null;
+
+function resolveAuthRuntimeConfig(env = getWebRuntimeEnv()) {
+  const convexUrl = getWebEnv('CONVEX_URL', env) ?? '';
+  const convexSiteUrl = resolveConvexSiteUrl(env) ?? '';
+
+  return {
+    convexUrl,
+    convexSiteUrl,
+    key: `${convexUrl}|${convexSiteUrl}`,
+  };
+}
+
+function getAuthRuntime(): AuthRuntime {
+  const config = resolveAuthRuntimeConfig();
+  if (!cachedAuthRuntime || cachedAuthRuntimeKey !== config.key) {
+    cachedAuthRuntime = convexBetterAuthReactStart({
+      convexUrl: config.convexUrl,
+      convexSiteUrl: config.convexSiteUrl,
+      ...AUTH_TOKEN_OPTIONS,
+    });
+    cachedAuthRuntimeKey = config.key;
+  }
+
+  return cachedAuthRuntime;
+}
 
 interface BetterAuthSessionUser {
   id?: string;
@@ -101,7 +124,7 @@ export function convertPostRedirectToJson(method: string, response: Response): R
  * return a JSON body the JS client can act on.
  */
 export async function handleAuthRequest(request: Request): Promise<Response> {
-  const res = await handler(request);
+  const res = await getAuthRuntime().handler(request);
   return convertPostRedirectToJson(request.method, res);
 }
 
@@ -187,6 +210,7 @@ async function getCurrentRequestHeaders(): Promise<Headers> {
 
 export async function collectAuthRuntimeDiagnostics(): Promise<Record<string, unknown>> {
   const headers = await getCurrentRequestHeaders();
+  const { convexSiteUrl } = resolveAuthRuntimeConfig();
 
   return {
     convexSiteUrl: convexSiteUrl || undefined,
@@ -199,6 +223,7 @@ export async function collectAuthRuntimeDiagnostics(): Promise<Record<string, un
 export async function getToken(): Promise<string | undefined> {
   try {
     const headers = await getCurrentRequestHeaders();
+    const { convexSiteUrl } = resolveAuthRuntimeConfig();
     const token = await fetchConvexAuthToken(
       convexSiteUrl,
       buildAuthRequestHeaders(headers),
@@ -236,6 +261,7 @@ export async function getSession(): Promise<AuthSessionState> {
   try {
     const requestHeaders = await getCurrentRequestHeaders();
     const authHeaders = buildAuthRequestHeaders(requestHeaders);
+    const { convexSiteUrl } = resolveAuthRuntimeConfig();
 
     if (!authHeaders.has('cookie')) {
       return toUnauthenticatedSessionState();

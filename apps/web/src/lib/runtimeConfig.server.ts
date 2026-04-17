@@ -1,5 +1,15 @@
 import { getRequestUrl } from '@tanstack/react-start/server';
-import { createPublicRuntimeConfig, type PublicRuntimeConfig } from '@/lib/runtimeConfig';
+import {
+  buildPublicRuntimeEnvSource,
+  createPublicRuntimeConfigFromEnv,
+  type PublicRuntimeConfig,
+  type PublicRuntimeEnvSource,
+} from '@/lib/runtimeConfig';
+import { getWebEnv, getWebRuntimeEnv } from '@/lib/server/runtimeEnv';
+
+export function getPublicRuntimeEnvSource(env = getWebRuntimeEnv()): PublicRuntimeEnvSource {
+  return buildPublicRuntimeEnvSource((key) => getWebEnv(key, env));
+}
 
 export function getPublicRuntimeConfigForRequest(): PublicRuntimeConfig {
   const requestUrl = getRequestUrl({
@@ -7,9 +17,5 @@ export function getPublicRuntimeConfigForRequest(): PublicRuntimeConfig {
     xForwardedProto: true,
   }).toString();
 
-  return createPublicRuntimeConfig({
-    requestUrl,
-    frontendUrl: process.env.FRONTEND_URL,
-    siteUrl: process.env.SITE_URL,
-  });
+  return createPublicRuntimeConfigFromEnv(getPublicRuntimeEnvSource(), requestUrl);
 }

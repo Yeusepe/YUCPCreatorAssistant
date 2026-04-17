@@ -7,6 +7,7 @@ import {
   VerificationClient,
 } from '@yucp/private-rpc';
 import { getInternalRpcSharedSecret } from '@yucp/shared';
+import { getWebApiBaseUrl, getWebRuntimeEnv, isWebProductionRuntime } from './runtimeEnv';
 
 /**
  * Bebop RPC client for server-to-server calls from TanStack Start
@@ -34,19 +35,19 @@ export interface RpcClients {
 let clientsPromise: Promise<RpcClients> | null = null;
 
 function getRpcBaseUrl(): string {
-  const base = process.env.API_BASE_URL ?? 'http://localhost:3001';
-  return base.replace(/\/$/, '');
+  return getWebApiBaseUrl(getWebRuntimeEnv()).replace(/\/$/, '');
 }
 
 async function initClients(): Promise<RpcClients> {
-  const sharedSecret = getInternalRpcSharedSecret(process.env);
+  const env = getWebRuntimeEnv();
+  const sharedSecret = getInternalRpcSharedSecret(env);
 
   const credential = BearerCredential.create(new NoStorageStrategy(), 'web-rpc');
   await credential.storeCredential({ token: sharedSecret });
 
   const rpcBaseUrl = getRpcBaseUrl();
   const isSecure = rpcBaseUrl.startsWith('https://');
-  const isProduction = process.env.NODE_ENV === 'production';
+  const isProduction = isWebProductionRuntime(env);
 
   const channel = TempoChannel.forAddress(`${rpcBaseUrl}${INTERNAL_RPC_PATH}`, {
     credential,

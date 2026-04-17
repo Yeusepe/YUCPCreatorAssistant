@@ -1,35 +1,46 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { cloudflare } from '@cloudflare/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import viteReact from '@vitejs/plugin-react';
 import { buildAllowedBrowserOrigins } from '@yucp/shared/authOrigins';
+import { parse as parseDotenv } from 'dotenv';
 import { defineConfig } from 'vite';
 import tsConfigPaths from 'vite-tsconfig-paths';
 
-/**
- * Bootstrap Infisical secrets into process.env before Vite reads config values.
- * Mirrors the pattern used by apps/api and apps/bot.
- * At build time (Docker) the Infisical credentials are absent, so this is a no-op.
- * In local dev or preview flows, secrets can still be injected before Vite starts.
- */
-async function bootstrapInfisicalSecrets(): Promise<void> {
-  try {
-    const { fetchInfisicalSecrets } = await import('@yucp/shared/infisical/fetchSecrets');
-    const secrets = await fetchInfisicalSecrets();
-    let loaded = 0;
-    for (const [key, value] of Object.entries(secrets)) {
-      if (value !== undefined && process.env[key] === undefined) {
+const APP_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT_DIR = join(APP_DIR, '..', '..');
+const LOCAL_WORKER_ENV_FILES = [join(APP_DIR, '.dev.vars'), join(REPO_ROOT_DIR, '.env.local')];
+
+function loadLocalWorkerEnvFiles(): void {
+  let loaded = 0;
+  const loadedFiles: string[] = [];
+
+  for (const filePath of LOCAL_WORKER_ENV_FILES) {
+    if (!existsSync(filePath)) {
+      continue;
+    }
+
+    const parsed = parseDotenv(readFileSync(filePath, 'utf8'));
+    let fileLoaded = false;
+    for (const [key, value] of Object.entries(parsed)) {
+      if (process.env[key] === undefined) {
         process.env[key] = value;
         loaded++;
+        fileLoaded = true;
       }
     }
-    if (loaded > 0) {
-      // eslint-disable-next-line no-console
-      console.log(
-        `[web] Loaded ${loaded} secrets from Infisical (env=${process.env.INFISICAL_ENV ?? 'dev'})`
-      );
+
+    if (fileLoaded) {
+      loadedFiles.push(filePath);
     }
-  } catch {
-    // Infisical not available (build time or local dev without creds) - continue with process.env
+  }
+
+  if (loaded > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`[web] Loaded ${loaded} local Worker env values from ${loadedFiles.join(', ')}`);
   }
 }
 
@@ -45,25 +56,11 @@ function buildViteAllowedHosts(): string[] {
 }
 
 export default defineConfig(async () => {
-  await bootstrapInfisicalSecrets();
+  loadLocalWorkerEnvFiles();
 
   const allowedHosts = buildViteAllowedHosts();
 
   return {
-    // Expose CONVEX_URL to client code via import.meta.env.CONVEX_URL.
-    // This is a public URL (not a secret) so it's safe to embed in the client bundle.
-    // The value comes from Infisical bootstrap (process.env.CONVEX_URL).
-    define: {
-      'import.meta.env.CONVEX_URL': JSON.stringify(process.env.CONVEX_URL),
-      'import.meta.env.HYPERDX_API_KEY': JSON.stringify(process.env.HYPERDX_API_KEY),
-      'import.meta.env.HYPERDX_OTLP_HTTP_URL': JSON.stringify(
-        process.env.HYPERDX_OTLP_HTTP_URL ?? process.env.OTEL_EXPORTER_OTLP_ENDPOINT
-      ),
-      'import.meta.env.HYPERDX_APP_URL': JSON.stringify(process.env.HYPERDX_APP_URL),
-      // Injected at build time for version skew detection (see versionPoller.ts).
-      // In CI/CD, set BUILD_ID to the git SHA or pipeline run ID.
-      'import.meta.env.VITE_BUILD_ID': JSON.stringify(process.env.BUILD_ID ?? 'dev'),
-    },
     server: {
       allowedHosts,
       port: 3000,
@@ -77,6 +74,7 @@ export default defineConfig(async () => {
       noExternal: ['@convex-dev/better-auth'],
     },
     plugins: [
+      cloudflare({ viteEnvironment: { name: 'ssr' } }),
       tsConfigPaths(),
       tailwindcss(),
       tanstackStart({

@@ -1,9 +1,10 @@
 import { resolveConvexSiteUrl } from '@yucp/shared';
+import { getWebRuntimeEnv } from './runtimeEnv';
 
 const OAUTH_AUTH_SERVER_METADATA_PATH = '/.well-known/oauth-authorization-server/api/auth';
 
 export async function proxyOAuthAuthorizationServerMetadata(request: Request): Promise<Response> {
-  const convexSiteUrl = resolveConvexSiteUrl(process.env);
+  const convexSiteUrl = resolveConvexSiteUrl(getWebRuntimeEnv());
   if (!convexSiteUrl) {
     return new Response(JSON.stringify({ error: 'CONVEX_SITE_URL is required' }), {
       status: 503,

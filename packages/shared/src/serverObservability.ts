@@ -28,6 +28,10 @@ function registerShutdownHooks(provider: BasicTracerProvider) {
     return;
   }
 
+  if ('WebSocketPair' in globalThis && !('Bun' in globalThis)) {
+    return;
+  }
+
   const flush = () => {
     void provider.forceFlush();
   };
@@ -93,3 +97,5 @@ export function initBunServerObservability({
   registerShutdownHooks(provider);
   return resolved;
 }
+
+export const initServerObservability = initBunServerObservability;

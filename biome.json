@@ -16,6 +16,8 @@
       "!**/frontend/*.css",
       "!**/docs/**/*.html",
       "!**/routeTree.gen.ts",
+      "!**/.wrangler",
+      "!**/.wrangler/**",
       "!**/playwright-report",
       "!**/test-results"
     ]
