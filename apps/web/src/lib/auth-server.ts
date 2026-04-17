@@ -6,10 +6,18 @@ import {
 import { resolveConvexSiteUrl } from '@yucp/shared';
 import { ConvexError } from 'convex/values';
 import { logWebError } from '@/lib/webDiagnostics';
-import { filterForwardedSessionCookieHeader } from './server/forwardedAuthCookies';
+import {
+  filterForwardedAuthCookieHeader,
+  filterForwardedSessionCookieHeader,
+} from './server/forwardedAuthCookies';
 import { getWebEnv, getWebRuntimeEnv } from './server/runtimeEnv';
 
 const AUTH_COOKIE_PREFIX = 'yucp';
+const AUTH_COOKIE_NAME_PREFIXES = [
+  `${AUTH_COOKIE_PREFIX}.`,
+  `__Secure-${AUTH_COOKIE_PREFIX}.`,
+  `__Host-${AUTH_COOKIE_PREFIX}.`,
+] as const;
 
 function isConvexAuthError(error: unknown): boolean {
   const message =
@@ -118,13 +126,43 @@ export function convertPostRedirectToJson(method: string, response: Response): R
   return response;
 }
 
+function buildProxiedAuthHeaders(request: Request): Headers {
+  const headers = new Headers(request.headers);
+  const filteredCookieHeader = filterForwardedAuthCookieHeader(request.headers.get('cookie'));
+
+  if (filteredCookieHeader) {
+    headers.set('cookie', filteredCookieHeader);
+  } else {
+    headers.delete('cookie');
+  }
+
+  return headers;
+}
+
+function proxyAuthRequest(request: Request, convexSiteUrl: string): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const targetUrl = `${convexSiteUrl}${requestUrl.pathname}${requestUrl.search}`;
+  const headers = buildProxiedAuthHeaders(request);
+  headers.set('host', new URL(convexSiteUrl).host);
+
+  return fetch(targetUrl, {
+    method: request.method,
+    headers,
+    redirect: 'manual',
+    body: request.body,
+    // @ts-expect-error duplex is required for streamed request bodies in server fetch runtimes.
+    duplex: 'half',
+  });
+}
+
 /**
  * Wraps the Better Auth handler, applying convertPostRedirectToJson so that
  * POST requests that result in redirects (e.g. /api/auth/oauth2/consent)
  * return a JSON body the JS client can act on.
  */
 export async function handleAuthRequest(request: Request): Promise<Response> {
-  const res = await getAuthRuntime().handler(request);
+  const { convexSiteUrl } = resolveAuthRuntimeConfig();
+  const res = await proxyAuthRequest(request, convexSiteUrl);
   return convertPostRedirectToJson(request.method, res);
 }
 
@@ -140,6 +178,29 @@ function getCookieNames(cookieHeader: string | null): string[] | undefined {
     .slice(0, 12);
 
   return cookieNames.length > 0 ? cookieNames : undefined;
+}
+
+function getRecoverableAuthCookieNames(cookieHeader: string | null): string[] {
+  return (getCookieNames(cookieHeader) ?? []).filter((cookieName) =>
+    AUTH_COOKIE_NAME_PREFIXES.some((prefix) => cookieName.startsWith(prefix))
+  );
+}
+
+async function clearRecoverableAuthCookies(cookieHeader: string | null): Promise<void> {
+  const cookieNames = getRecoverableAuthCookieNames(cookieHeader);
+  if (cookieNames.length === 0) {
+    return;
+  }
+
+  const { deleteCookie } = await import('@tanstack/react-start/server');
+  for (const cookieName of cookieNames) {
+    deleteCookie(cookieName, {
+      path: '/',
+      ...(cookieName.startsWith('__Secure-') || cookieName.startsWith('__Host-')
+        ? { secure: true }
+        : {}),
+    });
+  }
 }
 
 function summarizeRequestHeaders(headers: Headers): Record<string, unknown> {
@@ -260,6 +321,7 @@ function toUnauthenticatedSessionState(): AuthSessionState {
 export async function getSession(): Promise<AuthSessionState> {
   try {
     const requestHeaders = await getCurrentRequestHeaders();
+    const incomingCookieHeader = requestHeaders.get('cookie');
     const authHeaders = buildAuthRequestHeaders(requestHeaders);
     const { convexSiteUrl } = resolveAuthRuntimeConfig();
 
@@ -279,6 +341,7 @@ export async function getSession(): Promise<AuthSessionState> {
     const payload = (await response.json()) as BetterAuthSessionResponse | null;
     const user = payload?.user;
     if (!user?.id || !user.id.trim()) {
+      await clearRecoverableAuthCookies(incomingCookieHeader);
       return toUnauthenticatedSessionState();
     }
 
