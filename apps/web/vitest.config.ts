@@ -16,6 +16,10 @@ export default defineConfig({
         find: /^@yucp\/shared\/(.*)$/,
         replacement: path.resolve(__dirname, '../../packages/shared/src/$1.ts'),
       },
+      {
+        find: /^cloudflare:workers$/,
+        replacement: path.resolve(__dirname, './test/unit/cloudflareWorkers.mock.ts'),
+      },
     ],
   },
   test: {

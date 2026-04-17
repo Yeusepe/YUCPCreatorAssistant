@@ -16,26 +16,20 @@ describe('resolveDefaultWebRuntimeEnv', () => {
       resolveDefaultWebRuntimeEnv({
         fallbackEnv,
         runtimeCloudflareEnv,
-        workerRuntime: true,
       })
     ).toEqual(runtimeCloudflareEnv);
   });
 
-  it('falls back to process env outside Worker runtime', () => {
+  it('falls back to process env when no Cloudflare binding env is available', () => {
     const fallbackEnv = {
       CONVEX_SITE_URL: 'https://dev-example.convex.site',
       CONVEX_URL: 'https://dev-example.convex.cloud',
-    } satisfies WebRuntimeEnv;
-    const runtimeCloudflareEnv = {
-      CONVEX_SITE_URL: 'https://prod-example.convex.site',
-      CONVEX_URL: 'https://prod-example.convex.cloud',
     } satisfies WebRuntimeEnv;
 
     expect(
       resolveDefaultWebRuntimeEnv({
         fallbackEnv,
-        runtimeCloudflareEnv,
-        workerRuntime: false,
+        runtimeCloudflareEnv: {},
       })
     ).toEqual(fallbackEnv);
   });
