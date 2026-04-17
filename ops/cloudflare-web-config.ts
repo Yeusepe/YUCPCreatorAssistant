@@ -2,12 +2,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { type ParseError, parse, printParseErrorCode } from 'jsonc-parser';
-import { buildBunToolCommand } from './cli-utils';
+import { buildWranglerCommand } from './cli-utils';
 
 export const WEB_APP_DIR = resolve(import.meta.dir, '..', 'apps', 'web');
 export const REPO_ROOT_DIR = resolve(import.meta.dir, '..');
 export const REPO_ROOT_ENV_LOCAL_PATH = resolve(REPO_ROOT_DIR, '.env.local');
 export const WEB_WRANGLER_CONFIG_PATH = resolve(WEB_APP_DIR, 'wrangler.jsonc');
+export const WEB_DIST_SERVER_DIR = resolve(WEB_APP_DIR, 'dist', 'server');
+export const WEB_GENERATED_WRANGLER_CONFIG_PATH = resolve(WEB_DIST_SERVER_DIR, 'wrangler.json');
 export const WEB_LOCAL_ENV_PATH = resolve(WEB_APP_DIR, '.dev.vars');
 
 export const WEB_BUILD_ENV_KEYS = [
@@ -236,7 +238,10 @@ function loadWranglerConfig(): Record<string, unknown> {
   const errors: ParseError[] = [];
   const value = parse(text, errors, { allowTrailingComma: true }) as unknown;
   if (errors.length > 0) {
-    const first = errors[0]!;
+    const [first] = errors;
+    if (!first) {
+      throw new Error(`Failed to parse ${WEB_WRANGLER_CONFIG_PATH}: unknown parse error`);
+    }
     throw new Error(
       `Failed to parse ${WEB_WRANGLER_CONFIG_PATH}: ${printParseErrorCode(first.error)} at offset ${first.offset}`
     );
@@ -293,13 +298,13 @@ export async function runWranglerSecretBulk(
   try {
     writeFileSync(secretsFilePath, JSON.stringify(secretValues, null, 2), 'utf8');
 
-    const args = ['wrangler', 'secret', 'bulk', secretsFilePath, '--config', configPath];
+    const args = ['secret', 'bulk', secretsFilePath, '--config', configPath];
     if (workerEnvName) {
       args.push('--env', workerEnvName);
     }
 
     const proc = Bun.spawn({
-      cmd: buildBunToolCommand('wrangler', args),
+      cmd: buildWranglerCommand(args),
       stdout: 'pipe',
       stderr: 'pipe',
       stdin: 'inherit',
@@ -326,14 +331,14 @@ export async function runWranglerDeploy(
   extraArgs: string[],
   workerEnvName?: string
 ): Promise<void> {
-  const args = ['wrangler', 'deploy', '--config', configPath];
+  const args = ['deploy', '--config', configPath];
   if (workerEnvName) {
     args.push('--env', workerEnvName);
   }
   args.push(...extraArgs);
 
   const proc = Bun.spawn({
-    cmd: buildBunToolCommand('wrangler', args),
+    cmd: buildWranglerCommand(args),
     env: deployEnv,
     stdout: 'inherit',
     stderr: 'inherit',
@@ -343,5 +348,31 @@ export async function runWranglerDeploy(
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
     throw new Error(`wrangler deploy failed with exit code ${exitCode}`);
+  }
+}
+
+export async function runWranglerVersionsUpload(
+  configPath: string,
+  deployEnv: NodeJS.ProcessEnv,
+  extraArgs: string[],
+  workerEnvName?: string
+): Promise<void> {
+  const args = ['versions', 'upload', '--config', configPath];
+  if (workerEnvName) {
+    args.push('--env', workerEnvName);
+  }
+  args.push(...extraArgs);
+
+  const proc = Bun.spawn({
+    cmd: buildWranglerCommand(args),
+    env: deployEnv,
+    stdout: 'inherit',
+    stderr: 'inherit',
+    stdin: 'inherit',
+  });
+
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(`wrangler versions upload failed with exit code ${exitCode}`);
   }
 }

@@ -6,3 +6,7 @@ export function readFlag(name: string, argv: readonly string[] = process.argv): 
 export function buildBunToolCommand(tool: string, args: readonly string[]): string[] {
   return ['bun', 'x', tool, ...args];
 }
+
+export function buildWranglerCommand(args: readonly string[]): string[] {
+  return buildBunToolCommand('wrangler', args);
+}
