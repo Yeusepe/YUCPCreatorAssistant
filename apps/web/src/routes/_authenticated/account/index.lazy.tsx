@@ -1,16 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
 import { createLazyFileRoute, Link } from '@tanstack/react-router';
-import type { CSSProperties } from 'react';
+import { useMutation as useConvexMutation, useQuery as useConvexQuery } from 'convex/react';
+import { type CSSProperties, useState } from 'react';
 import { AccountPage, AccountSectionCard } from '@/components/account/AccountPage';
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { ProviderChip } from '@/components/ui/ProviderChip';
 import { StatusChip } from '@/components/ui/StatusChip';
+import { YucpButton } from '@/components/ui/YucpButton';
 import { useAccountShell } from '@/hooks/useAccountShell';
 import { useAuth } from '@/hooks/useAuth';
 import { listUserLicenses, listUserOAuthGrants } from '@/lib/account';
 import { authClient } from '@/lib/auth-client';
 import { listCreatorCertificates } from '@/lib/certificates';
 import { listUserAccounts } from '@/lib/dashboard';
+import { api } from '../../../../../../convex/_generated/api';
 
 function AccountProfilePending() {
   return (
@@ -29,6 +32,9 @@ function AccountProfile() {
   const { guilds, viewer } = useAccountShell();
   const { signOut } = useAuth();
   const isCreator = guilds.length > 0;
+  const [isDismissingRecoveryPrompt, setIsDismissingRecoveryPrompt] = useState(false);
+  const securityOverview = useConvexQuery(api.accountSecurity.getSecurityOverview, {});
+  const dismissRecoveryPrompt = useConvexMutation(api.accountSecurity.dismissRecoveryPrompt);
   const sessionQuery = useQuery({
     queryKey: ['better-auth-session'],
     queryFn: async () => {
@@ -191,6 +197,84 @@ function AccountProfile() {
         >
           Sign out
         </button>
+      </AccountSectionCard>
+
+      <AccountSectionCard
+        className="bento-col-12 animate-in animate-in-delay-2"
+        eyebrow="Recovery"
+        title="Account recovery posture"
+        description="Discord stays primary, but passkeys, backup codes, and a secondary recovery inbox keep the account recoverable when Discord or your primary email is unavailable."
+        actions={
+          <Link to="/account/security" className="account-btn account-btn--primary">
+            Open security settings
+          </Link>
+        }
+      >
+        {securityOverview?.shouldShowPrompt ? (
+          <div className="account-status-banner account-status-banner--warning">
+            <div className="account-status-banner-copy">
+              <strong>Add a stronger recovery factor now.</strong>
+              <span>
+                {isCreator
+                  ? 'Creator accounts should not rely on the Discord email alone.'
+                  : 'Add a passkey, backup codes, or a verified recovery email before you need them.'}
+              </span>
+            </div>
+            <div className="account-inline-actions">
+              <Link to="/account/security" className="account-btn account-btn--primary">
+                Set up recovery
+              </Link>
+              <YucpButton
+                yucp="secondary"
+                isLoading={isDismissingRecoveryPrompt}
+                onPress={async () => {
+                  setIsDismissingRecoveryPrompt(true);
+                  try {
+                    await dismissRecoveryPrompt({});
+                  } finally {
+                    setIsDismissingRecoveryPrompt(false);
+                  }
+                }}
+              >
+                Remind me later
+              </YucpButton>
+            </div>
+          </div>
+        ) : (
+          <div className="account-status-banner account-status-banner--success">
+            <div className="account-status-banner-copy">
+              <strong>Recovery factors are on file.</strong>
+              <span>
+                {securityOverview
+                  ? `${securityOverview.strongFactorCount} strong factor${securityOverview.strongFactorCount === 1 ? '' : 's'} currently protect this account.`
+                  : 'Open security settings to review your recovery posture.'}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div className="account-stat-grid">
+          <div className="account-stat-card">
+            <span className="account-stat-label">Passkeys</span>
+            <span className="account-stat-value">{securityOverview?.passkeyCount ?? '-'}</span>
+          </div>
+          <div className="account-stat-card">
+            <span className="account-stat-label">Backup codes</span>
+            <span className="account-stat-value">{securityOverview?.backupCodeCount ?? '-'}</span>
+          </div>
+          <div className="account-stat-card">
+            <span className="account-stat-label">Recovery emails</span>
+            <span className="account-stat-value">
+              {securityOverview?.verifiedRecoveryEmailCount ?? '-'}
+            </span>
+          </div>
+          <div className="account-stat-card">
+            <span className="account-stat-label">Primary email recovery</span>
+            <span className="account-stat-value">
+              {securityOverview?.primaryEmailRecoveryEligible ? 'Available' : 'Suppressed'}
+            </span>
+          </div>
+        </div>
       </AccountSectionCard>
 
       <AccountSectionCard

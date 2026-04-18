@@ -25,6 +25,7 @@ import {
 } from './lib/observability';
 import { detectTunnelUrl } from './lib/tunnel';
 import {
+  createAccountSecurityRoutes,
   createConnectRoutes,
   createCouplingLicenseRoutes,
   createForensicsRoutes,
@@ -52,6 +53,7 @@ let verificationRoutes: Map<string, (request: Request) => Promise<Response>> | n
 let verificationHandlers: ReturnType<typeof createVerificationRoutes> | null = null;
 let connectRoutes: ReturnType<typeof createConnectRoutes> | null = null;
 let couplingLicenseRoutes: ReturnType<typeof createCouplingLicenseRoutes> | null = null;
+let accountSecurityRoutes: ReturnType<typeof createAccountSecurityRoutes> | null = null;
 let forensicsRoutes: ReturnType<typeof createForensicsRoutes> | null = null;
 let packageRoutes: ReturnType<typeof createPackageRoutes> | null = null;
 let providerPlatformRoutes: ReturnType<typeof createProviderPlatformRoutes> | null = null;
@@ -269,6 +271,11 @@ function initializeAuth(webhookBaseUrl?: string) {
     convexUrl,
   });
 
+  accountSecurityRoutes = createAccountSecurityRoutes(auth, {
+    convexUrl,
+    convexApiSecret: env.CONVEX_API_SECRET ?? '',
+  });
+
   forensicsRoutes = createForensicsRoutes(auth, {
     apiBaseUrl: publicBaseUrl,
     frontendBaseUrl: frontendUrl,
@@ -389,6 +396,14 @@ async function routeRequest(request: Request): Promise<Response> {
   }
   if (pathname.startsWith('/api/connect/')) {
     if (isRateLimited(`connect:${clientAddress}`, 120, 60_000)) {
+      return new Response(JSON.stringify({ error: 'Too many requests' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
+  if (pathname.startsWith('/api/account-recovery/')) {
+    if (isRateLimited(`account-recovery:${clientAddress}`, 15, 60_000)) {
       return new Response(JSON.stringify({ error: 'Too many requests' }), {
         status: 429,
         headers: { 'Content-Type': 'application/json' },
@@ -819,6 +834,15 @@ async function routeRequest(request: Request): Promise<Response> {
   if (pathname === '/api/connect/creator/certificates/portal' && connectRoutes) {
     if (request.method === 'GET') return connectRoutes.getCreatorCertificatePortal(request);
     return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+  if (pathname === '/api/account-recovery/start' && accountSecurityRoutes) {
+    return accountSecurityRoutes.startRecovery(request);
+  }
+  if (pathname === '/api/account-recovery/verify-email' && accountSecurityRoutes) {
+    return accountSecurityRoutes.verifyRecoveryEmail(request);
+  }
+  if (pathname === '/api/account-recovery/verify-backup-code' && accountSecurityRoutes) {
+    return accountSecurityRoutes.verifyRecoveryBackupCode(request);
   }
   if (pathname === '/api/connect/user/certificates/reconcile' && connectRoutes) {
     return connectRoutes.reconcileUserCertificateBilling(request);
