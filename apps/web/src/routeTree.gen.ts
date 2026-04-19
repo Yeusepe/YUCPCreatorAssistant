@@ -47,8 +47,8 @@ import { Route as AuthenticatedDashboardCollaborationRouteImport } from './route
 import { Route as AuthenticatedDashboardCertificatesRouteImport } from './routes/_authenticated/dashboard/certificates'
 import { Route as AuthenticatedDashboardBillingRouteImport } from './routes/_authenticated/dashboard/billing'
 import { Route as AuthenticatedDashboardAuditLogsRouteImport } from './routes/_authenticated/dashboard/audit-logs'
-import { Route as AuthenticatedAccountSecurityRouteImport } from './routes/_authenticated/account/security'
 import { Route as AuthenticatedAccountVerifyRouteImport } from './routes/_authenticated/account/verify'
+import { Route as AuthenticatedAccountSecurityRouteImport } from './routes/_authenticated/account/security'
 import { Route as AuthenticatedAccountPrivacyRouteImport } from './routes/_authenticated/account/privacy'
 import { Route as AuthenticatedAccountLicensesRouteImport } from './routes/_authenticated/account/licenses'
 import { Route as AuthenticatedAccountConnectionsRouteImport } from './routes/_authenticated/account/connections'
@@ -320,7 +320,9 @@ const AuthenticatedAccountSecurityRoute =
     path: '/security',
     getParentRoute: () => AuthenticatedAccountRoute,
   } as any).lazy(() =>
-    import('./routes/_authenticated/account/security.lazy').then((d) => d.Route),
+    import('./routes/_authenticated/account/security.lazy').then(
+      (d) => d.Route,
+    ),
   )
 const AuthenticatedAccountPrivacyRoute =
   AuthenticatedAccountPrivacyRouteImport.update({
@@ -399,8 +401,8 @@ export interface FileRoutesByFullPath {
   '/account/certificates': typeof AuthenticatedAccountCertificatesRoute
   '/account/connections': typeof AuthenticatedAccountConnectionsRoute
   '/account/licenses': typeof AuthenticatedAccountLicensesRoute
-  '/account/security': typeof AuthenticatedAccountSecurityRoute
   '/account/privacy': typeof AuthenticatedAccountPrivacyRoute
+  '/account/security': typeof AuthenticatedAccountSecurityRoute
   '/account/verify': typeof AuthenticatedAccountVerifyRoute
   '/dashboard/audit-logs': typeof AuthenticatedDashboardAuditLogsRoute
   '/dashboard/billing': typeof AuthenticatedDashboardBillingRoute
@@ -443,8 +445,8 @@ export interface FileRoutesByTo {
   '/account/certificates': typeof AuthenticatedAccountCertificatesRoute
   '/account/connections': typeof AuthenticatedAccountConnectionsRoute
   '/account/licenses': typeof AuthenticatedAccountLicensesRoute
-  '/account/security': typeof AuthenticatedAccountSecurityRoute
   '/account/privacy': typeof AuthenticatedAccountPrivacyRoute
+  '/account/security': typeof AuthenticatedAccountSecurityRoute
   '/account/verify': typeof AuthenticatedAccountVerifyRoute
   '/dashboard/audit-logs': typeof AuthenticatedDashboardAuditLogsRoute
   '/dashboard/billing': typeof AuthenticatedDashboardBillingRoute
@@ -491,8 +493,8 @@ export interface FileRoutesById {
   '/_authenticated/account/certificates': typeof AuthenticatedAccountCertificatesRoute
   '/_authenticated/account/connections': typeof AuthenticatedAccountConnectionsRoute
   '/_authenticated/account/licenses': typeof AuthenticatedAccountLicensesRoute
-  '/_authenticated/account/security': typeof AuthenticatedAccountSecurityRoute
   '/_authenticated/account/privacy': typeof AuthenticatedAccountPrivacyRoute
+  '/_authenticated/account/security': typeof AuthenticatedAccountSecurityRoute
   '/_authenticated/account/verify': typeof AuthenticatedAccountVerifyRoute
   '/_authenticated/dashboard/audit-logs': typeof AuthenticatedDashboardAuditLogsRoute
   '/_authenticated/dashboard/billing': typeof AuthenticatedDashboardBillingRoute
@@ -539,8 +541,8 @@ export interface FileRouteTypes {
     | '/account/certificates'
     | '/account/connections'
     | '/account/licenses'
-    | '/account/security'
     | '/account/privacy'
+    | '/account/security'
     | '/account/verify'
     | '/dashboard/audit-logs'
     | '/dashboard/billing'
@@ -583,8 +585,8 @@ export interface FileRouteTypes {
     | '/account/certificates'
     | '/account/connections'
     | '/account/licenses'
-    | '/account/security'
     | '/account/privacy'
+    | '/account/security'
     | '/account/verify'
     | '/dashboard/audit-logs'
     | '/dashboard/billing'
@@ -630,8 +632,8 @@ export interface FileRouteTypes {
     | '/_authenticated/account/certificates'
     | '/_authenticated/account/connections'
     | '/_authenticated/account/licenses'
-    | '/_authenticated/account/security'
     | '/_authenticated/account/privacy'
+    | '/_authenticated/account/security'
     | '/_authenticated/account/verify'
     | '/_authenticated/dashboard/audit-logs'
     | '/_authenticated/dashboard/billing'
@@ -951,6 +953,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAccountVerifyRouteImport
       parentRoute: typeof AuthenticatedAccountRoute
     }
+    '/_authenticated/account/security': {
+      id: '/_authenticated/account/security'
+      path: '/security'
+      fullPath: '/account/security'
+      preLoaderRoute: typeof AuthenticatedAccountSecurityRouteImport
+      parentRoute: typeof AuthenticatedAccountRoute
+    }
     '/_authenticated/account/privacy': {
       id: '/_authenticated/account/privacy'
       path: '/privacy'
@@ -963,13 +972,6 @@ declare module '@tanstack/react-router' {
       path: '/licenses'
       fullPath: '/account/licenses'
       preLoaderRoute: typeof AuthenticatedAccountLicensesRouteImport
-      parentRoute: typeof AuthenticatedAccountRoute
-    }
-    '/_authenticated/account/security': {
-      id: '/_authenticated/account/security'
-      path: '/security'
-      fullPath: '/account/security'
-      preLoaderRoute: typeof AuthenticatedAccountSecurityRouteImport
       parentRoute: typeof AuthenticatedAccountRoute
     }
     '/_authenticated/account/connections': {
@@ -1001,8 +1003,8 @@ interface AuthenticatedAccountRouteChildren {
   AuthenticatedAccountCertificatesRoute: typeof AuthenticatedAccountCertificatesRoute
   AuthenticatedAccountConnectionsRoute: typeof AuthenticatedAccountConnectionsRoute
   AuthenticatedAccountLicensesRoute: typeof AuthenticatedAccountLicensesRoute
-  AuthenticatedAccountSecurityRoute: typeof AuthenticatedAccountSecurityRoute
   AuthenticatedAccountPrivacyRoute: typeof AuthenticatedAccountPrivacyRoute
+  AuthenticatedAccountSecurityRoute: typeof AuthenticatedAccountSecurityRoute
   AuthenticatedAccountVerifyRoute: typeof AuthenticatedAccountVerifyRoute
   AuthenticatedAccountIndexRoute: typeof AuthenticatedAccountIndexRoute
 }
@@ -1013,8 +1015,8 @@ const AuthenticatedAccountRouteChildren: AuthenticatedAccountRouteChildren = {
   AuthenticatedAccountCertificatesRoute: AuthenticatedAccountCertificatesRoute,
   AuthenticatedAccountConnectionsRoute: AuthenticatedAccountConnectionsRoute,
   AuthenticatedAccountLicensesRoute: AuthenticatedAccountLicensesRoute,
-  AuthenticatedAccountSecurityRoute: AuthenticatedAccountSecurityRoute,
   AuthenticatedAccountPrivacyRoute: AuthenticatedAccountPrivacyRoute,
+  AuthenticatedAccountSecurityRoute: AuthenticatedAccountSecurityRoute,
   AuthenticatedAccountVerifyRoute: AuthenticatedAccountVerifyRoute,
   AuthenticatedAccountIndexRoute: AuthenticatedAccountIndexRoute,
 }

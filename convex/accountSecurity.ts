@@ -414,17 +414,19 @@ async function computeSecurityPosture(
         : now;
 
   const recoveryContacts = await Promise.all(
-    contacts.map(async (contact: any) => ({
-      id: String(contact._id),
-      kind: contact.kind,
-      status: contact.status,
-      email: await decryptRecoveryContactEmail(contact.emailEncrypted),
-      verifiedAt: contact.verifiedAt ?? null,
-      compromisedAt: contact.compromisedAt ?? null,
-      addedAt: contact.addedAt,
-      lastUsedAt: contact.lastUsedAt ?? null,
-      removedAt: contact.removedAt ?? null,
-    }))
+    contacts
+      .filter((contact: any) => contact.status !== RECOVERY_CONTACT_STATUS.removed)
+      .map(async (contact: any) => ({
+        id: String(contact._id),
+        kind: contact.kind,
+        status: contact.status,
+        email: await decryptRecoveryContactEmail(contact.emailEncrypted),
+        verifiedAt: contact.verifiedAt ?? null,
+        compromisedAt: contact.compromisedAt ?? null,
+        addedAt: contact.addedAt,
+        lastUsedAt: contact.lastUsedAt ?? null,
+        removedAt: contact.removedAt ?? null,
+      }))
   );
 
   return {
@@ -689,7 +691,7 @@ export const getSecurityOverview = query({
   handler: async (ctx) => {
     const authUser = await getAuthenticatedAuthUser(ctx);
     const authUserId = requireAuthenticatedUserId(authUser);
-    return await syncSecurityStateForUser(ctx, authUserId);
+    return await computeSecurityPosture(ctx, authUserId);
   },
 });
 
@@ -785,17 +787,30 @@ export const prepareRecoveryContactEnrollment = mutation({
     if (!emailEncrypted) {
       throw new Error('Recovery email encryption failed');
     }
+    const enrollmentChallenge = generateNonce(24);
     const existing = await ctx.db
       .query('account_recovery_contacts')
       .withIndex('by_email_hash', (q: any) => q.eq('emailHash', emailHash))
       .collect();
+    const existingForAnotherUser =
+      existing.find((record: any) => record.authUserId !== authUserId) ?? null;
+    if (existingForAnotherUser) {
+      throw new ConvexError('Recovery email is already in use');
+    }
+
+    const existingPrimaryEmailOwnerId = getCanonicalAuthUserId(await getBetterAuthUserByEmail(ctx, email));
+    if (existingPrimaryEmailOwnerId && existingPrimaryEmailOwnerId !== authUserId) {
+      throw new ConvexError('Recovery email is already in use');
+    }
 
     const currentForUser = existing.find((record: any) => record.authUserId === authUserId) ?? null;
     if (currentForUser) {
       await ctx.db.patch(currentForUser._id, {
         kind: RECOVERY_CONTACT_KIND,
         emailEncrypted,
+        enrollmentChallenge,
         status: RECOVERY_CONTACT_STATUS.pending,
+        verifiedAt: undefined,
         compromisedAt: undefined,
         removedAt: undefined,
         updatedAt: now,
@@ -806,6 +821,7 @@ export const prepareRecoveryContactEnrollment = mutation({
         kind: RECOVERY_CONTACT_KIND,
         emailHash,
         emailEncrypted,
+        enrollmentChallenge,
         status: RECOVERY_CONTACT_STATUS.pending,
         addedAt: now,
         createdAt: now,
@@ -823,6 +839,7 @@ export const prepareRecoveryContactEnrollment = mutation({
     return {
       email,
       emailHash,
+      challengeToken: enrollmentChallenge,
     };
   },
 });
@@ -830,6 +847,8 @@ export const prepareRecoveryContactEnrollment = mutation({
 export const verifyRecoveryContactEnrollment = mutation({
   args: {
     email: v.string(),
+    challengeToken: v.optional(v.string()),
+    otpAssertion: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const authUser = await getAuthenticatedAuthUser(ctx);
@@ -837,18 +856,27 @@ export const verifyRecoveryContactEnrollment = mutation({
     const now = Date.now();
     const email = normalizeInputEmail(args.email);
     const emailHash = await sha256Hex(email);
-    const contact = await ctx.db
+    const enrollmentProof = args.challengeToken?.trim() || args.otpAssertion?.trim() || null;
+    if (!enrollmentProof) {
+      throw new ConvexError('Recovery email verification proof is required');
+    }
+
+    const matchingContacts = await ctx.db
       .query('account_recovery_contacts')
-      .withIndex('by_auth_user', (q: any) => q.eq('authUserId', authUserId))
-      .filter((q: any) => q.eq(q.field('emailHash'), emailHash))
-      .first();
+      .withIndex('by_email_hash', (q: any) => q.eq('emailHash', emailHash))
+      .collect();
+    const contact = matchingContacts.find((record: any) => record.authUserId === authUserId) ?? null;
 
     if (!contact) {
       throw new ConvexError('Recovery email enrollment not found');
     }
+    if (!contact.enrollmentChallenge || contact.enrollmentChallenge !== enrollmentProof) {
+      throw new ConvexError('Recovery email verification failed');
+    }
 
     await ctx.db.patch(contact._id, {
       status: RECOVERY_CONTACT_STATUS.verified,
+      enrollmentChallenge: undefined,
       verifiedAt: now,
       compromisedAt: undefined,
       removedAt: undefined,
@@ -1227,6 +1255,13 @@ export const completeRecoveryPasskeyEnrollment = internalMutation({
       .first();
 
     if (!session || session.authUserId !== args.authUserId) {
+      return { completed: false };
+    }
+    if (
+      (session.status !== RECOVERY_SESSION_STATUS.pending &&
+        session.status !== RECOVERY_SESSION_STATUS.verified) ||
+      session.expiresAt <= args.completedAt
+    ) {
       return { completed: false };
     }
 

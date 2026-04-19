@@ -53,6 +53,15 @@ h2 {
   filter: drop-shadow(0 0 10px rgba(88, 101, 242, 0.35));
 }
 
+/* YUCP Creator Suite wordmark — full logo asset, allow wider aspect */
+.logo-wrap--suite img {
+  height: auto;
+  max-height: 52px;
+  width: min(100%, 340px);
+  object-fit: contain;
+  filter: drop-shadow(0 0 10px rgba(88, 101, 242, 0.3));
+}
+
 .card {
   background: rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(24px) saturate(160%);
@@ -65,6 +74,70 @@ h2 {
   border-radius: 28px;
   padding: 2.5rem 2.25rem;
   text-align: center;
+}
+
+/* Creator Suite card: same glass shell as default .card (no extra tint or accent bar). */
+
+.sign-in-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sign-in-methods {
+  border: none;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+/* Secondary recovery entry — text link, not a second primary CTA (cf. sign-in form best practices) */
+.sign-in-recovery-row {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.sign-in-trouble-link {
+  margin: 0;
+  padding: 0.2rem 0.35rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.42);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.sign-in-trouble-link:hover {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.sign-in-trouble-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.45);
+}
+
+.sign-in-method svg {
+  flex-shrink: 0;
+}
+
+.sign-in-method--brand svg {
+  color: #fff;
+}
+
+.sign-in-method--neutral svg {
+  color: rgba(255, 255, 255, 0.92);
 }
 
 /* ── Discord app icon ────────────────────────────────────── */
@@ -218,74 +291,11 @@ h2 {
   border-right-color: transparent;
 }
 
-.recovery-divider {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  margin: 1.35rem 0 0.85rem;
-}
-.dark .recovery-divider {
-  color: inherit;
-}
-
-.recovery-divider span {
-  flex: 1;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.1);
-}
-.dark .recovery-divider span {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.recovery-divider p {
-  margin: 0;
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.36);
-}
-.dark .recovery-divider p {
-  color: rgba(255, 255, 255, 0.36);
-}
-
-.recovery-toggle-btn {
-  width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.78);
-  padding: 0.75rem 1rem;
-  font-family: var(--font-display), sans-serif;
-  font-size: 0.88rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    color 0.18s ease;
-}
-.dark .recovery-toggle-btn {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: transparent;
-  color: rgba(255, 255, 255, 0.78);
-}
-
-.recovery-toggle-btn:hover {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.92);
-}
-.dark .recovery-toggle-btn:hover {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.92);
-}
-
 .recovery-panel {
   display: flex;
   flex-direction: column;
   gap: 0.95rem;
-  margin-top: 1rem;
+  margin-top: 0.85rem;
   padding: 1rem;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -512,22 +522,6 @@ h2 {
 }
 .dark .recovery-support-note {
   color: rgba(255, 255, 255, 0.38);
-}
-
-/* ── Security note ───────────────────────────────────────── */
-.security-note {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  margin-top: 1.1rem;
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 0.73rem;
-  font-weight: 500;
-}
-
-.security-note svg {
-  flex-shrink: 0;
 }
 
 /* ── Divider ─────────────────────────────────────────────── */

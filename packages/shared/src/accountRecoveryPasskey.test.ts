@@ -44,4 +44,48 @@ describe('account recovery passkey context', () => {
       verifyRecoveryPasskeyContext(token, SECRET, 1_700_000_100_001)
     ).resolves.toBeNull();
   });
+
+  it('rejects tokens with extra dot segments', async () => {
+    const token = await issueRecoveryPasskeyContext(
+      {
+        authUserId: 'user_123',
+        method: 'backup-code',
+        issuedAt: 1_700_000_000_000,
+        expiresAt: 1_700_000_300_000,
+        nonce: 'nonce_123',
+      },
+      SECRET
+    );
+
+    await expect(
+      verifyRecoveryPasskeyContext(`${token}.unexpected`, SECRET, 1_700_000_100_000)
+    ).resolves.toBeNull();
+  });
+
+  it('rejects tokens with unsupported methods', async () => {
+    const token = await issueRecoveryPasskeyContext(
+      {
+        authUserId: 'user_123',
+        method: 'backup-code',
+        issuedAt: 1_700_000_000_000,
+        expiresAt: 1_700_000_300_000,
+        nonce: 'nonce_123',
+      },
+      SECRET
+    );
+    const [encodedPayload, signature] = token.split('.');
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as {
+      authUserId: string;
+      method: string;
+      expiresAt: number;
+      issuedAt: number;
+      nonce: string;
+      purpose: string;
+      version: string;
+    };
+    payload.method = 'totally-made-up-method';
+    const malformedToken = `${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${signature}`;
+
+    await expect(verifyRecoveryPasskeyContext(malformedToken, SECRET, 1_700_000_100_000)).resolves.toBeNull();
+  });
 });

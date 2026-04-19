@@ -17,6 +17,17 @@ export interface RecoveryPasskeyContextPayload {
   nonce: string;
 }
 
+const RECOVERY_CONTEXT_METHODS: readonly RecoveryContextMethod[] = [
+  'primary-email-otp',
+  'recovery-email-otp',
+  'backup-code',
+  'support-review',
+];
+
+function isRecoveryContextMethod(value: unknown): value is RecoveryContextMethod {
+  return typeof value === 'string' && RECOVERY_CONTEXT_METHODS.includes(value as RecoveryContextMethod);
+}
+
 function toBase64Url(bytes: Uint8Array): string {
   return Buffer.from(bytes)
     .toString('base64')
@@ -88,7 +99,12 @@ export async function verifyRecoveryPasskeyContext(
   secret: string,
   now = Date.now()
 ): Promise<RecoveryPasskeyContextPayload | null> {
-  const [encodedPayload, signature] = token.split('.');
+  const parts = token.split('.');
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const [encodedPayload, signature] = parts;
   if (!encodedPayload || !signature) {
     return null;
   }
@@ -111,7 +127,7 @@ export async function verifyRecoveryPasskeyContext(
       parsed.version !== RECOVERY_CONTEXT_VERSION ||
       typeof parsed.authUserId !== 'string' ||
       !parsed.authUserId.trim() ||
-      typeof parsed.method !== 'string' ||
+      !isRecoveryContextMethod(parsed.method) ||
       typeof parsed.expiresAt !== 'number' ||
       typeof parsed.issuedAt !== 'number' ||
       typeof parsed.nonce !== 'string' ||

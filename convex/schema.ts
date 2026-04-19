@@ -1634,6 +1634,7 @@ const account_recovery_contacts = defineTable({
   kind: RecoveryContactKind,
   emailHash: v.string(),
   emailEncrypted: v.string(),
+  enrollmentChallenge: v.optional(v.string()),
   status: RecoveryContactStatus,
   verifiedAt: v.optional(v.number()),
   compromisedAt: v.optional(v.number()),

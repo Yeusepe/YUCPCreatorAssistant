@@ -13,6 +13,10 @@ function jsonResponse(body: unknown, status = 200) {
   return Response.json(body, { status });
 }
 
+class ClientSafeError extends Error {
+  override readonly name = 'ClientSafeError';
+}
+
 async function readJsonBody<T>(request: Request): Promise<T | null> {
   try {
     return (await request.json()) as T;
@@ -22,13 +26,34 @@ async function readJsonBody<T>(request: Request): Promise<T | null> {
 }
 
 function getSafeErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof BetterAuthEndpointError && error.status >= 400 && error.status < 500) {
-    return fallback;
-  }
-  if (error instanceof Error && error.message.trim()) {
+  if (error instanceof ClientSafeError && error.message.trim()) {
     return error.message;
   }
   return fallback;
+}
+
+function getErrorLogDetails(error: unknown) {
+  if (error instanceof BetterAuthEndpointError) {
+    return {
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
+      betterAuthPath: error.path,
+      betterAuthStatus: error.status,
+      betterAuthBody: error.body,
+      betterAuthBodyText: error.bodyText,
+    };
+  }
+  if (error instanceof Error) {
+    return {
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
+    };
+  }
+  return {
+    errorValue: String(error),
+  };
 }
 
 export function createAccountSecurityRoutes(auth: Auth, config: AccountSecurityRoutesConfig) {
@@ -120,6 +145,7 @@ export function createAccountSecurityRoutes(auth: Auth, config: AccountSecurityR
         expiresAt: completed.expiresAt,
       });
     } catch (error) {
+      logger.warn('Account recovery email verification failed', getErrorLogDetails(error));
       return jsonResponse(
         {
           error: getSafeErrorMessage(error, 'Invalid or expired recovery code'),
@@ -158,6 +184,7 @@ export function createAccountSecurityRoutes(auth: Auth, config: AccountSecurityR
         expiresAt: completed.expiresAt,
       });
     } catch (error) {
+      logger.warn('Account recovery backup code verification failed', getErrorLogDetails(error));
       return jsonResponse(
         {
           error: getSafeErrorMessage(error, 'Invalid backup code'),

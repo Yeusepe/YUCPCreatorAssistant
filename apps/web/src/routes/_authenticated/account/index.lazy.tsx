@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { createLazyFileRoute, Link } from '@tanstack/react-router';
 import { useMutation as useConvexMutation, useQuery as useConvexQuery } from 'convex/react';
+import { AlertCircle, KeyRound, ShieldCheck } from 'lucide-react';
 import { type CSSProperties, useState } from 'react';
 import { AccountPage, AccountSectionCard } from '@/components/account/AccountPage';
-import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
+import { AccountProfileSkeleton } from '@/components/account/AccountProfileSkeleton';
 import { ProviderChip } from '@/components/ui/ProviderChip';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { YucpButton } from '@/components/ui/YucpButton';
@@ -16,11 +17,7 @@ import { listUserAccounts } from '@/lib/dashboard';
 import { api } from '../../../../../../convex/_generated/api';
 
 function AccountProfilePending() {
-  return (
-    <AccountPage>
-      <DashboardListSkeleton rows={4} />
-    </AccountPage>
-  );
+  return <AccountProfileSkeleton />;
 }
 
 export const Route = createLazyFileRoute('/_authenticated/account/')({
@@ -151,78 +148,80 @@ function AccountProfile() {
       </AccountSectionCard>
 
       <AccountSectionCard
-        className="bento-col-4 animate-in animate-in-delay-2"
+        className="bento-col-4 animate-in animate-in-delay-2 account-session-card"
+        leading={<KeyRound strokeWidth={1.75} aria-hidden />}
         eyebrow="Session"
-        title="Access and security"
-        description="Quick visibility into how you are signed in and what your account can access."
-        actions={
-          <Link to="/account/connections" className="account-btn account-btn--secondary">
-            Manage connections
-          </Link>
-        }
+        title="Your access"
+        description="How you sign in and what this account can use."
+        bodyClassName="account-session-card-body"
       >
-        <div className="account-kv-list">
-          <div className="account-kv-row">
-            <span className="account-kv-label">Authentication</span>
-            <span className="account-kv-value">Discord SSO</span>
+        <dl className="account-session-dl">
+          <div className="account-session-stat">
+            <dt>Sign-in</dt>
+            <dd>Discord SSO</dd>
           </div>
-          <div className="account-kv-row">
-            <span className="account-kv-label">Creator dashboard</span>
-            <span className="account-kv-value">{isCreator ? 'Enabled' : 'Not enabled'}</span>
+          <div className="account-session-stat">
+            <dt>Creator dashboard</dt>
+            <dd>{isCreator ? 'On' : 'Off'}</dd>
           </div>
-          <div className="account-kv-row">
-            <span className="account-kv-label">Authorized apps</span>
-            <span className="account-kv-value">
-              {renderMetricValue(grantsQuery, authorizedApps?.length ?? 0)}
-            </span>
+          <div className="account-session-stat">
+            <dt>Authorized apps</dt>
+            <dd>{renderMetricValue(grantsQuery, authorizedApps?.length ?? 0)}</dd>
           </div>
-          <div className="account-kv-row">
-            <span className="account-kv-label">Connected providers</span>
-            <span className="account-kv-value">
-              {renderMetricValue(accountsQuery, accounts.length)}
-            </span>
+          <div className="account-session-stat">
+            <dt>Providers</dt>
+            <dd>{renderMetricValue(accountsQuery, accounts.length)}</dd>
           </div>
-          <div className="account-kv-row">
-            <span className="account-kv-label">Active licenses</span>
-            <span className="account-kv-value">
-              {renderMetricValue(licensesQuery, activeLicenses)}
-            </span>
+          <div className="account-session-stat">
+            <dt>Active licenses</dt>
+            <dd>{renderMetricValue(licensesQuery, activeLicenses)}</dd>
           </div>
-        </div>
+        </dl>
 
-        <button
-          type="button"
-          className="account-btn account-btn--secondary"
-          onClick={() => signOut()}
-        >
-          Sign out
-        </button>
+        <div className="account-session-footer">
+          <Link to="/account/connections" className="account-btn account-btn--secondary">
+            Connections
+          </Link>
+          <button
+            type="button"
+            className="account-btn account-btn--ghost"
+            onClick={() => signOut()}
+          >
+            Sign out
+          </button>
+        </div>
       </AccountSectionCard>
 
       <AccountSectionCard
         className="bento-col-12 animate-in animate-in-delay-2"
-        eyebrow="Recovery"
-        title="Account recovery posture"
-        description="Discord stays primary, but passkeys, backup codes, and a secondary recovery inbox keep the account recoverable when Discord or your primary email is unavailable."
+        leading={<ShieldCheck strokeWidth={1.75} aria-hidden />}
+        eyebrow="Account recovery"
+        title="Can you get back in if Discord breaks?"
+        description="Discord is your normal sign-in. Add backups—passkeys, one-time codes, or a spare inbox—so you are never stuck."
         actions={
           <Link to="/account/security" className="account-btn account-btn--primary">
-            Open security settings
+            Manage recovery
           </Link>
         }
       >
         {securityOverview?.shouldShowPrompt ? (
-          <div className="account-status-banner account-status-banner--warning">
-            <div className="account-status-banner-copy">
-              <strong>Add a stronger recovery factor now.</strong>
-              <span>
-                {isCreator
-                  ? 'Creator accounts should not rely on the Discord email alone.'
-                  : 'Add a passkey, backup codes, or a verified recovery email before you need them.'}
+          <div className="account-status-banner account-status-banner--warning account-status-banner--recovery-cta">
+            <div className="account-status-banner-main">
+              <span className="account-status-banner-icon" aria-hidden>
+                <AlertCircle strokeWidth={1.75} />
               </span>
+              <div className="account-status-banner-copy">
+                <strong>Add a backup sign-in method</strong>
+                <span className="account-status-banner-detail">
+                  {isCreator
+                    ? 'Keep at least one option besides your Discord email alone.'
+                    : 'Passkeys, backup codes, or a recovery email take a few minutes.'}
+                </span>
+              </div>
             </div>
-            <div className="account-inline-actions">
+            <div className="account-status-banner-actions">
               <Link to="/account/security" className="account-btn account-btn--primary">
-                Set up recovery
+                Set up in security
               </Link>
               <YucpButton
                 yucp="secondary"
@@ -243,38 +242,42 @@ function AccountProfile() {
         ) : (
           <div className="account-status-banner account-status-banner--success">
             <div className="account-status-banner-copy">
-              <strong>Recovery factors are on file.</strong>
-              <span>
+              <strong>Recovery options look healthy</strong>
+              <span className="account-status-banner-detail">
                 {securityOverview
-                  ? `${securityOverview.strongFactorCount} strong factor${securityOverview.strongFactorCount === 1 ? '' : 's'} currently protect this account.`
-                  : 'Open security settings to review your recovery posture.'}
+                  ? `${securityOverview.strongFactorCount} strong backup${securityOverview.strongFactorCount === 1 ? '' : 's'} on file.`
+                  : 'Open security settings to review details.'}
               </span>
             </div>
           </div>
         )}
 
-        <div className="account-stat-grid">
-          <div className="account-stat-card">
-            <span className="account-stat-label">Passkeys</span>
-            <span className="account-stat-value">{securityOverview?.passkeyCount ?? '-'}</span>
-          </div>
-          <div className="account-stat-card">
-            <span className="account-stat-label">Backup codes</span>
-            <span className="account-stat-value">{securityOverview?.backupCodeCount ?? '-'}</span>
-          </div>
-          <div className="account-stat-card">
-            <span className="account-stat-label">Recovery emails</span>
-            <span className="account-stat-value">
-              {securityOverview?.verifiedRecoveryEmailCount ?? '-'}
+        <ul className="account-recovery-metrics" aria-label="Recovery snapshot">
+          <li className="account-recovery-metric">
+            <span>Passkeys</span>
+            <span className="account-recovery-metric-value">
+              {securityOverview?.passkeyCount ?? '—'}
             </span>
-          </div>
-          <div className="account-stat-card">
-            <span className="account-stat-label">Primary email recovery</span>
-            <span className="account-stat-value">
-              {securityOverview?.primaryEmailRecoveryEligible ? 'Available' : 'Suppressed'}
+          </li>
+          <li className="account-recovery-metric">
+            <span>Backup codes</span>
+            <span className="account-recovery-metric-value">
+              {securityOverview?.backupCodeCount ?? '—'}
             </span>
-          </div>
-        </div>
+          </li>
+          <li className="account-recovery-metric">
+            <span>Recovery inboxes</span>
+            <span className="account-recovery-metric-value">
+              {securityOverview?.verifiedRecoveryEmailCount ?? '—'}
+            </span>
+          </li>
+          <li className="account-recovery-metric account-recovery-metric--policy">
+            <span>Primary email reset</span>
+            <span className="account-recovery-metric-value">
+              {securityOverview?.primaryEmailRecoveryEligible ? 'On' : 'Paused'}
+            </span>
+          </li>
+        </ul>
       </AccountSectionCard>
 
       <AccountSectionCard

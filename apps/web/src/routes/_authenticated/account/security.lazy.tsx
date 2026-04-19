@@ -1,8 +1,9 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useMutation as useConvexMutation, useQuery as useConvexQuery } from 'convex/react';
+import { AlertCircle, KeyRound, Mail, ShieldAlert, ShieldCheck, Ticket } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { AccountPage, AccountSectionCard } from '@/components/account/AccountPage';
-import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
+import { AccountSecuritySkeleton } from '@/components/account/AccountSecuritySkeleton';
 import { useToast } from '@/components/ui/Toast';
 import { YucpButton } from '@/components/ui/YucpButton';
 import { authClient } from '@/lib/auth-client';
@@ -23,11 +24,7 @@ interface PasskeyRecord {
 }
 
 function SecurityPending() {
-  return (
-    <AccountPage>
-      <DashboardListSkeleton rows={5} />
-    </AccountPage>
-  );
+  return <AccountSecuritySkeleton />;
 }
 
 function formatCreatedAt(value: Date | string | number | null | undefined) {
@@ -69,6 +66,7 @@ function AccountSecurityPage() {
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryEmailOtp, setRecoveryEmailOtp] = useState('');
   const [pendingRecoveryEmail, setPendingRecoveryEmail] = useState<string | null>(null);
+  const [pendingRecoveryChallenge, setPendingRecoveryChallenge] = useState<string | null>(null);
   const [freshBackupCodes, setFreshBackupCodes] = useState<string[]>([]);
   const passkeys: PasskeyRecord[] = passkeysQuery.data ?? [];
   const isLoadingPasskeys = passkeysQuery.isPending;
@@ -78,18 +76,22 @@ function AccountSecurityPage() {
       {
         label: 'Passkeys',
         value: securityOverview?.passkeyCount ?? 0,
+        isPolicy: false,
       },
       {
-        label: 'Backup codes',
+        label: 'Backup codes left',
         value: securityOverview?.backupCodeCount ?? 0,
+        isPolicy: false,
       },
       {
-        label: 'Recovery emails',
+        label: 'Recovery inboxes',
         value: securityOverview?.verifiedRecoveryEmailCount ?? 0,
+        isPolicy: false,
       },
       {
-        label: 'Creator policy',
-        value: securityOverview?.isCreatorAccount ? 'High-sensitivity' : 'Personal',
+        label: 'Account type',
+        value: securityOverview?.isCreatorAccount ? 'Creator' : 'Personal',
+        isPolicy: true,
       },
     ],
     [securityOverview]
@@ -207,6 +209,7 @@ function AccountSecurityPage() {
         throw new Error(result.error.message ?? 'Could not send verification code');
       }
       setPendingRecoveryEmail(prepared.email);
+      setPendingRecoveryChallenge(prepared.challengeToken);
       toast.success('Verification code sent', {
         description: 'Enter the code from your recovery inbox to finish enrollment.',
       });
@@ -220,7 +223,7 @@ function AccountSecurityPage() {
   }
 
   async function handleVerifyRecoveryEmail() {
-    if (!pendingRecoveryEmail || !recoveryEmailOtp.trim()) {
+    if (!pendingRecoveryEmail || !pendingRecoveryChallenge || !recoveryEmailOtp.trim()) {
       toast.error('Enter the verification code');
       return;
     }
@@ -237,8 +240,10 @@ function AccountSecurityPage() {
       }
       await verifyRecoveryContactEnrollment({
         email: pendingRecoveryEmail,
+        challengeToken: pendingRecoveryChallenge,
       });
       setPendingRecoveryEmail(null);
+      setPendingRecoveryChallenge(null);
       setRecoveryEmail('');
       setRecoveryEmailOtp('');
       toast.success('Recovery email verified');
@@ -325,9 +330,10 @@ function AccountSecurityPage() {
     <AccountPage>
       <AccountSectionCard
         className="bento-col-12"
-        eyebrow="Security posture"
-        title="Recovery factors"
-        description="Discord stays primary, but Better Auth passkeys, backup codes, and verified recovery email protect the account when Discord or email access changes."
+        leading={<ShieldCheck strokeWidth={1.75} aria-hidden />}
+        eyebrow="Recovery status"
+        title="Can you get back in without Discord?"
+        description="You usually sign in with Discord. Add at least one backup so you are not locked out if you lose Discord, your phone, or access to your main email."
         actions={
           <YucpButton
             yucp="secondary"
@@ -339,251 +345,321 @@ function AccountSecurityPage() {
         }
       >
         {securityOverview.shouldShowPrompt ? (
-          <div className="account-status-banner account-status-banner--warning">
-            <div className="account-status-banner-copy">
-              <strong>Recovery is still weak.</strong>
-              <span>
-                Add at least one strong fallback now. Creator accounts should not rely on the
-                Discord email alone.
+          <div className="account-status-banner account-status-banner--warning account-status-banner--notice">
+            <div className="account-status-banner-main">
+              <span className="account-status-banner-icon" aria-hidden>
+                <AlertCircle strokeWidth={1.75} />
               </span>
+              <div className="account-status-banner-copy">
+                <strong>Add a backup before you need it</strong>
+                <span className="account-status-banner-detail">
+                  {securityOverview.isCreatorAccount
+                    ? 'Creator accounts should keep a passkey, backup codes, or a second inbox on file.'
+                    : 'A passkey, backup codes, or a verified recovery email keeps you from getting stuck.'}
+                </span>
+              </div>
             </div>
           </div>
         ) : (
           <div className="account-status-banner account-status-banner--success">
             <div className="account-status-banner-copy">
-              <strong>Recovery posture recorded.</strong>
-              <span>
-                Keep at least one passkey, backup code set, or verified recovery email active.
+              <strong>You have recovery options on file</strong>
+              <span className="account-status-banner-detail">
+                Keep at least one passkey, backup code set, or recovery email active so support is
+                easier if something breaks.
               </span>
             </div>
           </div>
         )}
 
-        <div className="account-stat-grid">
+        <ul className="account-recovery-metrics" aria-label="Recovery snapshot">
           {summaryItems.map((item) => (
-            <div key={item.label} className="account-stat-card">
-              <span className="account-stat-label">{item.label}</span>
-              <span className="account-stat-value">{item.value}</span>
-            </div>
+            <li key={item.label} className={joinMetricClass(item.isPolicy)}>
+              <span>{item.label}</span>
+              <span className="account-recovery-metric-value">{item.value}</span>
+            </li>
           ))}
-        </div>
+        </ul>
       </AccountSectionCard>
 
       <AccountSectionCard
-        className="bento-col-6"
-        eyebrow="Passkeys"
-        title="Passkey recovery"
-        description="Passkeys are the preferred passwordless recovery factor because Better Auth can use them for both sign-in and account recovery."
-        actions={
-          <YucpButton
-            yucp="primary"
-            isLoading={pendingAction === 'add-passkey'}
-            onPress={handleAddPasskey}
-          >
-            Add passkey
-          </YucpButton>
-        }
+        className="bento-col-12"
+        eyebrow="Backup sign-in methods"
+        title="Pick what works for you"
+        description="You do not need everything here—choose what you can keep safe. Passkeys are the smoothest; codes and a spare email are great fallbacks."
       >
-        {isLoadingPasskeys ? (
-          <p className="account-feature-copy">Loading passkeys...</p>
-        ) : passkeys.length === 0 ? (
-          <p className="account-feature-copy">
-            No passkeys enrolled yet. Add one from this browser or your hardware security key.
-          </p>
-        ) : (
-          <div className="account-security-list">
-            {passkeys.map((passkey) => (
-              <div key={passkey.id} className="account-security-row">
-                <div className="account-security-copy">
-                  <p className="account-security-title">{passkey.name || 'Unnamed passkey'}</p>
-                  <p className="account-security-meta">
-                    {passkey.deviceType || 'Authenticator device'} · Added{' '}
-                    {formatCreatedAt(passkey.createdAt)}
-                    {passkey.backedUp ? ' · Synced' : ''}
+        <p className="account-recovery-intro">
+          Each option below is independent. Turn on one now, then layer more over time.
+        </p>
+
+        <div className="account-recovery-board">
+          <article className="account-recovery-method">
+            <div className="account-recovery-method-head">
+              <div className="account-recovery-method-title-group">
+                <span className="account-recovery-method-icon">
+                  <KeyRound strokeWidth={1.75} aria-hidden />
+                </span>
+                <div className="account-recovery-method-titles">
+                  <p className="account-recovery-method-name">Passkeys</p>
+                  <p className="account-recovery-method-blurb">
+                    Use your phone, laptop, or a security key instead of typing a password when you
+                    need to recover access.
                   </p>
                 </div>
+              </div>
+            </div>
+            <div className="account-recovery-method-body">
+              {isLoadingPasskeys ? (
+                <p className="account-feature-copy">Loading passkeys…</p>
+              ) : passkeys.length === 0 ? (
+                <p className="account-feature-copy">
+                  None added yet. Start from this browser or plug in a hardware key.
+                </p>
+              ) : (
+                <div className="account-security-list">
+                  {passkeys.map((passkey) => (
+                    <div key={passkey.id} className="account-security-row">
+                      <div className="account-security-copy">
+                        <p className="account-security-title">
+                          {passkey.name || 'Unnamed passkey'}
+                        </p>
+                        <p className="account-security-meta">
+                          {passkey.deviceType || 'Authenticator device'} · Added{' '}
+                          {formatCreatedAt(passkey.createdAt)}
+                          {passkey.backedUp ? ' · Synced' : ''}
+                        </p>
+                      </div>
+                      <YucpButton
+                        yucp="secondary"
+                        isLoading={pendingAction === `delete-passkey:${passkey.id}`}
+                        onPress={() => handleDeletePasskey(passkey.id)}
+                      >
+                        Remove
+                      </YucpButton>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="account-recovery-method-actions">
+              <YucpButton
+                yucp="primary"
+                isLoading={pendingAction === 'add-passkey'}
+                onPress={handleAddPasskey}
+              >
+                Add passkey
+              </YucpButton>
+            </div>
+          </article>
+
+          <article className="account-recovery-method">
+            <div className="account-recovery-method-head">
+              <div className="account-recovery-method-title-group">
+                <span className="account-recovery-method-icon account-recovery-method-icon--amber">
+                  <Ticket strokeWidth={1.75} aria-hidden />
+                </span>
+                <div className="account-recovery-method-titles">
+                  <p className="account-recovery-method-name">Backup codes</p>
+                  <p className="account-recovery-method-blurb">
+                    One-time codes you can store offline. Each code works a single time if other
+                    options fail.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="account-recovery-method-body">
+              <p className="account-feature-copy">
+                {securityOverview.hasBackupCodes
+                  ? `${securityOverview.backupCodeCount} codes left. Regenerating creates a fresh list and voids the old one.`
+                  : 'Turn on backup codes once—we will generate a set you can print or store in a password manager.'}
+              </p>
+              {freshBackupCodes.length > 0 ? (
+                <div className="account-security-code-grid">
+                  {freshBackupCodes.map((code) => (
+                    <code key={code} className="account-security-code">
+                      {code}
+                    </code>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <div className="account-recovery-method-actions">
+              {securityOverview.hasBackupCodes ? (
                 <YucpButton
                   yucp="secondary"
-                  isLoading={pendingAction === `delete-passkey:${passkey.id}`}
-                  onPress={() => handleDeletePasskey(passkey.id)}
+                  isLoading={pendingAction === 'regenerate-backup-codes'}
+                  onPress={handleRegenerateBackupCodes}
                 >
-                  Remove
+                  Regenerate codes
+                </YucpButton>
+              ) : (
+                <YucpButton
+                  yucp="primary"
+                  isLoading={pendingAction === 'enable-backup-codes'}
+                  onPress={handleEnableBackupCodes}
+                >
+                  Enable backup codes
+                </YucpButton>
+              )}
+            </div>
+          </article>
+
+          <article className="account-recovery-method account-recovery-method--span-full">
+            <div className="account-recovery-method-head">
+              <div className="account-recovery-method-title-group">
+                <span className="account-recovery-method-icon account-recovery-method-icon--violet">
+                  <Mail strokeWidth={1.75} aria-hidden />
+                </span>
+                <div className="account-recovery-method-titles">
+                  <p className="account-recovery-method-name">Recovery email</p>
+                  <p className="account-recovery-method-blurb">
+                    A separate inbox (not the same as your Discord login email) where we can send a
+                    verification code if you are locked out.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="account-recovery-method-body">
+              <div className="account-security-form">
+                <label className="account-security-label" htmlFor="recovery-email">
+                  Email address
+                </label>
+                <input
+                  id="recovery-email"
+                  className="account-security-input"
+                  type="email"
+                  value={recoveryEmail}
+                  onChange={(event) => setRecoveryEmail(event.target.value)}
+                  placeholder="you@personal-domain.com"
+                  autoComplete="email"
+                />
+                <YucpButton
+                  yucp="primary"
+                  isLoading={pendingAction === 'send-recovery-email-otp'}
+                  onPress={handleStartRecoveryEmailEnrollment}
+                >
+                  Send code
                 </YucpButton>
               </div>
-            ))}
-          </div>
-        )}
-      </AccountSectionCard>
 
-      <AccountSectionCard
-        className="bento-col-6"
-        eyebrow="Backup codes"
-        title="Emergency codes"
-        description="Better Auth stores backup codes as encrypted two-factor recovery codes. Each code works once."
-        actions={
-          securityOverview.hasBackupCodes ? (
-            <YucpButton
-              yucp="secondary"
-              isLoading={pendingAction === 'regenerate-backup-codes'}
-              onPress={handleRegenerateBackupCodes}
-            >
-              Regenerate
-            </YucpButton>
-          ) : (
-            <YucpButton
-              yucp="primary"
-              isLoading={pendingAction === 'enable-backup-codes'}
-              onPress={handleEnableBackupCodes}
-            >
-              Enable backup codes
-            </YucpButton>
-          )
-        }
-      >
-        <p className="account-feature-copy">
-          {securityOverview.hasBackupCodes
-            ? `${securityOverview.backupCodeCount} backup codes remain available. Regenerating them invalidates the current set.`
-            : 'Enable passwordless 2FA once and Better Auth will mint encrypted backup codes for recovery.'}
-        </p>
-        {freshBackupCodes.length > 0 ? (
-          <div className="account-security-code-grid">
-            {freshBackupCodes.map((code) => (
-              <code key={code} className="account-security-code">
-                {code}
-              </code>
-            ))}
-          </div>
-        ) : null}
-      </AccountSectionCard>
-
-      <AccountSectionCard
-        className="bento-col-8"
-        eyebrow="Recovery email"
-        title="Verified secondary recovery email"
-        description="Use a second inbox you control. Creator accounts should keep this separate from the Discord primary email."
-      >
-        <div className="account-security-form">
-          <label className="account-security-label" htmlFor="recovery-email">
-            Recovery email
-          </label>
-          <input
-            id="recovery-email"
-            className="account-security-input"
-            type="email"
-            value={recoveryEmail}
-            onChange={(event) => setRecoveryEmail(event.target.value)}
-            placeholder="owner@example.com"
-            autoComplete="email"
-          />
-          <YucpButton
-            yucp="primary"
-            isLoading={pendingAction === 'send-recovery-email-otp'}
-            onPress={handleStartRecoveryEmailEnrollment}
-          >
-            Send verification code
-          </YucpButton>
-        </div>
-
-        {pendingRecoveryEmail ? (
-          <div className="account-security-form">
-            <label className="account-security-label" htmlFor="recovery-email-otp">
-              Verification code
-            </label>
-            <input
-              id="recovery-email-otp"
-              className="account-security-input"
-              type="text"
-              inputMode="numeric"
-              value={recoveryEmailOtp}
-              onChange={(event) => setRecoveryEmailOtp(event.target.value)}
-              placeholder="123456"
-              autoComplete="one-time-code"
-            />
-            <YucpButton
-              yucp="secondary"
-              isLoading={pendingAction === 'verify-recovery-email-otp'}
-              onPress={handleVerifyRecoveryEmail}
-            >
-              Verify recovery email
-            </YucpButton>
-          </div>
-        ) : null}
-
-        <div className="account-security-list">
-          {securityOverview.recoveryContacts.length === 0 ? (
-            <p className="account-feature-copy">No verified recovery email is enrolled yet.</p>
-          ) : (
-            securityOverview.recoveryContacts.map(
-              (contact: (typeof securityOverview.recoveryContacts)[number]) => (
-                <div key={contact.id} className="account-security-row">
-                  <div className="account-security-copy">
-                    <p className="account-security-title">
-                      {contact.email || 'Encrypted recovery email'}
-                    </p>
-                    <p className="account-security-meta">
-                      {contact.status} · Added {formatCreatedAt(contact.addedAt)}
-                    </p>
-                  </div>
-                  <div className="account-inline-actions">
-                    <YucpButton
-                      yucp="secondary"
-                      isLoading={pendingAction === `remove-recovery-email:${contact.id}`}
-                      onPress={() =>
-                        handleRemoveRecoveryEmail(contact.id as Id<'account_recovery_contacts'>)
-                      }
-                    >
-                      Remove
-                    </YucpButton>
-                    <YucpButton
-                      yucp="danger"
-                      isLoading={pendingAction === 'recovery-email'}
-                      onPress={() =>
-                        handleCompromised(
-                          'recovery-email',
-                          contact.id as Id<'account_recovery_contacts'>
-                        )
-                      }
-                    >
-                      Mark compromised
-                    </YucpButton>
-                  </div>
+              {pendingRecoveryEmail ? (
+                <div className="account-security-form">
+                  <label className="account-security-label" htmlFor="recovery-email-otp">
+                    Code from that inbox
+                  </label>
+                  <input
+                    id="recovery-email-otp"
+                    className="account-security-input"
+                    type="text"
+                    inputMode="numeric"
+                    value={recoveryEmailOtp}
+                    onChange={(event) => setRecoveryEmailOtp(event.target.value)}
+                    placeholder="123456"
+                    autoComplete="one-time-code"
+                  />
+                  <YucpButton
+                    yucp="secondary"
+                    isLoading={pendingAction === 'verify-recovery-email-otp'}
+                    onPress={handleVerifyRecoveryEmail}
+                  >
+                    Confirm email
+                  </YucpButton>
                 </div>
-              )
-            )
-          )}
+              ) : null}
+
+              <div className="account-security-list">
+                {securityOverview.recoveryContacts.length === 0 ? (
+                  <p className="account-feature-copy">No verified recovery email yet.</p>
+                ) : (
+                  securityOverview.recoveryContacts.map(
+                    (contact: (typeof securityOverview.recoveryContacts)[number]) => (
+                      <div key={contact.id} className="account-security-row">
+                        <div className="account-security-copy">
+                          <p className="account-security-title">
+                            {contact.email || 'Encrypted recovery email'}
+                          </p>
+                          <p className="account-security-meta">
+                            {contact.status} · Added {formatCreatedAt(contact.addedAt)}
+                          </p>
+                        </div>
+                        <div className="account-inline-actions">
+                          <YucpButton
+                            yucp="secondary"
+                            isLoading={pendingAction === `remove-recovery-email:${contact.id}`}
+                            onPress={() =>
+                              handleRemoveRecoveryEmail(
+                                contact.id as Id<'account_recovery_contacts'>
+                              )
+                            }
+                          >
+                            Remove
+                          </YucpButton>
+                          <YucpButton
+                            yucp="danger"
+                            isLoading={pendingAction === 'recovery-email'}
+                            onPress={() =>
+                              handleCompromised(
+                                'recovery-email',
+                                contact.id as Id<'account_recovery_contacts'>
+                              )
+                            }
+                          >
+                            Mark unsafe
+                          </YucpButton>
+                        </div>
+                      </div>
+                    )
+                  )
+                )}
+              </div>
+            </div>
+          </article>
         </div>
       </AccountSectionCard>
 
       <AccountSectionCard
-        className="bento-col-4"
-        eyebrow="Containment"
-        title="Compromised factors"
-        description="Suppress a compromised channel immediately, then revoke sessions so recovery must continue from a still-trusted factor."
+        className="bento-col-12 account-surface-card--security-emergency"
+        leading={<ShieldAlert strokeWidth={1.75} aria-hidden />}
+        eyebrow="If access might be stolen"
+        title="Pause risky channels"
+        description="Use these only when you suspect someone else reached your email or Discord. We will block recovery through the channel you mark until you replace it."
       >
-        <div className="account-inline-actions account-inline-actions--stack">
-          <YucpButton
-            yucp="danger"
-            isLoading={pendingAction === 'primary-email'}
-            onPress={() => handleCompromised('primary-email')}
-          >
-            Primary email compromised
-          </YucpButton>
-          <YucpButton
-            yucp="danger"
-            isLoading={pendingAction === 'discord'}
-            onPress={() => handleCompromised('discord')}
-          >
-            Discord compromised
-          </YucpButton>
-          <YucpButton
-            yucp="secondary"
-            isLoading={pendingAction === 'revoke-sessions'}
-            onPress={handleRevokeSessions}
-          >
-            Revoke all sessions
-          </YucpButton>
+        <div className="account-emergency-actions">
+          <p className="account-emergency-hint">
+            After marking a channel, sign out everywhere so new sign-ins must use a method you still
+            trust.
+          </p>
+          <div className="account-emergency-actions-row">
+            <YucpButton
+              yucp="danger"
+              isLoading={pendingAction === 'primary-email'}
+              onPress={() => handleCompromised('primary-email')}
+            >
+              Primary email unsafe
+            </YucpButton>
+            <YucpButton
+              yucp="danger"
+              isLoading={pendingAction === 'discord'}
+              onPress={() => handleCompromised('discord')}
+            >
+              Discord unsafe
+            </YucpButton>
+            <YucpButton
+              yucp="secondary"
+              isLoading={pendingAction === 'revoke-sessions'}
+              onPress={handleRevokeSessions}
+            >
+              Sign out everywhere
+            </YucpButton>
+          </div>
         </div>
       </AccountSectionCard>
     </AccountPage>
   );
+}
+
+function joinMetricClass(isPolicy: boolean) {
+  return ['account-recovery-metric', isPolicy ? 'account-recovery-metric--policy' : '']
+    .filter(Boolean)
+    .join(' ');
 }

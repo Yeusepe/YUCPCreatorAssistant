@@ -10,6 +10,13 @@ import {
   verifyAccountRecoveryEmail,
 } from '@/lib/account';
 import { authClient } from '@/lib/auth-client';
+import {
+  CREATOR_SUITE_LOGO_SRC,
+  CREATOR_SUITE_PRODUCT_NAME,
+  CREATOR_SUITE_SIGN_IN_METHODS,
+  CreatorSuiteSignInMethodIcon,
+  type CreatorSuiteSignInMethodId,
+} from '@/lib/creatorSuiteSignIn';
 import { routeStyleHrefs, routeStylesheetLinks } from '@/lib/routeStyles';
 import { getAuthSession } from '@/lib/server/auth';
 import { logWebError } from '@/lib/webDiagnostics';
@@ -19,7 +26,7 @@ export const Route = createFileRoute('/sign-in')({
     redirectTo: typeof search.redirectTo === 'string' ? search.redirectTo : undefined,
   }),
   head: () => ({
-    meta: [{ title: 'Sign in | Creator Assistant' }],
+    meta: [{ title: `Sign in | ${CREATOR_SUITE_PRODUCT_NAME}` }],
     links: routeStylesheetLinks(routeStyleHrefs.signIn),
   }),
   beforeLoad: async ({ search }) => {
@@ -54,7 +61,7 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
   const [currentState, setCurrentState] = useState<PageState>('state-signin');
   const [isVisible, setIsVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState('Something went wrong. Please try again.');
-  const [authAction, setAuthAction] = useState<'discord' | 'passkey' | null>(null);
+  const [authAction, setAuthAction] = useState<CreatorSuiteSignInMethodId | null>(null);
   const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
   const [recoveryStep, setRecoveryStep] = useState<RecoveryStep>('lookup');
   const [recoveryPendingAction, setRecoveryPendingAction] = useState<
@@ -147,6 +154,24 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
       setAuthAction(null);
     }
   }, [showError]);
+
+  const handleCreatorSuiteSignIn = useCallback(
+    (id: CreatorSuiteSignInMethodId) => {
+      switch (id) {
+        case 'discord':
+          void handleSignIn();
+          break;
+        case 'passkey':
+          void handlePasskeySignIn();
+          break;
+        default: {
+          const _exhaustive: never = id;
+          void _exhaustive;
+        }
+      }
+    },
+    [handlePasskeySignIn, handleSignIn]
+  );
 
   const handleStartRecovery = useCallback(async () => {
     if (!recoveryEmail.trim()) {
@@ -263,105 +288,53 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
     <div className="sign-in-page">
       <PageLoadingOverlay />
       <div id="page-content" className={isVisible ? 'visible' : ''}>
-        <div className="logo-wrap">
-          <img src="/Icons/MainLogo.png" alt="Creator Assistant" />
+        <div className="logo-wrap logo-wrap--suite">
+          <img src={CREATOR_SUITE_LOGO_SRC} alt={CREATOR_SUITE_PRODUCT_NAME} />
         </div>
 
         <div className="card">
           {currentState === 'state-signin' && (
             <div id="state-signin" className="state active">
-              <div className="brand-icon" aria-hidden="true">
-                <svg
-                  width="26"
-                  height="20"
-                  viewBox="0 0 22 16"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M18.6405 1.34005C17.2162 0.692466 15.6894 0.214918 14.0937 -0.000976562C13.8964 0.351023 13.668 0.827571 13.5104 1.20625C11.8109 0.957596 10.1272 0.957596 8.45984 1.20625C8.30222 0.827571 8.06802 0.351023 7.86887 -0.000976562C6.27139 0.214918 4.74277 0.694558 3.31851 1.34394C0.477068 5.53193 -0.29243 9.61536 0.0923454 13.6397C2.01043 15.0637 3.86783 15.9288 5.69467 16.4888C6.14896 15.8688 6.55408 15.2091 6.90196 14.5152C6.23869 14.2665 5.60335 13.9559 5.0046 13.5937C5.16222 13.4775 5.31618 13.3572 5.46618 13.2369C9.00034 14.9215 12.8434 14.9215 16.3356 13.2369C16.4875 13.3572 16.6415 13.4775 16.7972 13.5937C16.1965 13.9578 15.5592 14.2684 14.8959 14.5171C15.2438 15.2091 15.6471 15.8707 16.1032 16.4907C17.932 15.9307 19.7913 15.0656 21.7094 13.6397C22.1637 8.99328 20.9479 4.94768 18.6405 1.34005ZM7.35277 11.1872C6.27139 11.1872 5.38261 10.1885 5.38261 8.96893C5.38261 7.74936 6.25165 6.74884 7.35277 6.74884C8.4539 6.74884 9.34267 7.74756 9.32294 8.96893C9.32479 10.1885 8.4539 11.1872 7.35277 11.1872ZM14.449 11.1872C13.3677 11.1872 12.4789 10.1885 12.4789 8.96893C12.4789 7.74936 13.3479 6.74884 14.449 6.74884C15.5502 6.74884 16.439 7.74756 16.4192 8.96893C16.4192 10.1885 15.5502 11.1872 14.449 11.1872Z"
-                    fill="rgba(114,137,218,0.9)"
-                  />
-                </svg>
-              </div>
+              <h1 className="card-title">Sign in</h1>
+              <p className="card-sub">Use Discord or a passkey to access your creator account.</p>
 
-              <h1 className="card-title">Creator Assistant</h1>
-              <p className="card-sub">
-                Sign in with Discord or a passkey. If you are locked out, recover access with a
-                verified recovery channel and finish by enrolling a new passkey.
-              </p>
-
-              <div className="sign-in-actions">
-                <button
-                  id="discord-signin-btn"
-                  type="button"
-                  className="discord-btn"
-                  onClick={handleSignIn}
-                  disabled={authAction !== null}
-                >
-                  {authAction === 'discord' ? <span className="sign-in-btn-spinner" /> : null}
-                  <svg
-                    width="20"
-                    height="15"
-                    viewBox="0 0 22 16"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden="true"
+              <fieldset className="sign-in-actions sign-in-methods">
+                <legend className="sign-in-sr-only">Sign-in options</legend>
+                {CREATOR_SUITE_SIGN_IN_METHODS.map((method) => (
+                  <button
+                    key={method.id}
+                    id={method.id === 'discord' ? 'discord-signin-btn' : undefined}
+                    type="button"
+                    className={
+                      method.visual === 'brand'
+                        ? 'sign-in-method sign-in-method--brand discord-btn'
+                        : 'sign-in-method sign-in-method--neutral secondary-auth-btn'
+                    }
+                    onClick={() => handleCreatorSuiteSignIn(method.id)}
+                    disabled={authAction !== null}
                   >
-                    <path
-                      d="M18.6405 1.34005C17.2162 0.692466 15.6894 0.214918 14.0937 -0.000976562C13.8964 0.351023 13.668 0.827571 13.5104 1.20625C11.8109 0.957596 10.1272 0.957596 8.45984 1.20625C8.30222 0.827571 8.06802 0.351023 7.86887 -0.000976562C6.27139 0.214918 4.74277 0.694558 3.31851 1.34394C0.477068 5.53193 -0.29243 9.61536 0.0923454 13.6397C2.01043 15.0637 3.86783 15.9288 5.69467 16.4888C6.14896 15.8688 6.55408 15.2091 6.90196 14.5152C6.23869 14.2665 5.60335 13.9559 5.0046 13.5937C5.16222 13.4775 5.31618 13.3572 5.46618 13.2369C9.00034 14.9215 12.8434 14.9215 16.3356 13.2369C16.4875 13.3572 16.6415 13.4775 16.7972 13.5937C16.1965 13.9578 15.5592 14.2684 14.8959 14.5171C15.2438 15.2091 15.6471 15.8707 16.1032 16.4907C17.932 15.9307 19.7913 15.0656 21.7094 13.6397C22.1637 8.99328 20.9479 4.94768 18.6405 1.34005ZM7.35277 11.1872C6.27139 11.1872 5.38261 10.1885 5.38261 8.96893C5.38261 7.74936 6.25165 6.74884 7.35277 6.74884C8.4539 6.74884 9.34267 7.74756 9.32294 8.96893C9.32479 10.1885 8.4539 11.1872 7.35277 11.1872ZM14.449 11.1872C13.3677 11.1872 12.4789 10.1885 12.4789 8.96893C12.4789 7.74936 13.3479 6.74884 14.449 6.74884C15.5502 6.74884 16.439 7.74756 16.4192 8.96893C16.4192 10.1885 15.5502 11.1872 14.449 11.1872Z"
-                      fill="white"
-                    />
-                  </svg>
-                  {authAction === 'discord'
-                    ? 'Starting Discord sign-in...'
-                    : 'Sign in with Discord'}
-                </button>
+                    {authAction === method.id ? <span className="sign-in-btn-spinner" /> : null}
+                    <CreatorSuiteSignInMethodIcon name={method.id} />
+                    {authAction === method.id ? method.loadingLabel : method.label}
+                  </button>
+                ))}
+              </fieldset>
 
+              <div className="sign-in-recovery-row">
                 <button
                   type="button"
-                  className="secondary-auth-btn"
-                  onClick={handlePasskeySignIn}
-                  disabled={authAction !== null}
+                  className="sign-in-trouble-link"
+                  aria-expanded={isRecoveryOpen}
+                  onClick={() => {
+                    setIsRecoveryOpen((value) => !value);
+                    if (isRecoveryOpen) {
+                      resetRecoveryFlow();
+                    }
+                  }}
                 >
-                  {authAction === 'passkey' ? <span className="sign-in-btn-spinner" /> : null}
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v3a7 7 0 0 1-14 0v-3a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5Z" />
-                    <path d="M12 14h.01" />
-                  </svg>
-                  {authAction === 'passkey' ? 'Signing in with passkey...' : 'Sign in with passkey'}
+                  {isRecoveryOpen ? 'Close account recovery' : "Can't sign in?"}
                 </button>
               </div>
-
-              <div className="recovery-divider">
-                <span />
-                <p>Account recovery</p>
-                <span />
-              </div>
-
-              <button
-                type="button"
-                className="recovery-toggle-btn"
-                onClick={() => {
-                  setIsRecoveryOpen((value) => !value);
-                  if (isRecoveryOpen) {
-                    resetRecoveryFlow();
-                  }
-                }}
-              >
-                {isRecoveryOpen ? 'Hide recovery options' : 'Recover account'}
-              </button>
 
               {isRecoveryOpen ? (
                 <div className="recovery-panel">
@@ -459,8 +432,8 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
                     <div className="recovery-enroll-card">
                       <p className="recovery-panel-title">Finish recovery with a new passkey</p>
                       <p className="recovery-panel-copy">
-                        Your recovery proof is verified. Register a fresh passkey now, then Better
-                        Auth will complete sign-in with that passkey.
+                        Your recovery proof is verified. Register a fresh passkey now—we will
+                        complete sign-in with that passkey right after.
                       </p>
                       <button
                         type="button"
@@ -497,23 +470,6 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
                   </div>
                 </div>
               ) : null}
-
-              <div className="security-note">
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                </svg>
-                Secure OAuth 2.0 + PKCE and Better Auth passkeys
-              </div>
 
               <p className="terms-note">
                 By signing in you agree to our{' '}
@@ -676,7 +632,7 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
         </div>
 
         <p className="outer-footer">
-          Creator Assistant · <a href="/legal/privacy-policy">Privacy</a> ·{' '}
+          {CREATOR_SUITE_PRODUCT_NAME} · <a href="/legal/privacy-policy">Privacy</a> ·{' '}
           <a href="/legal/terms-of-service">Terms</a>
         </p>
       </div>
