@@ -82,16 +82,16 @@ export function createAccountSecurityRoutes(auth: Auth, config: AccountSecurityR
       });
 
       if (resolution?.authUserId && resolution.emailDeliveryMethod && resolution.targetEmail) {
-        await auth.sendEmailOtp({
-          email: resolution.targetEmail,
-          type: 'forget-password',
-        });
         await convex.mutation(api.accountSecurity.beginEmailRecoveryForApi, {
           apiSecret: config.convexApiSecret,
           authUserId: resolution.authUserId,
           lookupEmail: email,
           deliveryMethod: resolution.emailDeliveryMethod,
           targetEmail: resolution.targetEmail,
+        });
+        await auth.sendEmailOtp({
+          email: resolution.targetEmail,
+          type: 'forget-password',
         });
       }
     } catch (error) {

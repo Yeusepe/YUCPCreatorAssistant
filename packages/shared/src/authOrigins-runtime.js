@@ -5,6 +5,9 @@ const LOCAL_BROWSER_ORIGINS = [
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
   'http://127.0.0.1:5173',
+  'http://[::1]:3000',
+  'http://[::1]:3001',
+  'http://[::1]:5173',
 ];
 
 const LOCAL_TRUSTED_BROWSER_ORIGINS = [
@@ -15,6 +18,9 @@ const LOCAL_TRUSTED_BROWSER_ORIGINS = [
   'https://127.0.0.1:3000',
   'https://127.0.0.1:3001',
   'https://127.0.0.1:5173',
+  'https://[::1]:3000',
+  'https://[::1]:3001',
+  'https://[::1]:5173',
 ];
 
 function normalizeOrigin(value) {
@@ -23,7 +29,11 @@ function normalizeOrigin(value) {
   }
 
   try {
-    return new URL(value).origin;
+    const parsed = new URL(value);
+    if (parsed.origin === 'null' || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+      return null;
+    }
+    return parsed.origin;
   } catch {
     return null;
   }

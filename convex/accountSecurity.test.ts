@@ -191,6 +191,14 @@ describe('accountSecurity', () => {
         })
       ).resolves.toBeNull();
 
+      await expect(
+        t.mutation(api.accountSecurity.consumeBackupCodeRecoveryForApi, {
+          apiSecret: 'test-secret',
+          email: 'backup-owner@example.com',
+          backupCode: 'WRONG-AFTER-LOCKOUT',
+        })
+      ).resolves.toBeNull();
+
       const lookupEmailHash = await sha256Hex('backup-owner@example.com');
       const sessions = await t.run(async (ctx) => {
         return await ctx.db

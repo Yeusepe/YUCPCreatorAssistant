@@ -156,4 +156,35 @@ describe('sign-in passkey flows', () => {
     await waitFor(() => expect(window.location.assign).toHaveBeenCalledWith('/dashboard/security'));
     expect(screen.queryByLabelText('Passkey name')).not.toBeInTheDocument();
   });
+
+  it('verifies recovery against the lookup email that started the flow even if the input changes later', async () => {
+    startAccountRecoveryMock.mockResolvedValue({
+      message: 'Recovery email sent.',
+    });
+    verifyAccountRecoveryEmailMock.mockResolvedValue({
+      recoveryPasskeyContext: 'recovery-context-token',
+    });
+
+    render(<SignInPage redirectTo="/dashboard/security" />);
+
+    fireEvent.click(screen.getByRole('button', { name: "Can't sign in?" }));
+    fireEvent.change(screen.getByLabelText('Account or recovery email'), {
+      target: { value: 'creator@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send recovery options' }));
+
+    await screen.findByRole('button', { name: 'Verify email code' });
+
+    fireEvent.change(screen.getByLabelText('Account or recovery email'), {
+      target: { value: 'other@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Email code'), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify email code' }));
+
+    await waitFor(() =>
+      expect(verifyAccountRecoveryEmailMock).toHaveBeenCalledWith('creator@example.com', '123456')
+    );
+  });
 });

@@ -24,7 +24,7 @@ function dashboardStatsInsight(s: DashboardStats): string {
   if (s.recent7d > 0) {
     return `${String(s.recent7d)} verification${s.recent7d === 1 ? '' : 's'} in the last 7 days.`;
   }
-  return 'No verifications in the last day—check linked stores or run a test verification.';
+  return 'All quiet in the last 24 hours. Confirm your stores are linked, or run a test verification to make sure everything’s working.';
 }
 
 const STAT_DEFINITIONS: ReadonlyArray<{

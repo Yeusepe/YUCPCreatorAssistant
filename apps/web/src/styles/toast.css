@@ -17,8 +17,7 @@
   --toast-surface: rgba(255, 255, 255, 0.9);
   --toast-border: rgba(148, 163, 184, 0.34);
   --toast-shadow:
-    0 8px 28px rgba(15, 23, 42, 0.18),
-    0 2px 8px rgba(15, 23, 42, 0.12),
+    0 8px 28px rgba(15, 23, 42, 0.18), 0 2px 8px rgba(15, 23, 42, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
   --toast-text-primary: rgba(15, 23, 42, 0.96);
   --toast-text-secondary: rgba(51, 65, 85, 0.82);
@@ -33,13 +32,16 @@
   --toast-line-fallback: rgba(100, 116, 139, 0.38);
   --toast-progress-opacity: 0.64;
   --toast-persistent-line-opacity: 0.62;
-  --toast-update-surface: linear-gradient(155deg, rgba(255, 255, 255, 0.96) 0%, rgba(240, 249, 255, 0.94) 42%, rgba(226, 232, 240, 0.86) 100%);
+  --toast-update-surface: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(240, 249, 255, 0.94) 42%,
+    rgba(226, 232, 240, 0.86) 100%
+  );
   --toast-update-border: rgba(14, 165, 233, 0.32);
   --toast-update-shadow:
-    0 10px 34px rgba(14, 116, 144, 0.22),
-    0 2px 12px rgba(15, 23, 42, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8),
-    inset 0 -1px 0 rgba(148, 163, 184, 0.16);
+    0 10px 34px rgba(14, 116, 144, 0.22), 0 2px 12px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -1px 0 rgba(148, 163, 184, 0.16);
   --toast-update-line: linear-gradient(90deg, rgba(14, 165, 233, 0.34), rgba(3, 105, 161, 0.84));
   --toast-update-icon-bg: rgba(224, 242, 254, 0.85);
   --toast-update-icon-border: rgba(14, 165, 233, 0.28);
@@ -49,12 +51,19 @@
   --toast-update-support: rgba(30, 41, 59, 0.82);
   --toast-update-reload-text: #0f172a;
   --toast-update-reload-border: rgba(14, 165, 233, 0.36);
-  --toast-update-reload-bg: linear-gradient(165deg, rgba(125, 211, 252, 0.64) 0%, rgba(56, 189, 248, 0.34) 100%);
-  --toast-update-reload-bg-hover: linear-gradient(165deg, rgba(56, 189, 248, 0.75) 0%, rgba(14, 165, 233, 0.42) 100%);
+  --toast-update-reload-bg: linear-gradient(
+    165deg,
+    rgba(125, 211, 252, 0.64) 0%,
+    rgba(56, 189, 248, 0.34) 100%
+  );
+  --toast-update-reload-bg-hover: linear-gradient(
+    165deg,
+    rgba(56, 189, 248, 0.75) 0%,
+    rgba(14, 165, 233, 0.42) 100%
+  );
   --toast-update-reload-border-hover: rgba(2, 132, 199, 0.54);
   --toast-update-reload-shadow:
-    0 4px 16px rgba(14, 165, 233, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+    0 4px 16px rgba(14, 165, 233, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.62);
   --toast-update-close: rgba(51, 65, 85, 0.68);
   --toast-update-close-hover: rgba(15, 23, 42, 0.9);
   --toast-update-close-hover-bg: rgba(148, 163, 184, 0.2);
@@ -64,8 +73,7 @@
   --toast-surface: rgba(8, 12, 24, 0.72);
   --toast-border: rgba(255, 255, 255, 0.1);
   --toast-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.45),
-    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 8px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --toast-text-primary: rgba(255, 255, 255, 0.95);
   --toast-text-secondary: rgba(255, 255, 255, 0.6);
@@ -88,10 +96,8 @@
   );
   --toast-update-border: rgba(255, 255, 255, 0.12);
   --toast-update-shadow:
-    0 10px 40px rgba(0, 0, 0, 0.4),
-    0 2px 12px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+    0 10px 40px rgba(0, 0, 0, 0.4), 0 2px 12px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.12);
   --toast-update-line: linear-gradient(90deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.75));
   --toast-update-icon-bg: rgba(255, 255, 255, 0.1);
   --toast-update-icon-border: rgba(255, 255, 255, 0.16);
@@ -101,12 +107,19 @@
   --toast-update-support: rgba(203, 213, 225, 0.92);
   --toast-update-reload-text: #f0f9ff;
   --toast-update-reload-border: rgba(255, 255, 255, 0.22);
-  --toast-update-reload-bg: linear-gradient(165deg, rgba(56, 189, 248, 0.35) 0%, rgba(14, 165, 233, 0.22) 100%);
-  --toast-update-reload-bg-hover: linear-gradient(165deg, rgba(56, 189, 248, 0.48) 0%, rgba(14, 165, 233, 0.32) 100%);
+  --toast-update-reload-bg: linear-gradient(
+    165deg,
+    rgba(56, 189, 248, 0.35) 0%,
+    rgba(14, 165, 233, 0.22) 100%
+  );
+  --toast-update-reload-bg-hover: linear-gradient(
+    165deg,
+    rgba(56, 189, 248, 0.48) 0%,
+    rgba(14, 165, 233, 0.32) 100%
+  );
   --toast-update-reload-border-hover: rgba(255, 255, 255, 0.32);
   --toast-update-reload-shadow:
-    0 4px 18px rgba(14, 165, 233, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    0 4px 18px rgba(14, 165, 233, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.22);
   --toast-update-close: rgba(148, 163, 184, 0.75);
   --toast-update-close-hover: #f1f5f9;
   --toast-update-close-hover-bg: rgba(255, 255, 255, 0.08);

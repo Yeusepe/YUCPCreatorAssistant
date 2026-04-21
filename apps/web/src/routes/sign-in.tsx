@@ -70,6 +70,7 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryOtp, setRecoveryOtp] = useState('');
   const [recoveryBackupCode, setRecoveryBackupCode] = useState('');
+  const [recoveryLookupEmail, setRecoveryLookupEmail] = useState<string | null>(null);
   const [recoveryPasskeyContext, setRecoveryPasskeyContext] = useState<string | null>(null);
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
@@ -101,6 +102,7 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
     setRecoveryStep('lookup');
     setRecoveryOtp('');
     setRecoveryBackupCode('');
+    setRecoveryLookupEmail(null);
     setRecoveryPasskeyContext(null);
     setRecoveryMessage(null);
     setRecoveryError(null);
@@ -171,7 +173,9 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
     setRecoveryPendingAction('start');
     setRecoveryError(null);
     try {
-      const result = await startAccountRecovery(recoveryEmail.trim());
+      const lookupEmail = recoveryEmail.trim();
+      const result = await startAccountRecovery(lookupEmail);
+      setRecoveryLookupEmail(lookupEmail);
       setRecoveryStep('challenge');
       setRecoveryMessage(result.message);
       setRecoveryOtp('');
@@ -186,7 +190,8 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
   }, [recoveryEmail]);
 
   const handleVerifyRecoveryEmail = useCallback(async () => {
-    if (!recoveryEmail.trim() || !recoveryOtp.trim()) {
+    const lookupEmail = recoveryLookupEmail ?? recoveryEmail.trim();
+    if (!lookupEmail || !recoveryOtp.trim()) {
       setRecoveryError('Enter the recovery email and the code that was sent to it.');
       return;
     }
@@ -194,7 +199,7 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
     setRecoveryPendingAction('verify-email');
     setRecoveryError(null);
     try {
-      const result = await verifyAccountRecoveryEmail(recoveryEmail.trim(), recoveryOtp.trim());
+      const result = await verifyAccountRecoveryEmail(lookupEmail, recoveryOtp.trim());
       setRecoveryPasskeyContext(result.recoveryPasskeyContext);
       setRecoveryStep('enroll');
       setRecoveryMessage('Recovery verified. Add a new passkey to finish restoring access.');
@@ -205,10 +210,11 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
     } finally {
       setRecoveryPendingAction(null);
     }
-  }, [recoveryEmail, recoveryOtp]);
+  }, [recoveryEmail, recoveryLookupEmail, recoveryOtp]);
 
   const handleVerifyBackupCode = useCallback(async () => {
-    if (!recoveryEmail.trim() || !recoveryBackupCode.trim()) {
+    const lookupEmail = recoveryLookupEmail ?? recoveryEmail.trim();
+    if (!lookupEmail || !recoveryBackupCode.trim()) {
       setRecoveryError('Enter the account email and one backup code.');
       return;
     }
@@ -216,10 +222,7 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
     setRecoveryPendingAction('verify-backup-code');
     setRecoveryError(null);
     try {
-      const result = await verifyAccountRecoveryBackupCode(
-        recoveryEmail.trim(),
-        recoveryBackupCode.trim()
-      );
+      const result = await verifyAccountRecoveryBackupCode(lookupEmail, recoveryBackupCode.trim());
       setRecoveryPasskeyContext(result.recoveryPasskeyContext);
       setRecoveryStep('enroll');
       setRecoveryMessage('Backup code accepted. Add a new passkey to finish restoring access.');
@@ -228,7 +231,7 @@ function SignInPageContent({ redirectTo }: Readonly<{ redirectTo?: string | null
     } finally {
       setRecoveryPendingAction(null);
     }
-  }, [recoveryBackupCode, recoveryEmail]);
+  }, [recoveryBackupCode, recoveryEmail, recoveryLookupEmail]);
 
   const handleCompleteRecovery = useCallback(async () => {
     if (!recoveryPasskeyContext) {

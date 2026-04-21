@@ -582,7 +582,26 @@ async function getLatestActiveRecoverySessionByLookupEmail(
       return session;
     }
   }
-  return sorted[0] ?? null;
+  return null;
+}
+
+async function getLatestRecoverySessionByLookupEmail(
+  ctx: any,
+  lookupEmailHash: string,
+  predicate?: (session: any) => boolean
+) {
+  const sessions = await ctx.db
+    .query('account_recovery_sessions')
+    .withIndex('by_lookup_email_hash', (q: any) => q.eq('lookupEmailHash', lookupEmailHash))
+    .collect();
+
+  const sorted = sessions.sort((left: any, right: any) => right.createdAt - left.createdAt);
+  for (const session of sorted) {
+    if (!predicate || predicate(session)) {
+      return session;
+    }
+  }
+  return null;
 }
 
 async function issueRecoveryContext(session: {
@@ -1193,9 +1212,9 @@ export const consumeBackupCodeRecoveryForApi = mutation({
       return null;
     }
 
-    const activeAttemptSession = await expireRecoverySessionIfNeeded(
+    const latestAttemptSession = await expireRecoverySessionIfNeeded(
       ctx,
-      await getLatestActiveRecoverySessionByLookupEmail(
+      await getLatestRecoverySessionByLookupEmail(
         ctx,
         resolution.lookupEmailHash,
         (candidate) =>
@@ -1206,9 +1225,16 @@ export const consumeBackupCodeRecoveryForApi = mutation({
       now
     );
 
+    if (
+      latestAttemptSession?.status === RECOVERY_SESSION_STATUS.cancelled &&
+      latestAttemptSession.attempts >= RECOVERY_BACKUP_CODE_MAX_ATTEMPTS
+    ) {
+      return null;
+    }
+
     const attemptSessionId =
-      activeAttemptSession?.status === RECOVERY_SESSION_STATUS.pending
-        ? activeAttemptSession._id
+      latestAttemptSession?.status === RECOVERY_SESSION_STATUS.pending
+        ? latestAttemptSession._id
         : await createRecoverySession(ctx, {
             authUserId: resolution.authUserId,
             lookupEmailHash: resolution.lookupEmailHash,

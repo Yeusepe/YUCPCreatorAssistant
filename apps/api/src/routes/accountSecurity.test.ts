@@ -63,7 +63,7 @@ describe('account security routes', () => {
     });
     convexMutationMock.mockResolvedValue({ expiresAt: Date.now() + 60_000 });
 
-    const sendEmailOtp = mock(async () => ({
+    const sendEmailOtp = mock(async (_input: { email: string; type: string }) => ({
       success: true,
     }));
 
@@ -108,6 +108,14 @@ describe('account security routes', () => {
         targetEmail: 'owner@example.com',
       })
     );
+    const mutationCallOrder = convexMutationMock.mock.invocationCallOrder[0];
+    const emailCallOrder = sendEmailOtp.mock.invocationCallOrder[0];
+    expect(typeof mutationCallOrder).toBe('number');
+    expect(typeof emailCallOrder).toBe('number');
+    if (typeof mutationCallOrder !== 'number' || typeof emailCallOrder !== 'number') {
+      throw new Error('Expected recovery mutation and email send to both be called.');
+    }
+    expect(mutationCallOrder < emailCallOrder).toBe(true);
   });
 
   it('verifies backup-code recovery and returns a constrained passkey context', async () => {
