@@ -236,6 +236,15 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  position: relative;
+  contain: paint;
+  /* Keep the row visually transparent, but avoid a transient dark compositor backing
+     on this exact node while the filtered content area settles during load. */
+  background: rgba(255, 255, 255, 0.001);
+}
+
+.dark .dashboard-header-shell {
+  background: rgba(15, 23, 42, 0.001);
 }
 
 .dashboard-header-leading {

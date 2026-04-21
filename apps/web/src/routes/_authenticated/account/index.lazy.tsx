@@ -9,7 +9,6 @@ import { ProviderChip } from '@/components/ui/ProviderChip';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { YucpButton } from '@/components/ui/YucpButton';
 import { useAccountShell } from '@/hooks/useAccountShell';
-import { useAuth } from '@/hooks/useAuth';
 import { listUserLicenses, listUserOAuthGrants } from '@/lib/account';
 import { authClient } from '@/lib/auth-client';
 import { listCreatorCertificates } from '@/lib/certificates';
@@ -27,7 +26,6 @@ export const Route = createLazyFileRoute('/_authenticated/account/')({
 
 function AccountProfile() {
   const { guilds, viewer } = useAccountShell();
-  const { signOut } = useAuth();
   const isCreator = guilds.length > 0;
   const [isDismissingRecoveryPrompt, setIsDismissingRecoveryPrompt] = useState(false);
   const securityOverview = useConvexQuery(api.accountSecurity.getSecurityOverview, {});
@@ -182,13 +180,6 @@ function AccountProfile() {
           <Link to="/account/connections" className="account-btn account-btn--secondary">
             Connections
           </Link>
-          <button
-            type="button"
-            className="account-btn account-btn--ghost"
-            onClick={() => signOut()}
-          >
-            Sign out
-          </button>
         </div>
       </AccountSectionCard>
 

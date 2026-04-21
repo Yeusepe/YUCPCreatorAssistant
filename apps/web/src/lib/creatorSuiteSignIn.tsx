@@ -1,3 +1,4 @@
+import { KeyRound } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 /** Full wordmark used on the generic Creator Suite OAuth / sign-in page only. */
@@ -55,24 +56,7 @@ function DiscordGlyph() {
 }
 
 function PasskeyGlyph() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <title>Passkey</title>
-      <path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v3a7 7 0 0 1-14 0v-3a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5Z" />
-      <path d="M12 14h.01" />
-    </svg>
-  );
+  return <KeyRound width={16} height={16} strokeWidth={2} aria-hidden={true} />;
 }
 
 export function CreatorSuiteSignInMethodIcon({

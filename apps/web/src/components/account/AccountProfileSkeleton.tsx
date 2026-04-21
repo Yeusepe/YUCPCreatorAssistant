@@ -1,7 +1,18 @@
 import { AccountPage, AccountSectionCard } from '@/components/account/AccountPage';
-import { SkeletonCircle, SkeletonLine, SkeletonPill, SkeletonTile } from '@/components/ui/YucpSkeleton';
+import {
+  SkeletonCircle,
+  SkeletonLine,
+  SkeletonPill,
+  SkeletonTile,
+} from '@/components/ui/YucpSkeleton';
 
-const SESSION_STATS = ['Sign-in', 'Creator dashboard', 'Authorized apps', 'Providers', 'Active licenses'];
+const SESSION_STATS = [
+  'Sign-in',
+  'Creator dashboard',
+  'Authorized apps',
+  'Providers',
+  'Active licenses',
+];
 
 export function AccountProfileSkeleton() {
   return (
@@ -39,23 +50,24 @@ export function AccountProfileSkeleton() {
         description="How you sign in and what this account can use."
         bodyClassName="account-session-card-body"
       >
-        <dl className="account-session-dl" aria-hidden="true">
-          {SESSION_STATS.map((label, index) => (
-            <div key={label} className="account-session-stat">
-              <dt>{label}</dt>
-              <dd>
-                <SkeletonLine
-                  width={index === 0 ? '96px' : index === 1 ? '48px' : '36px'}
-                  style={{ height: 15 }}
-                />
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <div aria-hidden="true">
+          <dl className="account-session-dl">
+            {SESSION_STATS.map((label, index) => (
+              <div key={label} className="account-session-stat">
+                <dt>{label}</dt>
+                <dd>
+                  <SkeletonLine
+                    width={index === 0 ? '96px' : index === 1 ? '48px' : '36px'}
+                    style={{ height: 15 }}
+                  />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
 
         <div className="account-session-footer" aria-hidden="true">
           <SkeletonPill width="112px" style={{ height: 36 }} />
-          <SkeletonPill width="88px" style={{ height: 36 }} />
         </div>
       </AccountSectionCard>
 
