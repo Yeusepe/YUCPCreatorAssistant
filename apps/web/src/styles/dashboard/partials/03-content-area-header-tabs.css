@@ -210,6 +210,22 @@
   margin-bottom: 28px;
   position: relative;
   z-index: 0;
+  contain: paint;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  padding: 0;
+  min-height: 0;
+}
+
+.dark .content-area-header {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 .content-area-header .content-header-eyebrow {
@@ -233,20 +249,25 @@
 
 .dashboard-header-shell {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   position: relative;
   contain: paint;
-  /* Keep the row visually transparent, but avoid a transient dark compositor backing
-     on this exact node while the filtered content area settles during load. */
-  background: rgba(255, 255, 255, 0.001);
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  min-height: 38px;
 }
 
 .dark .dashboard-header-shell {
-  background: rgba(15, 23, 42, 0.001);
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
-
 .dashboard-header-leading {
   display: flex;
   align-items: center;
