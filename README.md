@@ -113,6 +113,7 @@ ops/           infisical (secret docs and templates)
 | `BETTER_AUTH_SECRET`                         | api      | Better Auth session encryption   |
 | `GUMROAD_CLIENT_ID`, `GUMROAD_CLIENT_SECRET` | api      | Gumroad OAuth and connect        |
 | `JINXXY_API_KEY`                             | api      | Jinxxy integration               |
+| `CDNGINE_DIR`                                | dev      | Optional checkout path for `bun run dev` to launch `cdngine` |
 | `INFISICAL_URL`                              | all      | Infisical endpoint (optional)    |
 
 
@@ -150,6 +151,7 @@ Full options and catalog: `apps/bot/src/commands/index.ts`.
 
 - Lint: `bun run lint`. Typecheck: `bun run typecheck`. Tests: `bun run test` (or `bun run test:ci`).
 - Full dev stack (Convex + API + bot + HyperDX + optional tunnel): `bun run dev` or `bun run dev:infisical`. In the Infisical path, the web leg now runs through `infisical run --watch` so frontend secret changes restart the local Worker loop with fresh bindings.
+- To have the dev supervisor launch `cdngine`, set `CDNGINE_DIR` in your local env to the checkout you want to run, for example `CDNGINE_DIR=C:\\Users\\svalp\\OneDrive\\Documents\\Development\\antiwork\\cdngine`. If `CDNGINE_DIR` is set and the path is wrong, `bun run dev` fails immediately instead of silently skipping `cdngine`.
 - Local Cloudflare Worker frontend loop: `bun run --filter @yucp/web worker:env:dev` to write `apps/web/.dev.vars`, then `bun run --filter @yucp/web worker:dev`. For an Infisical-backed local loop, use `bun run dev:web:infisical` so the Worker dev server is wrapped in `infisical run --watch`. When the watched process restarts, `worker:dev` rewrites `apps/web/.dev.vars` from the injected env before starting Vite. Use `bun run --filter @yucp/web worker:preview` for a Wrangler-local deploy-shape check.
 - Infisical Cloudflare Workers sync setup: `bun run --env-file=.env.infisical --filter @yucp/web worker:sync:setup -- --connectionId=<cloudflare-connection-id> --projectId=<infisical-project-id> --env=prod --path=/`. The setup script logs in with Infisical Universal Auth, creates or updates the Cloudflare Workers sync for the Worker name in `apps/web/wrangler.jsonc`, and triggers an immediate secret sync.
 - Cloudflare deploy flow for `apps/web`: `bun run --filter @yucp/web worker:deploy` builds the web Worker bundle and then deploys it with Wrangler while preserving the Worker bindings already managed in Cloudflare by the Infisical sync. Add `-- --prod` to mark the build as production and `-- --worker-env=<name>` if you use a named Wrangler environment. For non-production Worker Builds branches, use `bun run --filter @yucp/web worker:version:upload` so the same build step runs before `wrangler versions upload`. These deploy paths do not call `infisical export`, do not sync secrets from the repo, and do not require an Infisical CLI login.

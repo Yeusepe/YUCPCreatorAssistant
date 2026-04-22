@@ -22,6 +22,7 @@ import { applyResponseSecurityHeaders } from './lib/httpSecurity';
 import { createLegacyFrontendMovedResponse, isLegacyFrontendAsset } from './lib/legacyFrontend';
 import {
   createAccountSecurityRoutes,
+  createBackstageRepoRoutes,
   createCouplingLicenseRoutes,
   createVerificationRoutes,
   mountVerificationRouteHandlers,
@@ -142,6 +143,12 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
     convexUrl: config.convexUrl,
     convexApiSecret: config.convexApiSecret,
   });
+  const backstageRepoRoutes = createBackstageRepoRoutes({
+    apiBaseUrl: baseUrl,
+    convexApiSecret: config.convexApiSecret,
+    convexSiteUrl: config.convexSiteUrl,
+    convexUrl: config.convexUrl,
+  });
   const accountSecurityRoutes = createAccountSecurityRoutes(stubAuth, {
     convexUrl: config.convexUrl,
     convexApiSecret: config.convexApiSecret,
@@ -243,6 +250,8 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
     if (pathname.startsWith('/v1/')) {
       const couplingResponse = await couplingLicenseRoutes.handleRequest(request);
       if (couplingResponse) return couplingResponse;
+      const backstageResponse = await backstageRepoRoutes.handleRequest(request);
+      if (backstageResponse) return backstageResponse;
       const local = await providerPlatformRoutes.handleRequest(request);
       if (local) return local;
     }

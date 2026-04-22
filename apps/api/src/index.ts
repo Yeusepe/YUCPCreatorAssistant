@@ -27,6 +27,7 @@ import {
 import { detectTunnelUrl } from './lib/tunnel';
 import {
   createAccountSecurityRoutes,
+  createBackstageRepoRoutes,
   createConnectRoutes,
   createCouplingLicenseRoutes,
   createForensicsRoutes,
@@ -54,6 +55,7 @@ let verificationRoutes: Map<string, (request: Request) => Promise<Response>> | n
 let verificationHandlers: ReturnType<typeof createVerificationRoutes> | null = null;
 let connectRoutes: ReturnType<typeof createConnectRoutes> | null = null;
 let couplingLicenseRoutes: ReturnType<typeof createCouplingLicenseRoutes> | null = null;
+let backstageRepoRoutes: ReturnType<typeof createBackstageRepoRoutes> | null = null;
 let accountSecurityRoutes: ReturnType<typeof createAccountSecurityRoutes> | null = null;
 let forensicsRoutes: ReturnType<typeof createForensicsRoutes> | null = null;
 let packageRoutes: ReturnType<typeof createPackageRoutes> | null = null;
@@ -251,6 +253,12 @@ function initializeAuth(webhookBaseUrl?: string) {
     couplingServiceBaseUrl: env.YUCP_COUPLING_SERVICE_BASE_URL ?? '',
     couplingServiceSharedSecret: env.YUCP_COUPLING_SERVICE_SHARED_SECRET ?? '',
     convexApiSecret: env.CONVEX_API_SECRET ?? '',
+    convexUrl,
+  });
+  backstageRepoRoutes = createBackstageRepoRoutes({
+    apiBaseUrl: publicBaseUrl,
+    convexApiSecret: env.CONVEX_API_SECRET ?? '',
+    convexSiteUrl,
     convexUrl,
   });
 
@@ -551,6 +559,13 @@ async function routeRequest(request: Request): Promise<Response> {
     const localCouplingResponse = await couplingLicenseRoutes.handleRequest(request);
     if (localCouplingResponse) {
       return localCouplingResponse;
+    }
+  }
+
+  if (pathname.startsWith('/v1/') && backstageRepoRoutes) {
+    const localBackstageResponse = await backstageRepoRoutes.handleRequest(request);
+    if (localBackstageResponse) {
+      return localBackstageResponse;
     }
   }
 
@@ -879,6 +894,20 @@ async function routeRequest(request: Request): Promise<Response> {
   if (packageRestoreMatch && packageRoutes) {
     if (request.method === 'POST') {
       return packageRoutes.restorePackage(request, packageRestoreMatch[1]);
+    }
+    return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+  const backstageUploadMatch = pathname.match(/^\/api\/packages\/([^/]+)\/backstage\/upload-url$/);
+  if (backstageUploadMatch && packageRoutes) {
+    if (request.method === 'POST') {
+      return packageRoutes.createBackstageReleaseUploadUrl(request, backstageUploadMatch[1]);
+    }
+    return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+  const backstageReleaseMatch = pathname.match(/^\/api\/packages\/([^/]+)\/backstage\/releases$/);
+  if (backstageReleaseMatch && packageRoutes) {
+    if (request.method === 'POST') {
+      return packageRoutes.publishBackstageRelease(request, backstageReleaseMatch[1]);
     }
     return Response.json({ error: 'Method not allowed' }, { status: 405 });
   }

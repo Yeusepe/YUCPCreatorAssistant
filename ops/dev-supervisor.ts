@@ -46,7 +46,6 @@ const DEFAULT_COMMANDS: readonly DevCommandSpec[] = [
   { name: 'web', color: 'yellow', command: 'bun run dev:web' },
   { name: 'hyperdx', color: 'cyan', command: 'bun run dev:hyperdx' },
   { name: 'coupling', color: 'red', command: 'bun run dev', cwd: COUPLING_SERVICE_DIR },
-  { name: 'tunnel', color: 'cyan', command: 'tailscale funnel 3001' },
 ];
 
 const INFISICAL_COMMANDS: readonly DevCommandSpec[] = [
@@ -56,8 +55,44 @@ const INFISICAL_COMMANDS: readonly DevCommandSpec[] = [
   { name: 'web', color: 'yellow', command: 'bun run dev:web:infisical' },
   { name: 'hyperdx', color: 'cyan', command: 'bun run dev:hyperdx:infisical' },
   { name: 'coupling', color: 'red', command: 'bun run dev:infisical', cwd: COUPLING_SERVICE_DIR },
-  { name: 'tunnel', color: 'cyan', command: 'tailscale funnel 3001' },
 ];
+
+const TUNNEL_COMMAND: DevCommandSpec = {
+  name: 'tunnel',
+  color: 'cyan',
+  command: 'tailscale funnel 3001',
+};
+
+export function getCdngineDir(baseEnv: NodeJS.ProcessEnv = process.env): string | null {
+  const configured = baseEnv.CDNGINE_DIR?.trim();
+  if (!configured) {
+    return null;
+  }
+
+  if (!existsSync(configured)) {
+    throw new Error(`CDNGINE_DIR does not exist: ${configured}`);
+  }
+
+  return configured;
+}
+
+export function buildDevCommands(
+  baseEnv: NodeJS.ProcessEnv = process.env,
+  infisical = false
+): readonly DevCommandSpec[] {
+  const commands = [...(infisical ? INFISICAL_COMMANDS : DEFAULT_COMMANDS)];
+  const cdngineDir = getCdngineDir(baseEnv);
+  if (cdngineDir) {
+    commands.push({
+      name: 'cdngine',
+      color: 'cyan',
+      command: 'npm run start:demo',
+      cwd: cdngineDir,
+    });
+  }
+  commands.push(TUNNEL_COMMAND);
+  return commands;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -360,7 +395,7 @@ function signalExitCode(signal: NodeJS.Signals): number {
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   const infisical = argv.includes('--infisical');
   const env = infisical ? await loadInfisicalEnv() : applyLocalDevDefaults(process.env);
-  const supervisor = new DevSupervisor(infisical ? INFISICAL_COMMANDS : DEFAULT_COMMANDS, env, {
+  const supervisor = new DevSupervisor(buildDevCommands(env, infisical), env, {
     prefixOutput: true,
   });
 

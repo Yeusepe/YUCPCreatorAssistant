@@ -85,7 +85,6 @@ import {
   signLicenseJwt,
   signPackageCertificateData,
   signYucpTrustBundleJwt,
-  verifyCertEnvelope,
   verifyCertEnvelopeAgainstPinnedRoots,
 } from './lib/yucpCrypto';
 import { handleOAuthAuthorizationServerMetadata } from './oauthDiscovery';
@@ -136,6 +135,7 @@ const PROXY_REQUEST_HEADER_ALLOWLIST = new Set([
   'traceparent',
   'tracestate',
   'x-request-id',
+  'x-yucp-repo-token',
 ]);
 const PROXY_RESPONSE_HEADER_ALLOWLIST = new Set([
   'cache-control',
@@ -945,6 +945,30 @@ http.route({
     } catch {
       return errorResponse('Service not configured', 503);
     }
+  }),
+});
+
+http.route({
+  method: 'GET',
+  path: '/v1/backstage/repos/access',
+  handler: httpAction(async (_ctx, request) => {
+    return await proxyToPublicApi(request, '/v1/backstage/repos/access');
+  }),
+});
+
+http.route({
+  method: 'GET',
+  path: '/v1/backstage/repos/index.json',
+  handler: httpAction(async (_ctx, request) => {
+    return await proxyToPublicApi(request, '/v1/backstage/repos/index.json');
+  }),
+});
+
+http.route({
+  method: 'GET',
+  path: '/v1/backstage/package',
+  handler: httpAction(async (_ctx, request) => {
+    return await proxyToPublicApi(request, '/v1/backstage/package');
   }),
 });
 

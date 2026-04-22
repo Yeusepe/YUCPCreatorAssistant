@@ -60,6 +60,36 @@ export const getActiveArtifact = internalQuery({
   },
 });
 
+export const getArtifactById = internalQuery({
+  args: {
+    artifactId: v.id('signed_release_artifacts'),
+  },
+  returns: v.union(signedReleaseArtifactValidator, v.null()),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.artifactId);
+    return toSignedReleaseArtifact(row);
+  },
+});
+
+export const getLatestActiveArtifactByKey = internalQuery({
+  args: {
+    artifactKey: v.string(),
+  },
+  returns: v.union(signedReleaseArtifactValidator, v.null()),
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query('signed_release_artifacts')
+      .withIndex('by_artifact_key_status', (q) =>
+        q.eq('artifactKey', args.artifactKey).eq('status', 'active')
+      )
+      .collect();
+    const latest = rows.sort(
+      (left, right) => (right.activatedAt ?? right.createdAt) - (left.activatedAt ?? left.createdAt)
+    )[0];
+    return toSignedReleaseArtifact(latest ?? null);
+  },
+});
+
 export const publishArtifact = internalMutation({
   args: {
     artifactKey: v.string(),

@@ -31,7 +31,7 @@
     "contracts:check": "bun run --filter @yucp/private-rpc check:generated",
     "typecheck": "bun run contracts:check && tsc -b tsconfig.solution.json --pretty false && bun run --filter '@yucp/api' typecheck && bun run --filter '@yucp/bot' typecheck && bun run --filter '@yucp/web' typecheck",
     "test": "bun run test:fast",
-    "test:ops": "bun test ./ops/dev-supervisor.test.ts ./ops/convex-infisical-env.test.ts ./ops/convex-better-auth-compat.test.ts ./ops/web-vite-config.contract.test.ts",
+    "test:ops": "bun test ./ops/dev-supervisor.test.ts ./ops/convex-infisical-env.test.ts ./ops/convex-better-auth-compat.test.ts ./ops/web-vite-config.contract.test.ts ./ops/publish-backstage-package.test.ts",
     "test:fast": "bun run test:ops && bun run --filter '@yucp/api' test && bun run --filter '@yucp/application' test && bun run --filter '@yucp/policy' test && bun run --filter '@yucp/providers' test && bun run --filter '@yucp/shared' test",
     "test:convex": "bun x vitest run --config convex/vitest.config.ts",
     "test:convex:prepare": "bun run infisical:convex -- bun x convex dev --once",
@@ -67,7 +67,8 @@
     "start:api:infisical": "cross-env INFISICAL_ENV=prod bun run --filter @yucp/api start",
     "start:bot:infisical": "cross-env INFISICAL_ENV=prod bun run --filter @yucp/bot start",
     "start:web": "bun run --filter @yucp/web preview",
-    "start:all": "concurrently -k \"bun run start:api:infisical\" \"bun run start:bot:infisical\" \"bun run start:web\""
+    "start:all": "concurrently -k \"bun run start:api:infisical\" \"bun run start:bot:infisical\" \"bun run start:web\"",
+    "publish:backstage-package": "tsx ops/publish-backstage-package.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",

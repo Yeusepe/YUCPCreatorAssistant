@@ -4,7 +4,13 @@ import { once } from 'node:events';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { applyLocalDevDefaults, isProcessAlive, killProcessTree } from './dev-supervisor';
+import {
+  applyLocalDevDefaults,
+  buildDevCommands,
+  getCdngineDir,
+  isProcessAlive,
+  killProcessTree,
+} from './dev-supervisor';
 import { buildHyperdxDockerArgs, isDockerUnavailable } from './hyperdx-dev';
 
 async function waitFor<T>(
@@ -195,4 +201,38 @@ describe('DevSupervisor', () => {
       (state) => !state.parentAlive && !state.grandchildAlive
     );
   }, 20_000);
+
+  test('getCdngineDir returns an explicit CDNGINE_DIR when it exists', async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yucp-cdngine-dir-'));
+    expect(getCdngineDir({ CDNGINE_DIR: tempDir })).toBe(tempDir);
+  });
+
+  test('getCdngineDir skips cdngine when CDNGINE_DIR is unset', () => {
+    expect(getCdngineDir({})).toBeNull();
+  });
+
+  test('getCdngineDir rejects an explicit CDNGINE_DIR that is missing', () => {
+    expect(() =>
+      getCdngineDir({ CDNGINE_DIR: path.join(os.tmpdir(), 'yucp-cdngine-missing-path') })
+    ).toThrow('CDNGINE_DIR does not exist');
+  });
+
+  test('buildDevCommands includes cdngine when the directory exists', async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yucp-cdngine-build-'));
+    const commands = buildDevCommands({ CDNGINE_DIR: tempDir }, false);
+    expect(commands.some((command) => command.name === 'cdngine')).toBe(true);
+    expect(commands.find((command) => command.name === 'cdngine')).toMatchObject({
+      cwd: tempDir,
+      command: 'npm run start:demo',
+    });
+  });
+
+  test('buildDevCommands rejects a missing explicit CDNGINE_DIR', () => {
+    expect(() =>
+      buildDevCommands(
+        { CDNGINE_DIR: path.join(os.tmpdir(), 'yucp-cdngine-missing-build-path') },
+        false
+      )
+    ).toThrow('CDNGINE_DIR does not exist');
+  });
 });

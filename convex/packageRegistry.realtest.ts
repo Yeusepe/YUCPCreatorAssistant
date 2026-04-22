@@ -1,8 +1,8 @@
+import { createApiActorBinding } from '@yucp/shared/apiActor';
 import { describe, expect, it } from 'vitest';
 import { api, internal } from './_generated/api';
-import type { Doc } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { makeTestConvex } from './testHelpers';
-import { createApiActorBinding } from '@yucp/shared/apiActor';
 
 process.env.CONVEX_API_SECRET = 'test-secret';
 process.env.INTERNAL_SERVICE_AUTH_SECRET = 'test-internal-service-secret';
@@ -21,6 +21,50 @@ async function createAuthUserActorBinding(authUserId: string) {
     },
     process.env.INTERNAL_SERVICE_AUTH_SECRET as string
   );
+}
+
+async function seedCatalogProduct(
+  t: ReturnType<typeof makeTestConvex>,
+  overrides: {
+    authUserId?: string;
+    productId?: string;
+    provider?: Doc<'product_catalog'>['provider'];
+    providerProductRef?: string;
+    displayName?: string;
+    status?: Doc<'product_catalog'>['status'];
+  } = {}
+): Promise<Id<'product_catalog'>> {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert('product_catalog', {
+      authUserId: overrides.authUserId ?? 'auth-user-1',
+      productId: overrides.productId ?? 'product-1',
+      provider: overrides.provider ?? 'gumroad',
+      providerProductRef: overrides.providerProductRef ?? 'gumroad-product-1',
+      displayName: overrides.displayName ?? 'Creator Product',
+      status: overrides.status ?? 'active',
+      supportsAutoDiscovery: true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+async function seedSubject(
+  t: ReturnType<typeof makeTestConvex>,
+  overrides: {
+    authUserId?: string;
+    primaryDiscordUserId?: string;
+  } = {}
+): Promise<Id<'subjects'>> {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert('subjects', {
+      authUserId: overrides.authUserId ?? 'auth-user-1',
+      primaryDiscordUserId: overrides.primaryDiscordUserId ?? 'discord-user-1',
+      status: 'active',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  });
 }
 
 describe('packageRegistry', () => {
@@ -199,5 +243,292 @@ describe('packageRegistry', () => {
 
     expect(registration?.packageName).toBe('Archive Me');
     expect(registration?.publisherId).toBe('publisher-1');
+  });
+
+  it('enriches creator product listings with linked Backstage package summaries', async () => {
+    const t = makeTestConvex();
+    const catalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-backstage',
+      providerProductRef: 'gumroad-product-backstage',
+      displayName: 'Backstage Product',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.backstage.product',
+      packageName: 'Backstage Product',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    await t.mutation(internal.packageRegistry.upsertDeliveryPackageForProduct, {
+      authUserId: 'auth-user-1',
+      catalogProductId,
+      packageId: 'com.yucp.backstage.product',
+      packageName: 'Backstage Product',
+      displayName: 'Backstage Product',
+      repositoryVisibility: 'listed',
+      defaultChannel: 'stable',
+    });
+
+    await t.mutation(internal.packageRegistry.recordDeliveryPackageRelease, {
+      authUserId: 'auth-user-1',
+      packageId: 'com.yucp.backstage.product',
+      version: '1.2.3',
+      channel: 'stable',
+      releaseStatus: 'published',
+      repositoryVisibility: 'listed',
+      artifactKey: 'backstage-product-stable',
+    });
+
+    const result = await t.query(api.packageRegistry.listByAuthUser, {
+      apiSecret: 'test-secret',
+      actor: await createAuthUserActorBinding('auth-user-1'),
+      authUserId: 'auth-user-1',
+    });
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      _id: catalogProductId,
+      productId: 'product-backstage',
+      displayName: 'Backstage Product',
+      backstagePackages: [
+        {
+          packageId: 'com.yucp.backstage.product',
+          packageName: 'Backstage Product',
+          displayName: 'Backstage Product',
+          status: 'active',
+          repositoryVisibility: 'listed',
+          defaultChannel: 'stable',
+          latestPublishedVersion: '1.2.3',
+          latestRelease: {
+            version: '1.2.3',
+            channel: 'stable',
+            releaseStatus: 'published',
+            repositoryVisibility: 'listed',
+            artifactKey: 'backstage-product-stable',
+          },
+        },
+      ],
+    });
+  });
+
+  it('resolves entitled Backstage packages for a subject through active catalog entitlements', async () => {
+    const t = makeTestConvex();
+    const catalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-entitled',
+      providerProductRef: 'gumroad-product-entitled',
+      displayName: 'Entitled Product',
+    });
+    const subjectId = await seedSubject(t, {
+      authUserId: 'auth-user-1',
+      primaryDiscordUserId: 'discord-entitled-user',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.backstage.entitled',
+      packageName: 'Entitled Package',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    await t.mutation(internal.packageRegistry.upsertDeliveryPackageForProduct, {
+      authUserId: 'auth-user-1',
+      catalogProductId,
+      packageId: 'com.yucp.backstage.entitled',
+      packageName: 'Entitled Package',
+      displayName: 'Entitled Package',
+      repositoryVisibility: 'listed',
+      defaultChannel: 'stable',
+    });
+
+    await t.mutation(internal.packageRegistry.recordDeliveryPackageRelease, {
+      authUserId: 'auth-user-1',
+      packageId: 'com.yucp.backstage.entitled',
+      version: '2.0.0',
+      channel: 'stable',
+      releaseStatus: 'published',
+      repositoryVisibility: 'listed',
+      artifactKey: 'entitled-package-stable',
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert('entitlements', {
+        authUserId: 'auth-user-1',
+        subjectId,
+        productId: 'product-entitled',
+        sourceProvider: 'gumroad',
+        sourceReference: 'order-1',
+        catalogProductId,
+        status: 'active',
+        grantedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const entitledPackages = await t.query(
+      internal.packageRegistry.listEntitledPackagesForSubject,
+      {
+        authUserId: 'auth-user-1',
+        subjectId,
+      }
+    );
+
+    expect(entitledPackages).toMatchObject([
+      {
+        catalogProductIds: [catalogProductId],
+        packageId: 'com.yucp.backstage.entitled',
+        packageName: 'Entitled Package',
+        displayName: 'Entitled Package',
+        latestPublishedVersion: '2.0.0',
+        latestRelease: {
+          version: '2.0.0',
+          channel: 'stable',
+          releaseStatus: 'published',
+          repositoryVisibility: 'listed',
+          artifactKey: 'entitled-package-stable',
+        },
+      },
+    ]);
+  });
+
+  it('builds a VPM-style Backstage Repos document from entitled packages', async () => {
+    const t = makeTestConvex();
+    const catalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-vpm',
+      providerProductRef: 'gumroad-product-vpm',
+      displayName: 'VPM Product',
+    });
+    const subjectId = await seedSubject(t, {
+      authUserId: 'auth-user-1',
+      primaryDiscordUserId: 'discord-vpm-user',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.backstage.vpm',
+      packageName: 'VPM Package',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    await t.mutation(internal.packageRegistry.upsertDeliveryPackageForProduct, {
+      authUserId: 'auth-user-1',
+      catalogProductId,
+      packageId: 'com.yucp.backstage.vpm',
+      packageName: 'VPM Package',
+      displayName: 'VPM Package',
+      repositoryVisibility: 'listed',
+      defaultChannel: 'stable',
+    });
+
+    await t.mutation(internal.packageRegistry.recordDeliveryPackageRelease, {
+      authUserId: 'auth-user-1',
+      packageId: 'com.yucp.backstage.vpm',
+      version: '3.1.0',
+      channel: 'stable',
+      releaseStatus: 'published',
+      repositoryVisibility: 'listed',
+      artifactKey: 'vpm-package-stable',
+      zipSha256: 'abcdef1234567890',
+      metadata: {
+        description: 'Private VPM package',
+        dependencies: {
+          'com.vrchat.base': '3.7.0',
+        },
+      },
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert('entitlements', {
+        authUserId: 'auth-user-1',
+        subjectId,
+        productId: 'product-vpm',
+        sourceProvider: 'gumroad',
+        sourceReference: 'order-vpm',
+        catalogProductId,
+        status: 'active',
+        grantedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const repository = await t.query(internal.packageRegistry.buildBackstageRepositoryForSubject, {
+      authUserId: 'auth-user-1',
+      subjectId,
+      repositoryUrl: 'https://api.yucp.test/v1/backstage/repos/index.json',
+      packageBaseUrl: 'https://api.yucp.test/v1/backstage/package',
+      packageHeaders: {
+        'X-YUCP-Repo-Token': 'ybt_example',
+      },
+    });
+
+    expect(repository).toMatchObject({
+      name: 'Backstage Repos',
+      author: 'YUCP',
+      id: 'club.yucp.backstage.auth-user-1',
+      url: 'https://api.yucp.test/v1/backstage/repos/index.json',
+      packages: {
+        'com.yucp.backstage.vpm': {
+          versions: {
+            '3.1.0': {
+              name: 'com.yucp.backstage.vpm',
+              version: '3.1.0',
+              displayName: 'VPM Package',
+              description: 'Private VPM package',
+              dependencies: {
+                'com.vrchat.base': '3.7.0',
+              },
+              headers: {
+                'X-YUCP-Repo-Token': 'ybt_example',
+              },
+              zipSHA256: 'abcdef1234567890',
+              yucpArtifactKey: 'vpm-package-stable',
+            },
+          },
+        },
+      },
+    });
+    const repositoryPackages = repository.packages as Record<
+      string,
+      { versions: Record<string, { url: string }> }
+    >;
+    expect(repositoryPackages['com.yucp.backstage.vpm'].versions['3.1.0'].url).toBe(
+      'https://api.yucp.test/v1/backstage/package?packageId=com.yucp.backstage.vpm&version=3.1.0&channel=stable'
+    );
+  });
+
+  it('issues revocable Backstage repo tokens for an authenticated subject', async () => {
+    const t = makeTestConvex();
+    const subjectId = await seedSubject(t, {
+      authUserId: 'auth-user-1',
+      primaryDiscordUserId: 'discord-token-user',
+    });
+
+    const result = await t.mutation(internal.packageRegistry.issueBackstageRepoToken, {
+      authUserId: 'auth-user-1',
+      subjectId,
+      label: 'VCC desktop',
+      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    });
+
+    expect(result.token).toMatch(/^ybt_[0-9a-f]+$/);
+    const access = await t.query(internal.packageRegistry.getBackstageRepoAccessByToken, {
+      tokenHash: await crypto.subtle
+        .digest('SHA-256', new TextEncoder().encode(result.token))
+        .then((buffer) =>
+          Array.from(new Uint8Array(buffer))
+            .map((value) => value.toString(16).padStart(2, '0'))
+            .join('')
+        ),
+    });
+
+    expect(access).toMatchObject({
+      tokenId: result.tokenId,
+      authUserId: 'auth-user-1',
+      subjectId,
+      status: 'active',
+    });
   });
 });

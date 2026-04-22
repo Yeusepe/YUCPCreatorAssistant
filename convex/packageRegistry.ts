@@ -15,8 +15,10 @@
  *   Sigstore policy engine         https://docs.sigstore.dev/policy-controller/overview/
  */
 
+import { sha256Hex } from '@yucp/shared/crypto';
 import { ConvexError, v } from 'convex/values';
-import type { Doc } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
+import type { MutationCtx, QueryCtx } from './_generated/server';
 import { internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { ApiActorBindingV, requireDelegatedAuthUserActor } from './lib/apiActor';
 import { requireApiSecret } from './lib/apiAuth';
@@ -29,6 +31,46 @@ const PACKAGE_ARCHIVED_UPDATE_BLOCKED_REASON =
   'Archived packages cannot be updated. Restore the package before renaming it.';
 const PACKAGE_ARCHIVED_SIGNING_BLOCKED_REASON =
   'Archived packages cannot be updated. Restore the package before signing or changing it.';
+const DeliveryPackageVisibilityV = v.union(v.literal('hidden'), v.literal('listed'));
+const DeliveryRepoTokenStatusV = v.union(
+  v.literal('active'),
+  v.literal('revoked'),
+  v.literal('expired')
+);
+const DeliveryPackageReleaseStatusV = v.union(
+  v.literal('draft'),
+  v.literal('published'),
+  v.literal('revoked'),
+  v.literal('superseded')
+);
+const BACKSTAGE_REPO_TOKEN_PREFIX = 'ybt_';
+const BACKSTAGE_REPO_TOKEN_BYTES = 24;
+
+type BackstagePackageSummary = {
+  deliveryPackageId: Id<'delivery_packages'>;
+  packageId: string;
+  packageName?: string;
+  displayName?: string;
+  description?: string;
+  status: Doc<'delivery_packages'>['status'];
+  repositoryVisibility: Doc<'delivery_packages'>['repositoryVisibility'];
+  defaultChannel?: string;
+  latestPublishedVersion?: string;
+  latestPublishedAt?: number;
+  latestRelease: {
+    version: string;
+    channel: string;
+    releaseStatus: Doc<'delivery_package_releases'>['releaseStatus'];
+    repositoryVisibility: Doc<'delivery_package_releases'>['repositoryVisibility'];
+    artifactKey?: string;
+    signedArtifactId?: Id<'signed_release_artifacts'>;
+    zipSha256?: string;
+    metadata?: unknown;
+    publishedAt?: number;
+  } | null;
+};
+
+type RegistryReaderCtx = QueryCtx | MutationCtx;
 
 function getPackageStatus(
   registration: Pick<Doc<'package_registry'>, 'status'>
@@ -54,6 +96,335 @@ function normalizePackageName(packageName: string | undefined): string | undefin
   return normalized;
 }
 
+function compareReleaseRecency(
+  left: Doc<'delivery_package_releases'>,
+  right: Doc<'delivery_package_releases'>
+): number {
+  const leftScore = left.publishedAt ?? left.updatedAt;
+  const rightScore = right.publishedAt ?? right.updatedAt;
+  return rightScore - leftScore;
+}
+
+function shouldReplaceLatestRelease(
+  candidate: Doc<'delivery_package_releases'>,
+  existing: Doc<'delivery_package_releases'> | undefined
+): boolean {
+  if (!existing) {
+    return true;
+  }
+  if (candidate.releaseStatus === 'published' && existing.releaseStatus !== 'published') {
+    return true;
+  }
+  if (candidate.releaseStatus !== 'published' && existing.releaseStatus === 'published') {
+    return false;
+  }
+  return compareReleaseRecency(candidate, existing) < 0;
+}
+
+function compareBackstagePackages(
+  left: BackstagePackageSummary,
+  right: BackstagePackageSummary
+): number {
+  const leftLabel = (left.displayName ?? left.packageName ?? left.packageId).toLowerCase();
+  const rightLabel = (right.displayName ?? right.packageName ?? right.packageId).toLowerCase();
+  return leftLabel.localeCompare(rightLabel) || left.packageId.localeCompare(right.packageId);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function createBackstageRepoToken(): string {
+  const randomBytes = new Uint8Array(BACKSTAGE_REPO_TOKEN_BYTES);
+  crypto.getRandomValues(randomBytes);
+  return `${BACKSTAGE_REPO_TOKEN_PREFIX}${bytesToHex(randomBytes)}`;
+}
+
+function buildBackstageDownloadUrl(
+  packageBaseUrl: string,
+  packageId: string,
+  version: string,
+  channel: string
+): string {
+  const url = new URL(packageBaseUrl);
+  url.searchParams.set('packageId', packageId);
+  url.searchParams.set('version', version);
+  url.searchParams.set('channel', channel);
+  return url.toString();
+}
+
+function toVpmVersionManifest(
+  packageSummary: BackstagePackageSummary,
+  packageBaseUrl: string,
+  packageHeaders?: Record<string, string>
+): Record<string, unknown> | null {
+  if (!packageSummary.latestRelease || packageSummary.latestRelease.releaseStatus !== 'published') {
+    return null;
+  }
+
+  const metadata = isRecord(packageSummary.latestRelease.metadata)
+    ? packageSummary.latestRelease.metadata
+    : {};
+
+  return {
+    ...metadata,
+    name: packageSummary.packageId,
+    version: packageSummary.latestRelease.version,
+    displayName:
+      packageSummary.displayName ?? packageSummary.packageName ?? packageSummary.packageId,
+    url: buildBackstageDownloadUrl(
+      packageBaseUrl,
+      packageSummary.packageId,
+      packageSummary.latestRelease.version,
+      packageSummary.latestRelease.channel
+    ),
+    ...(packageHeaders && Object.keys(packageHeaders).length > 0
+      ? { headers: packageHeaders }
+      : {}),
+    ...(packageSummary.latestRelease.zipSha256
+      ? { zipSHA256: packageSummary.latestRelease.zipSha256 }
+      : {}),
+    ...(packageSummary.latestRelease.artifactKey
+      ? { yucpArtifactKey: packageSummary.latestRelease.artifactKey }
+      : {}),
+  };
+}
+
+async function requireOwnedCatalogProduct(
+  ctx: RegistryReaderCtx,
+  authUserId: string,
+  catalogProductId: Id<'product_catalog'>
+): Promise<Doc<'product_catalog'>> {
+  const product = await ctx.db.get(catalogProductId);
+  if (!product || product.authUserId !== authUserId) {
+    throw new ConvexError('Catalog product not found.');
+  }
+  return product;
+}
+
+async function assertPackageNamespaceOwnership(
+  ctx: RegistryReaderCtx,
+  authUserId: string,
+  packageId: string
+): Promise<void> {
+  const registration = await ctx.db
+    .query('package_registry')
+    .withIndex('by_package_id', (q) => q.eq('packageId', packageId))
+    .first();
+
+  if (registration && registration.yucpUserId !== authUserId) {
+    throw new ConvexError('Package namespace is owned by another creator.');
+  }
+}
+
+async function getOwnedDeliveryPackageByPackageId(
+  ctx: RegistryReaderCtx,
+  authUserId: string,
+  packageId: string
+): Promise<Doc<'delivery_packages'> | null> {
+  const deliveryPackage = await ctx.db
+    .query('delivery_packages')
+    .withIndex('by_package_id', (q) => q.eq('packageId', packageId))
+    .first();
+
+  if (!deliveryPackage) {
+    return null;
+  }
+  if (deliveryPackage.authUserId !== authUserId) {
+    throw new ConvexError('Delivery package is owned by another creator.');
+  }
+  return deliveryPackage;
+}
+
+async function buildBackstagePackageMap(
+  ctx: RegistryReaderCtx,
+  authUserId: string,
+  catalogProductIds: ReadonlyArray<Id<'product_catalog'>>
+): Promise<Map<string, BackstagePackageSummary[]>> {
+  if (catalogProductIds.length === 0) {
+    return new Map();
+  }
+
+  const catalogProductIdSet = new Set(catalogProductIds.map(String));
+  const links = (
+    await ctx.db
+      .query('delivery_package_products')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
+      .collect()
+  ).filter(
+    (link) => link.status === 'active' && catalogProductIdSet.has(String(link.catalogProductId))
+  );
+
+  if (links.length === 0) {
+    return new Map();
+  }
+
+  const uniqueDeliveryPackageIds = Array.from(
+    new Set(links.map((link) => String(link.deliveryPackageId)))
+  ) as Array<string>;
+  const deliveryPackages = (
+    await Promise.all(
+      uniqueDeliveryPackageIds.map(async (deliveryPackageId) => {
+        return await ctx.db.get(deliveryPackageId as Id<'delivery_packages'>);
+      })
+    )
+  ).filter(
+    (deliveryPackage): deliveryPackage is Doc<'delivery_packages'> => deliveryPackage !== null
+  );
+
+  const deliveryPackagesById = new Map(
+    deliveryPackages.map((deliveryPackage) => [String(deliveryPackage._id), deliveryPackage])
+  );
+
+  const releases = await ctx.db
+    .query('delivery_package_releases')
+    .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
+    .collect();
+
+  const latestReleaseByPackageId = new Map<string, Doc<'delivery_package_releases'>>();
+  for (const release of releases) {
+    if (!deliveryPackagesById.has(String(release.deliveryPackageId))) {
+      continue;
+    }
+    const existing = latestReleaseByPackageId.get(String(release.deliveryPackageId));
+    if (shouldReplaceLatestRelease(release, existing)) {
+      latestReleaseByPackageId.set(String(release.deliveryPackageId), release);
+    }
+  }
+
+  const summariesByCatalogProduct = new Map<string, BackstagePackageSummary[]>();
+  for (const link of links) {
+    const deliveryPackage = deliveryPackagesById.get(String(link.deliveryPackageId));
+    if (!deliveryPackage) {
+      continue;
+    }
+
+    const latestRelease = latestReleaseByPackageId.get(String(link.deliveryPackageId)) ?? null;
+    const summary: BackstagePackageSummary = {
+      deliveryPackageId: deliveryPackage._id,
+      packageId: deliveryPackage.packageId,
+      packageName: deliveryPackage.packageName,
+      displayName: deliveryPackage.displayName,
+      description: deliveryPackage.description,
+      status: deliveryPackage.status,
+      repositoryVisibility: deliveryPackage.repositoryVisibility,
+      defaultChannel: deliveryPackage.defaultChannel,
+      latestPublishedVersion: deliveryPackage.latestPublishedVersion,
+      latestPublishedAt: deliveryPackage.latestPublishedAt,
+      latestRelease: latestRelease
+        ? {
+            version: latestRelease.version,
+            channel: latestRelease.channel,
+            releaseStatus: latestRelease.releaseStatus,
+            repositoryVisibility: latestRelease.repositoryVisibility,
+            artifactKey: latestRelease.artifactKey,
+            signedArtifactId: latestRelease.signedArtifactId,
+            zipSha256: latestRelease.zipSha256,
+            metadata: latestRelease.metadata,
+            publishedAt: latestRelease.publishedAt,
+          }
+        : null,
+    };
+
+    const catalogProductKey = String(link.catalogProductId);
+    const existingSummaries = summariesByCatalogProduct.get(catalogProductKey) ?? [];
+    existingSummaries.push(summary);
+    summariesByCatalogProduct.set(catalogProductKey, existingSummaries);
+  }
+
+  for (const [catalogProductKey, summaries] of summariesByCatalogProduct) {
+    summariesByCatalogProduct.set(catalogProductKey, summaries.sort(compareBackstagePackages));
+  }
+
+  return summariesByCatalogProduct;
+}
+
+async function listEntitledBackstagePackages(
+  ctx: QueryCtx,
+  authUserId: string,
+  subjectId: Id<'subjects'>
+): Promise<
+  Array<
+    BackstagePackageSummary & {
+      catalogProductIds: Array<Id<'product_catalog'>>;
+    }
+  >
+> {
+  const subject = await ctx.db.get(subjectId);
+  if (!subject || subject.status !== 'active') {
+    return [];
+  }
+
+  const activeEntitlements = await ctx.db
+    .query('entitlements')
+    .withIndex('by_auth_user_subject', (q) =>
+      q.eq('authUserId', authUserId).eq('subjectId', subjectId)
+    )
+    .filter((q) => q.eq(q.field('status'), 'active'))
+    .collect();
+
+  const directCatalogProductIds = activeEntitlements
+    .map((entitlement) => entitlement.catalogProductId)
+    .filter((catalogProductId): catalogProductId is Id<'product_catalog'> => !!catalogProductId);
+
+  const unresolvedProductIds = activeEntitlements
+    .filter((entitlement) => entitlement.catalogProductId === undefined)
+    .map((entitlement) => entitlement.productId);
+
+  let catalogProductIds = [...directCatalogProductIds];
+  if (unresolvedProductIds.length > 0) {
+    const unresolvedProductIdSet = new Set(unresolvedProductIds);
+    const ownedProducts = await ctx.db
+      .query('product_catalog')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
+      .collect();
+    catalogProductIds = catalogProductIds.concat(
+      ownedProducts
+        .filter((product) => unresolvedProductIdSet.has(product.productId))
+        .map((product) => product._id)
+    );
+  }
+
+  const uniqueCatalogProductIds = Array.from(
+    new Map(
+      catalogProductIds.map((catalogProductId) => [String(catalogProductId), catalogProductId])
+    ).values()
+  );
+  const backstagePackagesByCatalogProduct = await buildBackstagePackageMap(
+    ctx,
+    authUserId,
+    uniqueCatalogProductIds
+  );
+
+  const entitledPackages = uniqueCatalogProductIds.flatMap((catalogProductId) => {
+    const summaries = backstagePackagesByCatalogProduct.get(String(catalogProductId)) ?? [];
+    return summaries.map((summary) => ({
+      catalogProductIds: [catalogProductId],
+      ...summary,
+    }));
+  });
+
+  const mergedByPackageId = new Map<string, (typeof entitledPackages)[number]>();
+  for (const entitledPackage of entitledPackages) {
+    const existing = mergedByPackageId.get(entitledPackage.packageId);
+    if (!existing) {
+      mergedByPackageId.set(entitledPackage.packageId, entitledPackage);
+      continue;
+    }
+    existing.catalogProductIds = Array.from(
+      new Set([...existing.catalogProductIds, ...entitledPackage.catalogProductIds])
+    ) as Array<Id<'product_catalog'>>;
+  }
+
+  return Array.from(mergedByPackageId.values()).sort(compareBackstagePackages);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Queries
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,6 +446,299 @@ export const getRegistrationsByYucpUser = internalQuery({
       .query('package_registry')
       .withIndex('by_yucp_user_id', (q) => q.eq('yucpUserId', args.yucpUserId))
       .collect();
+  },
+});
+
+export const issueBackstageRepoToken = internalMutation({
+  args: {
+    authUserId: v.string(),
+    subjectId: v.id('subjects'),
+    label: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+  },
+  returns: v.object({
+    token: v.string(),
+    tokenId: v.id('delivery_repo_tokens'),
+    expiresAt: v.optional(v.number()),
+  }),
+  handler: async (ctx, args) => {
+    const subject = await ctx.db.get(args.subjectId);
+    if (!subject || subject.status !== 'active' || subject.authUserId !== args.authUserId) {
+      throw new ConvexError('Subject not found.');
+    }
+
+    const token = createBackstageRepoToken();
+    const tokenHash = await sha256Hex(token);
+    const now = Date.now();
+    const tokenId = await ctx.db.insert('delivery_repo_tokens', {
+      authUserId: args.authUserId,
+      subjectId: args.subjectId,
+      tokenHash,
+      label: args.label,
+      status: 'active',
+      expiresAt: args.expiresAt,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return {
+      token,
+      tokenId,
+      expiresAt: args.expiresAt,
+    };
+  },
+});
+
+export const getBackstageRepoAccessByToken = internalQuery({
+  args: {
+    tokenHash: v.string(),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      tokenId: v.id('delivery_repo_tokens'),
+      authUserId: v.string(),
+      subjectId: v.id('subjects'),
+      status: DeliveryRepoTokenStatusV,
+      expiresAt: v.optional(v.number()),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const tokenRecord = await ctx.db
+      .query('delivery_repo_tokens')
+      .withIndex('by_token_hash', (q) => q.eq('tokenHash', args.tokenHash))
+      .first();
+    if (!tokenRecord) {
+      return null;
+    }
+
+    const now = Date.now();
+    const isExpired = tokenRecord.expiresAt !== undefined && tokenRecord.expiresAt <= now;
+    const effectiveStatus = isExpired ? 'expired' : tokenRecord.status;
+    if (effectiveStatus !== 'active') {
+      return null;
+    }
+
+    const subject = await ctx.db.get(tokenRecord.subjectId);
+    if (!subject || subject.status !== 'active') {
+      return null;
+    }
+
+    return {
+      tokenId: tokenRecord._id,
+      authUserId: tokenRecord.authUserId,
+      subjectId: tokenRecord.subjectId,
+      status: effectiveStatus,
+      expiresAt: tokenRecord.expiresAt,
+    };
+  },
+});
+
+export const touchBackstageRepoToken = internalMutation({
+  args: {
+    tokenId: v.id('delivery_repo_tokens'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.tokenId, {
+      lastUsedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+export const upsertDeliveryPackageForProduct = internalMutation({
+  args: {
+    authUserId: v.string(),
+    catalogProductId: v.id('product_catalog'),
+    packageId: v.string(),
+    packageName: v.optional(v.string()),
+    displayName: v.optional(v.string()),
+    description: v.optional(v.string()),
+    repositoryVisibility: v.optional(DeliveryPackageVisibilityV),
+    defaultChannel: v.optional(v.string()),
+  },
+  returns: v.object({
+    deliveryPackageId: v.id('delivery_packages'),
+    packageId: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    await requireOwnedCatalogProduct(ctx, args.authUserId, args.catalogProductId);
+    await assertPackageNamespaceOwnership(ctx, args.authUserId, args.packageId);
+
+    const now = Date.now();
+    const existing = await getOwnedDeliveryPackageByPackageId(ctx, args.authUserId, args.packageId);
+    const normalizedPackageName = normalizePackageName(args.packageName);
+    const normalizedDisplayName = normalizePackageName(args.displayName);
+
+    let deliveryPackageId: Id<'delivery_packages'>;
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        packageName: normalizedPackageName ?? existing.packageName,
+        displayName: normalizedDisplayName ?? existing.displayName,
+        description: args.description ?? existing.description,
+        repositoryVisibility: args.repositoryVisibility ?? existing.repositoryVisibility,
+        defaultChannel: args.defaultChannel ?? existing.defaultChannel,
+        status: existing.status === 'archived' ? 'active' : existing.status,
+        updatedAt: now,
+      });
+      deliveryPackageId = existing._id;
+    } else {
+      deliveryPackageId = await ctx.db.insert('delivery_packages', {
+        authUserId: args.authUserId,
+        packageId: args.packageId,
+        packageName: normalizedPackageName,
+        displayName: normalizedDisplayName,
+        description: args.description,
+        status: 'active',
+        repositoryVisibility: args.repositoryVisibility ?? 'hidden',
+        defaultChannel: args.defaultChannel,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    const existingLinks = await ctx.db
+      .query('delivery_package_products')
+      .withIndex('by_auth_user_catalog_product', (q) =>
+        q.eq('authUserId', args.authUserId).eq('catalogProductId', args.catalogProductId)
+      )
+      .collect();
+    const existingLink = existingLinks.find(
+      (link) => String(link.deliveryPackageId) === String(deliveryPackageId)
+    );
+
+    if (existingLink) {
+      await ctx.db.patch(existingLink._id, {
+        status: 'active',
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert('delivery_package_products', {
+        authUserId: args.authUserId,
+        deliveryPackageId,
+        catalogProductId: args.catalogProductId,
+        status: 'active',
+        accessMode: 'entitlement',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return {
+      deliveryPackageId,
+      packageId: args.packageId,
+    };
+  },
+});
+
+export const recordDeliveryPackageRelease = internalMutation({
+  args: {
+    authUserId: v.string(),
+    packageId: v.string(),
+    version: v.string(),
+    channel: v.string(),
+    releaseStatus: v.optional(DeliveryPackageReleaseStatusV),
+    repositoryVisibility: v.optional(DeliveryPackageVisibilityV),
+    signedArtifactId: v.optional(v.id('signed_release_artifacts')),
+    artifactKey: v.optional(v.string()),
+    unityVersion: v.optional(v.string()),
+    zipSha256: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+  },
+  returns: v.object({
+    deliveryPackageReleaseId: v.id('delivery_package_releases'),
+  }),
+  handler: async (ctx, args) => {
+    const deliveryPackage = await getOwnedDeliveryPackageByPackageId(
+      ctx,
+      args.authUserId,
+      args.packageId
+    );
+    if (!deliveryPackage) {
+      throw new ConvexError('Delivery package not found.');
+    }
+
+    const now = Date.now();
+    const releaseStatus = args.releaseStatus ?? 'published';
+    const repositoryVisibility = args.repositoryVisibility ?? deliveryPackage.repositoryVisibility;
+    const existingReleases = await ctx.db
+      .query('delivery_package_releases')
+      .withIndex('by_delivery_package', (q) => q.eq('deliveryPackageId', deliveryPackage._id))
+      .collect();
+    const existingRelease = existingReleases.find(
+      (release) => release.version === args.version && release.channel === args.channel
+    );
+
+    if (releaseStatus === 'published') {
+      await Promise.all(
+        existingReleases
+          .filter(
+            (release) =>
+              release.channel === args.channel &&
+              release.releaseStatus === 'published' &&
+              (!existingRelease || String(release._id) !== String(existingRelease._id))
+          )
+          .map(async (release) => {
+            await ctx.db.patch(release._id, {
+              releaseStatus: 'superseded',
+              updatedAt: now,
+            });
+          })
+      );
+    }
+
+    const patch = {
+      releaseStatus,
+      repositoryVisibility,
+      signedArtifactId: args.signedArtifactId,
+      artifactKey: args.artifactKey,
+      unityVersion: args.unityVersion,
+      zipSha256: args.zipSha256,
+      metadata: args.metadata,
+      publishedAt: releaseStatus === 'published' ? now : undefined,
+      updatedAt: now,
+    };
+
+    let deliveryPackageReleaseId: Id<'delivery_package_releases'>;
+    if (existingRelease) {
+      await ctx.db.patch(existingRelease._id, patch);
+      deliveryPackageReleaseId = existingRelease._id;
+    } else {
+      deliveryPackageReleaseId = await ctx.db.insert('delivery_package_releases', {
+        authUserId: args.authUserId,
+        deliveryPackageId: deliveryPackage._id,
+        packageId: args.packageId,
+        version: args.version,
+        channel: args.channel,
+        releaseStatus,
+        repositoryVisibility,
+        signedArtifactId: args.signedArtifactId,
+        artifactKey: args.artifactKey,
+        unityVersion: args.unityVersion,
+        zipSha256: args.zipSha256,
+        metadata: args.metadata,
+        publishedAt: releaseStatus === 'published' ? now : undefined,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    if (releaseStatus === 'published') {
+      await ctx.db.patch(deliveryPackage._id, {
+        status: 'active',
+        repositoryVisibility,
+        defaultChannel: deliveryPackage.defaultChannel ?? args.channel,
+        latestPublishedVersion: args.version,
+        latestPublishedAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return {
+      deliveryPackageReleaseId,
+    };
   },
 });
 
@@ -214,9 +878,17 @@ export const listByAuthUser = query({
       if (idx !== -1) startIndex = idx + 1;
     }
     const data = all.slice(startIndex, startIndex + limit);
+    const backstagePackagesByCatalogProduct = await buildBackstagePackageMap(
+      ctx,
+      args.authUserId,
+      data.map((product) => product._id)
+    );
     const hasMore = startIndex + limit < all.length;
     return {
-      data,
+      data: data.map((product) => ({
+        ...product,
+        backstagePackages: backstagePackagesByCatalogProduct.get(String(product._id)) ?? [],
+      })),
       hasMore,
       nextCursor: hasMore ? String(data[data.length - 1]._id) : null,
     };
@@ -532,6 +1204,129 @@ export const getByIdForAuthUser = query({
     await requireDelegatedAuthUserActor(args.actor, args.authUserId);
     const doc = await ctx.db.get(args.catalogProductId);
     if (!doc || doc.authUserId !== args.authUserId) return null;
-    return doc;
+    const backstagePackagesByCatalogProduct = await buildBackstagePackageMap(ctx, args.authUserId, [
+      args.catalogProductId,
+    ]);
+    return {
+      ...doc,
+      backstagePackages: backstagePackagesByCatalogProduct.get(String(doc._id)) ?? [],
+    };
+  },
+});
+
+export const listEntitledPackagesForSubject = internalQuery({
+  args: {
+    authUserId: v.string(),
+    subjectId: v.id('subjects'),
+  },
+  handler: async (ctx, args) => {
+    return await listEntitledBackstagePackages(ctx, args.authUserId, args.subjectId);
+  },
+});
+
+export const buildBackstageRepositoryForSubject = internalQuery({
+  args: {
+    authUserId: v.string(),
+    subjectId: v.id('subjects'),
+    repositoryUrl: v.string(),
+    packageBaseUrl: v.string(),
+    packageHeaders: v.optional(v.record(v.string(), v.string())),
+    repositoryName: v.optional(v.string()),
+    repositoryId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const entitledPackages = await listEntitledBackstagePackages(
+      ctx,
+      args.authUserId,
+      args.subjectId
+    );
+    const packages = entitledPackages.reduce<Record<string, { versions: Record<string, unknown> }>>(
+      (acc, packageSummary) => {
+        const manifest = toVpmVersionManifest(
+          packageSummary,
+          args.packageBaseUrl,
+          args.packageHeaders
+        );
+        if (!manifest || !packageSummary.latestRelease) {
+          return acc;
+        }
+        acc[packageSummary.packageId] = {
+          versions: {
+            [packageSummary.latestRelease.version]: manifest,
+          },
+        };
+        return acc;
+      },
+      {}
+    );
+
+    return {
+      name: args.repositoryName ?? 'Backstage Repos',
+      author: 'YUCP',
+      id: args.repositoryId ?? `club.yucp.backstage.${args.authUserId}`,
+      url: args.repositoryUrl,
+      packages,
+    };
+  },
+});
+
+export const getEntitledPackageReleaseForSubject = internalQuery({
+  args: {
+    authUserId: v.string(),
+    subjectId: v.id('subjects'),
+    packageId: v.string(),
+    version: v.optional(v.string()),
+    channel: v.optional(v.string()),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      deliveryPackageId: v.id('delivery_packages'),
+      packageId: v.string(),
+      version: v.string(),
+      channel: v.string(),
+      artifactKey: v.optional(v.string()),
+      signedArtifactId: v.optional(v.id('signed_release_artifacts')),
+      zipSha256: v.optional(v.string()),
+      repositoryVisibility: DeliveryPackageVisibilityV,
+    })
+  ),
+  handler: async (ctx, args) => {
+    const entitledPackages = await listEntitledBackstagePackages(
+      ctx,
+      args.authUserId,
+      args.subjectId
+    );
+    const entitledPackage = entitledPackages.find((entry) => entry.packageId === args.packageId);
+    if (!entitledPackage) {
+      return null;
+    }
+
+    const releases = await ctx.db
+      .query('delivery_package_releases')
+      .withIndex('by_delivery_package', (q) =>
+        q.eq('deliveryPackageId', entitledPackage.deliveryPackageId)
+      )
+      .collect();
+    const matchingRelease = releases
+      .filter((release) => release.releaseStatus === 'published')
+      .filter((release) => (args.version ? release.version === args.version : true))
+      .filter((release) => (args.channel ? release.channel === args.channel : true))
+      .sort(compareReleaseRecency)[0];
+
+    if (!matchingRelease) {
+      return null;
+    }
+
+    return {
+      deliveryPackageId: entitledPackage.deliveryPackageId,
+      packageId: matchingRelease.packageId,
+      version: matchingRelease.version,
+      channel: matchingRelease.channel,
+      artifactKey: matchingRelease.artifactKey,
+      signedArtifactId: matchingRelease.signedArtifactId,
+      zipSha256: matchingRelease.zipSha256,
+      repositoryVisibility: matchingRelease.repositoryVisibility,
+    };
   },
 });

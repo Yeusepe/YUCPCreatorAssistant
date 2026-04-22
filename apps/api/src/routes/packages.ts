@@ -1,5 +1,6 @@
 import type { ApiActorBinding } from '@yucp/shared/apiActor';
 import { api } from '../../../../convex/_generated/api';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import type { Auth } from '../auth';
 import { createAuthUserActorBinding } from '../lib/apiActor';
 import { getConvexClientFromUrl } from '../lib/convex';
@@ -284,11 +285,131 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
     }
   }
 
+  async function createBackstageReleaseUploadUrl(
+    request: Request,
+    packageIdParam: string
+  ): Promise<Response> {
+    const viewer = await resolveViewer(request, auth, config);
+    if (viewer instanceof Response) {
+      return viewer;
+    }
+    const convex = getConvexClientFromUrl(config.convexUrl, viewer.actorBinding);
+
+    let packageId: string;
+    try {
+      packageId = assertPackageId(packageIdParam);
+    } catch (error) {
+      return jsonResponse(
+        { error: error instanceof Error ? error.message : 'Invalid packageId' },
+        400
+      );
+    }
+
+    try {
+      const uploadUrl = await convex.mutation(
+        api.backstageRepos.generateReleaseUploadUrlForAuthUser,
+        {
+          apiSecret: config.convexApiSecret,
+          actor: viewer.actorBinding,
+          authUserId: viewer.authUserId,
+        }
+      );
+      return jsonResponse({ packageId, uploadUrl });
+    } catch (error) {
+      logger.error('Failed to generate Backstage release upload URL', {
+        authUserId: viewer.authUserId,
+        packageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return jsonResponse({ error: 'Failed to create upload URL' }, 500);
+    }
+  }
+
+  async function publishBackstageRelease(
+    request: Request,
+    packageIdParam: string
+  ): Promise<Response> {
+    const viewer = await resolveViewer(request, auth, config);
+    if (viewer instanceof Response) {
+      return viewer;
+    }
+    const convex = getConvexClientFromUrl(config.convexUrl, viewer.actorBinding);
+
+    let packageId: string;
+    try {
+      packageId = assertPackageId(packageIdParam);
+    } catch (error) {
+      return jsonResponse(
+        { error: error instanceof Error ? error.message : 'Invalid packageId' },
+        400
+      );
+    }
+
+    let body: {
+      catalogProductId?: string;
+      storageId?: string;
+      version?: string;
+      channel?: string;
+      packageName?: string;
+      displayName?: string;
+      description?: string;
+      repositoryVisibility?: 'hidden' | 'listed';
+      defaultChannel?: string;
+      unityVersion?: string;
+      metadata?: unknown;
+      deliveryName?: string;
+      contentType?: string;
+      releaseStatus?: 'draft' | 'published' | 'revoked' | 'superseded';
+    };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return jsonResponse({ error: 'Invalid JSON body' }, 400);
+    }
+
+    if (!body.catalogProductId || !body.storageId || !body.version) {
+      return jsonResponse({ error: 'catalogProductId, storageId, and version are required' }, 400);
+    }
+
+    try {
+      const result = await convex.action(api.backstageRepos.publishUploadedReleaseForAuthUser, {
+        apiSecret: config.convexApiSecret,
+        actor: viewer.actorBinding,
+        authUserId: viewer.authUserId,
+        catalogProductId: body.catalogProductId as Id<'product_catalog'>,
+        packageId,
+        storageId: body.storageId as Id<'_storage'>,
+        version: body.version,
+        channel: body.channel,
+        packageName: body.packageName,
+        displayName: body.displayName,
+        description: body.description,
+        repositoryVisibility: body.repositoryVisibility,
+        defaultChannel: body.defaultChannel,
+        unityVersion: body.unityVersion,
+        metadata: body.metadata,
+        deliveryName: body.deliveryName,
+        contentType: body.contentType,
+        releaseStatus: body.releaseStatus,
+      });
+      return jsonResponse(result, 201);
+    } catch (error) {
+      logger.error('Failed to publish Backstage release', {
+        authUserId: viewer.authUserId,
+        packageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return jsonResponse({ error: 'Failed to publish Backstage release' }, 500);
+    }
+  }
+
   return {
     listPackages,
     renamePackage,
     archivePackage,
     restorePackage,
     deletePackage,
+    createBackstageReleaseUploadUrl,
+    publishBackstageRelease,
   };
 }

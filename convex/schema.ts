@@ -64,6 +64,29 @@ const ProductCatalogStatus = v.union(
   v.literal('hidden')
 );
 
+const DeliveryPackageStatus = v.union(
+  v.literal('draft'),
+  v.literal('active'),
+  v.literal('archived')
+);
+
+const DeliveryPackageLinkStatus = v.union(v.literal('active'), v.literal('archived'));
+
+const DeliveryPackageReleaseStatus = v.union(
+  v.literal('draft'),
+  v.literal('published'),
+  v.literal('revoked'),
+  v.literal('superseded')
+);
+
+const DeliveryPackageVisibility = v.union(v.literal('hidden'), v.literal('listed'));
+
+const DeliveryRepoTokenStatus = v.union(
+  v.literal('active'),
+  v.literal('revoked'),
+  v.literal('expired')
+);
+
 /** Signed release artifact publication status */
 const SignedReleaseArtifactStatus = v.union(
   v.literal('active'),
@@ -1354,6 +1377,92 @@ const product_catalog = defineTable({
   .index('by_provider_ref', ['provider', 'providerProductRef'])
   .index('by_slug', ['canonicalSlug'])
   .index('by_status', ['status']);
+
+/**
+ * Delivery Packages - distributable Unity/VPM package identities for Backstage Repos.
+ * Separate from package_registry so namespace ownership and subscriber delivery stay decoupled.
+ */
+const delivery_packages = defineTable({
+  authUserId: v.string(),
+  packageId: v.string(),
+  packageName: v.optional(v.string()),
+  displayName: v.optional(v.string()),
+  description: v.optional(v.string()),
+  status: DeliveryPackageStatus,
+  repositoryVisibility: DeliveryPackageVisibility,
+  defaultChannel: v.optional(v.string()),
+  latestPublishedVersion: v.optional(v.string()),
+  latestPublishedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_auth_user', ['authUserId'])
+  .index('by_package_id', ['packageId'])
+  .index('by_auth_user_status', ['authUserId', 'status']);
+
+/**
+ * Delivery Package Products - links creator storefront products to delivery packages.
+ * Entitlements reach packages through these links via product_catalog.
+ */
+const delivery_package_products = defineTable({
+  authUserId: v.string(),
+  deliveryPackageId: v.id('delivery_packages'),
+  catalogProductId: v.id('product_catalog'),
+  status: DeliveryPackageLinkStatus,
+  accessMode: v.literal('entitlement'),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_auth_user', ['authUserId'])
+  .index('by_delivery_package', ['deliveryPackageId'])
+  .index('by_catalog_product', ['catalogProductId'])
+  .index('by_auth_user_catalog_product', ['authUserId', 'catalogProductId']);
+
+/**
+ * Delivery Package Releases - published package versions and delivery metadata.
+ * This is the release layer that future VCC listing and resolver endpoints will read from.
+ */
+const delivery_package_releases = defineTable({
+  authUserId: v.string(),
+  deliveryPackageId: v.id('delivery_packages'),
+  packageId: v.string(),
+  version: v.string(),
+  channel: v.string(),
+  releaseStatus: DeliveryPackageReleaseStatus,
+  repositoryVisibility: DeliveryPackageVisibility,
+  signedArtifactId: v.optional(v.id('signed_release_artifacts')),
+  artifactKey: v.optional(v.string()),
+  unityVersion: v.optional(v.string()),
+  zipSha256: v.optional(v.string()),
+  metadata: v.optional(v.any()),
+  publishedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_auth_user', ['authUserId'])
+  .index('by_delivery_package', ['deliveryPackageId'])
+  .index('by_package_version', ['packageId', 'version'])
+  .index('by_delivery_package_release_status', ['deliveryPackageId', 'releaseStatus'])
+  .index('by_auth_user_package', ['authUserId', 'packageId']);
+
+/**
+ * Delivery Repo Tokens - opaque revocable credentials for Backstage Repos access.
+ * Tokens are stored hashed so leaked database rows cannot be replayed as repo credentials.
+ */
+const delivery_repo_tokens = defineTable({
+  authUserId: v.string(),
+  subjectId: v.id('subjects'),
+  tokenHash: v.string(),
+  label: v.optional(v.string()),
+  status: DeliveryRepoTokenStatus,
+  expiresAt: v.optional(v.number()),
+  lastUsedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_token_hash', ['tokenHash'])
+  .index('by_subject_status', ['subjectId', 'status'])
+  .index('by_auth_user_status', ['authUserId', 'status']);
 
 /**
  * Purchase Facts - Canonical purchase layer for automatic verification
@@ -2709,6 +2818,10 @@ export default defineSchema({
   migration_grants,
   migration_events,
   product_catalog,
+  delivery_packages,
+  delivery_package_products,
+  delivery_package_releases,
+  delivery_repo_tokens,
   manual_licenses,
   purchase_facts,
   provider_connections,

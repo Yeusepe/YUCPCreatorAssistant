@@ -12,6 +12,7 @@ export {
   type VerificationRouteHandlers,
 } from '../verification';
 export { createAccountSecurityRoutes } from './accountSecurity';
+export { type BackstageRepoConfig, createBackstageRepoRoutes } from './backstageRepos';
 export { type ConnectConfig, createConnectRoutes } from './connect';
 export { type CouplingLicenseConfig, createCouplingLicenseRoutes } from './couplingLicenses';
 export { createForensicsRoutes, type ForensicsConfig } from './forensics';

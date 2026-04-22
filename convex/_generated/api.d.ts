@@ -14,6 +14,7 @@ import type * as audit_events from "../audit_events.js";
 import type * as auth from "../auth.js";
 import type * as authViewer from "../authViewer.js";
 import type * as backgroundSync from "../backgroundSync.js";
+import type * as backstageRepos from "../backstageRepos.js";
 import type * as betterAuthApiKeys from "../betterAuthApiKeys.js";
 import type * as bindings from "../bindings.js";
 import type * as certificateBilling from "../certificateBilling.js";
@@ -131,6 +132,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   authViewer: typeof authViewer;
   backgroundSync: typeof backgroundSync;
+  backstageRepos: typeof backstageRepos;
   betterAuthApiKeys: typeof betterAuthApiKeys;
   bindings: typeof bindings;
   certificateBilling: typeof certificateBilling;
