@@ -462,15 +462,29 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
           request,
           async () => {
             const response = await deps.verificationHandlers.completeLicenseVerification(
-              createJsonRequest(`${deps.config.apiBaseUrl}/api/verification/complete-license`, {
-                apiSecret: deps.config.convexApiSecret,
-                licenseKey: request.licenseKey ?? '',
-                productId: request.productId,
-                provider: request.provider,
-                authUserId: request.authUserId ?? '',
-                subjectId: request.subjectId ?? '',
-                discordUserId: request.discordUserId,
-              })
+              createJsonRequest(
+                `${deps.config.apiBaseUrl}/api/verification/complete-license`,
+                (request.creatorAuthUserId ?? request.buyerAuthUserId ?? request.buyerSubjectId)
+                  ? {
+                      apiSecret: deps.config.convexApiSecret,
+                      licenseKey: request.licenseKey ?? '',
+                      productId: request.productId,
+                      provider: request.provider,
+                      creatorAuthUserId: request.creatorAuthUserId ?? '',
+                      buyerAuthUserId: request.buyerAuthUserId ?? '',
+                      buyerSubjectId: request.buyerSubjectId ?? '',
+                      discordUserId: request.discordUserId,
+                    }
+                  : {
+                      apiSecret: deps.config.convexApiSecret,
+                      licenseKey: request.licenseKey ?? '',
+                      productId: request.productId,
+                      provider: request.provider,
+                      authUserId: request.authUserId ?? '',
+                      subjectId: request.subjectId ?? '',
+                      discordUserId: request.discordUserId,
+                    }
+              )
             );
             return normalizeVerificationResponse(
               await readJsonResponse<Partial<VerificationResultResponse>>(response, {
@@ -497,8 +511,16 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
             );
             return normalizeVerificationResponse(
               await handleCompleteVrchat(createVerificationConfig(deps), {
-                authUserId: request.authUserId ?? '',
-                subjectId: request.subjectId ?? '',
+                ...((request.creatorAuthUserId ?? request.buyerAuthUserId ?? request.buyerSubjectId)
+                  ? {
+                      creatorAuthUserId: request.creatorAuthUserId ?? '',
+                      buyerAuthUserId: request.buyerAuthUserId ?? '',
+                      buyerSubjectId: request.buyerSubjectId ?? '',
+                    }
+                  : {
+                      authUserId: request.authUserId ?? '',
+                      subjectId: request.subjectId ?? '',
+                    }),
                 vrchatUserId: ownership.vrchatUserId,
                 displayName: ownership.displayName,
                 ownedAvatarIds: ownership.ownedAvatarIds,

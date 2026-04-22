@@ -110,6 +110,123 @@ describe('license verification account linking', () => {
     });
   });
 
+  it('attributes manual-license verification to the buyer when the creator owns the product', async () => {
+    const t = makeTestConvex();
+    const creatorAuthUserId = 'auth-license-verification-creator';
+    const buyerAuthUserId = 'auth-license-verification-buyer';
+    const buyerSubjectId = await seedSubject(t, {
+      authUserId: buyerAuthUserId,
+      primaryDiscordUserId: 'discord-license-verification-buyer',
+    });
+
+    await seedCreatorProfile(t, {
+      authUserId: creatorAuthUserId,
+      ownerDiscordUserId: 'discord-license-verification-creator',
+    });
+
+    const result = await t.mutation(
+      api.licenseVerification.completeLicenseVerification,
+      {
+        apiSecret: API_SECRET,
+        creatorAuthUserId,
+        buyerAuthUserId,
+        subjectId: buyerSubjectId,
+        provider: 'jinxxy',
+        providerUserId: 'jinxxy-user-buyer-owned',
+        providerUsername: 'BuyerOwned',
+        productsToGrant: [
+          {
+            productId: 'product-license-verification-cross-user',
+            sourceReference: 'order-license-verification-cross-user',
+          },
+        ],
+        licenseSubjectLink: {
+          licenseSubject: 'cross-user-license-subject',
+          licenseKeyEncrypted: 'encrypted-cross-user-license-key',
+          providerProductId: 'product-license-verification-cross-user',
+        },
+      } as never
+    );
+
+    expect(result.success).toBe(true);
+
+    const buyerLinks = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId: buyerAuthUserId,
+    });
+    const creatorLinks = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId: creatorAuthUserId,
+    });
+
+    expect(buyerLinks).toHaveLength(1);
+    expect(buyerLinks[0]).toMatchObject({
+      provider: 'jinxxy',
+      providerUserId: 'jinxxy-user-buyer-owned',
+      providerUsername: 'BuyerOwned',
+      status: 'active',
+    });
+    expect(creatorLinks).toHaveLength(0);
+
+    const buyerIdentity = await t.run((ctx) =>
+      ctx.db
+        .query('license_subject_links')
+        .withIndex('by_auth_user_subject', (q) =>
+          q.eq('authUserId', buyerAuthUserId).eq('licenseSubject', 'cross-user-license-subject')
+        )
+        .first()
+    );
+    const creatorIdentity = await t.run((ctx) =>
+      ctx.db
+        .query('license_subject_links')
+        .withIndex('by_auth_user_subject', (q) =>
+          q.eq('authUserId', creatorAuthUserId).eq('licenseSubject', 'cross-user-license-subject')
+        )
+        .first()
+    );
+
+    expect(buyerIdentity).toMatchObject({
+      authUserId: buyerAuthUserId,
+      provider: 'jinxxy',
+      providerProductId: 'product-license-verification-cross-user',
+    });
+    expect(creatorIdentity).toBeNull();
+  });
+
+  it('rejects explicit buyer attribution when the subject belongs to a different auth user', async () => {
+    const t = makeTestConvex();
+    const creatorAuthUserId = 'auth-license-verification-creator-mismatch';
+    const buyerSubjectId = await seedSubject(t, {
+      authUserId: 'buyer-auth-from-subject',
+      primaryDiscordUserId: 'discord-license-verification-buyer-mismatch',
+    });
+
+    await seedCreatorProfile(t, {
+      authUserId: creatorAuthUserId,
+      ownerDiscordUserId: 'discord-license-verification-creator-mismatch',
+    });
+
+    await expect(
+      t.mutation(api.licenseVerification.completeLicenseVerification, {
+        apiSecret: API_SECRET,
+        creatorAuthUserId,
+        buyerAuthUserId: 'buyer-auth-from-request',
+        subjectId: buyerSubjectId,
+        provider: 'jinxxy',
+        providerUserId: 'jinxxy-user-mismatch',
+        providerUsername: 'MismatchBuyer',
+        productsToGrant: [
+          {
+            productId: 'product-license-verification-mismatch',
+            sourceReference: 'order-license-verification-mismatch',
+          },
+        ],
+      } as never)
+    ).rejects.toThrow(
+      `Subject ${buyerSubjectId} does not belong to buyer auth user buyer-auth-from-request`
+    );
+  });
+
   it('reconciles legacy verification bindings into buyer provider links', async () => {
     const t = makeTestConvex();
     const authUserId = 'auth-license-verification-reconcile';

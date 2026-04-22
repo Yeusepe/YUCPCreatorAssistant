@@ -956,6 +956,9 @@ export function createVerificationRoutes(config: VerificationConfig) {
           provider?: string;
           productId?: string;
           authUserId?: string;
+          creatorAuthUserId?: string;
+          buyerAuthUserId?: string;
+          buyerSubjectId?: string;
           subjectId?: string;
           discordUserId?: string;
         }
@@ -968,13 +971,29 @@ export function createVerificationRoutes(config: VerificationConfig) {
       }
 
       const { handleCompleteLicense } = await import('./completeLicense');
-      const result = await handleCompleteLicense(config, {
-        licenseKey: body.licenseKey ?? '',
-        provider: body.provider,
-        productId: body.productId,
-        authUserId: body.authUserId ?? '',
-        subjectId: body.subjectId ?? '',
-      });
+      const hasExplicitIdentity =
+        body.creatorAuthUserId !== undefined ||
+        body.buyerAuthUserId !== undefined ||
+        body.buyerSubjectId !== undefined;
+      const result = await handleCompleteLicense(
+        config,
+        hasExplicitIdentity
+          ? {
+              licenseKey: body.licenseKey ?? '',
+              provider: body.provider,
+              productId: body.productId,
+              creatorAuthUserId: body.creatorAuthUserId ?? '',
+              buyerAuthUserId: body.buyerAuthUserId ?? '',
+              buyerSubjectId: body.buyerSubjectId ?? '',
+            }
+          : {
+              licenseKey: body.licenseKey ?? '',
+              provider: body.provider,
+              productId: body.productId,
+              authUserId: body.authUserId ?? '',
+              subjectId: body.subjectId ?? '',
+            }
+      );
 
       if (!result.success) {
         return Response.json(result, { status: 400 });
@@ -986,7 +1005,7 @@ export function createVerificationRoutes(config: VerificationConfig) {
         discordUserId: body?.discordUserId,
         error: err,
         stage: 'complete_license_verification',
-        authUserId: body?.authUserId,
+        authUserId: body?.buyerAuthUserId ?? body?.authUserId ?? body?.creatorAuthUserId,
       });
       return Response.json(
         { success: false, error: 'Internal server error', supportCode: support.supportCode },

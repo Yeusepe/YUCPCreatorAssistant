@@ -683,6 +683,30 @@ export const getSubjectIdByDiscordId = internalQuery({
   },
 });
 
+export const getSubjectIdentityById = internalQuery({
+  args: {
+    subjectId: v.id('subjects'),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id('subjects'),
+      authUserId: v.optional(v.string()),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const subject = await ctx.db.get(args.subjectId);
+    if (!subject) {
+      return null;
+    }
+
+    return {
+      _id: subject._id,
+      authUserId: subject.authUserId,
+    };
+  },
+});
+
 export const listBuyerProviderLinksForAuthUser = query({
   args: {
     apiSecret: v.string(),

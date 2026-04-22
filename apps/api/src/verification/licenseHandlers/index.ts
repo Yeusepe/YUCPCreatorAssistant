@@ -19,6 +19,31 @@ import type { CompleteLicenseInput, CompleteLicenseResult } from '../completeLic
 import { encryptForensicsLicenseKey } from '../forensicsLicenseKey';
 import type { VerificationConfig } from '../verificationConfig';
 
+function resolveHandlerActors(input: CompleteLicenseInput): {
+  creatorAuthUserId: string;
+  buyerAuthUserId: string;
+  buyerSubjectId: string;
+} {
+  if (
+    'creatorAuthUserId' in input &&
+    typeof input.creatorAuthUserId === 'string' &&
+    typeof input.buyerAuthUserId === 'string' &&
+    typeof input.buyerSubjectId === 'string'
+  ) {
+    return {
+      creatorAuthUserId: input.creatorAuthUserId,
+      buyerAuthUserId: input.buyerAuthUserId,
+      buyerSubjectId: input.buyerSubjectId,
+    };
+  }
+
+  return {
+    creatorAuthUserId: input.authUserId,
+    buyerAuthUserId: input.authUserId,
+    buyerSubjectId: input.subjectId,
+  };
+}
+
 export interface LicenseVerificationHandler {
   verify(
     input: CompleteLicenseInput,
@@ -33,17 +58,23 @@ export function getHandler(provider: string): LicenseVerificationHandler | null 
 
   return {
     async verify(input, config, convex) {
-      const { licenseKey, productId, authUserId, subjectId } = input;
+      const { licenseKey, productId } = input;
+      const { creatorAuthUserId, buyerAuthUserId, buyerSubjectId } = resolveHandlerActors(input);
       const ctx = {
         convex,
         apiSecret: config.convexApiSecret,
-        authUserId,
+        authUserId: creatorAuthUserId,
         encryptionSecret: config.encryptionSecret ?? '',
       };
 
       let result: Awaited<ReturnType<typeof verification.verifyLicense>>;
       try {
-        result = await verification.verifyLicense(licenseKey, productId, authUserId, ctx);
+        result = await verification.verifyLicense(
+          licenseKey,
+          productId ?? '',
+          creatorAuthUserId,
+          ctx
+        );
       } catch (err) {
         logger.error('[licenseHandlers] verifyLicense threw', {
           provider,
@@ -74,7 +105,8 @@ export function getHandler(provider: string): LicenseVerificationHandler | null 
 
       logger.info('[licenseHandlers] Granting entitlement', {
         provider,
-        authUserId,
+        creatorAuthUserId,
+        buyerAuthUserId,
         productId,
       });
 
@@ -84,8 +116,9 @@ export function getHandler(provider: string): LicenseVerificationHandler | null 
           api.licenseVerification.completeLicenseVerification,
           {
             apiSecret: config.convexApiSecret,
-            authUserId,
-            subjectId,
+            creatorAuthUserId,
+            buyerAuthUserId,
+            subjectId: buyerSubjectId,
             provider,
             providerUserId,
             productsToGrant: [
