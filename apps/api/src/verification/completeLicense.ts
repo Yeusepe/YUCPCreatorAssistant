@@ -157,6 +157,7 @@ export async function handleCompleteLicense(
   if (resolvedInput.value.identityMode === 'legacy') {
     const buyerAuthUserId = await ensureSubjectAuthUserId(
       convex,
+      config.convexApiSecret,
       resolvedInput.value.buyerSubjectId
     );
     if (!buyerAuthUserId) {

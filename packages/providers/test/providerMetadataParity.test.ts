@@ -28,4 +28,13 @@ describe('provider metadata parity', () => {
   it('keeps itch.io mapped to the custom ItchIo emoji', () => {
     expect(getProviderDescriptor('itchio')?.emojiKey).toBe('ItchIo');
   });
+
+  it('advertises itch.io buyer verification through account linking only', () => {
+    expect(getProviderDescriptor('itchio')).toMatchObject({
+      buyerVerificationMethods: ['account_link'],
+      verificationMethods: ['account_link'],
+      supportsBuyerOAuthLink: true,
+      supportsLicenseVerify: false,
+    });
+  });
 });

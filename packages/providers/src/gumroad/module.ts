@@ -38,6 +38,7 @@ export const GUMROAD_DISPLAY_META = {
 } as const;
 
 const GUMROAD_API_BASE = 'https://api.gumroad.com/v2';
+const GUMROAD_PRODUCTS_URL = `${GUMROAD_API_BASE}/products`;
 const MAX_PRODUCTS = 5000;
 
 type GumroadRuntimeLogger = Pick<StructuredLogger, 'warn'>;
@@ -76,18 +77,43 @@ async function listGumroadProducts(
   ports: GumroadRuntimePorts
 ): Promise<ProductRecord[]> {
   const products: ProductRecord[] = [];
-  let nextPageUrl: string | undefined = `${GUMROAD_API_BASE}/products`;
+  let nextPageUrl: string | undefined = GUMROAD_PRODUCTS_URL;
   const fetchImpl = getFetch(ports);
+  const seenPageUrls = new Set<string>();
+  const seenCursors = new Set<string>();
 
   while (nextPageUrl && products.length < MAX_PRODUCTS) {
-    const parsedUrl = new URL(nextPageUrl);
-    parsedUrl.searchParams.delete('access_token');
+    const parsedUrl = normalizeGumroadProductsPageUrl(nextPageUrl, ports.logger);
+    if (!parsedUrl) {
+      break;
+    }
+
+    const normalizedUrl = parsedUrl.toString();
+    if (seenPageUrls.has(normalizedUrl)) {
+      ports.logger.warn('Ignoring Gumroad pagination link', {
+        reason: 'repeated-link',
+      });
+      break;
+    }
+
+    const cursor = parsedUrl.searchParams.get('cursor');
+    if (cursor && seenCursors.has(cursor)) {
+      ports.logger.warn('Ignoring Gumroad pagination link', {
+        reason: 'repeated-cursor',
+      });
+      break;
+    }
+
+    seenPageUrls.add(normalizedUrl);
+    if (cursor) {
+      seenCursors.add(cursor);
+    }
 
     // Gumroad products API reference: https://gumroad.com/api#products
     const response = await withProviderRateLimitRetries({
       providerName: 'Gumroad',
       operation: async () => {
-        const result = await fetchImpl(parsedUrl.toString(), {
+        const result = await fetchImpl(normalizedUrl, {
           method: 'GET',
           headers: {
             Accept: 'application/json',
@@ -142,6 +168,35 @@ async function listGumroadProducts(
   }
 
   return products;
+}
+
+function normalizeGumroadProductsPageUrl(rawUrl: string, logger: GumroadRuntimeLogger): URL | null {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(rawUrl, GUMROAD_PRODUCTS_URL);
+  } catch {
+    logger.warn('Ignoring Gumroad pagination link', {
+      reason: 'invalid-url',
+    });
+    return null;
+  }
+
+  if (parsedUrl.origin !== new URL(GUMROAD_API_BASE).origin) {
+    logger.warn('Ignoring Gumroad pagination link', {
+      reason: 'unexpected-origin',
+    });
+    return null;
+  }
+
+  if (parsedUrl.pathname !== new URL(GUMROAD_PRODUCTS_URL).pathname) {
+    logger.warn('Ignoring Gumroad pagination link', {
+      reason: 'unexpected-path',
+    });
+    return null;
+  }
+
+  parsedUrl.searchParams.delete('access_token');
+  return parsedUrl;
 }
 
 export async function verifyGumroadLicense(

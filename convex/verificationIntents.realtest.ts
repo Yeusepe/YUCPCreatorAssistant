@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setPinnedYucpRootsForTests } from '@yucp/shared/yucpTrust';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { getPublicKeyFromPrivate } from './lib/yucpCrypto';
@@ -154,6 +154,70 @@ describe('verification intents buyer provider links', () => {
 
     expect(intent?.status).toBe('verified');
     expect(intent?.verifiedMethodKey).toBe('vrchat-link');
+  });
+
+  it('canonicalizes legacy itch manual-license intents into buyer-provider-link verification', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-itch-legacy-link';
+    const subjectId = await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-itch-legacy-link',
+    });
+    const externalAccountId = await seedExternalAccount(t, {
+      provider: 'itchio',
+      providerUserId: 'itch-user-legacy',
+      providerUsername: 'LegacyItchBuyer',
+    });
+
+    await t.mutation(api.subjects.upsertBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      subjectId,
+      provider: 'itchio',
+      externalAccountId,
+      verificationMethod: 'account_link',
+    });
+
+    const { intentId } = await t.mutation(api.verificationIntents.createVerificationIntent, {
+      apiSecret: API_SECRET,
+      authUserId,
+      packageId: 'pkg-itch-legacy',
+      machineFingerprint: 'machine-itch-legacy',
+      codeChallenge: 'challenge-itch-legacy',
+      returnUrl: 'https://example.com/return',
+      requirements: [
+        {
+          methodKey: 'itchio-link',
+          providerKey: 'itchio',
+          kind: 'manual_license',
+          title: 'itch.io download key',
+          providerProductRef: '42',
+        },
+      ],
+    });
+
+    const storedIntent = await t.query(api.verificationIntents.getIntentRecord, {
+      apiSecret: API_SECRET,
+      authUserId,
+      intentId,
+    });
+
+    expect(storedIntent?.requirements).toMatchObject([
+      {
+        methodKey: 'itchio-link',
+        providerKey: 'itchio',
+        kind: 'buyer_provider_link',
+        providerProductRef: '42',
+      },
+    ]);
+
+    const result = await t.action(api.verificationIntents.verifyIntentWithBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      authUserId,
+      intentId,
+      methodKey: 'itchio-link',
+    });
+
+    expect(result).toEqual({ success: true });
   });
 
   it('keeps the intent pending and reports provider_link_missing when no buyer link exists', async () => {

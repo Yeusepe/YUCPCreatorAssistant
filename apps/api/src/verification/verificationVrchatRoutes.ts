@@ -159,6 +159,7 @@ async function finalizeVrchatOwnership({
   const { handleCompleteVrchat } = await import('./completeVrchat');
   const buyerAuthUserId = await ensureSubjectAuthUserId(
     getConvexClientFromUrl(config.convexUrl),
+    config.convexApiSecret,
     subjectId
   );
   if (!buyerAuthUserId) {

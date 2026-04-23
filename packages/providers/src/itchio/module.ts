@@ -30,7 +30,8 @@ export const ITCHIO_DISPLAY_META = {
   dashboardIconBg: '#fa5c5c',
   dashboardQuickStartBg: 'rgba(250,92,92,0.12)',
   dashboardQuickStartBorder: 'rgba(250,92,92,0.32)',
-  dashboardServerTileHint: 'Allow users to verify itch.io download keys in this Discord server.',
+  dashboardServerTileHint:
+    'Allow buyers to sign in with itch.io to verify access in this Discord server.',
 } as const;
 
 const ITCHIO_SERVER_API_BASE = 'https://itch.io/api/1/key';
@@ -337,34 +338,14 @@ export async function verifyItchioDownloadKey(
 
 export function createItchioLicenseVerification<
   TClient extends ProviderRuntimeClient = ProviderRuntimeClient,
->(ports: ItchioRuntimePorts<TClient>): LicenseVerificationPlugin<TClient> {
+>(_ports: ItchioRuntimePorts<TClient>): LicenseVerificationPlugin<TClient> {
   return {
-    async verifyLicense(downloadKey, productId, authUserId, ctx) {
-      if (!productId) {
-        return { valid: false, error: 'Game ID is required for itch.io verification' };
-      }
-
-      const encryptedToken = await ports.getEncryptedCredential(authUserId, ctx);
-      if (!encryptedToken) {
-        return {
-          valid: false,
-          error: 'itch.io is not connected for this creator. Ask them to reconnect and try again.',
-        };
-      }
-
-      try {
-        const accessToken = await ports.decryptCredential(encryptedToken, ctx);
-        return await verifyItchioDownloadKey(downloadKey, productId, accessToken, ports);
-      } catch (error) {
-        if (error instanceof CredentialExpiredError) {
-          return {
-            valid: false,
-            error:
-              'The creator itch.io connection has expired. Ask them to reconnect the store and try again.',
-          };
-        }
-        throw error;
-      }
+    async verifyLicense(_downloadKey, _productId, _authUserId, _ctx) {
+      return {
+        valid: false,
+        error:
+          'itch.io verification now requires the buyer to sign in with itch.io. Restart verification and use the itch.io account link flow.',
+      };
     },
   };
 }

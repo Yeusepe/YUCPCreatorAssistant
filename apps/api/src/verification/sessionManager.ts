@@ -978,7 +978,11 @@ export function createVerificationRoutes(config: VerificationConfig) {
         body.buyerSubjectId !== undefined;
       const legacyBuyerAuthUserId =
         !hasExplicitIdentity && body.subjectId
-          ? await ensureSubjectAuthUserId(getConvexClientFromUrl(config.convexUrl), body.subjectId)
+          ? await ensureSubjectAuthUserId(
+              getConvexClientFromUrl(config.convexUrl),
+              config.convexApiSecret,
+              body.subjectId
+            )
           : null;
       if (!hasExplicitIdentity && body.subjectId && !legacyBuyerAuthUserId) {
         return Response.json(

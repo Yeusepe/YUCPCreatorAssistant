@@ -68,6 +68,7 @@ describe('handleCompleteLicense', () => {
     expect(result.success).toBe(true);
     expect(ensureSubjectAuthUserIdMock).toHaveBeenCalledWith(
       expect.any(Object),
+      'convex-secret',
       'buyer_subject_456'
     );
     expect(handlerVerifyMock).toHaveBeenCalledWith(

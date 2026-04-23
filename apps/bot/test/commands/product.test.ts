@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import type {
   ButtonInteraction,
   ChatInputCommandInteraction,
@@ -33,6 +33,27 @@ mock.module('../../src/lib/internalRpc', () => ({
 // Mock posthog so track() is a no-op
 mock.module('../../src/lib/posthog', () => ({
   track: mock(() => {}),
+}));
+
+mock.module('../../../../convex/_generated/api', () => ({
+  api: {
+    providerConnections: {
+      getConnectionStatus: 'providerConnections:getConnectionStatus',
+    },
+    role_rules: {
+      getByGuildWithProductNames: 'role_rules:getByGuildWithProductNames',
+      addProductFromDiscordRole: 'role_rules:addProductFromDiscordRole',
+      addCatalogProduct: 'role_rules:addCatalogProduct',
+      addProductForProvider: 'role_rules:addProductForProvider',
+      createRoleRule: 'role_rules:createRoleRule',
+      getByTenant: 'role_rules:getByTenant',
+      deleteRoleRule: 'role_rules:deleteRoleRule',
+    },
+    creatorProfiles: {
+      getCreatorProfile: 'creatorProfiles:getCreatorProfile',
+      updateCreatorPolicy: 'creatorProfiles:updateCreatorPolicy',
+    },
+  },
 }));
 
 // Mock @yucp/providers so resolvePayhipProduct and resolveGumroadProduct don't make real HTTP calls
@@ -159,6 +180,15 @@ const TYPE_SELECT_CONVEX = {
   mutation: mock(() => Promise.resolve(undefined)),
   action: mock(() => Promise.resolve(undefined)),
 } as unknown as import('convex/browser').ConvexHttpClient;
+
+beforeEach(() => {
+  mockListProducts.mockReset();
+  mockListProducts.mockImplementation(() =>
+    Promise.resolve({
+      products: [],
+    })
+  );
+});
 
 describe('product command', () => {
   it('given /product add slash command, shows provider selection menu', async () => {
@@ -300,6 +330,104 @@ describe('product command', () => {
     // editReply should report no products found
     const editReplyPayload = selectInteraction.editReply.mock.calls[0]?.[0];
     expect(editReplyPayload?.content ?? editReplyPayload).toContain('No Gumroad products found');
+  });
+
+  it('given gumroad type selected with a transient provider error, preserves retry guidance instead of the empty state', async () => {
+    mockListProducts.mockImplementation(() =>
+      Promise.resolve({ products: [], error: 'Too many requests. Please wait a moment and try again.' })
+    );
+
+    const slashInteraction = mockSlashCommand({
+      userId: 'user_prod_transient',
+      guildId: 'guild_product_test',
+      commandName: 'creator-admin',
+      subcommandGroup: 'product',
+      subcommand: 'add',
+      isAdmin: true,
+    });
+    await handleProductAddInteractive(
+      slashInteraction as unknown as ChatInputCommandInteraction,
+      {
+        authUserId: 'auth_product_transient',
+        guildLinkId: 'link_id_transient' as ProductCtx['guildLinkId'],
+        guildId: 'guild_product_test',
+      },
+      ALL_CONNECTED,
+      TEST_API_SECRET
+    );
+
+    const selectInteraction = mockStringSelect({
+      userId: 'user_prod_transient',
+      guildId: 'guild_product_test',
+      customId: 'creator_product:type_select:auth_product_transient',
+      values: ['gumroad'],
+    });
+    selectInteraction.deferUpdate = mock(() => Promise.resolve(undefined)) as unknown as MockFn;
+
+    await handleProductTypeSelect(
+      selectInteraction as unknown as StringSelectMenuInteraction,
+      'auth_product_transient',
+      TYPE_SELECT_CONVEX,
+      TEST_API_SECRET
+    );
+
+    const editReplyPayload = selectInteraction.editReply.mock.calls[0]?.[0];
+    const content = editReplyPayload?.content ?? editReplyPayload;
+    expect(content).toContain('Too many requests. Please wait a moment and try again.');
+    expect(content).not.toContain('No Gumroad products found');
+    expect(content).not.toContain('after reconnecting');
+  });
+
+  it('given gumroad type selected with a malformed provider payload error, falls back to a safe actionable message', async () => {
+    const leakedToken = 'secret-live-1234567890';
+    mockListProducts.mockImplementation(() =>
+      Promise.resolve({
+        products: [],
+        error: `Unexpected token < in JSON while parsing access_token=${leakedToken}`,
+      })
+    );
+
+    const slashInteraction = mockSlashCommand({
+      userId: 'user_prod_malformed',
+      guildId: 'guild_product_test',
+      commandName: 'creator-admin',
+      subcommandGroup: 'product',
+      subcommand: 'add',
+      isAdmin: true,
+    });
+    await handleProductAddInteractive(
+      slashInteraction as unknown as ChatInputCommandInteraction,
+      {
+        authUserId: 'auth_product_malformed',
+        guildLinkId: 'link_id_malformed' as ProductCtx['guildLinkId'],
+        guildId: 'guild_product_test',
+      },
+      ALL_CONNECTED,
+      TEST_API_SECRET
+    );
+
+    const selectInteraction = mockStringSelect({
+      userId: 'user_prod_malformed',
+      guildId: 'guild_product_test',
+      customId: 'creator_product:type_select:auth_product_malformed',
+      values: ['gumroad'],
+    });
+    selectInteraction.deferUpdate = mock(() => Promise.resolve(undefined)) as unknown as MockFn;
+
+    await handleProductTypeSelect(
+      selectInteraction as unknown as StringSelectMenuInteraction,
+      'auth_product_malformed',
+      TYPE_SELECT_CONVEX,
+      TEST_API_SECRET
+    );
+
+    const editReplyPayload = selectInteraction.editReply.mock.calls[0]?.[0];
+    const content = editReplyPayload?.content ?? editReplyPayload;
+    expect(content).toContain("Couldn't load Gumroad products right now.");
+    expect(content).toContain('try again');
+    expect(content).not.toContain('No Gumroad products found');
+    expect(content).not.toContain(leakedToken);
+    expect(content).not.toContain('Unexpected token');
   });
 
   it('given gumroad type selected with products, shows catalog select menu', async () => {

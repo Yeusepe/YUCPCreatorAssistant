@@ -1,4 +1,4 @@
-import { internal } from '../../../../convex/_generated/api';
+import { api, internal } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import type { ConvexServerClient } from './convex';
 
@@ -17,9 +17,11 @@ export async function resolveSubjectAuthUserId(
 
 export async function ensureSubjectAuthUserId(
   convex: ConvexServerClient,
+  apiSecret: string,
   subjectId: string
 ): Promise<string | null> {
-  return await convex.mutation(internal.subjects.ensureAuthUserIdForSubject, {
+  return await convex.mutation(api.subjects.ensureAuthUserIdForSubject, {
+    apiSecret,
     subjectId: subjectId as Id<'subjects'>,
   });
 }

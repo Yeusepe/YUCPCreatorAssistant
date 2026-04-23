@@ -206,6 +206,29 @@ describe('buildVerifyStatusReply', () => {
     expect(text).toContain('verificationMethod=account_link');
   });
 
+  it('prefers itch.io account linking over the legacy license modal flow', async () => {
+    const convex = makeConvex({ subjectFound: false, providers: ['itchio'] });
+
+    const reply = await buildVerifyStatusReply(
+      'user_verify_itch',
+      'auth_verify_itch',
+      'guild_verify_itch',
+      convex,
+      'api-secret',
+      'https://api.example.com'
+    );
+
+    const text = JSON.stringify(reply.components[0].toJSON());
+    expect(text).toContain(
+      'https://api.example.com/api/verification/begin?authUserId=auth_verify_itch&mode=itchio'
+    );
+    expect(text).toContain('verificationMethod=account_link');
+    expect(text).toContain('Connect itch.io');
+    expect(text).toContain('Available here: purchases from itch.io.');
+    expect(text).not.toContain('creator_verify:license:auth_verify_itch');
+    expect(text).not.toContain('license key');
+  });
+
   it('handles DM context (null guildId) gracefully without throwing', async () => {
     const convex = makeConvex({ subjectFound: false, providers: [] });
 

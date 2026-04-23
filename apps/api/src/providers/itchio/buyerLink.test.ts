@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { CredentialExpiredError } from '@yucp/providers/contracts';
 import type { ConvexServerClient } from '../../lib/convex';
 
@@ -51,6 +51,12 @@ const fetchOwnedKeysMock = mock(async () => [
 ]);
 const encryptMock = mock(async (value: string) => `enc:${value}`);
 const decryptMock = mock(async (value: string) => value.replace(/^enc:/, ''));
+const resolveBuyerVerificationStoreContextMock = mock(async () => ({
+  ok: true as const,
+  creatorAuthUserId: 'creator_1',
+  creatorProductId: 'product_1',
+  displayName: 'Creator Product',
+}));
 
 mock.module('../../../../../convex/_generated/api', () => ({
   api: apiMock,
@@ -72,6 +78,11 @@ mock.module('../../lib/encrypt', () => ({
   decrypt: decryptMock,
 }));
 
+const buyerVerificationHelpersModule = await import('../../verification/buyerVerificationHelpers');
+spyOn(buyerVerificationHelpersModule, 'resolveBuyerVerificationStoreContext').mockImplementation(
+  resolveBuyerVerificationStoreContextMock
+);
+
 const { createItchioBuyerLinkPlugin } = await import('./buyerLink');
 
 beforeEach(() => {
@@ -81,6 +92,13 @@ beforeEach(() => {
   fetchOwnedKeysMock.mockClear();
   encryptMock.mockClear();
   decryptMock.mockClear();
+  resolveBuyerVerificationStoreContextMock.mockReset();
+  resolveBuyerVerificationStoreContextMock.mockResolvedValue({
+    ok: true,
+    creatorAuthUserId: 'creator_1',
+    creatorProductId: 'product_1',
+    displayName: 'Creator Product',
+  });
   queryImpl = async () => null;
   mutationImpl = async () => null;
 });
@@ -90,6 +108,7 @@ afterEach(() => {
   fetchOwnedKeysMock.mockReset();
   encryptMock.mockReset();
   decryptMock.mockReset();
+  resolveBuyerVerificationStoreContextMock.mockReset();
 
   fetchCurrentUserMock.mockResolvedValue({
     id: 'itch-user-1',
@@ -108,6 +127,12 @@ afterEach(() => {
   ]);
   encryptMock.mockImplementation(async (value: string) => `enc:${value}`);
   decryptMock.mockImplementation(async (value: string) => value.replace(/^enc:/, ''));
+  resolveBuyerVerificationStoreContextMock.mockResolvedValue({
+    ok: true,
+    creatorAuthUserId: 'creator_1',
+    creatorProductId: 'product_1',
+    displayName: 'Creator Product',
+  });
 });
 
 afterAll(() => {
@@ -312,6 +337,85 @@ describe('itchio buyer link plugin', () => {
       expect.objectContaining({
         intentId: 'intent_1',
         errorCode: 'provider_link_expired',
+      })
+    );
+  });
+
+  it('resolves creator product context for legacy itch intents that only carry providerProductRef', async () => {
+    queryMock.mockImplementation(async (ref) => {
+      switch (ref) {
+        case apiMock.verificationIntents.getIntentRecord:
+          return {
+            status: 'pending',
+            expiresAt: Date.now() + 60_000,
+            packageId: 'package_legacy',
+            requirements: [
+              {
+                methodKey: 'itchio-link',
+                providerKey: 'itchio',
+                kind: 'buyer_provider_link',
+                providerProductRef: '42',
+              },
+            ],
+          };
+        case apiMock.subjects.getSubjectByAuthId:
+          return {
+            found: true,
+            subject: { _id: 'subject_1' },
+          };
+        case internalMock.subjects.getBuyerProviderLinkForSubject:
+          return {
+            id: 'link_1',
+            provider: 'itchio',
+            externalAccountId: 'external-account-1',
+            providerUserId: 'itch-user-1',
+            label: 'itch-buyer',
+            status: 'active',
+            linkedAt: Date.now(),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+        case apiMock.identitySync.getExternalAccountOAuthCredentials:
+          return {
+            oauthAccessTokenEncrypted: 'enc:buyer-access-token',
+          };
+        default:
+          throw new Error(`Unhandled query ref ${String(ref)}`);
+      }
+    });
+
+    const plugin = createItchioBuyerLinkPlugin();
+    if (!plugin.verifyHostedIntent) {
+      throw new Error('Expected verifyHostedIntent to be defined for itch.io');
+    }
+
+    const result = await plugin.verifyHostedIntent(
+      {
+        authUserId: 'buyer-auth-user',
+        intentId: 'intent_legacy' as never,
+        methodKey: 'itchio-link',
+      },
+      makeCtx()
+    );
+
+    expect(result).toEqual({ success: true });
+    expect(resolveBuyerVerificationStoreContextMock).toHaveBeenCalledWith(
+      {
+        providerId: 'itchio',
+        packageId: 'package_legacy',
+        providerProductRef: '42',
+      },
+      expect.objectContaining({
+        apiSecret: 'api-secret',
+        encryptionSecret: 'encrypt-secret',
+      })
+    );
+    expect(mutationMock).toHaveBeenCalledWith(
+      apiMock.entitlements.grantEntitlement,
+      expect.objectContaining({
+        authUserId: 'creator_1',
+        subjectId: 'subject_1',
+        productId: 'product_1',
       })
     );
   });

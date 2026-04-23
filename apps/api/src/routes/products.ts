@@ -8,7 +8,7 @@
  * Adding a new provider: zero changes here. See apps/api/src/providers/index.ts.
  */
 
-import { timingSafeStringEqual } from '@yucp/shared';
+import { redactForLogging, timingSafeStringEqual } from '@yucp/shared';
 import { api } from '../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { loadEnv } from '../lib/env';
@@ -129,15 +129,20 @@ export async function handleProviderProducts(
     }
 
     const msg = err instanceof Error ? err.message : String(err);
+    const fallbackError = `Could not load ${provider} products right now.`;
+    const publicError = sanitizePublicErrorMessage(msg, fallbackError);
     logger.error('Provider products fetch failed', {
       provider,
-      error: msg,
-      stack: err instanceof Error ? err.stack : undefined,
+      error: publicError === fallbackError ? fallbackError : redactForLogging(msg),
+      stack:
+        err instanceof Error && publicError !== fallbackError
+          ? redactForLogging(err.stack)
+          : undefined,
     });
     return new Response(
       JSON.stringify({
         products: [],
-        error: sanitizePublicErrorMessage(msg, `Could not load ${provider} products right now.`),
+        error: publicError,
       }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );

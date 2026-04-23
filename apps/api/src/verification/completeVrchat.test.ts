@@ -95,6 +95,7 @@ describe('handleCompleteVrchat', () => {
     expect(result.success).toBe(true);
     expect(ensureSubjectAuthUserIdMock).toHaveBeenCalledWith(
       expect.any(Object),
+      'convex-secret',
       'buyer_subject_456'
     );
     expect(queryMock.mock.calls[0]?.[0]).toBe('role_rules.getVrchatCatalogProductsMatchingAvatars');

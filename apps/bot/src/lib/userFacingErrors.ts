@@ -1,3 +1,5 @@
+import { classifyProviderCatalogError } from './providerCatalogErrors';
+
 const INTERNAL_ERROR_PATTERNS = [
   /request id:/i,
   /argumentvalidationerror/i,
@@ -18,6 +20,9 @@ export function sanitizeUserFacingErrorMessage(
   const trimmed = rawMessage?.trim();
   if (!trimmed) return fallback;
   if (trimmed.length > 180) return fallback;
+  if (classifyProviderCatalogError(trimmed) === 'malformed_payload') {
+    return fallback;
+  }
   if (INTERNAL_ERROR_PATTERNS.some((pattern) => pattern.test(trimmed))) {
     return fallback;
   }

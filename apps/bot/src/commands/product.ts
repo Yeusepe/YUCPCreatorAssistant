@@ -47,6 +47,7 @@ import {
   upsertProductCredential,
 } from '../lib/internalRpc';
 import { track } from '../lib/posthog';
+import { classifyProviderCatalogError } from '../lib/providerCatalogErrors';
 import { canBotManageRole } from '../lib/roleHierarchy';
 import { sanitizeUserFacingErrorMessage } from '../lib/userFacingErrors';
 
@@ -454,15 +455,26 @@ export async function handleProductTypeSelect(
       ]);
 
       if (data.error && (!data.products || data.products.length === 0)) {
+        const errorKind = classifyProviderCatalogError(data.error);
         const msg =
-          data.error === 'session_expired'
+          errorKind === 'session_expired'
             ? `Your ${label} session has expired. Please reconnect at the creator dashboard, then try again.`
-            : sanitizeUserFacingErrorMessage(
-                data.error,
-                `Couldn't load ${label} products right now.`
-              );
+            : errorKind === 'malformed_payload'
+              ? `Couldn't load ${label} products right now. The provider returned an unexpected response.`
+              : sanitizeUserFacingErrorMessage(
+                  data.error,
+                  `Couldn't load ${label} products right now.`
+                );
+        const nextStep =
+          errorKind === 'session_expired'
+            ? 'Run `/creator-admin product add` again after reconnecting.'
+            : errorKind === 'transient'
+              ? 'Run `/creator-admin product add` again in a moment.'
+              : errorKind === 'malformed_payload'
+                ? 'Please try again. If it keeps happening, reconnect from the creator dashboard first, then run `/creator-admin product add` again.'
+                : 'Run `/creator-admin product add` again. If it keeps failing, reconnect from the creator dashboard first.';
         await interaction.editReply({
-          content: `${E.X_} ${msg}\n\nRun \`/creator-admin product add\` again after reconnecting.`,
+          content: `${E.X_} ${msg}\n\n${nextStep}`,
           components: [],
         });
         return;

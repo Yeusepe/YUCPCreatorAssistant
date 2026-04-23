@@ -1,4 +1,5 @@
 import * as ed from '@noble/ed25519';
+import { getProviderDescriptor } from '@yucp/providers/providerMetadata';
 import {
   base64ToBytes,
   base64UrlDecodeToBytes,
@@ -74,6 +75,29 @@ type VerificationIntentRedemptionResult = {
   expiresAt?: number;
   error?: string;
 };
+
+function canonicalizeVerificationRequirement(
+  requirement: VerificationIntentRequirement
+): VerificationIntentRequirement {
+  const descriptor = getProviderDescriptor(requirement.providerKey);
+  if (
+    requirement.kind === 'manual_license' &&
+    descriptor?.buyerVerificationMethods.includes('account_link') &&
+    !descriptor.buyerVerificationMethods.includes('license_key')
+  ) {
+    return {
+      ...requirement,
+      kind: 'buyer_provider_link',
+    };
+  }
+  return requirement;
+}
+
+function canonicalizeVerificationRequirements(
+  requirements: VerificationIntentRequirement[]
+): VerificationIntentRequirement[] {
+  return requirements.map(canonicalizeVerificationRequirement);
+}
 
 const VerificationIntentRequirementKindV = v.union(
   v.literal('existing_entitlement'),
@@ -280,7 +304,10 @@ export const getIntentRecord = query({
     if (!doc || doc.authUserId !== args.authUserId) {
       return null;
     }
-    return doc;
+    return {
+      ...doc,
+      requirements: canonicalizeVerificationRequirements(doc.requirements),
+    };
   },
 });
 
@@ -344,7 +371,8 @@ export const createVerificationIntent = mutation({
     requireApiSecret(args.apiSecret);
     await requireDelegatedAuthUserActor(args.actor, args.authUserId);
     validateReturnUrl(args.returnUrl);
-    validateRequirements(args.requirements);
+    const normalizedRequirements = canonicalizeVerificationRequirements(args.requirements);
+    validateRequirements(normalizedRequirements);
 
     const now = Date.now();
     const expiresAt = now + INTENT_EXPIRY_MS;
@@ -385,7 +413,7 @@ export const createVerificationIntent = mutation({
       machineFingerprint: args.machineFingerprint,
       codeChallenge: args.codeChallenge,
       returnUrl: args.returnUrl,
-      requirements: args.requirements,
+      requirements: normalizedRequirements,
       status: 'pending',
       idempotencyKey: args.idempotencyKey,
       expiresAt,
@@ -486,7 +514,8 @@ export const appendVerificationIntentRequirements = mutation({
       return { appended: 0 };
     }
 
-    validateRequirements(args.requirements);
+    const normalizedRequirements = canonicalizeVerificationRequirements(args.requirements);
+    validateRequirements(normalizedRequirements);
 
     const intent = await ctx.db.get(args.intentId);
     if (!intent || intent.authUserId !== args.authUserId) {
@@ -499,14 +528,17 @@ export const appendVerificationIntentRequirements = mutation({
     const existingMethodKeys = new Set(
       intent.requirements.map((requirement) => requirement.methodKey)
     );
-    const requirementsToAppend = args.requirements.filter(
+    const requirementsToAppend = normalizedRequirements.filter(
       (requirement) => !existingMethodKeys.has(requirement.methodKey)
     );
     if (requirementsToAppend.length === 0) {
       return { appended: 0 };
     }
 
-    const nextRequirements = [...intent.requirements, ...requirementsToAppend];
+    const nextRequirements = canonicalizeVerificationRequirements([
+      ...intent.requirements,
+      ...requirementsToAppend,
+    ]);
     validateRequirements(nextRequirements);
 
     await ctx.db.patch(args.intentId, {

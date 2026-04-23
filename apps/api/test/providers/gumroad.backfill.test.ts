@@ -129,4 +129,41 @@ describe('Gumroad backfill fetchPage', () => {
       'Gumroad API error: 401'
     );
   });
+
+  it('throws when Gumroad returns a success=false payload for a non-owned or unauthorized product', async () => {
+    restoreFetch = mockFetch({
+      success: false,
+      message: 'The requested product could not be found for this account.',
+    });
+
+    await expect(backfill.fetchPage(FAKE_TOKEN, FAKE_PRODUCT_REF, null, 100, '')).rejects.toThrow(
+      'The requested product could not be found for this account.'
+    );
+  });
+
+  it('uses the requested product ref for legacy sales payloads and skips rows without an order id', async () => {
+    restoreFetch = mockFetch({
+      success: true,
+      sales: [
+        {
+          sale_id: 'sale-legacy-shape',
+          email: 'legacy@example.com',
+          created_at: NINETY_DAYS_AGO_ISO,
+        },
+        {
+          product_id: 'prod-abc',
+          email: 'missing-order@example.com',
+          created_at: NINETY_DAYS_AGO_ISO,
+        },
+      ],
+    });
+
+    const result = await backfill.fetchPage(FAKE_TOKEN, FAKE_PRODUCT_REF, null, 100, '');
+
+    expect(result.facts).toHaveLength(1);
+    expect(result.facts[0]).toMatchObject({
+      externalOrderId: 'sale-legacy-shape',
+      providerProductId: FAKE_PRODUCT_REF,
+    });
+  });
 });

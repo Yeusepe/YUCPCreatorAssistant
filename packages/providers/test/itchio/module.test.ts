@@ -245,7 +245,8 @@ describe('createItchioProviderModule', () => {
 });
 
 describe('createItchioLicenseVerification', () => {
-  it('validates a download key for the expected game', async () => {
+  it('rejects legacy creator-token download key verification and asks for buyer account linking', async () => {
+    let fetchCalled = false;
     const verification = createItchioLicenseVerification({
       logger,
       async getEncryptedCredential() {
@@ -254,8 +255,8 @@ describe('createItchioLicenseVerification', () => {
       async decryptCredential() {
         return 'creator-token';
       },
-      async fetchImpl(input) {
-        expect(String(input)).toContain('/game/42/download_keys?download_key=DOWNLOAD-KEY');
+      async fetchImpl() {
+        fetchCalled = true;
         return new Response(
           JSON.stringify({
             download_key: {
@@ -272,11 +273,11 @@ describe('createItchioLicenseVerification', () => {
     await expect(
       verification.verifyLicense('DOWNLOAD-KEY', '42', 'user-1', makeCtx())
     ).resolves.toEqual({
-      valid: true,
-      externalOrderId: '77',
-      providerProductId: '42',
-      providerUserId: '99',
+      valid: false,
+      error:
+        'itch.io verification now requires the buyer to sign in with itch.io. Restart verification and use the itch.io account link flow.',
     });
+    expect(fetchCalled).toBe(false);
   });
 });
 

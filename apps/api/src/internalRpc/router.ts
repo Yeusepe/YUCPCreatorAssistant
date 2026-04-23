@@ -206,6 +206,26 @@ function normalizeProductsResponse(
   };
 }
 
+export async function listProviderProductsViaApi(
+  config: Pick<InternalRpcConfig, 'apiBaseUrl' | 'convexApiSecret'>,
+  request: ListProviderProductsRequest,
+  handleProducts: typeof handleProviderProducts = handleProviderProducts
+): Promise<ProductsResponse> {
+  const provider = request.provider ?? '';
+  const response = await handleProducts(
+    createJsonRequest(`${config.apiBaseUrl}/api/${provider}/products`, {
+      apiSecret: config.convexApiSecret,
+      authUserId: request.authUserId ?? '',
+    }),
+    provider
+  );
+  return normalizeProductsResponse(
+    await readJsonResponse<Partial<ProductsResponse>>(response, {
+      allowErrorStatuses: [500],
+    })
+  );
+}
+
 function normalizeDiscordRoleSetupResult(
   payload: Partial<DiscordRoleSetupResultResponse> | null | undefined
 ): DiscordRoleSetupResultResponse {
@@ -293,17 +313,7 @@ function registerServices(deps: InternalRpcDependencies): TempoServiceRegistry {
         _context: ServerContext
       ): Promise<ProductsResponse> {
         return withTelemetry('CatalogService.listProviderProducts', request, async () => {
-          const provider = request.provider ?? '';
-          const response = await handleProviderProducts(
-            createJsonRequest(`${deps.config.apiBaseUrl}/api/${provider}/products`, {
-              apiSecret: deps.config.convexApiSecret,
-              authUserId: request.authUserId ?? '',
-            }),
-            provider
-          );
-          return normalizeProductsResponse(
-            await readJsonResponse<Partial<ProductsResponse>>(response)
-          );
+          return await listProviderProductsViaApi(deps.config, request);
         });
       }
 

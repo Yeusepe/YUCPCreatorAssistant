@@ -6,6 +6,7 @@ import {
 } from '@yucp/providers/itchio/module';
 import { api, internal } from '../../../../../convex/_generated/api';
 import { decrypt, encrypt } from '../../lib/encrypt';
+import { resolveBuyerVerificationStoreContext } from '../../verification/buyerVerificationHelpers';
 import type {
   BuyerLinkPlugin,
   VerifyHostedBuyerLinkIntentInput,
@@ -172,16 +173,30 @@ export function createItchioBuyerLinkPlugin(deps: ItchioBuyerLinkDeps = {}): Buy
         );
       }
 
-      if (
-        !requirement.creatorAuthUserId ||
-        !requirement.productId ||
-        !requirement.providerProductRef
-      ) {
+      if (!requirement.providerProductRef) {
         await ctx.convex.mutation(internal.verificationIntents.markIntentVerified, {
           intentId: input.intentId,
           methodKey: input.methodKey,
         });
         return { success: true };
+      }
+
+      let creatorAuthUserId = requirement.creatorAuthUserId;
+      let productId = requirement.productId;
+      if (!creatorAuthUserId || !productId) {
+        const storeContext = await resolveBuyerVerificationStoreContext(
+          {
+            providerId: 'itchio',
+            packageId: intent.packageId,
+            providerProductRef: requirement.providerProductRef,
+          },
+          ctx
+        );
+        if (!storeContext.ok) {
+          return await markIntentFailed(input, storeContext.result, ctx.convex.mutation);
+        }
+        creatorAuthUserId = storeContext.creatorAuthUserId;
+        productId = storeContext.creatorProductId;
       }
 
       const credentials = await ctx.convex.query(
@@ -228,9 +243,9 @@ export function createItchioBuyerLinkPlugin(deps: ItchioBuyerLinkDeps = {}): Buy
 
         await ctx.convex.mutation(api.entitlements.grantEntitlement, {
           apiSecret: ctx.apiSecret,
-          authUserId: requirement.creatorAuthUserId,
+          authUserId: creatorAuthUserId,
           subjectId: subjectResult.subject._id,
-          productId: requirement.productId,
+          productId,
           evidence: {
             provider: 'itchio',
             sourceReference: matchedOwnedKey.ownedKeyId,

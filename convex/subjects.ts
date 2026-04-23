@@ -856,12 +856,17 @@ export const getSubjectIdentityById = internalQuery({
   },
 });
 
-export const ensureAuthUserIdForSubject = internalMutation({
+export const ensureAuthUserIdForSubject = mutation({
   args: {
+    apiSecret: v.string(),
+    actor: ApiActorBindingV,
     subjectId: v.id('subjects'),
   },
   returns: v.string(),
   handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    await requireServiceActor(args.actor, ['subjects:service']);
+
     const subject = await ctx.db.get(args.subjectId);
     if (!subject) {
       throw new Error(`Subject not found: ${args.subjectId}`);

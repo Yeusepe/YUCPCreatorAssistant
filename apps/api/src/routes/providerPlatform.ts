@@ -1049,7 +1049,11 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
           .map((b) => b.toString(16).padStart(2, '0'))
           .join('')
       : undefined;
-    const buyerAuthUserId = await ensureSubjectAuthUserId(convex, ensuredSubject.subjectId);
+    const buyerAuthUserId = await ensureSubjectAuthUserId(
+      convex,
+      config.convexApiSecret,
+      ensuredSubject.subjectId
+    );
     if (!buyerAuthUserId)
       return jsonResponse({ error: SUBJECT_AUTH_USER_REQUIRED_ERROR }, requestId, 409);
     const verification = await convex.mutation(

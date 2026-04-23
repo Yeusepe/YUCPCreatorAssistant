@@ -9,17 +9,16 @@ export const itchio = {
   emojiKey: 'ItchIo',
   addProductDescription: 'Pick a game from your connected itch.io account',
   creatorAuthModes: ['oauth'],
-  buyerVerificationMethods: ['account_link', 'license_key'],
+  buyerVerificationMethods: ['account_link'],
   capabilities: [
     'account_link',
     'catalog_sync',
     'ownership_verification',
     'reconciliation',
-    'license_verification',
     'orders',
   ],
   setupRequirements: ['oauth_client'],
-  verificationMethods: ['account_link', 'license_key'],
+  verificationMethods: ['account_link'],
   supportsCredentialLogin: false,
   supportsBuyerOAuthLink: true,
   collabCredential: {
@@ -28,10 +27,6 @@ export const itchio = {
   },
   collabLinkModes: ['api'],
   supportsAutoDiscovery: true,
-  licenseKey: {
-    inputLabel: 'Download Key',
-    placeholder: 'YWKse5jeAeuZ8w3a5qO2b2PId1sChw2B9b637w6z',
-  },
   productInput: {
     label: 'itch.io Game ID',
     description: 'Select a game from your connected itch.io account.',
