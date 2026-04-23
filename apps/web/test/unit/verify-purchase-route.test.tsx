@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -195,10 +195,34 @@ describe('verify purchase route', () => {
     await waitFor(() => expect(dashboardApi.listUserProviders).toHaveBeenCalled());
     await waitFor(() => expect(dashboardApi.listUserAccounts).toHaveBeenCalled());
 
-    expect(await screen.findByRole('button', { name: /loading/i })).toBeDisabled();
+    expect(await screen.findByLabelText('Loading store connections')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^sign in$/i })).not.toBeInTheDocument();
 
     deferredAccounts.resolve([]);
+  });
+
+  it('rejects invalid provider redirects before navigation', async () => {
+    vi.mocked(dashboardApi.listUserAccounts).mockResolvedValue([]);
+    vi.mocked(dashboardApi.startUserVerify).mockResolvedValue({
+      redirectUrl: 'https://evil.example/phishing',
+    });
+
+    const initialHref = window.location.href;
+    const Component = VerifyPurchaseRoute.options.component;
+    if (!Component) {
+      throw new Error('Verify purchase route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    const signInButton = await screen.findByRole('button', { name: 'Sign in' });
+    fireEvent.click(signInButton);
+
+    await waitFor(() =>
+      expect(screen.getByText('Could not connect, please try again')).toBeInTheDocument()
+    );
+    expect(window.location.href).toBe(initialHref);
+    expect(signInButton).toBeEnabled();
   });
 
   it('renders the shared cloud background like the dashboard shell', async () => {

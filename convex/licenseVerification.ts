@@ -41,6 +41,30 @@ const LicenseSubjectLink = v.object({
   providerProductId: v.optional(v.string()),
 });
 
+function buildExternalAccountProviderMetadata(
+  providerMetadata:
+    | {
+        emailEncrypted?: string;
+        avatarUrl?: string;
+        profileUrl?: string;
+        rawDataEncrypted?: string;
+      }
+    | undefined
+) {
+  if (!providerMetadata) {
+    return undefined;
+  }
+
+  const value = {
+    emailEncrypted: providerMetadata.emailEncrypted,
+    avatarUrl: providerMetadata.avatarUrl,
+    profileUrl: providerMetadata.profileUrl,
+    rawDataEncrypted: providerMetadata.rawDataEncrypted,
+  };
+
+  return Object.values(value).some((entry) => entry !== undefined) ? value : undefined;
+}
+
 async function resolveVerificationActors(
   ctx: Pick<MutationCtx, 'db'>,
   args: {
@@ -155,6 +179,10 @@ export const completeLicenseVerification = mutation({
     const now = Date.now();
     const { creatorAuthUserId, buyerAuthUserId, buyerSubjectId, subject } =
       await resolveVerificationActors(ctx, args);
+    const externalAccountProviderMetadata = buildExternalAccountProviderMetadata(
+      args.providerMetadata
+    );
+    const externalAccountEmailHash = args.providerMetadata?.emailHash;
 
     // 1. Create or update external_account
     let externalAccountId: Id<'external_accounts'>;
@@ -169,7 +197,8 @@ export const completeLicenseVerification = mutation({
       externalAccountId = existingAccount._id;
       await ctx.db.patch(externalAccountId, {
         providerUsername: args.providerUsername ?? existingAccount.providerUsername,
-        providerMetadata: args.providerMetadata ?? existingAccount.providerMetadata,
+        emailHash: externalAccountEmailHash ?? existingAccount.emailHash,
+        providerMetadata: externalAccountProviderMetadata ?? existingAccount.providerMetadata,
         lastValidatedAt: now,
         status: 'active',
         updatedAt: now,
@@ -179,7 +208,8 @@ export const completeLicenseVerification = mutation({
         provider: args.provider,
         providerUserId: args.providerUserId,
         providerUsername: args.providerUsername,
-        providerMetadata: args.providerMetadata,
+        emailHash: externalAccountEmailHash,
+        providerMetadata: externalAccountProviderMetadata,
         lastValidatedAt: now,
         status: 'active',
         createdAt: now,

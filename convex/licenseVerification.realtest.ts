@@ -89,7 +89,11 @@ describe('license verification account linking', () => {
     });
 
     expect(linksAfterWrite).toHaveLength(1);
-    expect(linksAfterWrite[0]).toMatchObject({
+    const [linkAfterWrite] = linksAfterWrite;
+    if (!linkAfterWrite) {
+      throw new Error('Expected the buyer provider link to exist after verification');
+    }
+    expect(linkAfterWrite).toMatchObject({
       provider: 'jinxxy',
       providerUserId: 'jinxxy-user-account-symmetry',
       providerUsername: 'SymmetryBuyer',
@@ -100,7 +104,7 @@ describe('license verification account linking', () => {
     const revokeResult = await t.mutation(api.subjects.revokeBuyerProviderLink, {
       apiSecret: API_SECRET,
       authUserId,
-      linkId: linksAfterWrite[0]!.id,
+      linkId: linkAfterWrite.id,
     });
 
     expect(revokeResult).toEqual({ success: true });
@@ -196,29 +200,26 @@ describe('license verification account linking', () => {
       ownerDiscordUserId: 'discord-license-verification-creator',
     });
 
-    const result = await t.mutation(
-      api.licenseVerification.completeLicenseVerification,
-      {
-        apiSecret: API_SECRET,
-        creatorAuthUserId,
-        buyerAuthUserId,
-        subjectId: buyerSubjectId,
-        provider: 'jinxxy',
-        providerUserId: 'jinxxy-user-buyer-owned',
-        providerUsername: 'BuyerOwned',
-        productsToGrant: [
-          {
-            productId: 'product-license-verification-cross-user',
-            sourceReference: 'order-license-verification-cross-user',
-          },
-        ],
-        licenseSubjectLink: {
-          licenseSubject: 'cross-user-license-subject',
-          licenseKeyEncrypted: 'encrypted-cross-user-license-key',
-          providerProductId: 'product-license-verification-cross-user',
+    const result = await t.mutation(api.licenseVerification.completeLicenseVerification, {
+      apiSecret: API_SECRET,
+      creatorAuthUserId,
+      buyerAuthUserId,
+      subjectId: buyerSubjectId,
+      provider: 'jinxxy',
+      providerUserId: 'jinxxy-user-buyer-owned',
+      providerUsername: 'BuyerOwned',
+      productsToGrant: [
+        {
+          productId: 'product-license-verification-cross-user',
+          sourceReference: 'order-license-verification-cross-user',
         },
-      } as never
-    );
+      ],
+      licenseSubjectLink: {
+        licenseSubject: 'cross-user-license-subject',
+        licenseKeyEncrypted: 'encrypted-cross-user-license-key',
+        providerProductId: 'product-license-verification-cross-user',
+      },
+    } as never);
 
     expect(result.success).toBe(true);
 
@@ -352,5 +353,112 @@ describe('license verification account linking', () => {
       verificationMethod: 'account_link',
       status: 'active',
     });
+  });
+
+  it('restores a revoked buyer provider link after the buyer reconnects and reconcile reruns', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-license-verification-reconnect-after-revoke';
+    const subjectId = await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-license-verification-reconnect-after-revoke',
+    });
+
+    const externalAccountId = await t.run(async (ctx) => {
+      const now = Date.now();
+      const accountId = await ctx.db.insert('external_accounts', {
+        provider: 'jinxxy',
+        providerUserId: 'jinxxy-user-reconnect-after-revoke',
+        providerUsername: 'ReconnectBuyer',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await ctx.db.insert('bindings', {
+        authUserId,
+        subjectId,
+        externalAccountId: accountId,
+        bindingType: 'verification',
+        status: 'active',
+        createdBy: subjectId,
+        reason: 'Initial buyer verification',
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      return accountId;
+    });
+
+    await expect(
+      t.mutation(api.subjects.reconcileBuyerProviderLinksForAuthUser, {
+        apiSecret: API_SECRET,
+        authUserId,
+      })
+    ).resolves.toEqual({ reconciledCount: 1 });
+
+    const [initialLink] = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId,
+    });
+    if (!initialLink) {
+      throw new Error('Expected the initial buyer provider link to exist');
+    }
+    expect(initialLink).toMatchObject({
+      provider: 'jinxxy',
+      providerUserId: 'jinxxy-user-reconnect-after-revoke',
+      status: 'active',
+    });
+
+    await expect(
+      t.mutation(api.subjects.revokeBuyerProviderLink, {
+        apiSecret: API_SECRET,
+        authUserId,
+        linkId: initialLink.id,
+      })
+    ).resolves.toEqual({ success: true });
+    await expect(
+      t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+        apiSecret: API_SECRET,
+        authUserId,
+      })
+    ).resolves.toEqual([]);
+
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert('bindings', {
+        authUserId,
+        subjectId,
+        externalAccountId,
+        bindingType: 'verification',
+        status: 'active',
+        createdBy: subjectId,
+        reason: 'Buyer reconnected after revoke',
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await expect(
+      t.mutation(api.subjects.reconcileBuyerProviderLinksForAuthUser, {
+        apiSecret: API_SECRET,
+        authUserId,
+      })
+    ).resolves.toEqual({ reconciledCount: 1 });
+
+    await expect(
+      t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+        apiSecret: API_SECRET,
+        authUserId,
+      })
+    ).resolves.toMatchObject([
+      expect.objectContaining({
+        id: initialLink.id,
+        provider: 'jinxxy',
+        providerUserId: 'jinxxy-user-reconnect-after-revoke',
+        status: 'active',
+      }),
+    ]);
   });
 });

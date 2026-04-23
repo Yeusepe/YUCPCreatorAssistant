@@ -3,6 +3,7 @@ import {
   parseRetryAfterMs,
   withProviderRateLimitRetries,
 } from '@yucp/providers/core/rateLimit';
+import { resolveGumroadProductId } from '@yucp/providers/gumroad';
 import { normalizeEmail, sha256Hex } from '@yucp/shared/crypto';
 import { encrypt } from '../../lib/encrypt';
 import { logger } from '../../lib/logger';
@@ -12,19 +13,28 @@ const GUMROAD_API_BASE = 'https://api.gumroad.com/v2';
 const MAX_RATE_LIMIT_RETRIES = 10;
 const PURCHASE_BUYER_EMAIL_PURPOSE = 'purchase-buyer-email';
 
+function requiresCanonicalGumroadProductId(productRef: string): boolean {
+  return /^https?:\/\//i.test(productRef.trim());
+}
+
 export const backfill: BackfillPlugin = {
   pageDelayMs: 1500,
 
   async fetchPage(accessToken, productRef, cursor, pageSize, encryptionSecret) {
     const page = cursor ? Number.parseInt(cursor, 10) : 1;
+    const salesProductRef = requiresCanonicalGumroadProductId(productRef)
+      ? await resolveGumroadProductId(productRef)
+      : productRef;
 
     return withProviderRateLimitRetries({
       providerName: 'Gumroad',
       maxRetries: MAX_RATE_LIMIT_RETRIES,
       operation: async () => {
         // Gumroad sales API reference: https://gumroad.com/api#sales
+        // The sales endpoint expects Gumroad's canonical product_id, so storefront
+        // URLs and permalinks must be resolved before paging purchase history.
         const res = await fetch(
-          `${GUMROAD_API_BASE}/sales?product_id=${encodeURIComponent(productRef)}&page=${page}&per_page=${pageSize}`,
+          `${GUMROAD_API_BASE}/sales?product_id=${encodeURIComponent(salesProductRef)}&page=${page}&per_page=${pageSize}`,
           {
             headers: {
               Authorization: `Bearer ${accessToken}`,
@@ -80,7 +90,7 @@ export const backfill: BackfillPlugin = {
                 externalOrderId,
                 buyerEmailHash,
                 buyerEmailEncrypted,
-                providerProductId: String(s.product_id ?? productRef),
+                providerProductId: String(s.product_id ?? salesProductRef),
                 paymentStatus: s.refunded === true || s.refunded === 'true' ? 'refunded' : 'paid',
                 lifecycleStatus: (s.refunded === true || s.refunded === 'true'
                   ? 'refunded'

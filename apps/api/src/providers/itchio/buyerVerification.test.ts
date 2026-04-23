@@ -51,14 +51,12 @@ mock.module('../../lib/encrypt', () => ({
 }));
 
 const buyerVerificationHelpersModule = await import('../../verification/buyerVerificationHelpers');
-spyOn(
-  buyerVerificationHelpersModule,
-  'createManualLicenseCapability'
-).mockImplementation(createManualLicenseCapabilityMock);
-spyOn(
-  buyerVerificationHelpersModule,
-  'resolveBuyerVerificationStoreContext'
-).mockImplementation(resolveBuyerVerificationStoreContextMock);
+spyOn(buyerVerificationHelpersModule, 'createManualLicenseCapability').mockImplementation(
+  createManualLicenseCapabilityMock
+);
+spyOn(buyerVerificationHelpersModule, 'resolveBuyerVerificationStoreContext').mockImplementation(
+  resolveBuyerVerificationStoreContextMock
+);
 
 const { buyerVerification } = await import('./buyerVerification');
 

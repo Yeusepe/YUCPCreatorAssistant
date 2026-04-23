@@ -20,6 +20,7 @@ import {
   type UserProvider,
   type UserProviderDisplay,
 } from '@/lib/dashboard';
+import { getSafeInternalRedirectTarget } from '@/lib/safeRedirects';
 import {
   areVerifyPurchaseConnectionQueriesSettled,
   getPurchaseIntentLoadErrorState,
@@ -141,7 +142,8 @@ function OAuthMethodButton({
   const connectMut = useMutation({
     mutationFn: async () => {
       const returnUrl = `/verify/purchase?intent=${encodeURIComponent(intentId)}&connected=${encodeURIComponent(requirement.providerKey)}`;
-      return startUserVerify(requirement.providerKey, returnUrl);
+      const { redirectUrl } = await startUserVerify(requirement.providerKey, returnUrl);
+      return { redirectUrl: getSafeInternalRedirectTarget(redirectUrl) };
     },
     onSuccess: ({ redirectUrl }) => {
       window.location.href = redirectUrl;

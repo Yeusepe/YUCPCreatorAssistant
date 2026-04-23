@@ -9,7 +9,7 @@
  */
 
 import { getInternalRpcSharedSecret, timingSafeStringEqual } from '@yucp/shared';
-import { internal } from '../../../../convex/_generated/api';
+import { api } from '../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { loadEnv } from '../lib/env';
 import { logger } from '../lib/logger';
@@ -91,7 +91,7 @@ export async function handleInternalNotify(request: Request): Promise<Response> 
 
   try {
     const convex = getConvexClientFromUrl(convexUrl);
-    await convex.mutation(internal.adminNotifications.create, {
+    await convex.mutation(api.adminNotifications.create, {
       apiSecret: convexApiSecret,
       authUserId,
       guildId,

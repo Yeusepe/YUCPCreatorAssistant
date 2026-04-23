@@ -146,7 +146,7 @@ async function listGumroadProducts(
 
     const data = (await response.json()) as {
       success: boolean;
-      products?: Array<{ id: string; name: string }>;
+      products?: Array<{ id: string; name: string; short_url?: string }>;
       next_page_url?: string;
       message?: string;
     };
@@ -157,7 +157,11 @@ async function listGumroadProducts(
 
     for (const product of data.products ?? []) {
       if (product.id && product.name) {
-        products.push({ id: product.id, name: product.name });
+        products.push({
+          id: product.id,
+          name: product.name,
+          ...(product.short_url ? { productUrl: product.short_url } : {}),
+        });
       }
     }
 

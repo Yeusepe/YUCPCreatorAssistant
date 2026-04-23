@@ -8,6 +8,10 @@ import type { BackfillPlugin, BackfillRecord } from '../types';
 
 const MAX_RATE_LIMIT_RETRIES = 10;
 
+function mapJinxxyLifecycleStatus(status: string | undefined): BackfillRecord['lifecycleStatus'] {
+  return status === 'active' ? 'active' : 'cancelled';
+}
+
 export const backfill: BackfillPlugin = {
   pageDelayMs: 600,
 
@@ -32,7 +36,7 @@ export const backfill: BackfillPlugin = {
           providerUserId: license.customer_id ?? undefined,
           providerProductId: license.product_id,
           paymentStatus: 'completed',
-          lifecycleStatus: 'active',
+          lifecycleStatus: mapJinxxyLifecycleStatus(license.status),
           purchasedAt: license.created_at ? new Date(license.created_at).getTime() : Date.now(),
         }));
 

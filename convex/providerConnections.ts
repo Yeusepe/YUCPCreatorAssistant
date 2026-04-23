@@ -8,7 +8,7 @@
 import { providerLabel } from '@yucp/providers/providerMetadata';
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
-import type { MutationCtx } from './_generated/server';
+import type { MutationCtx, QueryCtx } from './_generated/server';
 import { mutation, query } from './_generated/server';
 import { requireApiSecret } from './lib/apiAuth';
 import { AUTH_MODE_CREDENTIAL_KEY } from './lib/credentialKeys';
@@ -36,17 +36,32 @@ function getDefaultConnectionLabel(providerKey: string): string {
 }
 
 async function getCredentialValue(
-  ctx: any,
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
   connectionId: Id<'provider_connections'>,
   credentialKey: string
 ): Promise<string | null> {
   const credential = await ctx.db
     .query('provider_credentials')
-    .withIndex('by_connection_key', (q: any) =>
+    .withIndex('by_connection_key', (q) =>
       q.eq('providerConnectionId', connectionId).eq('credentialKey', credentialKey)
     )
     .first();
   return credential?.encryptedValue ?? null;
+}
+
+async function getConnectionCredentialPresence(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  connectionId: Id<'provider_connections'>
+): Promise<{ hasApiKey: boolean; hasAccessToken: boolean }> {
+  const [apiKey, accessToken] = await Promise.all([
+    getCredentialValue(ctx, connectionId, 'api_key'),
+    getCredentialValue(ctx, connectionId, 'oauth_access_token'),
+  ]);
+
+  return {
+    hasApiKey: !!apiKey,
+    hasAccessToken: !!accessToken,
+  };
 }
 
 async function upsertCredential(
@@ -436,9 +451,10 @@ export const listConnections = query({
             .withIndex('by_connection', (q) => q.eq('providerConnectionId', c._id))
             .collect();
           const providerKey = getConnectionProviderKey(c);
-          const apiKey = await getCredentialValue(ctx, c._id, 'api_key');
-          const apiToken = await getCredentialValue(ctx, c._id, 'api_token');
-          const accessToken = await getCredentialValue(ctx, c._id, 'oauth_access_token');
+          const [credentialPresence, apiToken] = await Promise.all([
+            getConnectionCredentialPresence(ctx, c._id),
+            getCredentialValue(ctx, c._id, 'api_token'),
+          ]);
 
           return {
             id: c._id,
@@ -446,14 +462,18 @@ export const listConnections = query({
             providerKey,
             label: c.label ?? getDefaultConnectionLabel(providerKey),
             connectionType: c.connectionType ?? 'setup',
-            status: c.status ?? (apiKey || apiToken || accessToken ? 'active' : 'disconnected'),
+            status:
+              c.status ??
+              (credentialPresence.hasApiKey || apiToken || credentialPresence.hasAccessToken
+                ? 'active'
+                : 'disconnected'),
             authMode: c.authMode,
             externalShopId: c.externalShopId,
             externalShopName: c.externalShopName,
             webhookConfigured: c.webhookConfigured,
-            hasApiKey: !!apiKey,
+            hasApiKey: credentialPresence.hasApiKey,
             hasApiToken: !!apiToken,
-            hasAccessToken: !!accessToken,
+            hasAccessToken: credentialPresence.hasAccessToken,
             capabilities: capabilityRows.map((row) => ({
               capabilityKey: row.capabilityKey,
               status: row.status,
@@ -1328,22 +1348,33 @@ export const listConnectionsForUser = query({
       .filter((q) => q.neq(q.field('status'), 'disconnected'))
       .collect();
 
-    return allConnections.map((c) => ({
-      id: c._id,
-      provider: c.provider,
-      label: c.label ?? `${c.provider} Connection`,
-      connectionType: c.connectionType ?? 'setup',
-      status: c.status ?? (c.webhookConfigured ? 'active' : 'disconnected'),
-      webhookConfigured: c.webhookConfigured,
-      hasApiKey: false,
-      hasAccessToken: false,
-      authUserId: c.authUserId,
-      lastHealthcheckAt: c.lastHealthcheckAt,
-      lastSyncAt: c.lastSyncAt,
-      lastWebhookAt: c.lastWebhookAt,
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-    }));
+    return await Promise.all(
+      allConnections.map(async (c) => {
+        const credentialPresence = await getConnectionCredentialPresence(ctx, c._id);
+        return {
+          id: c._id,
+          provider: c.provider,
+          label: c.label ?? `${c.provider} Connection`,
+          connectionType: c.connectionType ?? 'setup',
+          status:
+            c.status ??
+            (c.webhookConfigured ||
+            credentialPresence.hasApiKey ||
+            credentialPresence.hasAccessToken
+              ? 'active'
+              : 'disconnected'),
+          webhookConfigured: c.webhookConfigured,
+          hasApiKey: credentialPresence.hasApiKey,
+          hasAccessToken: credentialPresence.hasAccessToken,
+          authUserId: c.authUserId,
+          lastHealthcheckAt: c.lastHealthcheckAt,
+          lastSyncAt: c.lastSyncAt,
+          lastWebhookAt: c.lastWebhookAt,
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+        };
+      })
+    );
   },
 });
 

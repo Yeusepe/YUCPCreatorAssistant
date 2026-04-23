@@ -228,6 +228,8 @@ describe('provider connection credential storage', () => {
       connectionType: 'setup',
       status: 'active',
       webhookConfigured: true,
+      hasApiKey: false,
+      hasAccessToken: true,
     });
 
     await expect(
@@ -289,6 +291,8 @@ describe('provider connection credential storage', () => {
         id: connectionId,
         provider: 'gumroad',
         status: 'active',
+        hasApiKey: false,
+        hasAccessToken: true,
       }),
     ]);
     await expect(
@@ -299,6 +303,42 @@ describe('provider connection credential storage', () => {
     ).resolves.toMatchObject({
       gumroad: true,
     });
+  });
+
+  it('surfaces api-key connections with credential presence on creator reads', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-connection-api-key-read-symmetry';
+
+    const connectionId = await t.mutation(api.providerConnections.upsertProviderConnection, {
+      apiSecret: API_SECRET,
+      authUserId,
+      providerKey: 'payhip',
+      authMode: 'api_key',
+      label: 'Payhip Storefront',
+      credentials: [
+        {
+          credentialKey: 'api_key',
+          kind: 'api_key',
+          encryptedValue: 'enc-payhip-api-key',
+        },
+      ],
+    });
+
+    await expect(
+      t.query(api.providerConnections.listConnectionsForUser, {
+        apiSecret: API_SECRET,
+        authUserId,
+      })
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: connectionId,
+        provider: 'payhip',
+        label: 'Payhip Storefront',
+        status: 'active',
+        hasApiKey: true,
+        hasAccessToken: false,
+      }),
+    ]);
   });
 
   it('given provider data for 2 creators, when destructive reset runs for one creator, then only that creator provider data is deleted', async () => {

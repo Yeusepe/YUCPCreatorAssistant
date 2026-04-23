@@ -30,6 +30,7 @@ import {
   type UserProvider,
   type UserProviderDisplay,
 } from '@/lib/dashboard';
+import { getSafeInternalRedirectTarget } from '@/lib/safeRedirects';
 
 function AccountConnectionsPending() {
   return (
@@ -43,12 +44,15 @@ interface ProviderCardModel extends UserProviderDisplay {
   canConnect: boolean;
 }
 
-function getSafeRedirectUrl(redirectUrl: string): string {
-  const parsed = new URL(redirectUrl, window.location.origin);
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('Unsupported redirect protocol');
-  }
-  return parsed.toString();
+function summarizeProviderConnections(connections: UserAccountConnection[]) {
+  const hasActiveConnection = connections.some((connection) => connection.status === 'active');
+  const hasExpiredConnection = connections.some((connection) => connection.status === 'expired');
+
+  return {
+    hasAnyConnection: connections.length > 0,
+    hasActiveConnection,
+    hasExpiredConnection,
+  };
 }
 
 function buildProviderCardModel(connection: UserAccountConnection): ProviderCardModel {
@@ -136,7 +140,7 @@ function ProviderCard({
 
     try {
       const { redirectUrl } = await startUserVerify(provider.id);
-      window.location.href = getSafeRedirectUrl(redirectUrl);
+      window.location.href = getSafeInternalRedirectTarget(redirectUrl);
     } catch {
       setConnecting(false);
       toast.error('Could not start connection', {
@@ -151,7 +155,9 @@ function ProviderCard({
     backgroundColor: `${providerColor}20`,
     color: providerColor,
   };
-  const isConnected = connections.length > 0;
+  const { hasAnyConnection, hasActiveConnection, hasExpiredConnection } =
+    summarizeProviderConnections(connections);
+  const canReconnect = hasExpiredConnection && !hasActiveConnection;
 
   return (
     <motion.div
@@ -177,10 +183,11 @@ function ProviderCard({
       <div className="acct-provider-info">
         <div className="acct-provider-title-row">
           <p className="acct-provider-name">{provider.label}</p>
-          {isConnected ? <StatusChip status="connected" /> : null}
+          {hasActiveConnection ? <StatusChip status="connected" /> : null}
+          {canReconnect ? <StatusChip status="degraded" /> : null}
           {connections.length > 1 ? <ProviderChip name={`${connections.length} links`} /> : null}
         </div>
-        {isConnected ? (
+        {hasAnyConnection ? (
           <div className="acct-provider-connection-list">
             {connections.map((connection) => {
               const isConfirming = confirmingId === connection.id;
@@ -236,7 +243,7 @@ function ProviderCard({
         )}
       </div>
 
-      {!isConnected && provider.canConnect ? (
+      {provider.canConnect && !hasActiveConnection ? (
         <div className="acct-provider-actions acct-provider-actions--standalone">
           <YucpButton
             yucp="primary"
@@ -245,7 +252,13 @@ function ProviderCard({
             isDisabled={connecting}
             onClick={handleConnect}
           >
-            {connecting ? 'Connecting...' : 'Connect'}
+            {connecting
+              ? canReconnect
+                ? 'Reconnecting...'
+                : 'Connecting...'
+              : canReconnect
+                ? 'Reconnect'
+                : 'Connect'}
           </YucpButton>
         </div>
       ) : null}

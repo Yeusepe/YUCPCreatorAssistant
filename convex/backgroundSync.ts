@@ -659,16 +659,11 @@ export const projectBackfilledPurchasesForProduct = internalMutation({
 
       let subjectId = purchaseFact.subjectId;
       if (!subjectId) {
-        subjectId = await findSubjectByEmailHash(ctx, args.authUserId, purchaseFact.buyerEmailHash);
+        subjectId = await findSubjectByEmailHash(ctx, args.provider, purchaseFact.buyerEmailHash);
       }
 
       if (!subjectId && purchaseFact.providerUserId) {
-        subjectId = await findSubjectByProviderUserId(
-          ctx,
-          args.authUserId,
-          args.provider,
-          purchaseFact.providerUserId
-        );
+        subjectId = await findSubjectByProviderUserId(ctx, args.provider, purchaseFact.providerUserId);
       }
 
       if (!subjectId) {
@@ -721,7 +716,7 @@ export const projectBackfilledPurchasesForProduct = internalMutation({
 
 async function findSubjectByEmailHash(
   ctx: MutationCtx,
-  authUserId: string,
+  provider: string,
   emailHash: string | undefined
 ): Promise<Id<'subjects'> | undefined> {
   if (!emailHash) return undefined;
@@ -729,29 +724,29 @@ async function findSubjectByEmailHash(
   const externalAccounts = await ctx.db
     .query('external_accounts')
     .withIndex('by_email_hash', (q) => q.eq('emailHash', emailHash))
+    .filter((q) => q.eq(q.field('provider'), provider))
     .filter((q) => q.eq(q.field('status'), 'active'))
     .collect();
 
+  let resolvedSubjectId: Id<'subjects'> | undefined;
   for (const externalAccount of externalAccounts) {
-    const binding = await ctx.db
-      .query('bindings')
-      .withIndex('by_auth_user_external', (q) =>
-        q.eq('authUserId', authUserId).eq('externalAccountId', externalAccount._id)
-      )
-      .filter((q) => q.eq(q.field('status'), 'active'))
-      .first();
-
-    if (binding) {
-      return binding.subjectId;
+    const subjectId = await findSubjectByExternalAccountId(ctx, externalAccount._id);
+    if (!subjectId) {
+      continue;
     }
+
+    if (resolvedSubjectId && resolvedSubjectId !== subjectId) {
+      return undefined;
+    }
+
+    resolvedSubjectId = subjectId;
   }
 
-  return undefined;
+  return resolvedSubjectId;
 }
 
 async function findSubjectByProviderUserId(
   ctx: MutationCtx,
-  authUserId: string,
   provider: string,
   providerUserId: string
 ): Promise<Id<'subjects'> | undefined> {
@@ -767,15 +762,92 @@ async function findSubjectByProviderUserId(
     return undefined;
   }
 
-  const binding = await ctx.db
-    .query('bindings')
-    .withIndex('by_auth_user_external', (q) =>
-      q.eq('authUserId', authUserId).eq('externalAccountId', externalAccount._id)
-    )
-    .filter((q) => q.eq(q.field('status'), 'active'))
-    .first();
+  return await findSubjectByExternalAccountId(ctx, externalAccount._id);
+}
 
-  return binding?.subjectId;
+async function findSubjectByExternalAccountId(
+  ctx: MutationCtx,
+  externalAccountId: Id<'external_accounts'>
+): Promise<Id<'subjects'> | undefined> {
+  const externalAccount = await ctx.db.get(externalAccountId);
+  if (!externalAccount || externalAccount.status !== 'active') {
+    return undefined;
+  }
+
+  const buyerLinks = await ctx.db
+    .query('buyer_provider_links')
+    .withIndex('by_external_account', (q) => q.eq('externalAccountId', externalAccountId))
+    .collect();
+
+  const buyerLinkSubjectIds = await collectActiveBuyerLinkSubjectIds(ctx, buyerLinks, externalAccount);
+  if (buyerLinks.length > 0) {
+    return buyerLinkSubjectIds.length === 1 ? buyerLinkSubjectIds[0] : undefined;
+  }
+
+  const verificationBindings = await ctx.db
+    .query('bindings')
+    .withIndex('by_external_account', (q) => q.eq('externalAccountId', externalAccountId))
+    .collect();
+
+  const boundSubjectIds = await collectActiveVerificationBindingSubjectIds(ctx, verificationBindings);
+  return boundSubjectIds.length === 1 ? boundSubjectIds[0] : undefined;
+}
+
+async function collectActiveBuyerLinkSubjectIds(
+  ctx: MutationCtx,
+  buyerLinks: Array<{
+    subjectId: Id<'subjects'>;
+    status: 'active' | 'expired' | 'revoked';
+    expiresAt?: number;
+  }>,
+  externalAccount: {
+    status: 'active' | 'disconnected' | 'revoked';
+  }
+): Promise<Id<'subjects'>[]> {
+  const subjectIds = new Set<Id<'subjects'>>();
+
+  for (const buyerLink of buyerLinks) {
+    if (buyerLink.status !== 'active') {
+      continue;
+    }
+    if (externalAccount.status !== 'active') {
+      continue;
+    }
+    if (buyerLink.expiresAt != null && buyerLink.expiresAt <= Date.now()) {
+      continue;
+    }
+
+    const subject = await ctx.db.get(buyerLink.subjectId);
+    if (subject?.status === 'active') {
+      subjectIds.add(buyerLink.subjectId);
+    }
+  }
+
+  return [...subjectIds];
+}
+
+async function collectActiveVerificationBindingSubjectIds(
+  ctx: MutationCtx,
+  bindings: Array<{
+    subjectId: Id<'subjects'>;
+    bindingType: 'ownership' | 'verification' | 'manual_override';
+    status: 'pending' | 'active' | 'revoked' | 'transferred' | 'quarantined';
+  }>
+): Promise<Id<'subjects'>[]> {
+  const subjectIds = new Set<Id<'subjects'>>();
+
+  for (const binding of bindings) {
+    if (binding.bindingType !== 'verification' || binding.status !== 'active') {
+      continue;
+    }
+
+    const subject = await ctx.db.get(binding.subjectId);
+    if (subject?.status === 'active') {
+      subjectIds.add(binding.subjectId);
+    }
+  }
+
+  return [...subjectIds];
 }
 
 // ============================================================================

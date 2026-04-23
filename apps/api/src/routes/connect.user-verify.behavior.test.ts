@@ -146,4 +146,23 @@ describe('POST /api/connect/user/verify/start', () => {
       'http://localhost:3000/account/connections'
     );
   });
+
+  it('rejects providers that do not support buyer identity linking', async () => {
+    const routes = createRoutes();
+
+    const response = await routes.postUserVerifyStart(
+      new Request('http://localhost:3001/api/connect/user/verify/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerKey: 'vrchat',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Provider 'vrchat' does not support user identity linking",
+    });
+  });
 });

@@ -180,6 +180,19 @@ const ACCOUNT_SURFACE_PROVIDER_MATRIX = [
     },
   },
   {
+    provider: 'gumroad',
+    label: 'Gumroad account link',
+    providerUserId: 'buyer_gumroad_account_link_user',
+    providerUsername: 'buyer-gumroad-account-link',
+    verificationMethod: 'account_link',
+    expectedDisplay: {
+      label: 'gumroad',
+      icon: null,
+      color: null,
+      description: 'Linked provider',
+    },
+  },
+  {
     provider: 'vrchat',
     label: 'VRChat account',
     providerUserId: 'buyer_vrchat_user',

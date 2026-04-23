@@ -164,13 +164,15 @@ export function createPayhipProviderModule<
       }));
     },
     async onProductCredentialAdded(productId, ctx) {
+      const parsedProductId = parseProductId('payhip', productId);
+      const normalizedProductId = parsedProductId.ok ? parsedProductId.productId : productId;
       const client = new PayhipApiClient();
-      const name = await client.fetchProductName(productId);
+      const name = await client.fetchProductName(normalizedProductId);
       if (!name) {
         return;
       }
       await ports.upsertProductName(
-        { authUserId: ctx.authUserId, permalink: productId, displayName: name },
+        { authUserId: ctx.authUserId, permalink: normalizedProductId, displayName: name },
         ctx
       );
     },

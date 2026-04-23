@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 import {
   createPayhipLicenseVerification,
   createPayhipProviderModule,
@@ -8,6 +8,12 @@ const logger = {
   info: mock(() => {}),
   warn: mock(() => {}),
 };
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 const baseCtx = {
   convex: {
@@ -58,6 +64,58 @@ describe('createPayhipProviderModule', () => {
         hasSecretKey: true,
       },
     ]);
+  });
+
+  it('normalizes full Payhip URLs before backfilling product names for manual product credentials', async () => {
+    let upserted:
+      | {
+          authUserId: string;
+          permalink: string;
+          displayName: string;
+        }
+      | undefined;
+
+    globalThis.fetch = mock(async (url: string) => {
+      const expectedTarget = encodeURIComponent('https://payhip.com/b/KZFw0');
+      if (!url.includes(expectedTarget)) {
+        return new Response('', { status: 404 });
+      }
+
+      return new Response(JSON.stringify({ meta: { title: 'Starter Pack' } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const module = createPayhipProviderModule({
+      logger,
+      async listProducts() {
+        return [];
+      },
+      async upsertProductName(input) {
+        upserted = input;
+      },
+      async listProductSecretKeys() {
+        return [];
+      },
+      async decryptProductSecretKey() {
+        throw new Error('not used');
+      },
+      async verifyLicenseKey() {
+        throw new Error('not used');
+      },
+    });
+
+    await module.onProductCredentialAdded?.(
+      'https://payhip.com/b/KZFw0?utm_source=creator',
+      baseCtx
+    );
+
+    expect(upserted).toEqual({
+      authUserId: 'user-1',
+      permalink: 'KZFw0',
+      displayName: 'Starter Pack',
+    });
   });
 });
 

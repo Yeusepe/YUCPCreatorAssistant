@@ -35,6 +35,9 @@ export function classifyProviderCatalogError(
   if (trimmed === 'session_expired') {
     return 'session_expired';
   }
+  if (trimmed === 'malformed_payload') {
+    return 'malformed_payload';
+  }
   if (/\bis not connected\b/i.test(trimmed)) {
     return 'not_connected';
   }

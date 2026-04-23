@@ -255,6 +255,59 @@ describe('createGumroadProviderModule', () => {
       meta: { reason: 'repeated-cursor' },
     });
   });
+
+  it('preserves Gumroad storefront URLs for catalog, creator-subdomain, and external products', async () => {
+    const products = [
+      {
+        id: 'product-catalog',
+        name: 'Catalog Product',
+        short_url: 'https://gumroad.com/l/catalog-product',
+      },
+      {
+        id: 'product-storefront',
+        name: 'Storefront Product',
+        short_url: 'https://creator.gumroad.com/l/storefront-product?layout=profile',
+      },
+      {
+        id: 'product-external',
+        name: 'External Product',
+        short_url: 'https://store.example.com/l/external-product?recommended_by=library',
+      },
+    ];
+    const module = createGumroadProviderModule({
+      logger,
+      async getEncryptedCredential() {
+        return 'encrypted-token';
+      },
+      async decryptCredential() {
+        return 'access-token';
+      },
+      async fetchImpl() {
+        return new Response(JSON.stringify({ success: true, products }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      },
+    });
+
+    await expect(module.fetchProducts('access-token', makeCtx())).resolves.toEqual([
+      {
+        id: 'product-catalog',
+        name: 'Catalog Product',
+        productUrl: 'https://gumroad.com/l/catalog-product',
+      },
+      {
+        id: 'product-storefront',
+        name: 'Storefront Product',
+        productUrl: 'https://creator.gumroad.com/l/storefront-product?layout=profile',
+      },
+      {
+        id: 'product-external',
+        name: 'External Product',
+        productUrl: 'https://store.example.com/l/external-product?recommended_by=library',
+      },
+    ]);
+  });
 });
 
 describe('createGumroadLicenseVerification', () => {

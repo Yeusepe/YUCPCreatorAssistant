@@ -32,6 +32,34 @@ function mockFetch(response: unknown, status = 200): () => void {
   };
 }
 
+function mockFetchSequence(
+  responses: Array<{
+    body: string;
+    status?: number;
+    contentType?: string;
+  }>
+): () => void {
+  const original = globalThis.fetch;
+  let callIndex = 0;
+  globalThis.fetch = (async () => {
+    const response = responses[callIndex];
+    callIndex += 1;
+    if (!response) {
+      throw new Error(`Unexpected fetch call ${callIndex}`);
+    }
+
+    return new Response(response.body, {
+      status: response.status ?? 200,
+      headers: {
+        'Content-Type': response.contentType ?? 'application/json',
+      },
+    });
+  }) as unknown as typeof fetch;
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
 describe('Gumroad backfill fetchPage', () => {
   let restoreFetch: (() => void) | undefined;
 
@@ -164,6 +192,50 @@ describe('Gumroad backfill fetchPage', () => {
     expect(result.facts[0]).toMatchObject({
       externalOrderId: 'sale-legacy-shape',
       providerProductId: FAKE_PRODUCT_REF,
+    });
+  });
+
+  it('resolves external storefront URLs to the canonical Gumroad product id before backfilling sales', async () => {
+    const storefrontUrl =
+      'https://quaggycharr.gumroad.com/l/Fluffgan?layout=profile&recommended_by=library';
+    const canonicalProductId = 'QAJc7ErxdAC815P5P8R89g==';
+    const encodedDataPage = JSON.stringify({
+      props: {
+        product: {
+          id: canonicalProductId,
+          name: 'Fluffgan',
+        },
+      },
+    })
+      .replaceAll('&', '&amp;')
+      .replaceAll('"', '&quot;');
+
+    restoreFetch = mockFetchSequence([
+      {
+        body: `<div data-page="${encodedDataPage}"></div>`,
+        contentType: 'text/html',
+      },
+      {
+        body: JSON.stringify({
+          success: true,
+          sales: [
+            {
+              sale_id: 'sale-external-storefront',
+              product_id: canonicalProductId,
+              email: 'buyer@example.com',
+              created_at: NINETY_DAYS_AGO_ISO,
+            },
+          ],
+        }),
+      },
+    ]);
+
+    const result = await backfill.fetchPage(FAKE_TOKEN, storefrontUrl, null, 100, '');
+
+    expect(result.facts).toHaveLength(1);
+    expect(result.facts[0]).toMatchObject({
+      externalOrderId: 'sale-external-storefront',
+      providerProductId: canonicalProductId,
     });
   });
 });

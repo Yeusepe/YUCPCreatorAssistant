@@ -192,6 +192,43 @@ describe('account connections route', () => {
     });
   }
 
+  it('keeps expired links visible while surfacing a reconnect action', async () => {
+    const store = createBuyerProviderLinkStore([
+      createBuyerProviderLinkRecord({
+        status: 'expired',
+      }),
+    ]);
+    vi.mocked(dashboardApi.listUserProviders).mockResolvedValue([
+      {
+        id: 'itchio',
+        label: 'itch.io',
+        icon: 'Itchio.png',
+        color: '#fa5c5c',
+        description: 'Linked provider',
+      },
+    ]);
+    vi.mocked(dashboardApi.listUserAccounts).mockImplementation(async () =>
+      store.listAccountConnections('buyer_auth_user_B')
+    );
+
+    const Component = AccountConnectionsRoute.options.component;
+    if (!Component) {
+      throw new Error('Account connections route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    const connectionHandle = await screen.findByText('buyer-b');
+    const providerCard = connectionHandle.closest('.acct-provider-row');
+    if (!(providerCard instanceof HTMLElement)) {
+      throw new Error('Expired provider card was not rendered');
+    }
+
+    expect(within(providerCard).getByText('Needs attention')).toBeInTheDocument();
+    expect(within(providerCard).getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
+    expect(within(providerCard).queryByText('Connected')).toBeNull();
+  });
+
   it('shows an inline error without also rendering the empty state when provider loading fails', async () => {
     vi.mocked(dashboardApi.listUserProviders).mockRejectedValue(new Error('provider fetch failed'));
     vi.mocked(dashboardApi.listUserAccounts).mockResolvedValue([]);
@@ -213,6 +250,36 @@ describe('account connections route', () => {
     vi.mocked(dashboardApi.listUserAccounts).mockResolvedValue([]);
     vi.mocked(dashboardApi.startUserVerify).mockResolvedValue({
       redirectUrl: 'javascript:alert(1)',
+    });
+
+    const initialHref = window.location.href;
+    const Component = AccountConnectionsRoute.options.component;
+    if (!Component) {
+      throw new Error('Account connections route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    const [connectButton] = await screen.findAllByRole('button', { name: 'Connect' });
+    if (!(connectButton instanceof HTMLButtonElement)) {
+      throw new Error('Connect button was not rendered');
+    }
+
+    fireEvent.click(connectButton);
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith('Could not start connection', {
+        description: 'Please try connecting Gumroad again.',
+      })
+    );
+    expect(window.location.href).toBe(initialHref);
+    expect(connectButton).toBeEnabled();
+  });
+
+  it('rejects absolute redirects to other origins before navigation', async () => {
+    vi.mocked(dashboardApi.listUserAccounts).mockResolvedValue([]);
+    vi.mocked(dashboardApi.startUserVerify).mockResolvedValue({
+      redirectUrl: 'https://evil.example/phishing',
     });
 
     const initialHref = window.location.href;

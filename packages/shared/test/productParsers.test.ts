@@ -3,15 +3,35 @@ import { parseProductId } from '../src/productParsers';
 
 describe('parseProductId', () => {
   describe('gumroad', () => {
-    it('accepts a standard URL slug', () => {
-      const r = parseProductId('gumroad', 'https://gumroad.com/l/abc123');
-      expect(r).toEqual({ ok: true, productId: 'abc123' });
-    });
+    const storefrontCases = [
+      {
+        name: 'accepts a standard URL slug',
+        input: 'https://gumroad.com/l/abc123',
+        productId: 'abc123',
+      },
+      {
+        name: 'accepts a subdomain URL',
+        input: 'https://user.gumroad.com/l/myproduct',
+        productId: 'myproduct',
+      },
+      {
+        name: 'accepts a creator storefront URL with query params',
+        input: 'https://creator.gumroad.com/l/storefront-product?layout=profile',
+        productId: 'storefront-product',
+      },
+      {
+        name: 'accepts an external storefront URL with a Gumroad /l/ slug',
+        input: 'https://store.example.com/l/external-product?recommended_by=library',
+        productId: 'external-product',
+      },
+    ] as const;
 
-    it('accepts a subdomain URL', () => {
-      const r = parseProductId('gumroad', 'https://user.gumroad.com/l/myproduct');
-      expect(r).toEqual({ ok: true, productId: 'myproduct' });
-    });
+    for (const testCase of storefrontCases) {
+      it(testCase.name, () => {
+        const r = parseProductId('gumroad', testCase.input);
+        expect(r).toEqual({ ok: true, productId: testCase.productId });
+      });
+    }
 
     it('accepts a dashboard /products/ URL', () => {
       const r = parseProductId('gumroad', 'https://app.gumroad.com/products/abc123');

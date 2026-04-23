@@ -281,6 +281,34 @@ describe('autosetup migrate flow', () => {
     expect(content).not.toContain('expired');
   });
 
+  it('shows malformed payload guidance when a provider returns invalid catalog data', async () => {
+    mockProductsResultsByProvider = {
+      gumroad: { products: [], error: 'malformed_payload' },
+      jinxxy: {
+        products: [],
+        error: 'jinxxy is not connected. Connect it in your creator setup.',
+      },
+      lemonsqueezy: {
+        products: [],
+        error: 'lemonsqueezy is not connected. Connect it in your creator setup.',
+      },
+    };
+
+    await startSession('user_migrate_malformed_payload');
+    const interaction = mockModeSelectInteraction('user_migrate_malformed_payload', 'migrate');
+    await handleAutosetupModeSelect(
+      interaction as unknown as StringSelectMenuInteraction,
+      MOCK_CONVEX,
+      TEST_API_SECRET,
+      BASE_CTX.authUserId
+    );
+
+    const content = lastReplyContent(interaction.editReply as ReturnType<typeof mock>);
+    expect(content).toContain('unexpected response');
+    expect(content).toContain('Gumroad');
+    expect(content).not.toContain('Connect Gumroad or Jinxxy first');
+  });
+
   it('proceeds when products are returned (does not show no-products message)', async () => {
     mockProductsResult = { products: [{ id: 'prod_1', name: 'My Product' }], error: undefined };
 

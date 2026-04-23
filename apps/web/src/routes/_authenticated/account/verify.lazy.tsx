@@ -27,6 +27,7 @@ import {
   type UserAccountConnection,
   type UserProvider,
 } from '@/lib/dashboard';
+import { getSafeInternalRedirectTarget } from '@/lib/safeRedirects';
 
 export const Route = createLazyFileRoute('/_authenticated/account/verify')({
   component: AccountVerifyPage,
@@ -138,7 +139,8 @@ function MethodCard({
           `Provider '${method.providerLabel}' does not support direct account linking`
         );
       }
-      return await startUserVerify(method.providerKey, returnUrl);
+      const { redirectUrl } = await startUserVerify(method.providerKey, returnUrl);
+      return { redirectUrl: getSafeInternalRedirectTarget(redirectUrl) };
     },
     onSuccess: ({ redirectUrl }) => {
       window.location.href = redirectUrl;

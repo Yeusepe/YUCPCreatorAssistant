@@ -3,14 +3,14 @@
  *
  * Lifecycle:
  *  1. Discord bot fires POST /api/internal/notify → API validates secret →
- *     calls internal mutation `create`
+ *     calls public mutation `create`
  *  2. Dashboard subscribes to `listUnseen` via Convex React hook (live updates)
  *  3. Dashboard calls `markSeen` mutation when toasts are shown
  *  4. Cron job calls `cleanupExpired` every minute to purge stale records
  *
  * Security:
- *  - `create` is internalMutation: only callable from Convex actions/mutations
- *    or via the API secret-authenticated HTTP route
+ *  - `create` is a public mutation guarded by CONVEX_API_SECRET so the API
+ *    server can call it through ConvexHttpClient without Convex admin auth
  *  - `listUnseen` and `markSeen` use the shared authenticated-user resolver to ensure
  *    the caller can only access their own notifications
  */
@@ -23,10 +23,10 @@ import { getAuthenticatedAuthUser } from './lib/authUser';
 const NOTIFICATION_TTL_MS = 60_000; // 60 seconds
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Internal Mutation, create (called by API route)
+// Public Mutation, create (called by API route)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const create = internalMutation({
+export const create = mutation({
   args: {
     apiSecret: v.string(),
     authUserId: v.string(),
