@@ -1,7 +1,14 @@
 import { describe, expect, it, mock } from 'bun:test';
 
 mock.module('../../../../convex/_generated/api', () => ({
-  api: {},
+  api: {
+    yucpLicenses: {
+      lookupProductByProviderRef: 'yucpLicenses.lookupProductByProviderRef',
+    },
+    packageRegistry: {
+      lookupRegistration: 'packageRegistry.lookupRegistration',
+    },
+  },
   components: {},
   internal: {
     yucpLicenses: {
@@ -41,6 +48,7 @@ describe('resolveBuyerVerificationStoreContext', () => {
         convex: {
           query: queryMock,
         },
+        apiSecret: 'api-secret',
       } as never
     );
 
@@ -52,16 +60,18 @@ describe('resolveBuyerVerificationStoreContext', () => {
     });
     expect(queryMock).toHaveBeenNthCalledWith(
       1,
-      expect.anything(),
+      'yucpLicenses.lookupProductByProviderRef',
       expect.objectContaining({
+        apiSecret: 'api-secret',
         provider: 'gumroad',
         providerProductRef: 'gumroad-product-1',
       })
     );
     expect(queryMock).toHaveBeenNthCalledWith(
       2,
-      expect.anything(),
+      'packageRegistry.lookupRegistration',
       expect.objectContaining({
+        apiSecret: 'api-secret',
         packageId: 'package_123',
       })
     );
@@ -92,6 +102,7 @@ describe('resolveBuyerVerificationStoreContext', () => {
         convex: {
           query: queryMock,
         },
+        apiSecret: 'api-secret',
       } as never
     );
 

@@ -41,7 +41,7 @@ type BuyerLinkPluginMock = {
     authUrl: string;
     tokenUrl: string;
     callbackPath: string;
-    responseType: 'code';
+    responseType: 'code' | 'token';
     scopes: string[];
     usesPkce: boolean;
   };
@@ -275,5 +275,29 @@ describe('VerificationSessionManager account-link callback', () => {
         apiSecret: 'convex-api-secret',
       })
     );
+  });
+
+  it('persists the linked buyer account through the implicit callback path used by itch.io', async () => {
+    buyerLinkPlugin.oauth.responseType = 'token';
+    const manager = createVerificationSessionManager(testConfig);
+
+    const result = await manager.handleImplicitCallback(
+      'itchio',
+      'fragment-access-token-123',
+      'verify:itchio:buyer_auth_user_B:state-suffix'
+    );
+
+    expect(result).toEqual({
+      success: true,
+      redirectUri: 'https://app.example.com/account/connections',
+    });
+    expect(fetchIdentityMock).toHaveBeenCalledWith(
+      'fragment-access-token-123',
+      expect.objectContaining({
+        apiSecret: 'convex-api-secret',
+      })
+    );
+    expect(stateStoreGetMock).not.toHaveBeenCalled();
+    expect(stateStoreDeleteMock).not.toHaveBeenCalled();
   });
 });

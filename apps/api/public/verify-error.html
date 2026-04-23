@@ -90,19 +90,12 @@
 <body>
     <!-- Full-page loading overlay (content injected by site.js) -->
     <div id="page-loading-overlay"></div>
-    </div>
-    <div id="page-content" style="display: none;">
-        <div id="bg-canvas-root"
-            style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -20; pointer-events: none;">
-        </div>
-        <!-- Playful Background Stickers -->
-        <div id="holo-world-0"
-            class="absolute top-20 left-10 w-24 opacity-40 sticker pointer-events-auto z-0 grayscale h-24 hidden sm:block"
-            style="animation-delay: -2s;"></div>
-        <div id="holo-discord-1"
-            class="absolute bottom-40 right-10 w-20 opacity-40 sticker pointer-events-auto z-0 grayscale h-20 hidden sm:block"
-            style="animation-delay: -5s;"></div>
 
+    <!-- Cloud background - must live outside #page-content so it initializes before reveal -->
+    <div id="bg-canvas-root" style="position:fixed;inset:0;z-index:0;pointer-events:none;"></div>
+    <div id="fg-canvas-root" style="position:fixed;inset:0;z-index:1;pointer-events:none;"></div>
+
+    <div id="page-content">
         <main class="text-center max-w-2xl w-full px-4 sm:px-6 relative z-10">
             <div class="mb-8 fade-up" style="animation-delay: 0.2s">
                 <svg class="w-24 h-24 mx-auto text-[#c53030]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -1,5 +1,5 @@
 import { getProviderDescriptor } from '@yucp/providers/providerMetadata';
-import { internal } from '../../../../convex/_generated/api';
+import { api } from '../../../../convex/_generated/api';
 import type {
   BuyerVerificationCapabilityDescriptor,
   BuyerVerificationContext,
@@ -24,7 +24,8 @@ export async function resolveBuyerVerificationStoreContext(
       result: BuyerVerificationResult;
     }
 > {
-  const product = await ctx.convex.query(internal.yucpLicenses.getProductByProviderRef, {
+  const product = await ctx.convex.query(api.yucpLicenses.lookupProductByProviderRef, {
+    apiSecret: ctx.apiSecret,
     provider: input.providerId,
     providerProductRef: input.providerProductRef,
   });
@@ -41,7 +42,8 @@ export async function resolveBuyerVerificationStoreContext(
     };
   }
 
-  const packageRegistration = await ctx.convex.query(internal.packageRegistry.getRegistration, {
+  const packageRegistration = await ctx.convex.query(api.packageRegistry.lookupRegistration, {
+    apiSecret: ctx.apiSecret,
     packageId: input.packageId,
   });
 

@@ -87,6 +87,17 @@ type ItchioGameRecord = {
   published?: boolean;
 };
 
+type ItchioOwnedKeyPayload = {
+  id?: number;
+  game_id?: number;
+  purchase_id?: number;
+  game?: {
+    id?: number;
+    title?: string;
+    url?: string;
+  };
+};
+
 function getFetch(ports: Pick<ItchioRuntimePorts, 'fetchImpl'>): ItchioFetchLike {
   return ports.fetchImpl ?? fetch;
 }
@@ -110,6 +121,19 @@ function normalizeItchioGames(games: unknown): ItchioGameRecord[] {
   if (games && typeof games === 'object') {
     return Object.values(games).filter((game): game is ItchioGameRecord =>
       Boolean(game && typeof game === 'object')
+    );
+  }
+  return [];
+}
+
+function normalizeItchioOwnedKeys(ownedKeys: unknown): ItchioOwnedKeyPayload[] {
+  if (Array.isArray(ownedKeys)) {
+    return ownedKeys;
+  }
+  if (ownedKeys && typeof ownedKeys === 'object') {
+    return Object.values(ownedKeys).filter(
+      (ownedKey): ownedKey is ItchioOwnedKeyPayload =>
+        Boolean(ownedKey && typeof ownedKey === 'object')
     );
   }
   return [];
@@ -217,19 +241,10 @@ export async function fetchItchioOwnedKeys(
 
     const data = await readItchioJson<{
       errors?: string[];
-      owned_keys?: Array<{
-        id?: number;
-        game_id?: number;
-        purchase_id?: number;
-        game?: {
-          id?: number;
-          title?: string;
-          url?: string;
-        };
-      }>;
+      owned_keys?: ItchioOwnedKeyPayload[] | Record<string, ItchioOwnedKeyPayload>;
     }>(response, { treatUnauthorizedAsExpired: true });
 
-    const pageRecords = (data.owned_keys ?? [])
+    const pageRecords = normalizeItchioOwnedKeys(data.owned_keys)
       .filter(
         (ownedKey): ownedKey is NonNullable<typeof ownedKey> & { id: number; game_id: number } =>
           ownedKey?.id != null && ownedKey.game_id != null

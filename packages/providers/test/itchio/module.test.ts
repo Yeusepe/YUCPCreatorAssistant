@@ -368,4 +368,51 @@ describe('itch.io OAuth helpers', () => {
       'https://api.itch.io/profile/owned-keys?page=2',
     ]);
   });
+
+  it('normalizes owned library pages when owned_keys is returned as an object map', async () => {
+    const seenUrls: string[] = [];
+    const fetchImpl = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seenUrls.push(url);
+
+      if (url.endsWith('/profile/owned-keys?page=1')) {
+        return new Response(
+          JSON.stringify({
+            owned_keys: {
+              primary: {
+                id: 5001,
+                game_id: 42,
+                purchase_id: 9001,
+                game: {
+                  id: 42,
+                  title: 'Volcanic Sinkhole Battlemap',
+                  url: 'https://creator.itch.io/volcanic-sinkhole-battlemap',
+                },
+              },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(JSON.stringify({ owned_keys: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    await expect(fetchItchioOwnedKeys('token', { fetchImpl })).resolves.toEqual([
+      {
+        ownedKeyId: '5001',
+        gameId: '42',
+        purchaseId: '9001',
+        gameTitle: 'Volcanic Sinkhole Battlemap',
+        gameUrl: 'https://creator.itch.io/volcanic-sinkhole-battlemap',
+      },
+    ]);
+    expect(seenUrls).toEqual([
+      'https://api.itch.io/profile/owned-keys?page=1',
+      'https://api.itch.io/profile/owned-keys?page=2',
+    ]);
+  });
 });

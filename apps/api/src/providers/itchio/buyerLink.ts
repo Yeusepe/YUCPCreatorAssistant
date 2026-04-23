@@ -1,8 +1,10 @@
 import { CredentialExpiredError } from '@yucp/providers/contracts';
 import {
+  fetchItchioCredentialsInfo,
   fetchItchioCurrentUser,
   fetchItchioOwnedKeys,
   ITCHIO_PURPOSES,
+  itchioScopeSatisfied,
 } from '@yucp/providers/itchio/module';
 import { api, internal } from '../../../../../convex/_generated/api';
 import { decrypt, encrypt } from '../../lib/encrypt';
@@ -19,6 +21,7 @@ const PURCHASE_NOT_FOUND_MESSAGE =
   'No purchase was found for this itch.io account. If you just bought, please try again in a moment.';
 const MISSING_PRODUCT_REF_MESSAGE =
   'Verification method is missing the itch.io product reference required for linked account verification.';
+const REQUIRED_ITCHIO_BUYER_SCOPES = ['profile:me', 'profile:owned'] as const;
 
 interface ItchioBuyerLinkDeps {
   fetchCurrentUser?: typeof fetchItchioCurrentUser;
@@ -35,7 +38,8 @@ async function backfillOwnedItchioEntitlements(
   const seenEntitlementKeys = new Set<string>();
 
   for (const ownedKey of ownedKeys) {
-    const product = await ctx.convex.query(internal.yucpLicenses.getProductByProviderRef, {
+    const product = await ctx.convex.query(api.yucpLicenses.lookupProductByProviderRef, {
+      apiSecret: ctx.apiSecret,
       provider: 'itchio',
       providerProductRef: ownedKey.gameId,
     });
@@ -99,6 +103,15 @@ export function createItchioBuyerLinkPlugin(deps: ItchioBuyerLinkDeps = {}): Buy
     },
 
     async fetchIdentity(accessToken) {
+      const credentialsInfo = await fetchItchioCredentialsInfo(accessToken, {});
+      const grantedScopes = credentialsInfo.scopes ?? [];
+      const missingScopes = REQUIRED_ITCHIO_BUYER_SCOPES.filter(
+        (requiredScope) => !itchioScopeSatisfied(grantedScopes, requiredScope)
+      );
+      if (missingScopes.length > 0) {
+        throw new Error(`Missing required itch.io scopes: ${missingScopes.join(', ')}`);
+      }
+
       const currentUser = await readCurrentUser(accessToken, {});
       return {
         providerUserId: currentUser.id,

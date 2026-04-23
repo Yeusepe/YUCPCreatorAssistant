@@ -16,6 +16,7 @@
  */
 
 import { ConvexError, v } from 'convex/values';
+import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { ApiActorBindingV, requireDelegatedAuthUserActor } from './lib/apiActor';
@@ -75,6 +76,38 @@ export const getRegistrationsByYucpUser = internalQuery({
       .query('package_registry')
       .withIndex('by_yucp_user_id', (q) => q.eq('yucpUserId', args.yucpUserId))
       .collect();
+  },
+});
+
+type PackageRegistrationLookupResult = {
+  packageId: string;
+  yucpUserId: string;
+  status: 'active' | 'archived';
+} | null;
+
+export const lookupRegistration = query({
+  args: { apiSecret: v.string(), packageId: v.string() },
+  returns: v.union(
+    v.null(),
+    v.object({
+      packageId: v.string(),
+      yucpUserId: v.string(),
+      status: v.union(v.literal('active'), v.literal('archived')),
+    })
+  ),
+  handler: async (ctx, args): Promise<PackageRegistrationLookupResult> => {
+    requireApiSecret(args.apiSecret);
+    const registration = await ctx.runQuery(internal.packageRegistry.getRegistration, {
+      packageId: args.packageId,
+    });
+    if (!registration) {
+      return null;
+    }
+    return {
+      packageId: registration.packageId,
+      yucpUserId: registration.yucpUserId,
+      status: getPackageStatus(registration),
+    };
   },
 });
 

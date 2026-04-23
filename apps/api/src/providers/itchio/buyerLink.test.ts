@@ -16,6 +16,9 @@ const apiMock = {
   entitlements: {
     grantEntitlement: 'entitlements.grantEntitlement',
   },
+  yucpLicenses: {
+    lookupProductByProviderRef: 'yucpLicenses.lookupProductByProviderRef',
+  },
 } as const;
 
 const internalMock = {
@@ -28,7 +31,6 @@ const internalMock = {
     markIntentVerified: 'verificationIntents.markIntentVerified',
   },
   yucpLicenses: {
-    getProductByProviderRef: 'yucpLicenses.getProductByProviderRef',
     checkSubjectEntitlement: 'yucpLicenses.checkSubjectEntitlement',
   },
 } as const;
@@ -43,6 +45,9 @@ const fetchCurrentUserMock = mock(async () => ({
   username: 'itch-buyer',
   displayName: 'Itch Buyer',
   profileUrl: 'https://itch-buyer.itch.io',
+}));
+const fetchCredentialsInfoMock = mock(async () => ({
+  scopes: ['profile:me', 'profile:owned'],
 }));
 const fetchOwnedKeysMock = mock(async () => [
   {
@@ -73,8 +78,14 @@ mock.module('@yucp/providers/itchio/module', () => ({
     credential: 'itchio-oauth-access-token',
     buyerCredential: 'itchio-oauth-buyer-access-token',
   },
+  fetchItchioCredentialsInfo: fetchCredentialsInfoMock,
   fetchItchioCurrentUser: fetchCurrentUserMock,
   fetchItchioOwnedKeys: fetchOwnedKeysMock,
+  itchioScopeSatisfied: (grantedScopes: string[], requiredScope: string) =>
+    grantedScopes.some(
+      (grantedScope) =>
+        grantedScope === requiredScope || requiredScope.startsWith(`${grantedScope}:`)
+    ),
 }));
 
 mock.module('../../lib/encrypt', () => ({
@@ -93,6 +104,7 @@ beforeEach(() => {
   queryMock.mockClear();
   mutationMock.mockClear();
   fetchCurrentUserMock.mockClear();
+  fetchCredentialsInfoMock.mockClear();
   fetchOwnedKeysMock.mockClear();
   encryptMock.mockClear();
   decryptMock.mockClear();
@@ -109,6 +121,7 @@ beforeEach(() => {
 
 afterEach(() => {
   fetchCurrentUserMock.mockReset();
+  fetchCredentialsInfoMock.mockReset();
   fetchOwnedKeysMock.mockReset();
   encryptMock.mockReset();
   decryptMock.mockReset();
@@ -119,6 +132,9 @@ afterEach(() => {
     username: 'itch-buyer',
     displayName: 'Itch Buyer',
     profileUrl: 'https://itch-buyer.itch.io',
+  });
+  fetchCredentialsInfoMock.mockResolvedValue({
+    scopes: ['profile:me', 'profile:owned'],
   });
   fetchOwnedKeysMock.mockResolvedValue([
     {
@@ -223,7 +239,7 @@ function mockHostedVerificationQueries(options: {
         return buyerProviderLink;
       case apiMock.identitySync.getExternalAccountOAuthCredentials:
         return credentials;
-      case internalMock.yucpLicenses.getProductByProviderRef:
+      case apiMock.yucpLicenses.lookupProductByProviderRef:
         return {
           authUserId: 'creator_1',
           productId: 'product_1',
@@ -267,10 +283,23 @@ describe('itchio buyer link plugin', () => {
     );
   });
 
+  it('rejects account-link tokens that are missing the owned-library scope before persisting the link', async () => {
+    fetchCredentialsInfoMock.mockResolvedValueOnce({
+      scopes: ['profile:me'],
+    });
+
+    const plugin = createItchioBuyerLinkPlugin();
+
+    await expect(plugin.fetchIdentity('buyer-access-token', makeCtx())).rejects.toThrow(
+      'Missing required itch.io scopes: profile:owned'
+    );
+    expect(fetchCurrentUserMock).not.toHaveBeenCalled();
+  });
+
   it('backfills entitlements for owned itch.io games when account linking completes', async () => {
     queryMock.mockImplementation(async (ref, args) => {
       switch (ref) {
-        case internalMock.yucpLicenses.getProductByProviderRef:
+        case apiMock.yucpLicenses.lookupProductByProviderRef:
           return (args as { providerProductRef?: string }).providerProductRef === '42'
             ? {
                 authUserId: 'creator_1',
@@ -371,7 +400,7 @@ describe('itchio buyer link plugin', () => {
           return {
             oauthAccessTokenEncrypted: 'enc:buyer-access-token',
           };
-        case internalMock.yucpLicenses.getProductByProviderRef:
+        case apiMock.yucpLicenses.lookupProductByProviderRef:
           return {
             authUserId: 'creator_1',
             productId: 'product_1',
@@ -545,7 +574,7 @@ describe('itchio buyer link plugin', () => {
           return {
             oauthAccessTokenEncrypted: 'enc:buyer-access-token',
           };
-        case internalMock.yucpLicenses.getProductByProviderRef:
+        case apiMock.yucpLicenses.lookupProductByProviderRef:
           return {
             authUserId: 'creator_1',
             productId: 'product_1',
@@ -638,7 +667,7 @@ describe('itchio buyer link plugin', () => {
             return {
               oauthAccessTokenEncrypted: 'enc:buyer-access-token',
             };
-          case internalMock.yucpLicenses.getProductByProviderRef:
+          case apiMock.yucpLicenses.lookupProductByProviderRef:
             return {
               authUserId: 'creator_1',
               productId: 'product_1',
@@ -766,7 +795,7 @@ describe('itchio buyer link plugin', () => {
             return {
               oauthAccessTokenEncrypted: 'enc:buyer-access-token',
             };
-          case internalMock.yucpLicenses.getProductByProviderRef:
+          case apiMock.yucpLicenses.lookupProductByProviderRef:
             return {
               authUserId: 'creator_1',
               productId: 'product_1',
