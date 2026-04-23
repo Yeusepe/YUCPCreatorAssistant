@@ -1,3 +1,4 @@
+import { PROVIDER_REGISTRY } from '@yucp/providers/providerMetadata';
 import { setPinnedYucpRootsForTests } from '@yucp/shared/yucpTrust';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -218,6 +219,59 @@ describe('verification intents buyer provider links', () => {
     });
 
     expect(result).toEqual({ success: true });
+  });
+
+  it('canonicalizes legacy manual-license requirements across provider capability permutations', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-manual-license-permutations';
+    await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-manual-license-permutations',
+    });
+
+    const requirements = PROVIDER_REGISTRY.map((provider, index) => ({
+      methodKey: `${provider.providerKey}-legacy-manual-license`,
+      providerKey: provider.providerKey,
+      kind: 'manual_license' as const,
+      title: `${provider.label} proof`,
+      providerProductRef: `product-${index}`,
+    }));
+
+    const { intentId } = await t.mutation(api.verificationIntents.createVerificationIntent, {
+      apiSecret: API_SECRET,
+      authUserId,
+      packageId: 'pkg-manual-license-permutations',
+      machineFingerprint: 'machine-manual-license-permutations',
+      codeChallenge: 'challenge-manual-license-permutations',
+      returnUrl: 'https://example.com/return',
+      requirements,
+    });
+
+    const storedIntent = await t.query(api.verificationIntents.getIntentRecord, {
+      apiSecret: API_SECRET,
+      authUserId,
+      intentId,
+    });
+
+    expect(
+      storedIntent?.requirements.map((requirement) => ({
+        methodKey: requirement.methodKey,
+        providerKey: requirement.providerKey,
+        kind: requirement.kind,
+        providerProductRef: requirement.providerProductRef ?? null,
+      }))
+    ).toEqual(
+      PROVIDER_REGISTRY.map((provider, index) => ({
+        methodKey: `${provider.providerKey}-legacy-manual-license`,
+        providerKey: provider.providerKey,
+        kind:
+          provider.buyerVerificationMethods.includes('account_link') &&
+          !provider.buyerVerificationMethods.includes('license_key')
+            ? 'buyer_provider_link'
+            : 'manual_license',
+        providerProductRef: `product-${index}`,
+      }))
+    );
   });
 
   it('keeps the intent pending and reports provider_link_missing when no buyer link exists', async () => {

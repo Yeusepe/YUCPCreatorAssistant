@@ -53,6 +53,78 @@ describe('license verification account linking', () => {
     });
   });
 
+  it('keeps manual-license buyer links symmetric across account reads, disconnect, and reconcile', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-license-verification-account-symmetry';
+    const subjectId = await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-license-verification-account-symmetry',
+    });
+
+    await seedCreatorProfile(t, {
+      authUserId,
+      ownerDiscordUserId: 'discord-license-verification-account-symmetry',
+    });
+
+    const result = await t.mutation(api.licenseVerification.completeLicenseVerification, {
+      apiSecret: API_SECRET,
+      authUserId,
+      subjectId,
+      provider: 'jinxxy',
+      providerUserId: 'jinxxy-user-account-symmetry',
+      providerUsername: 'SymmetryBuyer',
+      productsToGrant: [
+        {
+          productId: 'product-license-verification-account-symmetry',
+          sourceReference: 'order-license-verification-account-symmetry',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+
+    const linksAfterWrite = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId,
+    });
+
+    expect(linksAfterWrite).toHaveLength(1);
+    expect(linksAfterWrite[0]).toMatchObject({
+      provider: 'jinxxy',
+      providerUserId: 'jinxxy-user-account-symmetry',
+      providerUsername: 'SymmetryBuyer',
+      verificationMethod: 'account_link',
+      status: 'active',
+    });
+
+    const revokeResult = await t.mutation(api.subjects.revokeBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      authUserId,
+      linkId: linksAfterWrite[0]!.id,
+    });
+
+    expect(revokeResult).toEqual({ success: true });
+
+    const linksAfterDisconnect = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId,
+    });
+    expect(linksAfterDisconnect).toEqual([]);
+
+    const reconcileResult = await t.mutation(api.subjects.reconcileBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId,
+    });
+
+    expect(reconcileResult.reconciledCount).toBe(0);
+
+    const linksAfterReconcile = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId,
+    });
+    expect(linksAfterReconcile).toEqual([]);
+  });
+
   it('records a license subject link for verified licenses so leak tracing can resolve the buyer later', async () => {
     const t = makeTestConvex();
     const authUserId = 'auth-license-verification-forensics';

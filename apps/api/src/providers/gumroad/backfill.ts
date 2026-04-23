@@ -22,6 +22,7 @@ export const backfill: BackfillPlugin = {
       providerName: 'Gumroad',
       maxRetries: MAX_RATE_LIMIT_RETRIES,
       operation: async () => {
+        // Gumroad sales API reference: https://gumroad.com/api#sales
         const res = await fetch(
           `${GUMROAD_API_BASE}/sales?product_id=${encodeURIComponent(productRef)}&page=${page}&per_page=${pageSize}`,
           {
@@ -45,39 +46,55 @@ export const backfill: BackfillPlugin = {
         }
 
         const data = (await res.json()) as {
+          success?: boolean;
           sales?: Array<Record<string, unknown>>;
           next_page_url?: string;
+          message?: string;
         };
+        if (data.success === false) {
+          throw new Error(data.message ?? 'Gumroad API returned an error');
+        }
+
         const sales = data.sales ?? [];
 
-        const facts: BackfillRecord[] = await Promise.all(
-          sales.map(async (s) => {
-            const email = (s.email ?? '') as string;
-            const normalized = email ? normalizeEmail(email) : undefined;
-            const buyerEmailHash = normalized ? await sha256Hex(normalized) : undefined;
-            const buyerEmailEncrypted = normalized
-              ? await encrypt(normalized, encryptionSecret, PURCHASE_BUYER_EMAIL_PURPOSE)
-              : undefined;
-            return {
-              authUserId: '',
-              provider: 'gumroad',
-              externalOrderId: String(s.sale_id ?? s.id ?? ''),
-              buyerEmailHash,
-              buyerEmailEncrypted,
-              providerProductId: String(s.product_id ?? ''),
-              paymentStatus: s.refunded === true || s.refunded === 'true' ? 'refunded' : 'paid',
-              lifecycleStatus: (s.refunded === true || s.refunded === 'true'
-                ? 'refunded'
-                : 'active') as BackfillRecord['lifecycleStatus'],
-              purchasedAt:
-                s.created_at && !Number.isNaN(new Date(s.created_at as string).getTime())
-                  ? new Date(s.created_at as string).getTime()
-                  : typeof s.sale_timestamp === 'number'
-                    ? (s.sale_timestamp as number) * 1000
-                    : Date.now(),
-            };
-          })
-        );
+        const facts: BackfillRecord[] = (
+          await Promise.all(
+            sales.map(async (s): Promise<BackfillRecord | null> => {
+              const externalOrderId = String(s.sale_id ?? s.id ?? '').trim();
+              if (!externalOrderId) {
+                logger.warn('Skipping malformed Gumroad backfill sale', {
+                  reason: 'missing-order-id',
+                });
+                return null;
+              }
+
+              const email = (s.email ?? '') as string;
+              const normalized = email ? normalizeEmail(email) : undefined;
+              const buyerEmailHash = normalized ? await sha256Hex(normalized) : undefined;
+              const buyerEmailEncrypted = normalized
+                ? await encrypt(normalized, encryptionSecret, PURCHASE_BUYER_EMAIL_PURPOSE)
+                : undefined;
+              return {
+                authUserId: '',
+                provider: 'gumroad',
+                externalOrderId,
+                buyerEmailHash,
+                buyerEmailEncrypted,
+                providerProductId: String(s.product_id ?? productRef),
+                paymentStatus: s.refunded === true || s.refunded === 'true' ? 'refunded' : 'paid',
+                lifecycleStatus: (s.refunded === true || s.refunded === 'true'
+                  ? 'refunded'
+                  : 'active') as BackfillRecord['lifecycleStatus'],
+                purchasedAt:
+                  s.created_at && !Number.isNaN(new Date(s.created_at as string).getTime())
+                    ? new Date(s.created_at as string).getTime()
+                    : typeof s.sale_timestamp === 'number'
+                      ? (s.sale_timestamp as number) * 1000
+                      : Date.now(),
+              } satisfies BackfillRecord;
+            })
+          )
+        ).filter((fact): fact is BackfillRecord => fact !== null);
 
         return { facts, nextCursor: data.next_page_url ? String(page + 1) : null };
       },

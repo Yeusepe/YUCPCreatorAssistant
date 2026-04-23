@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  BUYER_PROVIDER_LINK_SURFACE_MATRIX,
+  createBuyerProviderLinkRecord,
+  createBuyerProviderLinkStore,
+} from '../../../../packages/shared/test/buyerProviderLinkInvariantMatrix';
 import type { ConnectConfig } from '../providers/types';
 
 const convexQueryMock = mock(async (_reference?: unknown, _args?: unknown) => [] as unknown[]);
@@ -147,20 +152,68 @@ const testConfig: ConnectConfig = {
   encryptionSecret: 'test-encryption-secret-32chars!!',
 };
 
-const buyerLink = {
-  id: 'buyer-link-itchio-1',
-  provider: 'itchio',
-  label: 'itch.io account',
-  status: 'active',
-  providerUserId: 'buyer_b_user_id',
-  providerUsername: 'buyer-b',
-  verificationMethod: 'account_link',
-  linkedAt: 1,
-  lastValidatedAt: 2,
-  expiresAt: null,
-  createdAt: 1,
-  updatedAt: 2,
-};
+const ACCOUNT_SURFACE_PROVIDER_MATRIX = [
+  {
+    provider: 'itchio',
+    label: 'itch.io account',
+    providerUserId: 'buyer_itchio_user',
+    providerUsername: 'buyer-itch',
+    verificationMethod: 'account_link',
+    expectedDisplay: {
+      label: 'itch.io',
+      icon: 'Itchio.png',
+      color: '#fa5c5c',
+      description: 'Linked provider',
+    },
+  },
+  {
+    provider: 'gumroad',
+    label: 'Gumroad account',
+    providerUserId: 'buyer_gumroad_user',
+    providerUsername: 'buyer-gumroad',
+    verificationMethod: 'oauth',
+    expectedDisplay: {
+      label: 'gumroad',
+      icon: null,
+      color: null,
+      description: 'Linked provider',
+    },
+  },
+  {
+    provider: 'vrchat',
+    label: 'VRChat account',
+    providerUserId: 'buyer_vrchat_user',
+    providerUsername: 'buyer-vrchat',
+    verificationMethod: 'account_link',
+    expectedDisplay: {
+      label: 'vrchat',
+      icon: null,
+      color: null,
+      description: 'Linked provider',
+    },
+  },
+] as const;
+
+const ACCOUNT_SURFACE_RECORD_SHAPES = [
+  {
+    name: 'current',
+    includeProviderUsername: true,
+    includeVerificationMethod: true,
+    includeLastValidatedAt: true,
+    includeExpiresAt: true,
+  },
+  {
+    name: 'legacy',
+    includeProviderUsername: false,
+    includeVerificationMethod: false,
+    includeLastValidatedAt: false,
+    includeExpiresAt: false,
+  },
+] as const;
+
+const ACCOUNT_SURFACE_VISIBLE_STATUS_MATRIX = BUYER_PROVIDER_LINK_SURFACE_MATRIX.filter(
+  (entry) => entry.expectVisible
+);
 
 function createRoutes(sessionUserId: string) {
   return createConnectUserVerificationRoutes({
@@ -181,20 +234,37 @@ describe('GET /api/connect/user/accounts', () => {
     convexQueryMock.mockReset();
     convexMutationMock.mockReset();
     loggerErrorMock.mockReset();
-    convexMutationMock.mockResolvedValue(undefined);
+  });
+
+  it('isolates account-link reads and revokes to the signed-in owner', async () => {
+    const store = createBuyerProviderLinkStore([createBuyerProviderLinkRecord()]);
     convexQueryMock.mockImplementation(async (reference: unknown, args: unknown) => {
       if (reference !== apiMock.subjects.listBuyerProviderLinksForAuthUser) {
         throw new Error(`Unexpected query reference: ${String(reference)}`);
       }
 
-      return (args as { authUserId: string }).authUserId === 'buyer_auth_user_B' ? [buyerLink] : [];
+      return store.listBuyerProviderLinks((args as { authUserId: string }).authUserId);
     });
-  });
+    convexMutationMock.mockImplementation(async (reference: unknown, args: unknown) => {
+      if (reference === apiMock.subjects.reconcileBuyerProviderLinksForAuthUser) {
+        return { reconciledCount: 0 };
+      }
 
-  it('shows buyer B link for buyer B while creator A stays empty even if buyer authUserId is requested', async () => {
+      if (reference === apiMock.subjects.revokeBuyerProviderLink) {
+        return {
+          success: store.revoke(
+            (args as { authUserId: string }).authUserId,
+            (args as { linkId: string }).linkId
+          ),
+        };
+      }
+
+      throw new Error(`Unexpected mutation reference: ${String(reference)}`);
+    });
+
     const creatorRoutes = createRoutes('creator_auth_user_A');
     const creatorResponse = await creatorRoutes.getUserAccounts(
-      new Request('http://localhost:3001/api/connect/user/accounts?authUserId=buyer_auth_user_B')
+      new Request('http://localhost:3001/api/connect/user/accounts')
     );
 
     expect(creatorResponse.status).toBe(200);
@@ -209,14 +279,18 @@ describe('GET /api/connect/user/accounts', () => {
         authUserId: 'creator_auth_user_A',
       }
     );
-    expect(convexQueryMock).toHaveBeenNthCalledWith(
-      1,
-      apiMock.subjects.listBuyerProviderLinksForAuthUser,
-      {
-        apiSecret: 'test-convex-secret',
-        authUserId: 'creator_auth_user_A',
-      }
+    expect(store.snapshot()[0]?.status).toBe('active');
+
+    const creatorDisconnect = await creatorRoutes.deleteUserAccount(
+      new Request('http://localhost:3001/api/connect/user/accounts?id=buyer-link-active-1', {
+        method: 'DELETE',
+      })
     );
+    expect(creatorDisconnect.status).toBe(404);
+    await expect(creatorDisconnect.json()).resolves.toEqual({
+      error: 'Account link not found',
+    });
+    expect(store.snapshot()[0]?.status).toBe('active');
 
     const buyerRoutes = createRoutes('buyer_auth_user_B');
     const buyerResponse = await buyerRoutes.getUserAccounts(
@@ -227,7 +301,7 @@ describe('GET /api/connect/user/accounts', () => {
     await expect(buyerResponse.json()).resolves.toEqual({
       connections: [
         {
-          id: 'buyer-link-itchio-1',
+          id: 'buyer-link-active-1',
           provider: 'itchio',
           label: 'itch.io account',
           connectionType: 'verification',
@@ -252,23 +326,165 @@ describe('GET /api/connect/user/accounts', () => {
         },
       ],
     });
-    expect(convexMutationMock).toHaveBeenNthCalledWith(
-      2,
-      apiMock.subjects.reconcileBuyerProviderLinksForAuthUser,
-      {
-        apiSecret: 'test-convex-secret',
-        authUserId: 'buyer_auth_user_B',
-      }
+
+    const buyerDisconnect = await buyerRoutes.deleteUserAccount(
+      new Request('http://localhost:3001/api/connect/user/accounts?id=buyer-link-active-1', {
+        method: 'DELETE',
+      })
     );
-    expect(convexQueryMock).toHaveBeenNthCalledWith(
-      2,
-      apiMock.subjects.listBuyerProviderLinksForAuthUser,
-      {
-        apiSecret: 'test-convex-secret',
-        authUserId: 'buyer_auth_user_B',
-      }
+    expect(buyerDisconnect.status).toBe(200);
+    await expect(buyerDisconnect.json()).resolves.toEqual({ success: true });
+    expect(store.snapshot()[0]?.status).toBe('revoked');
+
+    const buyerAfterDisconnect = await buyerRoutes.getUserAccounts(
+      new Request('http://localhost:3001/api/connect/user/accounts')
     );
+    expect(buyerAfterDisconnect.status).toBe(200);
+    await expect(buyerAfterDisconnect.json()).resolves.toEqual({
+      connections: [],
+    });
   });
+
+  for (const matrixCase of BUYER_PROVIDER_LINK_SURFACE_MATRIX) {
+    it(`maps ${matrixCase.name}`, async () => {
+      const store = createBuyerProviderLinkStore([
+        createBuyerProviderLinkRecord({
+          status: matrixCase.status,
+        }),
+      ]);
+      convexQueryMock.mockImplementation(async (reference: unknown, args: unknown) => {
+        if (reference !== apiMock.subjects.listBuyerProviderLinksForAuthUser) {
+          throw new Error(`Unexpected query reference: ${String(reference)}`);
+        }
+
+        return store.listBuyerProviderLinks((args as { authUserId: string }).authUserId);
+      });
+      convexMutationMock.mockImplementation(async (reference: unknown) => {
+        if (reference === apiMock.subjects.reconcileBuyerProviderLinksForAuthUser) {
+          return { reconciledCount: 0 };
+        }
+
+        throw new Error(`Unexpected mutation reference: ${String(reference)}`);
+      });
+
+      const routes = createRoutes('buyer_auth_user_B');
+      const response = await routes.getUserAccounts(
+        new Request('http://localhost:3001/api/connect/user/accounts')
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        connections: matrixCase.expectVisible
+          ? [
+              {
+                id: `buyer-link-${matrixCase.status}-1`,
+                provider: 'itchio',
+                label: 'itch.io account',
+                connectionType: 'verification',
+                status: matrixCase.status,
+                webhookConfigured: false,
+                hasApiKey: false,
+                hasAccessToken: false,
+                providerUserId: 'buyer_b_user_id',
+                providerUsername: 'buyer-b',
+                verificationMethod: 'account_link',
+                providerDisplay: {
+                  label: 'itch.io',
+                  icon: 'Itchio.png',
+                  color: '#fa5c5c',
+                  description: 'Linked provider',
+                },
+                linkedAt: 1,
+                lastValidatedAt: 2,
+                expiresAt: matrixCase.status === 'expired' ? 2 : null,
+                createdAt: 1,
+                updatedAt: 2,
+              },
+            ]
+          : [],
+      });
+    });
+  }
+
+  for (const statusCase of ACCOUNT_SURFACE_VISIBLE_STATUS_MATRIX) {
+    for (const providerCase of ACCOUNT_SURFACE_PROVIDER_MATRIX) {
+      for (const recordShape of ACCOUNT_SURFACE_RECORD_SHAPES) {
+        it(`maps ${providerCase.provider} ${providerCase.verificationMethod} ${recordShape.name} records when link status is ${statusCase.status}`, async () => {
+          const recordId = `buyer-link-${providerCase.provider}-${statusCase.status}-${recordShape.name}`;
+          const expectedExpiresAt = recordShape.includeExpiresAt
+            ? statusCase.status === 'expired'
+              ? 30
+              : 300
+            : null;
+          const store = createBuyerProviderLinkStore([
+            createBuyerProviderLinkRecord({
+              id: recordId,
+              status: statusCase.status,
+              provider: providerCase.provider,
+              label: providerCase.label,
+              providerUserId: providerCase.providerUserId,
+              providerUsername: recordShape.includeProviderUsername
+                ? providerCase.providerUsername
+                : null,
+              verificationMethod: recordShape.includeVerificationMethod
+                ? providerCase.verificationMethod
+                : null,
+              lastValidatedAt: recordShape.includeLastValidatedAt ? 20 : null,
+              expiresAt: expectedExpiresAt,
+            }),
+          ]);
+          convexQueryMock.mockImplementation(async (reference: unknown, args: unknown) => {
+            if (reference !== apiMock.subjects.listBuyerProviderLinksForAuthUser) {
+              throw new Error(`Unexpected query reference: ${String(reference)}`);
+            }
+
+            return store.listBuyerProviderLinks((args as { authUserId: string }).authUserId);
+          });
+          convexMutationMock.mockImplementation(async (reference: unknown) => {
+            if (reference === apiMock.subjects.reconcileBuyerProviderLinksForAuthUser) {
+              return { reconciledCount: 0 };
+            }
+
+            throw new Error(`Unexpected mutation reference: ${String(reference)}`);
+          });
+
+          const routes = createRoutes('buyer_auth_user_B');
+          const response = await routes.getUserAccounts(
+            new Request('http://localhost:3001/api/connect/user/accounts')
+          );
+
+          expect(response.status).toBe(200);
+          await expect(response.json()).resolves.toEqual({
+            connections: [
+              {
+                id: recordId,
+                provider: providerCase.provider,
+                label: providerCase.label,
+                connectionType: 'verification',
+                status: statusCase.status,
+                webhookConfigured: false,
+                hasApiKey: false,
+                hasAccessToken: false,
+                providerUserId: providerCase.providerUserId,
+                providerUsername: recordShape.includeProviderUsername
+                  ? providerCase.providerUsername
+                  : null,
+                verificationMethod: recordShape.includeVerificationMethod
+                  ? providerCase.verificationMethod
+                  : null,
+                providerDisplay: providerCase.expectedDisplay,
+                linkedAt: 1,
+                lastValidatedAt: recordShape.includeLastValidatedAt ? 20 : null,
+                expiresAt: expectedExpiresAt,
+                createdAt: 1,
+                updatedAt: 2,
+              },
+            ],
+          });
+        });
+      }
+    }
+  }
 });
 
 describe('DELETE /api/connect/user/accounts', () => {
@@ -280,9 +496,10 @@ describe('DELETE /api/connect/user/accounts', () => {
   });
 
   it('disconnects the signed-in user account link through the revoke mutation', async () => {
+    convexMutationMock.mockResolvedValue({ success: true });
     const routes = createRoutes('buyer_auth_user_B');
     const response = await routes.deleteUserAccount(
-      new Request('http://localhost:3001/api/connect/user/accounts?id=buyer-link-itchio-1', {
+      new Request('http://localhost:3001/api/connect/user/accounts?id=buyer-link-active-1', {
         method: 'DELETE',
       })
     );
@@ -292,7 +509,7 @@ describe('DELETE /api/connect/user/accounts', () => {
     expect(convexMutationMock).toHaveBeenCalledWith(apiMock.subjects.revokeBuyerProviderLink, {
       apiSecret: 'test-convex-secret',
       authUserId: 'buyer_auth_user_B',
-      linkId: 'buyer-link-itchio-1',
+      linkId: 'buyer-link-active-1',
     });
   });
 });

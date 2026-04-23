@@ -189,6 +189,118 @@ describe('provider connection credential storage', () => {
     process.env.CONVEX_API_SECRET = API_SECRET;
   });
 
+  it('keeps creator connection read models in sync across upsert, disconnect, and reconnect', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-connection-read-symmetry';
+
+    const connectionId = await t.mutation(api.providerConnections.upsertProviderConnection, {
+      apiSecret: API_SECRET,
+      authUserId,
+      providerKey: 'gumroad',
+      authMode: 'oauth',
+      label: 'Gumroad Storefront',
+      webhookConfigured: true,
+      credentials: [
+        {
+          credentialKey: 'oauth_access_token',
+          kind: 'oauth_access_token',
+          encryptedValue: 'enc-gumroad-access-token',
+        },
+      ],
+      capabilities: [
+        {
+          capabilityKey: 'catalog_sync',
+          status: 'active',
+          requiredCredentialKeys: ['oauth_access_token'],
+        },
+      ],
+    });
+
+    const connectionsAfterUpsert = await t.query(api.providerConnections.listConnectionsForUser, {
+      apiSecret: API_SECRET,
+      authUserId,
+    });
+    expect(connectionsAfterUpsert).toHaveLength(1);
+    expect(connectionsAfterUpsert[0]).toMatchObject({
+      id: connectionId,
+      provider: 'gumroad',
+      label: 'Gumroad Storefront',
+      connectionType: 'setup',
+      status: 'active',
+      webhookConfigured: true,
+    });
+
+    await expect(
+      t.query(api.providerConnections.getConnectionStatus, {
+        apiSecret: API_SECRET,
+        authUserId,
+      })
+    ).resolves.toMatchObject({
+      gumroad: true,
+    });
+
+    await expect(
+      t.mutation(api.providerConnections.disconnectConnection, {
+        apiSecret: API_SECRET,
+        authUserId,
+        connectionId,
+      })
+    ).resolves.toEqual({ success: true });
+
+    await expect(
+      t.query(api.providerConnections.listConnectionsForUser, {
+        apiSecret: API_SECRET,
+        authUserId,
+      })
+    ).resolves.toEqual([]);
+    await expect(
+      t.query(api.providerConnections.getConnectionStatus, {
+        apiSecret: API_SECRET,
+        authUserId,
+      })
+    ).resolves.toMatchObject({
+      gumroad: false,
+    });
+
+    const reconnectedId = await t.mutation(api.providerConnections.upsertProviderConnection, {
+      apiSecret: API_SECRET,
+      authUserId,
+      providerKey: 'gumroad',
+      authMode: 'oauth',
+      label: 'Gumroad Storefront',
+      webhookConfigured: true,
+      credentials: [
+        {
+          credentialKey: 'oauth_access_token',
+          kind: 'oauth_access_token',
+          encryptedValue: 'enc-gumroad-access-token-refresh',
+        },
+      ],
+    });
+
+    expect(reconnectedId).toBe(connectionId);
+    await expect(
+      t.query(api.providerConnections.listConnectionsForUser, {
+        apiSecret: API_SECRET,
+        authUserId,
+      })
+    ).resolves.toMatchObject([
+      expect.objectContaining({
+        id: connectionId,
+        provider: 'gumroad',
+        status: 'active',
+      }),
+    ]);
+    await expect(
+      t.query(api.providerConnections.getConnectionStatus, {
+        apiSecret: API_SECRET,
+        authUserId,
+      })
+    ).resolves.toMatchObject({
+      gumroad: true,
+    });
+  });
+
   it('given provider data for 2 creators, when destructive reset runs for one creator, then only that creator provider data is deleted', async () => {
     const t = makeTestConvex();
 
