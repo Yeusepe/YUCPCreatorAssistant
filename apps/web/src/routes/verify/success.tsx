@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { BackgroundCanvasRoot } from '@/components/page/BackgroundCanvasRoot';
 import { routeStyleHrefs, routeStylesheetLinks } from '@/lib/routeStyles';
 
 export const Route = createFileRoute('/verify/success')({
@@ -29,7 +30,7 @@ function getSafeReturnTo(value: string | null): string | null {
 }
 
 function VerifySuccessPage() {
-  const [redirectText, setRedirectText] = useState('Redirecting in 5 seconds...');
+  const [redirectText, setRedirectText] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -40,11 +41,6 @@ function VerifySuccessPage() {
   const deepLink = safeReturnTo
     ? safeReturnTo.replace(/^http(s)?:\/\/(ptb\.|canary\.)?discord\.com/, 'discord://-')
     : null;
-
-  const handleClose = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    window.close();
-  }, []);
 
   useEffect(() => {
     setIsVisible(true);
@@ -57,32 +53,16 @@ function VerifySuccessPage() {
       }).catch(() => {});
     }
 
-    if (typeof window !== 'undefined' && 'confetti' in window) {
-      const confetti = (window as unknown as Record<string, unknown>).confetti as (
-        opts: Record<string, unknown>
-      ) => void;
-      if (typeof confetti === 'function') {
-        confetti({
-          particleCount: 150,
-          spread: 100,
-          origin: { y: 0.6 },
-          colors: ['#ffeb3b', '#0ea5e9', '#00e676', '#ffffff'],
-          disableForReducedMotion: true,
-        });
-      }
-    }
-
     if (safeReturnTo && deepLink) {
       let count = 5;
+      setRedirectText(`Redirecting in ${count} seconds...`);
       intervalRef.current = setInterval(() => {
         count--;
-        setRedirectText(
-          count > 0
-            ? `Redirecting to app in ${count} second${count !== 1 ? 's' : ''}...`
-            : 'Redirecting...'
-        );
-        if (count <= 0) {
+        if (count > 0) {
+          setRedirectText(`Redirecting in ${count} second${count !== 1 ? 's' : ''}...`);
+        } else {
           if (intervalRef.current) clearInterval(intervalRef.current);
+          setRedirectText('Redirecting...');
           window.location.href = deepLink;
           setTimeout(() => {
             window.location.href = safeReturnTo;
@@ -98,6 +78,7 @@ function VerifySuccessPage() {
 
   return (
     <div className="verify-success-page-wrapper">
+      <BackgroundCanvasRoot position="fixed" />
       <main className={`verify-success-page${isVisible ? ' is-visible' : ''}`}>
         <section className="verify-success-card">
           <div className="verify-success-eyebrow fade-up" style={{ animationDelay: '0.15s' }}>
@@ -115,66 +96,15 @@ function VerifySuccessPage() {
           </h1>
 
           <p className="verify-success-subtitle fade-up" style={{ animationDelay: '0.45s' }}>
-            Your Discord account has been verified. Your roles will update shortly, and you can head
-            back to Discord now.
+            Your Discord roles will update shortly.
           </p>
 
-          <div className="verify-success-note fade-up" style={{ animationDelay: '0.55s' }}>
-            <div className="verify-success-note-label">Next</div>
-            <p className="verify-success-note-copy">
-              {safeReturnTo
-                ? 'We will try to reopen Discord automatically. If it does not open, use the button below or continue in your browser.'
-                : 'Verification is complete. You can close this tab and return to Discord whenever you are ready.'}
-            </p>
+          <div
+            className="verify-success-status fade-up"
+            style={{ animationDelay: '0.55s' }}
+          >
+            {redirectText ?? 'You can close this tab.'}
           </div>
-
-          <div className="verify-success-actions fade-up" style={{ animationDelay: '0.65s' }}>
-            {safeReturnTo && deepLink ? (
-              <>
-                <a
-                  id="return-btn"
-                  href={deepLink}
-                  className="verify-success-btn verify-success-btn--primary"
-                >
-                  Open Discord app
-                </a>
-                <a
-                  id="return-web-btn"
-                  href={safeReturnTo}
-                  className="verify-success-btn verify-success-btn--ghost"
-                >
-                  Continue in browser
-                </a>
-              </>
-            ) : (
-              <button
-                id="return-btn"
-                type="button"
-                onClick={handleClose}
-                className="verify-success-btn verify-success-btn--primary"
-              >
-                Close tab
-              </button>
-            )}
-          </div>
-
-          {safeReturnTo ? (
-            <div
-              id="redirect-msg"
-              className="verify-success-status fade-up"
-              style={{ animationDelay: '0.75s' }}
-            >
-              {redirectText}
-            </div>
-          ) : (
-            <div
-              id="close-msg"
-              className="verify-success-status fade-up"
-              style={{ animationDelay: '0.75s' }}
-            >
-              You can close this tab.
-            </div>
-          )}
         </section>
       </main>
     </div>

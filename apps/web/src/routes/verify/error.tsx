@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BackgroundCanvasRoot } from '@/components/page/BackgroundCanvasRoot';
 import { routeStyleHrefs, routeStylesheetLinks } from '@/lib/routeStyles';
 
 export const Route = createFileRoute('/verify/error')({
@@ -58,12 +59,13 @@ function VerifyErrorPage() {
 
   return (
     <div className="verify-error-page-wrapper">
+      <BackgroundCanvasRoot position="fixed" />
       <main
-        className={`verify-error-page text-center max-w-2xl w-full px-4 sm:px-6 relative z-10${isVisible ? ' is-visible' : ''}`}
+        className={`verify-error-page text-center max-w-lg w-full px-4 sm:px-6 relative z-10${isVisible ? ' is-visible' : ''}`}
       >
-        <div className="mb-8 fade-up" style={{ animationDelay: '0.2s' }}>
+        <div className="mb-6 fade-up" style={{ animationDelay: '0.2s' }}>
           <svg
-            className="w-24 h-24 mx-auto text-[#c53030]"
+            className="w-16 h-16 mx-auto text-[#c53030]"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -78,14 +80,14 @@ function VerifyErrorPage() {
           </svg>
         </div>
         <h1
-          className="text-4xl sm:text-5xl lg:text-6xl text-[#ffffff] mb-6 fade-up"
+          className="text-3xl sm:text-4xl text-[#ffffff] mb-4 fade-up"
           style={{ animationDelay: '0.3s' }}
         >
           Something went wrong
         </h1>
         <p
           id="error-msg"
-          className="text-lg sm:text-xl md:text-2xl text-[rgba(255,255,255,0.85)] mb-10 leading-relaxed fade-up"
+          className="text-base text-[rgba(255,255,255,0.72)] mb-8 leading-relaxed fade-up"
           style={{ animationDelay: '0.5s' }}
         >
           {errorMessage}
@@ -95,16 +97,16 @@ function VerifyErrorPage() {
             <a
               id="return-btn"
               href={safeReturnTo}
-              className="action-btn inline-block w-full sm:w-auto px-8 py-4 sm:px-12 sm:py-5 rounded-full text-lg sm:text-xl font-black uppercase tracking-widest no-underline"
+              className="action-btn inline-block px-7 py-3 rounded-full text-sm font-bold uppercase tracking-widest no-underline"
             >
-              Return to Discord®
+              Return to Discord
             </a>
           ) : (
             <button
               id="return-btn"
               type="button"
               onClick={handleGoBack}
-              className="action-btn inline-block w-full sm:w-auto px-8 py-4 sm:px-12 sm:py-5 rounded-full text-lg sm:text-xl font-black uppercase tracking-widest no-underline"
+              className="action-btn inline-block px-7 py-3 rounded-full text-sm font-bold uppercase tracking-widest no-underline"
             >
               Try Again
             </button>
