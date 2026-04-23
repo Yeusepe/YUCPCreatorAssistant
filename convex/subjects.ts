@@ -100,6 +100,21 @@ function buildLightAuthDisplayName(
   return trimmed && trimmed.length > 0 ? trimmed : `Discord ${subject.primaryDiscordUserId}`;
 }
 
+export type CanonicalSubjectAuthResolution =
+  | {
+      kind: 'resolved';
+      authUserId: string;
+      source: 'better_auth' | 'existing_light';
+    }
+  | {
+      kind: 'materialize_light';
+      marker: string;
+    }
+  | {
+      kind: 'ambiguous';
+      authUserIds: string[];
+    };
+
 async function findBetterAuthUserIdByLightMarker(
   ctx: Pick<MutationCtx, 'runQuery'>,
   marker: string
@@ -110,6 +125,110 @@ async function findBetterAuthUserIdByLightMarker(
   })) as { id?: string; _id?: string } | null;
 
   return existingUser?.id ?? existingUser?._id ?? null;
+}
+
+async function findBetterAuthUserIdsByDiscordUserId(
+  ctx: Pick<MutationCtx, 'runQuery'>,
+  discordUserId: string
+): Promise<string[]> {
+  const result = (await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    model: 'account',
+    where: buildBetterAuthEqualityWhere([
+      { field: 'accountId', value: discordUserId },
+      { field: 'providerId', value: 'discord' },
+    ]),
+    select: ['userId'],
+    paginationOpts: { cursor: null, numItems: 10 },
+  })) as { page?: Array<{ userId?: string | null }> } | null;
+
+  return Array.from(
+    new Set(
+      (result?.page ?? [])
+        .map((record) => record.userId?.trim())
+        .filter((userId): userId is string => Boolean(userId))
+    )
+  );
+}
+
+export async function detectCanonicalAuthResolutionForSubject(
+  ctx: Pick<MutationCtx, 'runQuery'>,
+  subject: Pick<Doc<'subjects'>, 'primaryDiscordUserId'>
+): Promise<CanonicalSubjectAuthResolution> {
+  const betterAuthUserIds = await findBetterAuthUserIdsByDiscordUserId(
+    ctx,
+    subject.primaryDiscordUserId
+  );
+  if (betterAuthUserIds.length === 1) {
+    return {
+      kind: 'resolved',
+      authUserId: betterAuthUserIds[0],
+      source: 'better_auth',
+    };
+  }
+  if (betterAuthUserIds.length > 1) {
+    return {
+      kind: 'ambiguous',
+      authUserIds: betterAuthUserIds,
+    };
+  }
+
+  const marker = buildLightAuthMarker(subject.primaryDiscordUserId);
+  const lightAuthUserId = await findBetterAuthUserIdByLightMarker(ctx, marker);
+  if (lightAuthUserId) {
+    return {
+      kind: 'resolved',
+      authUserId: lightAuthUserId,
+      source: 'existing_light',
+    };
+  }
+
+  return {
+    kind: 'materialize_light',
+    marker,
+  };
+}
+
+export async function ensureCanonicalAuthUserIdForSubject(
+  ctx: Pick<MutationCtx, 'runQuery' | 'runMutation'>,
+  subject: Pick<Doc<'subjects'>, 'displayName' | 'primaryDiscordUserId'>
+): Promise<{ authUserId: string; source: 'better_auth' | 'existing_light' | 'new_light' }> {
+  const resolution = await detectCanonicalAuthResolutionForSubject(ctx, subject);
+  if (resolution.kind === 'resolved') {
+    return {
+      authUserId: resolution.authUserId,
+      source: resolution.source,
+    };
+  }
+  if (resolution.kind === 'ambiguous') {
+    throw new Error(
+      `Ambiguous Better Auth ownership for Discord subject ${subject.primaryDiscordUserId}`
+    );
+  }
+
+  const now = Date.now();
+  await ctx.runMutation(components.betterAuth.adapter.create, {
+    input: {
+      model: 'user',
+      data: {
+        name: buildLightAuthDisplayName(subject),
+        email: buildLightAuthEmail(subject.primaryDiscordUserId),
+        emailVerified: false,
+        createdAt: now,
+        updatedAt: now,
+        userId: resolution.marker,
+      },
+    },
+  });
+
+  const authUserId = await findBetterAuthUserIdByLightMarker(ctx, resolution.marker);
+  if (!authUserId) {
+    throw new Error(`Failed to materialize auth user for Discord subject ${subject.primaryDiscordUserId}`);
+  }
+
+  return {
+    authUserId,
+    source: 'new_light',
+  };
 }
 
 export async function upsertBuyerProviderLinkRecord(
@@ -755,38 +874,15 @@ export const ensureAuthUserIdForSubject = internalMutation({
       throw new Error(`Subject ${args.subjectId} has no Discord identity to materialize`);
     }
 
-    const marker = buildLightAuthMarker(subject.primaryDiscordUserId);
-    let authUserId = await findBetterAuthUserIdByLightMarker(ctx, marker);
+    const resolved = await ensureCanonicalAuthUserIdForSubject(ctx, subject);
     const now = Date.now();
 
-    if (!authUserId) {
-      await ctx.runMutation(components.betterAuth.adapter.create, {
-        input: {
-          model: 'user',
-          data: {
-            name: buildLightAuthDisplayName(subject),
-            email: buildLightAuthEmail(subject.primaryDiscordUserId),
-            emailVerified: false,
-            createdAt: now,
-            updatedAt: now,
-            userId: marker,
-          },
-        },
-      });
-
-      authUserId = await findBetterAuthUserIdByLightMarker(ctx, marker);
-    }
-
-    if (!authUserId) {
-      throw new Error(`Failed to materialize auth user for subject ${args.subjectId}`);
-    }
-
     await ctx.db.patch(subject._id, {
-      authUserId,
+      authUserId: resolved.authUserId,
       updatedAt: now,
     });
 
-    return authUserId;
+    return resolved.authUserId;
   },
 });
 

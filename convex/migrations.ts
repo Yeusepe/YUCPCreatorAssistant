@@ -12,12 +12,16 @@
 
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, internalQuery, type QueryCtx } from './_generated/server';
+import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from './_generated/server';
 import { PII_PURPOSES } from './lib/credentialKeys';
 import { upsertLicenseSubjectLink } from './lib/licenseSubjectLink';
 import { encryptPii } from './lib/piiCrypto';
 import { resolveProtectedAssetUnlockMode } from './lib/protectedAssetUnlockMode';
-import { upsertBuyerProviderLinkRecord } from './subjects';
+import {
+  detectCanonicalAuthResolutionForSubject,
+  ensureCanonicalAuthUserIdForSubject,
+  upsertBuyerProviderLinkRecord,
+} from './subjects';
 
 type LegacyMigrationDoc = Record<string, unknown>;
 type BuyerAttributionCandidateConfidence = 'high' | 'medium';
@@ -59,8 +63,34 @@ type BuyerAttributionCandidate = {
   relatedLicenseSubjectLinks: BuyerAttributionRelatedLicenseSubjectLink[];
   repairable: boolean;
 };
+type SubjectOwnershipResolution = 'better_auth' | 'existing_light' | 'new_light' | 'ambiguous';
+type SubjectOwnershipRelatedBinding = {
+  id: Id<'bindings'>;
+  authUserId: string;
+  status: Doc<'bindings'>['status'];
+  createdAt: number;
+  updatedAt: number;
+  externalAccountId: Id<'external_accounts'>;
+  provider?: Doc<'external_accounts'>['provider'];
+  providerUserId?: string;
+  providerUsername?: string;
+};
+type SubjectOwnershipCandidate = {
+  subjectId: Id<'subjects'>;
+  currentAuthUserId: string;
+  discordUserId: string;
+  subjectDisplayName?: string;
+  expectedAuthUserId?: string;
+  expectedLightAuthMarker?: string;
+  ambiguousAuthUserIds?: string[];
+  resolution: SubjectOwnershipResolution;
+  relatedBuyerProviderLinks: BuyerAttributionRelatedBuyerProviderLink[];
+  relatedVerificationBindings: SubjectOwnershipRelatedBinding[];
+  repairable: boolean;
+};
 
 const DEFAULT_BUYER_ATTRIBUTION_REPORT_LIMIT = 50;
+const DEFAULT_SUBJECT_OWNERSHIP_REPORT_LIMIT = 50;
 const REPORTABLE_BINDING_STATUSES = new Set<Doc<'bindings'>['status']>(['active', 'pending']);
 
 const LEGACY_TABLES = [
@@ -97,6 +127,67 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
   return Array.from(new Map(items.map((item) => [item.id, item])).values());
 }
 
+async function listRelatedBuyerProviderLinks(
+  ctx: Pick<QueryCtx, 'db'>,
+  subjectId: Id<'subjects'>,
+  externalAccountId?: Id<'external_accounts'>
+): Promise<BuyerAttributionRelatedBuyerProviderLink[]> {
+  const links = externalAccountId
+    ? ((await ctx.db
+        .query('buyer_provider_links')
+        .withIndex('by_subject_external', (q) =>
+          q.eq('subjectId', subjectId).eq('externalAccountId', externalAccountId)
+        )
+        .collect()) as Doc<'buyer_provider_links'>[])
+    : ((await ctx.db
+        .query('buyer_provider_links')
+        .withIndex('by_subject', (q) => q.eq('subjectId', subjectId))
+        .collect()) as Doc<'buyer_provider_links'>[]);
+
+  return links.map((link) => ({
+    id: link._id,
+    subjectId: link.subjectId,
+    status: link.status,
+    verificationMethod: link.verificationMethod,
+    linkedAt: link.linkedAt,
+    createdAt: link.createdAt,
+    updatedAt: link.updatedAt,
+  }));
+}
+
+async function listRelatedVerificationBindings(
+  ctx: Pick<QueryCtx, 'db'>,
+  subjectId: Id<'subjects'>,
+  authUserId: string
+): Promise<SubjectOwnershipRelatedBinding[]> {
+  const bindings = (await ctx.db
+    .query('bindings')
+    .withIndex('by_auth_user_subject', (q) => q.eq('authUserId', authUserId).eq('subjectId', subjectId))
+    .collect()) as Doc<'bindings'>[];
+
+  const relatedBindings: SubjectOwnershipRelatedBinding[] = [];
+  for (const binding of bindings) {
+    if (binding.bindingType !== 'verification' || !REPORTABLE_BINDING_STATUSES.has(binding.status)) {
+      continue;
+    }
+
+    const externalAccount = await ctx.db.get(binding.externalAccountId);
+    relatedBindings.push({
+      id: binding._id,
+      authUserId: binding.authUserId,
+      status: binding.status,
+      createdAt: binding.createdAt,
+      updatedAt: binding.updatedAt,
+      externalAccountId: binding.externalAccountId,
+      provider: externalAccount?.provider,
+      providerUserId: externalAccount?.providerUserId,
+      providerUsername: externalAccount?.providerUsername,
+    });
+  }
+
+  return relatedBindings;
+}
+
 async function buildBuyerAttributionCandidate(
   ctx: Pick<QueryCtx, 'db'>,
   binding: Doc<'bindings'>
@@ -117,22 +208,11 @@ async function buildBuyerAttributionCandidate(
 
   const providerUserCollision = await hasProviderUserCollision(ctx, binding, externalAccount);
 
-  const relatedBuyerProviderLinks = (
-    (await ctx.db
-      .query('buyer_provider_links')
-      .withIndex('by_subject_external', (q) =>
-        q.eq('subjectId', binding.subjectId).eq('externalAccountId', binding.externalAccountId)
-      )
-      .collect()) as Doc<'buyer_provider_links'>[]
-  ).map((link) => ({
-    id: link._id,
-    subjectId: link.subjectId,
-    status: link.status,
-    verificationMethod: link.verificationMethod,
-    linkedAt: link.linkedAt,
-    createdAt: link.createdAt,
-    updatedAt: link.updatedAt,
-  }));
+  const relatedBuyerProviderLinks = await listRelatedBuyerProviderLinks(
+    ctx,
+    binding.subjectId,
+    binding.externalAccountId
+  );
 
   const highConfidenceMatches: BuyerAttributionRelatedLicenseSubjectLink[] = [];
   const mediumConfidenceMatches: BuyerAttributionRelatedLicenseSubjectLink[] = [];
@@ -298,6 +378,208 @@ async function listBuyerAttributionCandidates(ctx: Pick<QueryCtx, 'db'>, limit: 
       ),
     },
     candidates,
+  };
+}
+
+async function buildSubjectOwnershipCandidate(
+  ctx: Pick<QueryCtx, 'db' | 'runQuery'>,
+  subject: Doc<'subjects'>
+): Promise<SubjectOwnershipCandidate | null> {
+  if (!subject.authUserId || subject.status !== 'active') {
+    return null;
+  }
+
+  const resolution = await detectCanonicalAuthResolutionForSubject(ctx, subject);
+  if (resolution.kind === 'resolved' && resolution.authUserId === subject.authUserId) {
+    return null;
+  }
+  if (resolution.kind === 'ambiguous' && resolution.authUserIds.includes(subject.authUserId)) {
+    return null;
+  }
+
+  return {
+    subjectId: subject._id,
+    currentAuthUserId: subject.authUserId,
+    discordUserId: subject.primaryDiscordUserId,
+    subjectDisplayName: subject.displayName,
+    expectedAuthUserId: resolution.kind === 'resolved' ? resolution.authUserId : undefined,
+    expectedLightAuthMarker: resolution.kind === 'materialize_light' ? resolution.marker : undefined,
+    ambiguousAuthUserIds: resolution.kind === 'ambiguous' ? resolution.authUserIds : undefined,
+    resolution:
+      resolution.kind === 'resolved'
+        ? resolution.source
+        : resolution.kind === 'materialize_light'
+          ? 'new_light'
+          : 'ambiguous',
+    relatedBuyerProviderLinks: await listRelatedBuyerProviderLinks(ctx, subject._id),
+    relatedVerificationBindings: await listRelatedVerificationBindings(ctx, subject._id, subject.authUserId),
+    repairable: resolution.kind !== 'ambiguous',
+  };
+}
+
+async function listSubjectOwnershipCandidates(
+  ctx: Pick<QueryCtx, 'db' | 'runQuery'>,
+  limit: number
+) {
+  const candidates: SubjectOwnershipCandidate[] = [];
+  let cursor: string | null = null;
+  const batchSize = Math.max(50, Math.min(200, limit * 2));
+
+  while (candidates.length < limit) {
+    const pageResult = await ctx.db.query('subjects').order('desc').paginate({
+      numItems: batchSize,
+      cursor,
+    });
+    const page = pageResult.page as Doc<'subjects'>[];
+
+    for (const subject of page) {
+      const candidate = await buildSubjectOwnershipCandidate(ctx, subject);
+      if (!candidate) {
+        continue;
+      }
+      candidates.push(candidate);
+      if (candidates.length >= limit) {
+        break;
+      }
+    }
+
+    if (pageResult.isDone) {
+      break;
+    }
+    cursor = pageResult.continueCursor;
+  }
+
+  return {
+    scannedAt: Date.now(),
+    summary: {
+      candidateSubjects: candidates.length,
+      repairableSubjects: candidates.filter((candidate) => candidate.repairable).length,
+      reviewOnlySubjects: candidates.filter((candidate) => !candidate.repairable).length,
+      buyerProviderLinksForReview: candidates.reduce(
+        (total, candidate) => total + candidate.relatedBuyerProviderLinks.length,
+        0
+      ),
+      followUpVerificationBindings: candidates.reduce(
+        (total, candidate) => total + candidate.relatedVerificationBindings.length,
+        0
+      ),
+    },
+    candidates,
+  };
+}
+
+async function repairBuyerAttributionBindingIds(
+  ctx: Pick<MutationCtx, 'db'>,
+  bindingIds: readonly Id<'bindings'>[]
+) {
+  const uniqueBindingIds = Array.from(new Set(bindingIds));
+  const skippedBindings: Array<{ bindingId: Id<'bindings'>; reason: string }> = [];
+  const repairedLicenseLinkIds = new Set<string>();
+  const initialCandidates = new Map<Id<'bindings'>, BuyerAttributionCandidate | null>();
+  let repairedBindings = 0;
+  let repairedLicenseSubjectLinks = 0;
+  let createdBuyerProviderLinks = 0;
+
+  for (const bindingId of uniqueBindingIds) {
+    const binding = (await ctx.db.get(bindingId)) as Doc<'bindings'> | null;
+    initialCandidates.set(bindingId, binding ? await buildBuyerAttributionCandidate(ctx, binding) : null);
+  }
+
+  for (const bindingId of uniqueBindingIds) {
+    const binding = (await ctx.db.get(bindingId)) as Doc<'bindings'> | null;
+    if (!binding) {
+      skippedBindings.push({ bindingId, reason: 'Binding no longer exists' });
+      continue;
+    }
+
+    const candidate = initialCandidates.get(bindingId) ?? null;
+    if (!candidate) {
+      skippedBindings.push({
+        bindingId,
+        reason: 'Binding is no longer a repairable buyer-attribution candidate',
+      });
+      continue;
+    }
+
+    const existingBuyerBinding = (await ctx.db
+      .query('bindings')
+      .withIndex('by_auth_user_subject', (q) =>
+        q.eq('authUserId', candidate.expectedBuyerAuthUserId).eq('subjectId', candidate.subjectId)
+      )
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('externalAccountId'), candidate.externalAccountId),
+          q.or(q.eq(q.field('status'), 'active'), q.eq(q.field('status'), 'pending'))
+        )
+      )
+      .first()) as Doc<'bindings'> | null;
+
+    if (existingBuyerBinding && existingBuyerBinding._id !== binding._id) {
+      await ctx.db.patch(binding._id, {
+        status: 'revoked',
+        reason: 'Merged into buyer-scoped verification binding during remediation',
+        version: binding.version + 1,
+        updatedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.patch(binding._id, {
+        authUserId: candidate.expectedBuyerAuthUserId,
+        version: binding.version + 1,
+        updatedAt: Date.now(),
+      });
+    }
+    repairedBindings += 1;
+
+    const hasActiveBuyerProviderLink = candidate.relatedBuyerProviderLinks.some(
+      (link) => link.status === 'active'
+    );
+    if (!hasActiveBuyerProviderLink) {
+      await upsertBuyerProviderLinkRecord(ctx, {
+        subjectId: candidate.subjectId,
+        provider: candidate.provider,
+        externalAccountId: candidate.externalAccountId,
+        verificationMethod: 'account_link',
+      });
+      if (candidate.relatedBuyerProviderLinks.length === 0) {
+        createdBuyerProviderLinks += 1;
+      }
+    }
+
+    for (const relatedLicenseLink of candidate.relatedLicenseSubjectLinks) {
+      if (!relatedLicenseLink.repairable || repairedLicenseLinkIds.has(String(relatedLicenseLink.id))) {
+        continue;
+      }
+
+      const source = (await ctx.db.get(relatedLicenseLink.id)) as Doc<'license_subject_links'> | null;
+      if (!source) {
+        continue;
+      }
+
+      const targetId = await upsertLicenseSubjectLink(ctx, {
+        authUserId: candidate.expectedBuyerAuthUserId,
+        licenseSubject: source.licenseSubject,
+        packageId: source.packageId,
+        provider: source.provider,
+        licenseKeyEncrypted: source.licenseKeyEncrypted,
+        providerUserId: source.providerUserId,
+        externalOrderId: source.externalOrderId,
+        providerProductId: source.providerProductId,
+      });
+
+      if (targetId !== source._id) {
+        await ctx.db.delete(source._id);
+      }
+
+      repairedLicenseLinkIds.add(String(source._id));
+      repairedLicenseSubjectLinks += 1;
+    }
+  }
+
+  return {
+    repairedBindings,
+    repairedLicenseSubjectLinks,
+    createdBuyerProviderLinks,
+    skippedBindings,
   };
 }
 
@@ -495,6 +777,23 @@ export const listBuyerAttributionRemediationCandidates = internalQuery({
 });
 
 /**
+ * Detection-first remediation report for subjects whose auth owner no longer
+ * matches the canonical Discord account owner from Better Auth.
+ */
+export const listSubjectOwnershipRemediationCandidates = internalQuery({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const requestedLimit = args.limit ?? DEFAULT_SUBJECT_OWNERSHIP_REPORT_LIMIT;
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(500, Math.trunc(requestedLimit)))
+      : DEFAULT_SUBJECT_OWNERSHIP_REPORT_LIMIT;
+    return await listSubjectOwnershipCandidates(ctx, limit);
+  },
+});
+
+/**
  * Explicit, opt-in repair for selected buyer-attribution candidates. This only
  * moves verification bindings plus high-confidence license subject links. Any
  * ambiguous license links remain in the report for operator review.
@@ -503,125 +802,88 @@ export const repairBuyerAttributionCandidates = internalMutation({
   args: {
     bindingIds: v.array(v.id('bindings')),
   },
+  handler: async (ctx, args) => await repairBuyerAttributionBindingIds(ctx, args.bindingIds),
+});
+
+/**
+ * Explicit, opt-in repair for selected subjects with wrong auth ownership.
+ * After re-homing each subject, this reuses the existing buyer-attribution
+ * repair flow for any verification bindings that become newly suspect.
+ */
+export const repairSubjectOwnershipCandidates = internalMutation({
+  args: {
+    subjectIds: v.array(v.id('subjects')),
+  },
   handler: async (ctx, args) => {
-    const uniqueBindingIds = Array.from(new Set(args.bindingIds));
-    const skippedBindings: Array<{ bindingId: Id<'bindings'>; reason: string }> = [];
-    const repairedLicenseLinkIds = new Set<string>();
-    const initialCandidates = new Map<Id<'bindings'>, BuyerAttributionCandidate | null>();
-    let repairedBindings = 0;
-    let repairedLicenseSubjectLinks = 0;
-    let createdBuyerProviderLinks = 0;
+    const uniqueSubjectIds = Array.from(new Set(args.subjectIds));
+    const skippedSubjects: Array<{ subjectId: Id<'subjects'>; reason: string }> = [];
+    const followUpBindingIds = new Set<Id<'bindings'>>();
+    let repairedSubjects = 0;
+    let createdLightAuthUsers = 0;
 
-    for (const bindingId of uniqueBindingIds) {
-      const binding = (await ctx.db.get(bindingId)) as Doc<'bindings'> | null;
-      initialCandidates.set(
-        bindingId,
-        binding ? await buildBuyerAttributionCandidate(ctx, binding) : null
-      );
-    }
-
-    for (const bindingId of uniqueBindingIds) {
-      const binding = (await ctx.db.get(bindingId)) as Doc<'bindings'> | null;
-      if (!binding) {
-        skippedBindings.push({ bindingId, reason: 'Binding no longer exists' });
+    for (const subjectId of uniqueSubjectIds) {
+      const subject = (await ctx.db.get(subjectId)) as Doc<'subjects'> | null;
+      if (!subject) {
+        skippedSubjects.push({ subjectId, reason: 'Subject no longer exists' });
         continue;
       }
 
-      const candidate = initialCandidates.get(bindingId) ?? null;
+      const candidate = await buildSubjectOwnershipCandidate(ctx, subject);
       if (!candidate) {
-        skippedBindings.push({
-          bindingId,
-          reason: 'Binding is no longer a repairable buyer-attribution candidate',
+        skippedSubjects.push({
+          subjectId,
+          reason: 'Subject is no longer a repairable ownership candidate',
+        });
+        continue;
+      }
+      if (!candidate.repairable) {
+        skippedSubjects.push({
+          subjectId,
+          reason: 'Subject ownership is ambiguous and requires manual review',
         });
         continue;
       }
 
-      const existingBuyerBinding = (await ctx.db
+      const resolved = await ensureCanonicalAuthUserIdForSubject(ctx, subject);
+      if (resolved.source === 'new_light') {
+        createdLightAuthUsers += 1;
+      }
+
+      await ctx.db.patch(subject._id, {
+        authUserId: resolved.authUserId,
+        updatedAt: Date.now(),
+      });
+      repairedSubjects += 1;
+
+      const relatedBindings = (await ctx.db
         .query('bindings')
         .withIndex('by_auth_user_subject', (q) =>
-          q
-            .eq('authUserId', candidate.expectedBuyerAuthUserId)
-            .eq('subjectId', candidate.subjectId)
+          q.eq('authUserId', candidate.currentAuthUserId).eq('subjectId', subject._id)
         )
-        .filter((q) =>
-          q.and(
-            q.eq(q.field('externalAccountId'), candidate.externalAccountId),
-            q.or(q.eq(q.field('status'), 'active'), q.eq(q.field('status'), 'pending'))
-          )
-        )
-        .first()) as Doc<'bindings'> | null;
-
-      if (existingBuyerBinding && existingBuyerBinding._id !== binding._id) {
-        await ctx.db.patch(binding._id, {
-          status: 'revoked',
-          reason: 'Merged into buyer-scoped verification binding during remediation',
-          version: binding.version + 1,
-          updatedAt: Date.now(),
-        });
-      } else {
-        await ctx.db.patch(binding._id, {
-          authUserId: candidate.expectedBuyerAuthUserId,
-          version: binding.version + 1,
-          updatedAt: Date.now(),
-        });
-      }
-      repairedBindings += 1;
-
-      const hasActiveBuyerProviderLink = candidate.relatedBuyerProviderLinks.some(
-        (link) => link.status === 'active'
-      );
-      if (!hasActiveBuyerProviderLink) {
-        await upsertBuyerProviderLinkRecord(ctx, {
-          subjectId: candidate.subjectId,
-          provider: candidate.provider,
-          externalAccountId: candidate.externalAccountId,
-          verificationMethod: 'account_link',
-        });
-        if (candidate.relatedBuyerProviderLinks.length === 0) {
-          createdBuyerProviderLinks += 1;
-        }
-      }
-
-      for (const relatedLicenseLink of candidate.relatedLicenseSubjectLinks) {
-        if (
-          !relatedLicenseLink.repairable ||
-          repairedLicenseLinkIds.has(String(relatedLicenseLink.id))
-        ) {
+        .collect()) as Doc<'bindings'>[];
+      for (const binding of relatedBindings) {
+        if (binding.bindingType !== 'verification' || !REPORTABLE_BINDING_STATUSES.has(binding.status)) {
           continue;
         }
-
-        const source = (await ctx.db.get(
-          relatedLicenseLink.id
-        )) as Doc<'license_subject_links'> | null;
-        if (!source) {
-          continue;
-        }
-
-        const targetId = await upsertLicenseSubjectLink(ctx, {
-          authUserId: candidate.expectedBuyerAuthUserId,
-          licenseSubject: source.licenseSubject,
-          packageId: source.packageId,
-          provider: source.provider,
-          licenseKeyEncrypted: source.licenseKeyEncrypted,
-          providerUserId: source.providerUserId,
-          externalOrderId: source.externalOrderId,
-          providerProductId: source.providerProductId,
-        });
-
-        if (targetId !== source._id) {
-          await ctx.db.delete(source._id);
-        }
-
-        repairedLicenseLinkIds.add(String(source._id));
-        repairedLicenseSubjectLinks += 1;
+        followUpBindingIds.add(binding._id);
       }
     }
 
+    const bindingRepairResult =
+      followUpBindingIds.size > 0
+        ? await repairBuyerAttributionBindingIds(ctx, Array.from(followUpBindingIds))
+        : {
+            repairedBindings: 0,
+            repairedLicenseSubjectLinks: 0,
+            createdBuyerProviderLinks: 0,
+            skippedBindings: [],
+          };
+
     return {
-      repairedBindings,
-      repairedLicenseSubjectLinks,
-      createdBuyerProviderLinks,
-      skippedBindings,
+      repairedSubjects,
+      createdLightAuthUsers,
+      skippedSubjects,
+      ...bindingRepairResult,
     };
   },
 });

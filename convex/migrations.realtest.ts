@@ -1,6 +1,57 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { internal } from './_generated/api';
+import type { GenericActionCtx, GenericMutationCtx } from 'convex/server';
+import { api, internal } from './_generated/api';
+import type { DataModel } from './_generated/dataModel';
+import betterAuthSchema from './betterAuth/schema';
 import { makeTestConvex } from './testHelpers';
+
+type ComponentMutationCtx = GenericMutationCtx<DataModel> &
+  Pick<GenericActionCtx<DataModel>, 'storage'>;
+
+type ComponentAwareTestConvex = ReturnType<typeof makeTestConvex> & {
+  runInComponent: <Output>(
+    componentPath: string,
+    handler: (ctx: ComponentMutationCtx) => Promise<Output>
+  ) => Promise<Output>;
+  registerComponent: (
+    componentPath: string,
+    schema: unknown,
+    functions: Record<string, () => Promise<unknown>>
+  ) => void;
+};
+
+async function seedBetterAuthDiscordAccount(
+  t: ComponentAwareTestConvex,
+  input: {
+    authUserMarker: string;
+    email: string;
+    name: string;
+    discordUserId: string;
+  }
+) {
+  const now = Date.now();
+
+  return await t.runInComponent('betterAuth', async (ctx) => {
+    await ctx.db.insert('user', {
+      userId: input.authUserMarker,
+      email: input.email,
+      emailVerified: true,
+      name: input.name,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert('account', {
+      accountId: input.discordUserId,
+      providerId: 'discord',
+      userId: input.authUserMarker,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return input.authUserMarker;
+  });
+}
 
 describe('legacy license subject link hardening', () => {
   beforeEach(() => {
@@ -697,5 +748,240 @@ describe('buyer attribution remediation', () => {
       status: 'revoked',
     });
     expect(buyerBindings).toHaveLength(2);
+  });
+});
+
+describe('subject ownership remediation', () => {
+  beforeEach(() => {
+    process.env.ENCRYPTION_SECRET = 'test-encryption-secret-32-bytes!!';
+    process.env.CONVEX_API_SECRET = 'test-secret';
+  });
+
+  it('detects subjects whose auth owner disagrees with the Better Auth Discord owner', async () => {
+    const t = makeTestConvex() as ComponentAwareTestConvex;
+    t.registerComponent('betterAuth', betterAuthSchema, import.meta.glob('./betterAuth/**/*.ts'));
+    const now = Date.now();
+
+    await seedBetterAuthDiscordAccount(t, {
+      authUserMarker: 'buyer-auth-subject-detect',
+      email: 'buyer-subject-detect@example.com',
+      name: 'Buyer Subject Detect',
+      discordUserId: 'discord-subject-detect',
+    });
+
+    const subjectId = await t.run(async (ctx) => {
+      return await ctx.db.insert('subjects', {
+        primaryDiscordUserId: 'discord-subject-detect',
+        authUserId: 'creator-auth-subject-detect',
+        displayName: 'Wrongly Owned Buyer',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await t.run(async (ctx) => {
+      const externalAccountId = await ctx.db.insert('external_accounts', {
+        provider: 'gumroad',
+        providerUserId: 'subject-detect-gumroad-user',
+        providerUsername: 'SubjectDetectBuyer',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await ctx.db.insert('buyer_provider_links', {
+        subjectId,
+        provider: 'gumroad',
+        externalAccountId,
+        verificationMethod: 'account_link',
+        status: 'active',
+        linkedAt: now,
+        lastValidatedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const report = await t.query(internal.migrations.listSubjectOwnershipRemediationCandidates, {
+      limit: 10,
+    });
+
+    expect(report.summary.candidateSubjects).toBe(1);
+    expect(report.summary.repairableSubjects).toBe(1);
+    expect(report.candidates).toEqual([
+      expect.objectContaining({
+        subjectId,
+        currentAuthUserId: 'creator-auth-subject-detect',
+        expectedAuthUserId: 'buyer-auth-subject-detect',
+        resolution: 'better_auth',
+        repairable: true,
+      }),
+    ]);
+  });
+
+  it('repairs subject ownership and removes the foreign links from the old auth user page', async () => {
+    const t = makeTestConvex() as ComponentAwareTestConvex;
+    t.registerComponent('betterAuth', betterAuthSchema, import.meta.glob('./betterAuth/**/*.ts'));
+    const now = Date.now();
+
+    await seedBetterAuthDiscordAccount(t, {
+      authUserMarker: 'buyer-auth-subject-repair',
+      email: 'buyer-subject-repair@example.com',
+      name: 'Buyer Subject Repair',
+      discordUserId: 'discord-subject-repair',
+    });
+
+    const subjectId = await t.run(async (ctx) => {
+      return await ctx.db.insert('subjects', {
+        primaryDiscordUserId: 'discord-subject-repair',
+        authUserId: 'creator-auth-subject-repair',
+        displayName: 'Wrongly Owned Repair Buyer',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await t.run(async (ctx) => {
+      const discordExternalAccountId = await ctx.db.insert('external_accounts', {
+        provider: 'discord',
+        providerUserId: 'discord-subject-repair',
+        providerUsername: 'repair-buyer',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await ctx.db.insert('buyer_provider_links', {
+        subjectId,
+        provider: 'discord',
+        externalAccountId: discordExternalAccountId,
+        verificationMethod: 'account_link',
+        status: 'active',
+        linkedAt: now,
+        lastValidatedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await ctx.db.insert('bindings', {
+        authUserId: 'creator-auth-subject-repair',
+        subjectId,
+        externalAccountId: discordExternalAccountId,
+        bindingType: 'verification',
+        status: 'active',
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const beforeOldOwnerLinks = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: 'test-secret',
+      authUserId: 'creator-auth-subject-repair',
+    });
+    expect(beforeOldOwnerLinks).toHaveLength(1);
+
+    const result = await t.mutation(internal.migrations.repairSubjectOwnershipCandidates, {
+      subjectIds: [subjectId],
+    });
+
+    expect(result).toMatchObject({
+      repairedSubjects: 1,
+      createdLightAuthUsers: 0,
+      repairedBindings: 1,
+      skippedSubjects: [],
+      skippedBindings: [],
+    });
+
+    const afterOldOwnerLinks = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: 'test-secret',
+      authUserId: 'creator-auth-subject-repair',
+    });
+    const afterBuyerLinks = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: 'test-secret',
+      authUserId: 'buyer-auth-subject-repair',
+    });
+
+    expect(afterOldOwnerLinks).toHaveLength(0);
+    expect(afterBuyerLinks).toHaveLength(1);
+
+    const repairedSubject = await t.run(async (ctx) => ctx.db.get(subjectId));
+    expect(repairedSubject?.authUserId).toBe('buyer-auth-subject-repair');
+  });
+
+  it('materializes a light auth owner when the Discord user has no Better Auth account', async () => {
+    const t = makeTestConvex() as ComponentAwareTestConvex;
+    t.registerComponent('betterAuth', betterAuthSchema, import.meta.glob('./betterAuth/**/*.ts'));
+    const now = Date.now();
+
+    const subjectId = await t.run(async (ctx) => {
+      return await ctx.db.insert('subjects', {
+        primaryDiscordUserId: 'discord-subject-light',
+        authUserId: 'creator-auth-subject-light',
+        displayName: 'Light Subject Buyer',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await t.run(async (ctx) => {
+      const externalAccountId = await ctx.db.insert('external_accounts', {
+        provider: 'gumroad',
+        providerUserId: 'subject-light-gumroad-user',
+        providerUsername: 'SubjectLightBuyer',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await ctx.db.insert('buyer_provider_links', {
+        subjectId,
+        provider: 'gumroad',
+        externalAccountId,
+        verificationMethod: 'account_link',
+        status: 'active',
+        linkedAt: now,
+        lastValidatedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const report = await t.query(internal.migrations.listSubjectOwnershipRemediationCandidates, {
+      limit: 10,
+    });
+
+    expect(report.candidates).toEqual([
+      expect.objectContaining({
+        subjectId,
+        currentAuthUserId: 'creator-auth-subject-light',
+        expectedLightAuthMarker: 'light-discord:discord-subject-light',
+        resolution: 'new_light',
+        repairable: true,
+      }),
+    ]);
+
+    const result = await t.mutation(internal.migrations.repairSubjectOwnershipCandidates, {
+      subjectIds: [subjectId],
+    });
+
+    expect(result).toMatchObject({
+      repairedSubjects: 1,
+      createdLightAuthUsers: 1,
+      skippedSubjects: [],
+    });
+
+    const repairedSubject = await t.run(async (ctx) => ctx.db.get(subjectId));
+    expect(repairedSubject?.authUserId).toBeTruthy();
+    expect(repairedSubject?.authUserId).not.toBe('creator-auth-subject-light');
+
+    const newOwnerLinks = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: 'test-secret',
+      authUserId: repairedSubject?.authUserId ?? '',
+    });
+    expect(newOwnerLinks).toHaveLength(1);
   });
 });
