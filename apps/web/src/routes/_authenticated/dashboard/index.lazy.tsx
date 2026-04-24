@@ -17,6 +17,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
 import { useDashboardSession } from '@/hooks/useDashboardSession';
 import { useDashboardShell } from '@/hooks/useDashboardShell';
+import { useRuntimeConfig } from '@/lib/runtimeConfig';
 import type { DashboardShellData } from '@/lib/server/dashboard';
 import { api } from '../../../../../../convex/_generated/api';
 import type { Id } from '../../../../../../convex/_generated/dataModel';
@@ -116,6 +117,7 @@ function readOnboardingState(stateKey: string): OnboardingState {
 }
 
 function DashboardIndex() {
+  const { automaticSetupEnabled } = useRuntimeConfig();
   const { isPersonalDashboard, activeGuildId, activeTenantId } = useActiveDashboardContext();
   const { canRunPanelQueries, hasHydrated, markSessionExpired, status } = useDashboardSession();
   const { guilds, home, viewer } = useDashboardShell();
@@ -301,7 +303,7 @@ function DashboardIndex() {
           />
         </div>
 
-        {guildId ? (
+        {guildId && automaticSetupEnabled ? (
           <div className="col-span-12">
             <SetupJourneyCard />
           </div>

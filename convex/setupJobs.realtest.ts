@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { makeTestConvex } from './testHelpers';
 
 const API_SECRET = 'test-secret';
+const previousAutomaticSetupFlag = process.env.YUCP_ENABLE_AUTOMATIC_SETUP;
 
 async function seedGuildLink(
   t: ReturnType<typeof makeTestConvex>,
@@ -57,6 +58,11 @@ async function seedProviderConnection(
 describe('setup jobs orchestration', () => {
   beforeEach(() => {
     process.env.CONVEX_API_SECRET = API_SECRET;
+    process.env.YUCP_ENABLE_AUTOMATIC_SETUP = 'true';
+  });
+
+  afterEach(() => {
+    process.env.YUCP_ENABLE_AUTOMATIC_SETUP = previousAutomaticSetupFlag;
   });
 
   it('creates a durable automatic setup job with the doc-aligned default steps', async () => {
@@ -130,6 +136,27 @@ describe('setup jobs orchestration', () => {
       'role_creation',
     ]);
     expect(auditEvents).toHaveLength(1);
+  });
+
+  it('rejects automatic setup launches when the feature flag is disabled', async () => {
+    process.env.YUCP_ENABLE_AUTOMATIC_SETUP = 'false';
+
+    const t = makeTestConvex();
+    const authUserId = 'auth-setup-disabled';
+    const guildLinkId = await seedGuildLink(t, {
+      authUserId,
+      discordGuildId: 'guild-setup-disabled',
+    });
+
+    await expect(
+      t.mutation(api.setupJobs.createOrResumeSetupJobForOwner, {
+        apiSecret: API_SECRET,
+        authUserId,
+        guildLinkId,
+        mode: 'automatic_setup',
+        triggerSource: 'dashboard',
+      })
+    ).rejects.toThrow(/automatic setup is currently disabled/i);
   });
 
   it('resumes an active setup job instead of creating a duplicate', async () => {

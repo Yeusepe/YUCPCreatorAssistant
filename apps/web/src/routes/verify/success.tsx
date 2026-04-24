@@ -99,10 +99,7 @@ function VerifySuccessPage() {
             Your Discord roles will update shortly.
           </p>
 
-          <div
-            className="verify-success-status fade-up"
-            style={{ animationDelay: '0.55s' }}
-          >
+          <div className="verify-success-status fade-up" style={{ animationDelay: '0.55s' }}>
             {redirectText ?? 'You can close this tab.'}
           </div>
         </section>

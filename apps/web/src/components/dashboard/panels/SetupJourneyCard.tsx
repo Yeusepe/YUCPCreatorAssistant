@@ -1,6 +1,13 @@
 import { Link } from '@tanstack/react-router';
+import { useRuntimeConfig } from '@/lib/runtimeConfig';
 
 export function SetupJourneyCard() {
+  const { automaticSetupEnabled } = useRuntimeConfig();
+
+  if (!automaticSetupEnabled) {
+    return null;
+  }
+
   return (
     <section
       className="intg-card animate-in animate-in-delay-1"

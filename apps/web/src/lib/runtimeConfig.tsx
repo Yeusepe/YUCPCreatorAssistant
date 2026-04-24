@@ -1,8 +1,10 @@
+import { isAutomaticSetupEnabled } from '@yucp/shared/featureFlags';
 import { createContext, type ReactNode, useContext } from 'react';
 
 const LOCAL_FALLBACK_SITE_URL = 'http://localhost:3000';
 
 export interface PublicRuntimeConfig {
+  automaticSetupEnabled: boolean;
   browserAuthBaseUrl: string;
   buildId: string;
   convexSiteUrl?: string;
@@ -22,6 +24,7 @@ export interface PublicRuntimeEnvSource {
   HYPERDX_OTLP_HTTP_URL?: string | null;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string | null;
   SITE_URL?: string | null;
+  YUCP_ENABLE_AUTOMATIC_SETUP?: string | null;
 }
 
 const PUBLIC_RUNTIME_ENV_KEYS = [
@@ -34,6 +37,7 @@ const PUBLIC_RUNTIME_ENV_KEYS = [
   'HYPERDX_OTLP_HTTP_URL',
   'OTEL_EXPORTER_OTLP_ENDPOINT',
   'SITE_URL',
+  'YUCP_ENABLE_AUTOMATIC_SETUP',
 ] as const;
 
 declare global {
@@ -80,6 +84,7 @@ export function resolveBrowserAuthBaseUrl({
 }
 
 export function createPublicRuntimeConfig({
+  automaticSetupEnabled,
   requestUrl,
   siteUrl,
   frontendUrl,
@@ -91,6 +96,7 @@ export function createPublicRuntimeConfig({
   hyperdxAppUrl,
   hyperdxOtlpHttpUrl,
 }: Readonly<{
+  automaticSetupEnabled?: boolean;
   requestUrl?: string | URL | null;
   siteUrl?: string | null;
   frontendUrl?: string | null;
@@ -103,6 +109,7 @@ export function createPublicRuntimeConfig({
   hyperdxOtlpHttpUrl?: string | null;
 }>): PublicRuntimeConfig {
   return {
+    automaticSetupEnabled: automaticSetupEnabled === true,
     browserAuthBaseUrl: resolveBrowserAuthBaseUrl({
       requestUrl,
       siteUrl,
@@ -127,6 +134,7 @@ export function createPublicRuntimeConfigFromEnv(
     normalizeOptionalValue(env.OTEL_EXPORTER_OTLP_ENDPOINT);
 
   return createPublicRuntimeConfig({
+    automaticSetupEnabled: isAutomaticSetupEnabled(env as Record<string, string | undefined>),
     buildId: env.BUILD_ID,
     convexSiteUrl: env.CONVEX_SITE_URL,
     convexUrl: env.CONVEX_URL,
@@ -165,6 +173,7 @@ export function getPublicRuntimeConfig(): PublicRuntimeConfig {
   return (
     window.__YUCP_PUBLIC_RUNTIME_CONFIG__ ??
     createPublicRuntimeConfig({
+      automaticSetupEnabled: false,
       buildId: 'dev',
       requestUrl: window.location.href,
       fallback: window.location.origin,

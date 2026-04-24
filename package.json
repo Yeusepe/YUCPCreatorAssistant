@@ -9,7 +9,7 @@
   "overrides": {
     "axios": ">=1.15.0",
     "bebop": "3.0.4",
-    "fast-xml-parser": ">=5.5.7",
+    "fast-xml-parser": "5.7.0",
     "h3": "2.0.1-rc.19",
     "happy-dom": ">=20.8.8",
     "kysely": ">=0.28.12",
@@ -23,7 +23,9 @@
     "@smithy/config-resolver": ">=4.4.0",
     "srvx": ">=0.11.13",
     "@babel/runtime": ">=7.26.10",
-    "protobufjs": ">=7.5.5"
+    "protobufjs": ">=7.5.5",
+    "postcss": ">=8.5.10",
+    "uuid": ">=14.0.0"
   },
   "scripts": {
     "bebop:regenerate": "bun run --filter @yucp/private-rpc generate",

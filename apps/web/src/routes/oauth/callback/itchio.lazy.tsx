@@ -237,9 +237,7 @@ function ItchioSetupPage() {
   }, [apiBase, beginUrl, dashboardUrl, guildId, tenantId]);
 
   const statusText =
-    phase === 'processing'
-      ? 'Finalizing your connection...'
-      : 'Redirecting to itch.io...';
+    phase === 'processing' ? 'Finalizing your connection...' : 'Redirecting to itch.io...';
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-[#0b0b10] text-white">

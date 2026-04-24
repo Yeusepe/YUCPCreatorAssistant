@@ -334,7 +334,10 @@ describe('product command', () => {
 
   it('given gumroad type selected with a transient provider error, preserves retry guidance instead of the empty state', async () => {
     mockListProducts.mockImplementation(() =>
-      Promise.resolve({ products: [], error: 'Too many requests. Please wait a moment and try again.' })
+      Promise.resolve({
+        products: [],
+        error: 'Too many requests. Please wait a moment and try again.',
+      })
     );
 
     const slashInteraction = mockSlashCommand({

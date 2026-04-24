@@ -131,9 +131,8 @@ function normalizeItchioOwnedKeys(ownedKeys: unknown): ItchioOwnedKeyPayload[] {
     return ownedKeys;
   }
   if (ownedKeys && typeof ownedKeys === 'object') {
-    return Object.values(ownedKeys).filter(
-      (ownedKey): ownedKey is ItchioOwnedKeyPayload =>
-        Boolean(ownedKey && typeof ownedKey === 'object')
+    return Object.values(ownedKeys).filter((ownedKey): ownedKey is ItchioOwnedKeyPayload =>
+      Boolean(ownedKey && typeof ownedKey === 'object')
     );
   }
   return [];

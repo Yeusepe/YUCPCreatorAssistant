@@ -207,27 +207,29 @@ export async function bindVerifyPanel(params: {
   };
 }
 
-export async function completeLicenseVerification(params: {
-  discordUserId?: string;
-  licenseKey: string;
-  productId?: string;
-  provider?: string;
-} & (
-  | {
-      subjectId: string;
-      authUserId: string;
-      creatorAuthUserId?: never;
-      buyerAuthUserId?: never;
-      buyerSubjectId?: never;
-    }
-  | {
-      creatorAuthUserId: string;
-      buyerAuthUserId: string;
-      buyerSubjectId: string;
-      authUserId?: never;
-      subjectId?: never;
-    }
-)): Promise<VerificationResultResponse> {
+export async function completeLicenseVerification(
+  params: {
+    discordUserId?: string;
+    licenseKey: string;
+    productId?: string;
+    provider?: string;
+  } & (
+    | {
+        subjectId: string;
+        authUserId: string;
+        creatorAuthUserId?: never;
+        buyerAuthUserId?: never;
+        buyerSubjectId?: never;
+      }
+    | {
+        creatorAuthUserId: string;
+        buyerAuthUserId: string;
+        buyerSubjectId: string;
+        authUserId?: never;
+        subjectId?: never;
+      }
+  )
+): Promise<VerificationResultResponse> {
   const response = await (await getClients()).verification.completeLicenseVerification(params);
   return {
     success: response.success ?? false,
@@ -238,26 +240,28 @@ export async function completeLicenseVerification(params: {
   };
 }
 
-export async function completeVrchatVerification(params: {
-  password: string;
-  twoFactorCode?: string;
-  username: string;
-} & (
-  | {
-      subjectId: string;
-      authUserId: string;
-      creatorAuthUserId?: never;
-      buyerAuthUserId?: never;
-      buyerSubjectId?: never;
-    }
-  | {
-      creatorAuthUserId: string;
-      buyerAuthUserId: string;
-      buyerSubjectId: string;
-      authUserId?: never;
-      subjectId?: never;
-    }
-)): Promise<VerificationResultResponse> {
+export async function completeVrchatVerification(
+  params: {
+    password: string;
+    twoFactorCode?: string;
+    username: string;
+  } & (
+    | {
+        subjectId: string;
+        authUserId: string;
+        creatorAuthUserId?: never;
+        buyerAuthUserId?: never;
+        buyerSubjectId?: never;
+      }
+    | {
+        creatorAuthUserId: string;
+        buyerAuthUserId: string;
+        buyerSubjectId: string;
+        authUserId?: never;
+        subjectId?: never;
+      }
+  )
+): Promise<VerificationResultResponse> {
   const response = await (await getClients()).verification.completeVrchatVerification(params);
   return {
     success: response.success ?? false,

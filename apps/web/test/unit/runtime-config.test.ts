@@ -51,6 +51,7 @@ describe('createPublicRuntimeConfig', () => {
         siteUrl: 'https://verify.creators.yucp.club',
       })
     ).toEqual({
+      automaticSetupEnabled: false,
       browserAuthBaseUrl: 'https://verify.creators.yucp.club',
       buildId: 'build-123',
       convexSiteUrl: 'https://rare-squid-409.convex.site',
@@ -80,10 +81,12 @@ describe('createPublicRuntimeConfig', () => {
           HYPERDX_API_KEY: 'key-234',
           HYPERDX_APP_URL: 'https://analytics.admin.yucp.club',
           OTEL_EXPORTER_OTLP_ENDPOINT: 'https://analytics.admin.yucp.club/ingest',
+          YUCP_ENABLE_AUTOMATIC_SETUP: 'true',
         },
         'https://verify.creators.yucp.club/dashboard'
       )
     ).toEqual({
+      automaticSetupEnabled: true,
       browserAuthBaseUrl: 'https://verify.creators.yucp.club',
       buildId: 'build-234',
       convexSiteUrl: 'https://rare-squid-409.convex.site',
@@ -102,6 +105,7 @@ describe('createPublicRuntimeConfig', () => {
         SITE_URL: 'https://verify.creators.yucp.club',
       })
     ).toEqual({
+      automaticSetupEnabled: false,
       browserAuthBaseUrl: 'https://verify.creators.yucp.club',
       buildId: 'dev',
       hyperdxOtlpHttpUrl: 'https://analytics.admin.yucp.club/otlp',

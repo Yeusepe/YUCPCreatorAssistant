@@ -1,5 +1,11 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+let mockRuntimeConfig = {
+  automaticSetupEnabled: true,
+  browserAuthBaseUrl: 'https://app.example.com',
+  buildId: 'test-build',
+};
 
 vi.mock('@tanstack/react-router', () => ({
   createLazyFileRoute: () => (options: unknown) => ({ options }),
@@ -49,6 +55,10 @@ vi.mock('@/components/ui/Toast', () => ({
   })),
 }));
 
+vi.mock('@/lib/runtimeConfig', () => ({
+  useRuntimeConfig: () => mockRuntimeConfig,
+}));
+
 vi.mock('@/components/dashboard/panels/StoreIntegrationsPanel', () => ({
   StoreIntegrationsPanel: () => <div>store integrations</div>,
 }));
@@ -72,6 +82,15 @@ vi.mock('@/components/dashboard/panels/AutomaticSetupPanel', () => ({
 import { Route as DashboardIndexRoute } from '@/routes/_authenticated/dashboard/index.lazy';
 
 describe('dashboard setup entry', () => {
+  beforeEach(() => {
+    cleanup();
+    mockRuntimeConfig = {
+      automaticSetupEnabled: true,
+      browserAuthBaseUrl: 'https://app.example.com',
+      buildId: 'test-build',
+    };
+  });
+
   it('shows the dedicated setup entry card instead of rendering the full setup panel inline', () => {
     const Component = DashboardIndexRoute.options.component;
     if (!Component) {
@@ -82,5 +101,22 @@ describe('dashboard setup entry', () => {
 
     expect(screen.getByTestId('setup-journey-card')).toBeInTheDocument();
     expect(screen.queryByTestId('automatic-setup-panel')).toBeNull();
+  });
+
+  it('hides the setup entry card when automatic setup is disabled', () => {
+    mockRuntimeConfig = {
+      automaticSetupEnabled: false,
+      browserAuthBaseUrl: 'https://app.example.com',
+      buildId: 'test-build',
+    };
+
+    const Component = DashboardIndexRoute.options.component;
+    if (!Component) {
+      throw new Error('Dashboard index route component is not defined');
+    }
+
+    render(<Component />);
+
+    expect(screen.queryByTestId('setup-journey-card')).toBeNull();
   });
 });

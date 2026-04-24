@@ -6,7 +6,7 @@
  */
 
 import { getProviderDescriptor, providerLabel } from '@yucp/providers/providerMetadata';
-import { createLogger } from '@yucp/shared';
+import { createLogger, isAutomaticSetupEnabled } from '@yucp/shared';
 import {
   type AutocompleteInteraction,
   type ButtonInteraction,
@@ -47,6 +47,8 @@ import {
 } from './interactions/verify';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
+const AUTOMATIC_SETUP_DISABLED_MESSAGE =
+  'Automatic setup is currently disabled. Use `/creator-admin setup start` to open the setup dashboard.';
 
 export type { InteractionHandlerContext };
 
@@ -67,6 +69,18 @@ function hasAdministratorPermission(interaction: {
 
 async function rejectComponentInteraction(
   interaction: ButtonInteraction | StringSelectMenuInteraction | UserSelectMenuInteraction,
+  content: string
+): Promise<void> {
+  if (interaction.deferred || interaction.replied) return;
+  await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => {});
+}
+
+async function rejectRepliableInteraction(
+  interaction:
+    | ButtonInteraction
+    | StringSelectMenuInteraction
+    | UserSelectMenuInteraction
+    | ModalSubmitInteraction,
   content: string
 ): Promise<void> {
   if (interaction.deferred || interaction.replied) return;
@@ -850,6 +864,11 @@ async function handleButton(
   }
 
   // ─── Autosetup flow ────────────────────────────────────────────────────────
+  if (customId.startsWith('creator_autosetup:') && !isAutomaticSetupEnabled()) {
+    await rejectRepliableInteraction(interaction, AUTOMATIC_SETUP_DISABLED_MESSAGE);
+    return;
+  }
+
   if (customId.startsWith('creator_autosetup:create_verify:')) {
     const rest = customId.slice('creator_autosetup:create_verify:'.length);
     const colonIdx = rest.indexOf(':');
@@ -1243,6 +1262,11 @@ async function handleModalSubmit(
   if (await handleVerifyModal(interaction, ctx)) return;
   if (await handleProductModal(interaction, ctx)) return;
 
+  if (customId.startsWith('creator_autosetup:') && !isAutomaticSetupEnabled()) {
+    await rejectRepliableInteraction(interaction, AUTOMATIC_SETUP_DISABLED_MESSAGE);
+    return;
+  }
+
   if (customId.startsWith('creator_autosetup:role_modal:')) {
     const rest = customId.slice('creator_autosetup:role_modal:'.length);
     const colonIdx = rest.indexOf(':');
@@ -1285,6 +1309,11 @@ async function handleSelectMenu(
   if (await handleCollabStringSelect(interaction, ctx)) return;
   if (await handleVerifyStringSelect(interaction, ctx)) return;
   if (await handleProductStringSelect(interaction, ctx)) return;
+
+  if (customId.startsWith('creator_autosetup:') && !isAutomaticSetupEnabled()) {
+    await rejectComponentInteraction(interaction, AUTOMATIC_SETUP_DISABLED_MESSAGE);
+    return;
+  }
 
   // Autosetup - mode select
   if (customId.startsWith('creator_autosetup:mode:')) {

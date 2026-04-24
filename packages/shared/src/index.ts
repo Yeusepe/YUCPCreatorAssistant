@@ -47,6 +47,7 @@ export * from './crypto';
 export { sha256Hex } from './crypto';
 // Entitlement module exports
 export * from './entitlement';
+export * from './featureFlags';
 export * from './hyperdx';
 export * from './internalRpcSecret';
 export {
