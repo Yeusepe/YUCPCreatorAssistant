@@ -14,6 +14,7 @@ import {
 } from '@yucp/private-rpc';
 import { getInternalRpcSharedSecret } from '@yucp/shared';
 import { getApiUrls } from './apiUrls';
+import { normalizeProviderTiers } from './internalRpcTiers';
 
 const INTERNAL_RPC_PATH = '/__internal/tempo';
 
@@ -138,43 +139,6 @@ function normalizeProducts(
   }));
 }
 
-function normalizeTiers(
-  tiers:
-    | Array<{
-        active?: boolean;
-        amountCents?: bigint | number;
-        currency?: string;
-        description?: string;
-        id?: string;
-        name?: string;
-        productId?: string;
-      }>
-    | undefined
-): Array<{
-  active: boolean;
-  amountCents?: number;
-  currency?: string;
-  description?: string;
-  id: string;
-  name: string;
-  productId: string;
-}> {
-  return (tiers ?? []).map((tier) => ({
-    id: tier.id ?? '',
-    productId: tier.productId ?? '',
-    name: tier.name ?? tier.id ?? 'Unknown tier',
-    description: tier.description,
-    amountCents:
-      typeof tier.amountCents === 'bigint'
-        ? Number(tier.amountCents)
-        : typeof tier.amountCents === 'number'
-          ? tier.amountCents
-          : undefined,
-    currency: tier.currency,
-    active: tier.active ?? false,
-  }));
-}
-
 /** Generic product listing, calls the provider-specific RPC via the catalog service. */
 export async function listProviderProducts(
   provider: string,
@@ -215,7 +179,7 @@ export async function listProviderTiers(
     productId,
   });
   return {
-    tiers: normalizeTiers(response.tiers),
+    tiers: normalizeProviderTiers(response.tiers),
     error: response.error,
   };
 }
