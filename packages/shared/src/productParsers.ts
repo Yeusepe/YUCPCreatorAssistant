@@ -15,12 +15,23 @@ type ProductParser = (input: string) => ProductParseResult;
 const PRODUCT_PARSERS: Record<string, ProductParser> = {
   gumroad: (input) => {
     const trimmed = input.trim();
-    // URL formats: https://gumroad.com/l/abc123, https://user.gumroad.com/l/abc123
-    const urlMatch = trimmed.match(/gumroad\.com\/l\/([a-zA-Z0-9_-]+)/);
-    if (urlMatch) return { ok: true, productId: urlMatch[1] };
-    // Dashboard URL format: https://app.gumroad.com/products/abc123
-    const productsMatch = trimmed.match(/gumroad\.com\/products\/([a-zA-Z0-9_-]+)/);
-    if (productsMatch) return { ok: true, productId: productsMatch[1] };
+    try {
+      const parsedUrl = new URL(trimmed);
+      const storefrontMatch = parsedUrl.pathname.match(/^\/l\/([^/?#]+)/);
+      if (storefrontMatch) {
+        return { ok: true, productId: decodeURIComponent(storefrontMatch[1]) };
+      }
+
+      if (parsedUrl.hostname === 'app.gumroad.com') {
+        const productsMatch = parsedUrl.pathname.match(/^\/products\/([^/?#]+)/);
+        if (productsMatch) {
+          return { ok: true, productId: decodeURIComponent(productsMatch[1]) };
+        }
+      }
+    } catch {
+      // Fall through to raw ID parsing below.
+    }
+
     // Raw product ID: alphanumeric, hyphens, underscores, and base64 padding (=).
     // Gumroad uses both URL slugs (abc123) and base64-encoded IDs (QAJc7A==).
     if (/^[a-zA-Z0-9_+/==-]{3,}$/.test(trimmed)) {

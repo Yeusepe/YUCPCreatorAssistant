@@ -79,6 +79,16 @@ vi.mock('@/components/ui/Toast', () => {
   };
 });
 
+vi.mock('@/lib/runtimeConfig', () => {
+  return {
+    useRuntimeConfig: vi.fn(() => ({
+      automaticSetupEnabled: false,
+      browserAuthBaseUrl: 'https://app.example.com',
+      buildId: 'test-build',
+    })),
+  };
+});
+
 vi.mock('@/lib/dashboard', () => {
   return {
     buildProviderConnectUrl: vi.fn(

@@ -89,6 +89,7 @@ describe('setup command', () => {
     expect(payload.components?.[0]?.components?.[0]?.data?.url).toBe(
       'https://app.example.com/dashboard/setup?guild_id=1458860898234929315#token=connect-token-123'
     );
+    expect(JSON.stringify(rawPayload)).toContain('Sign In & Open Setup Dashboard');
   });
 
   it('starts setup when only API_INTERNAL_URL and a frontend origin are configured', async () => {
@@ -114,7 +115,21 @@ describe('setup command', () => {
     expect(firstCall).toBeDefined();
 
     const [rawPayload] = firstCall as unknown as [unknown];
-    expect(JSON.stringify(rawPayload)).toContain('https://app.example.com/dashboard/setup');
+    const payload = rawPayload as {
+      components?: Array<{
+        components?: Array<{
+          data?: {
+            url?: string;
+          };
+        }>;
+      }>;
+    };
+
+    expect(payload.components?.[0]?.components?.[0]?.data?.url).toBe(
+      'https://app.example.com/dashboard/setup?guild_id=1458860898234929315&tenant_id=auth-user-123#s=setup-token-123'
+    );
+    expect(JSON.stringify(rawPayload)).toContain('Open Setup Dashboard');
+    expect(JSON.stringify(rawPayload)).toContain('Review product-role mappings');
   });
 
   it('throws a frontend-specific configuration error when no browser origin exists', async () => {

@@ -1,6 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
-import { ArrowLeft, LoaderCircle } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BackgroundCanvasRoot } from '@/components/page/BackgroundCanvasRoot';
 import { buildSetupAuthQuery } from '@/lib/setupAuth';
 import { resolveSetupApiBase } from '../../setup/lemonsqueezySetupSupport';
@@ -56,10 +56,75 @@ function isCreatorSetupCallback(state: string | null, tenantId: string, guildId:
   return state?.startsWith('connect_itchio:') === true || Boolean(tenantId || guildId);
 }
 
+function getUserFacingItchioCallbackError(error: string | null | undefined): string {
+  if (!error) {
+    return 'Could not finish itch.io callback.';
+  }
+
+  const normalized = error.trim().toLowerCase();
+  if (
+    normalized === 'invalid_state' ||
+    normalized === 'invalid state parameter' ||
+    normalized === 'session not found or expired'
+  ) {
+    return 'This itch.io link expired or was already used. Restart verification and try again.';
+  }
+
+  if (
+    normalized.startsWith('verification mode does not support implicit callback') ||
+    normalized.startsWith('provider does not support implicit account linking') ||
+    normalized.startsWith('unknown verification mode')
+  ) {
+    return 'This itch.io return link is no longer supported. Start the verification flow again from the latest YUCP screen.';
+  }
+
+  return error;
+}
+
+function useSimulatedProgress(phase: Phase): number {
+  const [progress, setProgress] = useState(0);
+  const rafRef = useRef<number | null>(null);
+  const startRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (phase === 'error') {
+      setProgress(0);
+      return;
+    }
+
+    const target = phase === 'processing' ? 90 : 70;
+    const duration = phase === 'processing' ? 6000 : 1200;
+
+    function tick(now: number) {
+      if (startRef.current === null) startRef.current = now;
+      const elapsed = now - startRef.current;
+      const t = Math.min(elapsed / duration, 1);
+      // ease-out curve
+      const eased = 1 - (1 - t) * (1 - t);
+      setProgress(Math.round(eased * target));
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      }
+    }
+
+    startRef.current = null;
+    rafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [phase]);
+
+  return progress;
+}
+
 function ItchioSetupPage() {
   const { tenantId, guildId, apiBase } = getUrlParams();
   const [phase, setPhase] = useState<Phase>('redirecting');
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const rawProgress = useSimulatedProgress(phase);
+  const progress = done ? 100 : rawProgress;
 
   const dashboardUrl = useMemo(() => {
     if (typeof window === 'undefined') return '/dashboard';
@@ -135,24 +200,33 @@ function ItchioSetupPage() {
         if (!cancelled) {
           setPhase('error');
           setError(
-            data.error ??
-              (creatorSetupCallback
-                ? 'Could not finish itch.io setup.'
-                : 'Could not finish itch.io verification.')
+            getUserFacingItchioCallbackError(
+              data.error ??
+                (creatorSetupCallback
+                  ? 'Could not finish itch.io setup.'
+                  : 'Could not finish itch.io verification.')
+            )
           );
         }
         return;
       }
 
       if (cancelled) return;
-      window.location.replace(data.redirectUrl ?? dashboardUrl);
+      setDone(true);
+      setTimeout(() => {
+        window.location.replace(data.redirectUrl ?? dashboardUrl);
+      }, 300);
     }
 
     run().catch((caughtError) => {
       if (!cancelled) {
         setPhase('error');
         setError(
-          caughtError instanceof Error ? caughtError.message : 'Could not finish itch.io callback.'
+          getUserFacingItchioCallbackError(
+            caughtError instanceof Error
+              ? caughtError.message
+              : 'Could not finish itch.io callback.'
+          )
         );
       }
     });
@@ -162,52 +236,49 @@ function ItchioSetupPage() {
     };
   }, [apiBase, beginUrl, dashboardUrl, guildId, tenantId]);
 
-  const statusCopy =
-    phase === 'processing'
-      ? 'Finalizing your itch.io connection...'
-      : phase === 'redirecting'
-        ? 'Redirecting to itch.io...'
-        : (error ?? 'Could not finish itch.io setup.');
+  const statusText =
+    phase === 'processing' ? 'Finalizing your connection...' : 'Redirecting to itch.io...';
 
   return (
-    <div className="fixed inset-0 overflow-y-auto overflow-x-hidden bg-[#0b0b10] text-white">
-      <div className="relative flex min-h-screen items-center justify-center px-6 py-16">
-        <BackgroundCanvasRoot position="absolute" />
-        <div className="absolute top-10 left-10 h-64 w-64 rounded-full border border-white/5 pointer-events-none animate-[spin_60s_linear_infinite]" />
-        <div className="absolute right-10 bottom-10 h-96 w-96 rounded-full border border-[#fa5c5c]/5 pointer-events-none animate-[spin_80s_linear_infinite_reverse]" />
+    <div className="fixed inset-0 flex items-center justify-center bg-[#0b0b10] text-white">
+      <BackgroundCanvasRoot position="fixed" />
 
-        <div className="relative z-10 w-full max-w-md rounded-[32px] border border-white/10 bg-black/30 p-8 text-center shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] backdrop-blur-xl">
-          {phase === 'error' ? (
-            <>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-red-400/20 bg-red-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-white/80">
-                Connection error
-              </div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">itch.io</h1>
-              <p className="mt-3 text-sm leading-6 text-white/65">{statusCopy}</p>
-              <a
-                href={dashboardUrl}
-                className="mt-6 inline-flex items-center justify-center gap-2 rounded-[10px] border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white/80 transition-all hover:bg-white/10 hover:text-white"
-                style={{ textDecoration: 'none' }}
-              >
-                <ArrowLeft size={14} />
-                Back to dashboard
-              </a>
-            </>
-          ) : (
-            <>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#fa5c5c]/20 bg-[#fa5c5c]/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-white/80">
-                {phase === 'processing' ? 'Connecting' : 'Redirecting'}
-              </div>
-              <LoaderCircle
-                className="mx-auto h-10 w-10 animate-spin text-[#fa5c5c]"
-                aria-hidden="true"
-              />
-              <h1 className="mt-4 text-3xl font-bold tracking-tight text-white">itch.io</h1>
-              <p className="mt-3 text-sm leading-6 text-white/65">{statusCopy}</p>
-            </>
-          )}
+      {phase === 'error' ? (
+        <div className="relative z-10 w-full max-w-sm rounded-2xl border border-white/10 bg-black/40 p-8 text-center backdrop-blur-xl">
+          <p className="mb-1 text-[11px] font-bold uppercase tracking-widest text-red-400/80">
+            Connection error
+          </p>
+          <h1 className="mt-1 text-xl font-semibold text-white">itch.io</h1>
+          <p className="mt-3 text-sm leading-6 text-white/60">
+            {error ?? 'Could not finish itch.io setup.'}
+          </p>
+          <a
+            href={dashboardUrl}
+            className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            style={{ textDecoration: 'none' }}
+          >
+            <ArrowLeft size={14} />
+            Back to dashboard
+          </a>
         </div>
-      </div>
+      ) : (
+        <div className="relative z-10 w-full max-w-sm rounded-2xl border border-white/10 bg-black/40 px-8 py-7 text-center backdrop-blur-xl">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">
+            {phase === 'processing' ? 'Connecting' : 'Redirecting'}
+          </p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-white">itch.io</h1>
+
+          {/* Progress bar */}
+          <div className="relative mt-6 h-1 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className="absolute inset-y-0 left-0 rounded-full bg-[#fa5c5c] transition-[width] duration-500 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+
+          <p className="mt-4 text-xs text-white/40">{statusText}</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { canReactivate } from '@yucp/shared/entitlement/service';
 import { ConvexError, v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { mutation } from './_generated/server';
+import type { MutationCtx } from './_generated/server';
 import { requireApiSecret } from './lib/apiAuth';
 import { upsertLicenseSubjectLink } from './lib/licenseSubjectLink';
 import { LicenseProviderV } from './lib/providers';
@@ -40,6 +41,92 @@ const LicenseSubjectLink = v.object({
   providerProductId: v.optional(v.string()),
 });
 
+function buildExternalAccountProviderMetadata(
+  providerMetadata:
+    | {
+        emailEncrypted?: string;
+        avatarUrl?: string;
+        profileUrl?: string;
+        rawDataEncrypted?: string;
+      }
+    | undefined
+) {
+  if (!providerMetadata) {
+    return undefined;
+  }
+
+  const value = {
+    emailEncrypted: providerMetadata.emailEncrypted,
+    avatarUrl: providerMetadata.avatarUrl,
+    profileUrl: providerMetadata.profileUrl,
+    rawDataEncrypted: providerMetadata.rawDataEncrypted,
+  };
+
+  return Object.values(value).some((entry) => entry !== undefined) ? value : undefined;
+}
+
+async function resolveVerificationActors(
+  ctx: Pick<MutationCtx, 'db'>,
+  args: {
+  authUserId?: string;
+  creatorAuthUserId?: string;
+  buyerAuthUserId?: string;
+  subjectId: Id<'subjects'>;
+}
+) {
+  const subject = await ctx.db.get(args.subjectId);
+  if (!subject) {
+    throw new ConvexError(`Subject not found: ${args.subjectId}`);
+  }
+
+  const hasLegacyIdentity = args.authUserId !== undefined;
+  const hasExplicitIdentity =
+    args.creatorAuthUserId !== undefined || args.buyerAuthUserId !== undefined;
+
+  if (hasLegacyIdentity && hasExplicitIdentity) {
+    throw new ConvexError(
+      'Provide either authUserId or creatorAuthUserId/buyerAuthUserId, not both.'
+    );
+  }
+
+  if (hasExplicitIdentity) {
+    if (!args.creatorAuthUserId) {
+      throw new ConvexError('Missing required field creatorAuthUserId in object');
+    }
+    if (!args.buyerAuthUserId) {
+      throw new ConvexError('Missing required field buyerAuthUserId in object');
+    }
+    if (subject.authUserId !== args.buyerAuthUserId) {
+      throw new ConvexError(
+        `Subject ${args.subjectId} does not belong to buyer auth user ${args.buyerAuthUserId}`
+      );
+    }
+
+    return {
+      creatorAuthUserId: args.creatorAuthUserId,
+      buyerAuthUserId: args.buyerAuthUserId,
+      buyerSubjectId: args.subjectId,
+      subject,
+    };
+  }
+
+  if (!args.authUserId) {
+    throw new ConvexError('Missing required field authUserId in object');
+  }
+  if (subject.authUserId && subject.authUserId !== args.authUserId) {
+    throw new ConvexError(
+      `Subject ${args.subjectId} does not belong to auth user ${args.authUserId}`
+    );
+  }
+
+  return {
+    creatorAuthUserId: args.authUserId,
+    buyerAuthUserId: args.authUserId,
+    buyerSubjectId: args.subjectId,
+    subject,
+  };
+}
+
 /**
  * Hash email for provider_customers normalizedEmailHash (SHA-256 hex)
  */
@@ -58,7 +145,9 @@ async function hashForStorage(value: string): Promise<string> {
 export const completeLicenseVerification = mutation({
   args: {
     apiSecret: v.string(),
-    authUserId: v.string(),
+    authUserId: v.optional(v.string()),
+    creatorAuthUserId: v.optional(v.string()),
+    buyerAuthUserId: v.optional(v.string()),
     subjectId: v.id('subjects'),
     provider: Provider,
     providerUserId: v.string(),
@@ -88,6 +177,12 @@ export const completeLicenseVerification = mutation({
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
     const now = Date.now();
+    const { creatorAuthUserId, buyerAuthUserId, buyerSubjectId, subject } =
+      await resolveVerificationActors(ctx, args);
+    const externalAccountProviderMetadata = buildExternalAccountProviderMetadata(
+      args.providerMetadata
+    );
+    const externalAccountEmailHash = args.providerMetadata?.emailHash;
 
     // 1. Create or update external_account
     let externalAccountId: Id<'external_accounts'>;
@@ -102,7 +197,8 @@ export const completeLicenseVerification = mutation({
       externalAccountId = existingAccount._id;
       await ctx.db.patch(externalAccountId, {
         providerUsername: args.providerUsername ?? existingAccount.providerUsername,
-        providerMetadata: args.providerMetadata ?? existingAccount.providerMetadata,
+        emailHash: externalAccountEmailHash ?? existingAccount.emailHash,
+        providerMetadata: externalAccountProviderMetadata ?? existingAccount.providerMetadata,
         lastValidatedAt: now,
         status: 'active',
         updatedAt: now,
@@ -112,7 +208,8 @@ export const completeLicenseVerification = mutation({
         provider: args.provider,
         providerUserId: args.providerUserId,
         providerUsername: args.providerUsername,
-        providerMetadata: args.providerMetadata,
+        emailHash: externalAccountEmailHash,
+        providerMetadata: externalAccountProviderMetadata,
         lastValidatedAt: now,
         status: 'active',
         createdAt: now,
@@ -124,7 +221,7 @@ export const completeLicenseVerification = mutation({
     const existingBinding = await ctx.db
       .query('bindings')
       .withIndex('by_auth_user_subject', (q) =>
-        q.eq('authUserId', args.authUserId).eq('subjectId', args.subjectId)
+        q.eq('authUserId', buyerAuthUserId).eq('subjectId', buyerSubjectId)
       )
       .filter((q) => q.eq(q.field('externalAccountId'), externalAccountId))
       .first();
@@ -143,12 +240,12 @@ export const completeLicenseVerification = mutation({
       }
     } else {
       bindingId = await ctx.db.insert('bindings', {
-        authUserId: args.authUserId,
-        subjectId: args.subjectId,
+        authUserId: buyerAuthUserId,
+        subjectId: buyerSubjectId,
         externalAccountId,
         bindingType: 'verification',
         status: 'active',
-        createdBy: args.subjectId,
+        createdBy: buyerSubjectId,
         reason: 'License verification',
         version: 1,
         createdAt: now,
@@ -157,7 +254,7 @@ export const completeLicenseVerification = mutation({
     }
 
     await upsertBuyerProviderLinkRecord(ctx, {
-      subjectId: args.subjectId,
+      subjectId: buyerSubjectId,
       provider: args.provider,
       externalAccountId,
       verificationMethod: 'account_link',
@@ -204,20 +301,15 @@ export const completeLicenseVerification = mutation({
     // 4. Grant entitlements for each product and emit role sync jobs
     const profile = await ctx.db
       .query('creator_profiles')
-      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', creatorAuthUserId))
       .first();
     if (!profile) {
-      throw new Error(`Creator profile not found: ${args.authUserId}`);
-    }
-
-    const subject = await ctx.db.get(args.subjectId);
-    if (!subject) {
-      throw new Error(`Subject not found: ${args.subjectId}`);
+      throw new Error(`Creator profile not found: ${creatorAuthUserId}`);
     }
 
     if (args.licenseSubjectLink) {
       await upsertLicenseSubjectLink(ctx, {
-        authUserId: args.authUserId,
+        authUserId: buyerAuthUserId,
         licenseSubject: args.licenseSubjectLink.licenseSubject,
         provider: args.provider,
         licenseKeyEncrypted: args.licenseSubjectLink.licenseKeyEncrypted,
@@ -234,7 +326,7 @@ export const completeLicenseVerification = mutation({
       const existingForProduct = await ctx.db
         .query('entitlements')
         .withIndex('by_auth_user_subject', (q) =>
-          q.eq('authUserId', args.authUserId).eq('subjectId', args.subjectId)
+          q.eq('authUserId', creatorAuthUserId).eq('subjectId', buyerSubjectId)
         )
         .filter((q) => q.eq(q.field('productId'), product.productId))
         .filter((q) => q.eq(q.field('status'), 'active'))
@@ -257,17 +349,17 @@ export const completeLicenseVerification = mutation({
       }
       if (duplicateBehavior === 'notify' && notifyChannelId) {
         const _jobId = await ctx.db.insert('outbox_jobs', {
-          authUserId: args.authUserId,
+          authUserId: creatorAuthUserId,
           jobType: 'creator_alert',
           payload: {
             channelId: notifyChannelId,
             message: `Duplicate verification: <@${subject.primaryDiscordUserId}> already owns product(s) ${duplicateProductIds.join(', ')}. Verification was allowed.`,
             alertType: 'duplicate_verification',
             productIds: duplicateProductIds,
-            subjectId: args.subjectId,
+            subjectId: buyerSubjectId,
           },
           status: 'pending',
-          idempotencyKey: `dup_notify:${args.authUserId}:${args.subjectId}:${duplicateProductIds.join(',')}`,
+          idempotencyKey: `dup_notify:${creatorAuthUserId}:${buyerSubjectId}:${duplicateProductIds.join(',')}`,
           retryCount: 0,
           maxRetries: 3,
           createdAt: now,
@@ -285,7 +377,7 @@ export const completeLicenseVerification = mutation({
       const existingEntitlement = await ctx.db
         .query('entitlements')
         .withIndex('by_auth_user_subject', (q) =>
-          q.eq('authUserId', args.authUserId).eq('subjectId', args.subjectId)
+          q.eq('authUserId', creatorAuthUserId).eq('subjectId', buyerSubjectId)
         )
         .filter((q) => q.eq(q.field('sourceReference'), product.sourceReference))
         .first();
@@ -304,15 +396,15 @@ export const completeLicenseVerification = mutation({
           });
           // Emit role sync for reactivated entitlement
           const jobId = await ctx.db.insert('outbox_jobs', {
-            authUserId: args.authUserId,
+            authUserId: creatorAuthUserId,
             jobType: 'role_sync',
             payload: {
-              subjectId: args.subjectId,
+              subjectId: buyerSubjectId,
               entitlementId,
               discordUserId: subject.primaryDiscordUserId,
             },
             status: 'pending',
-            idempotencyKey: `role_sync:${args.authUserId}:${args.subjectId}:${entitlementId}`,
+            idempotencyKey: `role_sync:${creatorAuthUserId}:${buyerSubjectId}:${entitlementId}`,
             targetDiscordUserId: subject.primaryDiscordUserId,
             retryCount: 0,
             maxRetries: 5,
@@ -326,14 +418,14 @@ export const completeLicenseVerification = mutation({
         const existingEntitlements = await ctx.db
           .query('entitlements')
           .withIndex('by_auth_user_subject', (q) =>
-            q.eq('authUserId', args.authUserId).eq('subjectId', args.subjectId)
+            q.eq('authUserId', creatorAuthUserId).eq('subjectId', buyerSubjectId)
           )
           .collect();
         const policySnapshotVersion = existingEntitlements.length + 1;
 
         entitlementId = await ctx.db.insert('entitlements', {
-          authUserId: args.authUserId,
-          subjectId: args.subjectId,
+          authUserId: creatorAuthUserId,
+          subjectId: buyerSubjectId,
           productId: product.productId,
           sourceProvider: args.provider,
           sourceReference: product.sourceReference,
@@ -347,15 +439,15 @@ export const completeLicenseVerification = mutation({
 
         // Emit role sync job
         const jobId = await ctx.db.insert('outbox_jobs', {
-          authUserId: args.authUserId,
+          authUserId: creatorAuthUserId,
           jobType: 'role_sync',
           payload: {
-            subjectId: args.subjectId,
+            subjectId: buyerSubjectId,
             entitlementId,
             discordUserId: subject.primaryDiscordUserId,
           },
           status: 'pending',
-          idempotencyKey: `role_sync:${args.authUserId}:${args.subjectId}:${entitlementId}`,
+          idempotencyKey: `role_sync:${creatorAuthUserId}:${buyerSubjectId}:${entitlementId}`,
           targetDiscordUserId: subject.primaryDiscordUserId,
           retryCount: 0,
           maxRetries: 5,
@@ -366,10 +458,10 @@ export const completeLicenseVerification = mutation({
 
         // Audit event
         await ctx.db.insert('audit_events', {
-          authUserId: args.authUserId,
+          authUserId: creatorAuthUserId,
           eventType: 'entitlement.granted',
           actorType: 'system',
-          subjectId: args.subjectId,
+          subjectId: buyerSubjectId,
           entitlementId,
           metadata: {
             productId: product.productId,
@@ -387,10 +479,10 @@ export const completeLicenseVerification = mutation({
 
     // Audit event for license verification
     await ctx.db.insert('audit_events', {
-      authUserId: args.authUserId,
+      authUserId: buyerAuthUserId,
       eventType: 'binding.created',
       actorType: 'system',
-      subjectId: args.subjectId,
+      subjectId: buyerSubjectId,
       externalAccountId,
       metadata: {
         bindingId,
@@ -398,6 +490,8 @@ export const completeLicenseVerification = mutation({
         providerUserId: args.providerUserId,
         productsGranted: args.productsToGrant.length,
         entitlementIds,
+        creatorAuthUserId,
+        buyerAuthUserId,
         correlationId: args.correlationId,
       },
       correlationId: args.correlationId,

@@ -9,6 +9,8 @@ import { getConvexClientFromUrl } from '../lib/convex';
 import { decrypt, encrypt } from '../lib/encrypt';
 import { logger } from '../lib/logger';
 import { loadRequestScoped, requestScopeKey } from '../lib/requestScope';
+import { ensureSubjectAuthUserId, SUBJECT_AUTH_USER_REQUIRED_ERROR } from '../lib/subjectIdentity';
+import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 import {
   isWebhookContentLengthTooLarge,
   PayloadTooLargeError,
@@ -1047,11 +1049,19 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
           .map((b) => b.toString(16).padStart(2, '0'))
           .join('')
       : undefined;
+    const buyerAuthUserId = await ensureSubjectAuthUserId(
+      convex,
+      config.convexApiSecret,
+      ensuredSubject.subjectId
+    );
+    if (!buyerAuthUserId)
+      return jsonResponse({ error: SUBJECT_AUTH_USER_REQUIRED_ERROR }, requestId, 409);
     const verification = await convex.mutation(
       api.licenseVerification.completeLicenseVerification,
       {
         apiSecret: config.convexApiSecret,
-        authUserId: body.authUserId,
+        creatorAuthUserId: body.authUserId,
+        buyerAuthUserId,
         subjectId: ensuredSubject.subjectId,
         provider: 'lemonsqueezy',
         providerUserId: String(
@@ -1068,6 +1078,18 @@ export function createProviderPlatformRoutes(auth: Auth, config: ProviderPlatfor
         ],
       }
     );
+    if (!verification.success)
+      return jsonResponse(
+        {
+          error: sanitizePublicErrorMessage(
+            verification.error,
+            'The license could not be verified right now.'
+          ),
+          verification,
+        },
+        requestId,
+        409
+      );
 
     await convex.mutation(api.providerPlatform.upsertEntitlementEvidence, {
       apiSecret: config.convexApiSecret,

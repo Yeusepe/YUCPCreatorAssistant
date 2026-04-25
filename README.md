@@ -133,7 +133,7 @@ Do not commit real values; use env files or a secret store (all env files are gi
 | Group      | Subcommand                    | Notes                                                                                           |
 | ---------- | ----------------------------- | ----------------------------------------------------------------------------------------------- |
 | setup      | start                         | Get links to connect Gumroad/Jinxxy and configure (opens in browser)                            |
-| autosetup  | -                             | Guided setup in Discord: create roles, channels, verify button, or migrate from another bot     |
+| autosetup  | -                             | Legacy path behind a feature flag. Use `setup start` to open the setup dashboard instead.        |
 | product    | add, list, remove             | Product–role mapping; sources: cross_server, discord_role, gumroad, jinxxy, vrchat              |
 | downloads  | setup, manage                 | **Liened Downloads**: liened file routes; setup creates routes, manage toggles/edits/removes |
 | collab     | invite, list                  | **Collaborators**: invite creators to share Jinxxy store; list active connections               |
@@ -149,7 +149,14 @@ Full options and catalog: `apps/bot/src/commands/index.ts`.
 
 ## Development and testing
 
+- Playbooks:
+  - `docs/review-playbook.md`: multi-pass review, regression placement, and risky-change validation.
+  - `docs/fleet-bugfix-playbook.md`: bug-fix workflow, GPT-5.4 fleet decomposition, SQL lane coordination, and combined-branch validation.
 - Lint: `bun run lint`. Typecheck: `bun run typecheck`. Tests: `bun run test` (or `bun run test:ci`).
+- External integration contract gate: `bun run test:external-integrations`. This is the fast PR-facing slice for provider/runtime/API/consumer hardening. It now explicitly covers the production-incident surfaces in `ops/production-regression-loop.ts`: provider contracts, identity boundaries, verification flows, account surfaces, and backfill paths.
+- Production issue -> invariant -> regression loop: when a prod bug lands in any of those surfaces, update `ops/production-regression-loop.ts`, write the invariant it broke, add the primary regression in the listed contract home, add the nearest consumer regression, and run `bun run test:external-integrations`. If bad state may already exist, add the listed remediation or Convex regression too. The loop is enforced by `ops/production-regression-loop.test.ts`, so missing homes or uncovered surfaces fail in `bun run test:ops`.
+- Manual live-smoke drift checks stay out of normal CI. Use `bun run smoke:providers -- --provider gumroad --strict` for low-impact read/verify probes, then `bun run smoke:providers:refresh-fixtures -- --provider gumroad --case gumroad-products,gumroad-license-verify` to write sanitized fixture payloads into `packages/providers/test/fixtures/live-smoke/` for review. Current Gumroad coverage targets the post-connect `/v2/user` readback, catalog `/v2/products`, and manual verification `/v2/licenses/verify` boundaries. Provide smoke-only secrets via env (`GUMROAD_SMOKE_ACCESS_TOKEN`, `GUMROAD_SMOKE_LICENSE_PRODUCT_ID`, `GUMROAD_SMOKE_LICENSE_KEY`) and review fixture diffs before feeding them back into deterministic tests.
+- Live smoke is not a pull request gate. Keep `bun run smoke:providers` for manual drift checks and any separate scheduled/manual automation, while `bun run test:external-integrations` stays deterministic and safe for normal CI.
 - Full dev stack (Convex + API + bot + HyperDX + optional tunnel): `bun run dev` or `bun run dev:infisical`. In the Infisical path, the web leg now runs through `infisical run --watch` so frontend secret changes restart the local Worker loop with fresh bindings.
 - To have the dev supervisor launch `cdngine`, set `CDNGINE_DIR` in your local env to the checkout you want to run, for example `CDNGINE_DIR=C:\\Users\\svalp\\OneDrive\\Documents\\Development\\antiwork\\cdngine`. If `CDNGINE_DIR` is set and the path is wrong, `bun run dev` fails immediately instead of silently skipping `cdngine`.
 - Local Cloudflare Worker frontend loop: `bun run --filter @yucp/web worker:env:dev` to write `apps/web/.dev.vars`, then `bun run --filter @yucp/web worker:dev`. For an Infisical-backed local loop, use `bun run dev:web:infisical` so the Worker dev server is wrapped in `infisical run --watch`. When the watched process restarts, `worker:dev` rewrites `apps/web/.dev.vars` from the injected env before starting Vite. Use `bun run --filter @yucp/web worker:preview` for a Wrangler-local deploy-shape check.

@@ -28,4 +28,29 @@ describe('provider metadata parity', () => {
   it('keeps itch.io mapped to the custom ItchIo emoji', () => {
     expect(getProviderDescriptor('itchio')?.emojiKey).toBe('ItchIo');
   });
+
+  it('advertises itch.io buyer verification through account linking only', () => {
+    expect(getProviderDescriptor('itchio')).toMatchObject({
+      buyerVerificationMethods: ['account_link'],
+      verificationMethods: ['account_link'],
+      supportsBuyerOAuthLink: true,
+      supportsLicenseVerify: false,
+    });
+  });
+
+  it('keeps itch.io account-link capability flags aligned with its descriptor metadata', () => {
+    const descriptor = getProviderDescriptor('itchio');
+    expect(descriptor).toBeDefined();
+    expect(descriptor?.capabilities).toEqual(
+      expect.arrayContaining(['account_link', 'catalog_sync', 'orders', 'ownership_verification'])
+    );
+    expect(descriptor?.buyerVerificationMethods.includes('account_link')).toBe(true);
+    expect(descriptor?.buyerVerificationMethods.includes('license_key')).toBe(false);
+    expect(descriptor?.supportsBuyerOAuthLink).toBe(
+      descriptor?.buyerVerificationMethods.includes('account_link')
+    );
+    expect(descriptor?.supportsLicenseVerify).toBe(
+      descriptor?.capabilities.includes('license_verification') ?? false
+    );
+  });
 });

@@ -4,6 +4,7 @@ import { DashboardSkeletonSwap } from '@/components/dashboard/DashboardSkeletonS
 import { DashboardListSkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { useToast } from '@/components/ui/Toast';
 import { YucpButton } from '@/components/ui/YucpButton';
+import { useRuntimeConfig } from '@/lib/runtimeConfig';
 import { api } from '../../../../../../convex/_generated/api';
 
 const PHASE_LABELS: Record<string, string> = {
@@ -66,6 +67,7 @@ export function AutomaticSetupPanel({
   guildId: string;
   showMigrationCenter?: boolean;
 }) {
+  const { automaticSetupEnabled } = useRuntimeConfig();
   const toast = useToast();
   const setupJob = useConvexQuery(api.setupJobs.getMySetupJobForGuild, { guildId });
   const migrationJob = useConvexQuery(api.setupJobs.getMyLatestMigrationJobForGuild, { guildId });
@@ -106,6 +108,10 @@ export function AutomaticSetupPanel({
   const canApplyRecommendedSetup =
     setupJob?.job.status === 'waiting_for_user' &&
     setupJob.job.currentPhase === 'review_exceptions';
+
+  if (!automaticSetupEnabled) {
+    return null;
+  }
 
   return (
     <section

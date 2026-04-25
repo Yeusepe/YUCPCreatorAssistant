@@ -4,7 +4,6 @@ import { decrypt } from '../../lib/encrypt';
 import { logger } from '../../lib/logger';
 import { defineApiProviderEntry } from '../types';
 import { buyerLink } from './buyerLink';
-import { buyerVerification } from './buyerVerification';
 import { connect } from './connect';
 
 export const PURPOSES = ITCHIO_PURPOSES;
@@ -37,10 +36,7 @@ const itchioRuntime = createItchioProviderModule({
 });
 
 const itchioProvider = defineApiProviderEntry({
-  runtime: {
-    ...itchioRuntime,
-    buyerVerification,
-  },
+  runtime: itchioRuntime,
   hooks: {
     buyerLink,
     connect,

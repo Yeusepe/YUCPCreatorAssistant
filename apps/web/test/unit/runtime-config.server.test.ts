@@ -11,6 +11,7 @@ describe('getPublicRuntimeConfigForRequest', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env = { ...originalEnv };
+    delete process.env.YUCP_ENABLE_AUTOMATIC_SETUP;
     getRequestUrlMock.mockReturnValue(new URL('https://preview.creators.yucp.club/sign-in'));
   });
 
@@ -25,10 +26,13 @@ describe('getPublicRuntimeConfigForRequest', () => {
 
     const { getPublicRuntimeConfigForRequest } = await import('@/lib/runtimeConfig.server');
 
-    expect(getPublicRuntimeConfigForRequest()).toEqual({
-      browserAuthBaseUrl: 'https://preview.creators.yucp.club',
-      buildId: 'build-preview',
-    });
+    expect(getPublicRuntimeConfigForRequest()).toEqual(
+      expect.objectContaining({
+        automaticSetupEnabled: false,
+        browserAuthBaseUrl: 'https://preview.creators.yucp.club',
+        buildId: 'build-preview',
+      })
+    );
     expect(getRequestUrlMock).toHaveBeenCalledWith({
       xForwardedHost: true,
       xForwardedProto: true,

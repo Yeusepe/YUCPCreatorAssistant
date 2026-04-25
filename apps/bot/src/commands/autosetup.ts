@@ -9,7 +9,9 @@ import {
   buildCatalogProductUrl,
   CATALOG_SYNC_PROVIDER_KEYS,
   getProviderDescriptor,
+  providerLabel,
 } from '@yucp/providers/providerMetadata';
+import type { ProviderKey } from '@yucp/providers/types';
 import { createLogger } from '@yucp/shared';
 import type { ConvexHttpClient } from 'convex/browser';
 import type {
@@ -43,7 +45,9 @@ import { getApiUrls } from '../lib/apiUrls';
 import { E, Emoji } from '../lib/emojis';
 import { createSetupSessionToken, listProviderProducts } from '../lib/internalRpc';
 import { track } from '../lib/posthog';
+import { classifyProviderCatalogError } from '../lib/providerCatalogErrors';
 import { canBotManageRole } from '../lib/roleHierarchy';
+import { summarizeSetupCatalogResults } from '../lib/setupCatalog';
 import { VERIFY_PROMPT_FOOTER_TEXT } from '../lib/verifyPrompt';
 
 const logger = createLogger(process.env.LOG_LEVEL ?? 'info');
@@ -204,34 +208,78 @@ function formatRoleName(
   return result || 'Verified';
 }
 
-async function fetchAllProducts(
-  authUserId: string,
-  _apiSecret: string
-): Promise<{ products: AutosetupProduct[]; error?: 'session_expired' }> {
+async function fetchAllProducts(authUserId: string, _apiSecret: string) {
   const results = await Promise.all(
     CATALOG_SYNC_PROVIDER_KEYS.map((providerKey) => listProviderProducts(providerKey, authUserId))
   );
+  const summary = summarizeSetupCatalogResults(
+    results.map((result, index) => ({
+      provider: CATALOG_SYNC_PROVIDER_KEYS[index] as ProviderKey,
+      products: result.products,
+      error: result.error,
+    }))
+  );
+  const blockingErrors = summary.providerErrors.filter(
+    (entry) => classifyProviderCatalogError(entry.error) !== 'not_connected'
+  );
+  const errorProviders = Array.from(new Set(blockingErrors.map((entry) => entry.provider)));
 
-  const products: AutosetupProduct[] = [];
-  for (let i = 0; i < CATALOG_SYNC_PROVIDER_KEYS.length; i++) {
-    const providerKey = CATALOG_SYNC_PROVIDER_KEYS[i];
-    for (const p of results[i].products ?? []) {
-      products.push({ id: p.id, name: p.name, provider: providerKey });
-    }
-  }
-
-  const seen = new Set<string>();
   return {
-    products: products.filter((p) => {
-      const key = `${p.provider}:${p.id}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }),
-    error: results.some((result) => result.error === 'session_expired')
-      ? 'session_expired'
-      : undefined,
-  };
+    products: summary.products,
+    emptyState:
+      summary.sessionExpiredProviders.length > 0
+        ? 'session_expired'
+        : blockingErrors.some(
+              (entry) => classifyProviderCatalogError(entry.error) === 'malformed_payload'
+            )
+          ? 'malformed_payload'
+          : blockingErrors.length > 0
+            ? 'provider_error'
+            : 'empty',
+    errorProviders,
+  } as const;
+}
+
+function formatAutosetupProviderLabels(providers: ProviderKey[]): string {
+  const labels = providers.map((provider) => providerLabel(provider));
+  if (labels.length <= 1) {
+    return labels[0] ?? 'your connected store';
+  }
+  if (labels.length === 2) {
+    return `${labels[0]} and ${labels[1]}`;
+  }
+  return `${labels.slice(0, -1).join(', ')}, and ${labels.at(-1)}`;
+}
+
+function buildAutosetupCatalogEmptyMessage(params: {
+  emptyState: 'empty' | 'session_expired' | 'provider_error' | 'malformed_payload';
+  errorProviders: ProviderKey[];
+  mode: 'roles' | 'migrate';
+  setupUrl?: string | null;
+}): string {
+  const reconnectLine = params.setupUrl
+    ? `Use \`/creator-admin setup start\` to get the link, or visit ${params.setupUrl}`
+    : 'Use `/creator-admin setup start` to reconnect your account.';
+  if (params.emptyState === 'session_expired') {
+    return `## ${E.Wrench} No products found\n\nYour connected provider session has expired. Please reconnect it, then ${
+      params.mode === 'migrate'
+        ? 'run `/creator-admin setup start` again.'
+        : `try again.\n\n${reconnectLine}`
+    }`;
+  }
+  if (params.emptyState === 'malformed_payload') {
+    const providers = formatAutosetupProviderLabels(params.errorProviders);
+    return `## ${E.Wrench} No products found\n\nYUCP could not load products from ${providers} because the provider returned an unexpected response. Please try again. If it keeps happening, reconnect the affected store and retry.\n\n${reconnectLine}`;
+  }
+  if (params.emptyState === 'provider_error') {
+    const providers = formatAutosetupProviderLabels(params.errorProviders);
+    return `## ${E.Wrench} No products found\n\nYUCP could not load products from ${providers} right now. Please try again in a moment. If the problem keeps happening, reconnect the affected store and retry.\n\n${reconnectLine}`;
+  }
+  return `## ${E.Wrench} No products found\n\n${
+    params.mode === 'migrate'
+      ? 'Connect Gumroad or Jinxxy first. Use `/creator-admin setup start`.'
+      : `Connect your Gumroad or Jinxxy account first to see your products.\n\n${reconnectLine}`
+  }`;
 }
 
 function buildDashboardSetupUrl(params: {
@@ -659,7 +707,10 @@ async function handleRolesFlowStart(
     components: [loadingContainer('Loading products...')],
   });
 
-  const { products, error } = await fetchAllProducts(session.authUserId, apiSecret);
+  const { products, emptyState, errorProviders } = await fetchAllProducts(
+    session.authUserId,
+    apiSecret
+  );
 
   if (products.length === 0) {
     const { apiPublic } = getApiUrls();
@@ -667,17 +718,12 @@ async function handleRolesFlowStart(
     const container = new ContainerBuilder().setAccentColor(0xfaa61a);
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        error === 'session_expired'
-          ? `## ${E.Wrench} No products found\n\nYour connected provider session has expired. Please reconnect it, then try again.\n\n${
-              setupUrl
-                ? `Use \`/creator-admin setup start\` to get the link, or visit ${setupUrl}`
-                : 'Use `/creator-admin setup start` to reconnect your account.'
-            }`
-          : `## ${E.Wrench} No products found\n\nConnect your Gumroad or Jinxxy account first to see your products.\n\n${
-              setupUrl
-                ? `Use \`/creator-admin setup start\` to get the link, or visit ${setupUrl}`
-                : 'Use `/creator-admin setup start` to connect your accounts.'
-            }`
+        buildAutosetupCatalogEmptyMessage({
+          emptyState,
+          errorProviders,
+          mode: 'roles',
+          setupUrl,
+        })
       )
     );
     await interaction.editReply({
@@ -1205,15 +1251,20 @@ async function handleMigrateFlowStart(
 ): Promise<void> {
   await interaction.deferUpdate();
 
-  const { products, error } = await fetchAllProducts(session.authUserId, apiSecret);
+  const { products, emptyState, errorProviders } = await fetchAllProducts(
+    session.authUserId,
+    apiSecret
+  );
 
   if (products.length === 0) {
     const container = new ContainerBuilder().setAccentColor(0xfaa61a);
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        error === 'session_expired'
-          ? `## ${E.Wrench} No products found\n\nYour connected provider session has expired. Please reconnect it, then run \`/creator-admin setup start\` again.`
-          : `## ${E.Wrench} No products found\n\nConnect Gumroad or Jinxxy first. Use \`/creator-admin setup start\`.`
+        buildAutosetupCatalogEmptyMessage({
+          emptyState,
+          errorProviders,
+          mode: 'migrate',
+        })
       )
     );
     await interaction.editReply({

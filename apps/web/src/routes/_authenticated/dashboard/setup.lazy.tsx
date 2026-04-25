@@ -7,6 +7,7 @@ import { YucpButton } from '@/components/ui/YucpButton';
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
 import { useDashboardSession } from '@/hooks/useDashboardSession';
 import { useDashboardShell } from '@/hooks/useDashboardShell';
+import { useRuntimeConfig } from '@/lib/runtimeConfig';
 import { api } from '../../../../../../convex/_generated/api';
 import type { Id } from '../../../../../../convex/_generated/dataModel';
 
@@ -730,6 +731,98 @@ function SetupStartView({
         ) : null}
       </section>
     </>
+  );
+}
+
+function SetupManualOnlyView({
+  connectedStoreCount,
+  setupSummary,
+}: {
+  connectedStoreCount: number;
+  setupSummary: {
+    enabledRoleRuleCount: number;
+    verificationPromptLive: boolean;
+    lastCompletedSetupAt: number | null;
+  };
+}) {
+  return (
+    <section className="intg-card animate-in animate-in-delay-1" aria-label="Manual setup">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
+          Server setup
+        </p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950 dark:text-white">
+          Server setup tools
+        </h1>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+          Use this page as the manual setup hub for this server. Connect storefronts, review role
+          mappings, and refresh the verification message from the existing dashboard tools.
+        </p>
+      </div>
+
+      <div className="mt-6 grid gap-3 lg:grid-cols-3">
+        <div className="rounded-[14px] border border-zinc-200 bg-zinc-50/90 p-4 dark:border-white/10 dark:bg-white/5">
+          <p className="text-sm font-semibold text-zinc-900 dark:text-white">
+            Connect stores manually
+          </p>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+            Open integrations to connect Gumroad, itch.io, and any other storefronts you use.
+          </p>
+          <Link to="/dashboard/integrations" search={(prev) => prev} className="btn-primary mt-4">
+            Go to integrations
+          </Link>
+        </div>
+        <div className="rounded-[14px] border border-zinc-200 bg-zinc-50/90 p-4 dark:border-white/10 dark:bg-white/5">
+          <p className="text-sm font-semibold text-zinc-900 dark:text-white">
+            Manage role mappings
+          </p>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+            Review or update the roles each product should grant from the server rules page.
+          </p>
+          <Link to="/dashboard/server-rules" search={(prev) => prev} className="btn-primary mt-4">
+            Open server rules
+          </Link>
+        </div>
+        <div className="rounded-[14px] border border-zinc-200 bg-zinc-50/90 p-4 dark:border-white/10 dark:bg-white/5">
+          <p className="text-sm font-semibold text-zinc-900 dark:text-white">
+            Keep verification current
+          </p>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+            Use /creator-admin spawn-verify in Discord to post or refresh the verification message.
+          </p>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+            Verification prompt: {setupSummary.verificationPromptLive ? 'Live' : 'Needs attention'}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-3">
+        <div className="rounded-[14px] border border-zinc-200 bg-white p-4 dark:border-white/10 dark:bg-white/5">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+            Storefronts connected
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-white">
+            {String(connectedStoreCount)}
+          </p>
+        </div>
+        <div className="rounded-[14px] border border-zinc-200 bg-white p-4 dark:border-white/10 dark:bg-white/5">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+            Product-role mappings
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-white">
+            {String(setupSummary.enabledRoleRuleCount)}
+          </p>
+        </div>
+        <div className="rounded-[14px] border border-zinc-200 bg-white p-4 dark:border-white/10 dark:bg-white/5">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+            Last successful setup
+          </p>
+          <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-white">
+            {formatDate(setupSummary.lastCompletedSetupAt)}
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1733,11 +1826,12 @@ function DashboardSetupRoute() {
   const { activeGuildId, isPersonalDashboard } = useActiveDashboardContext();
   const { status } = useDashboardSession();
   const { home } = useDashboardShell();
+  const { automaticSetupEnabled } = useRuntimeConfig();
   const toast = useToast();
 
   const setupJob = useConvexQuery(
     api.setupJobs.getMySetupJobForGuild,
-    activeGuildId ? { guildId: activeGuildId } : 'skip'
+    automaticSetupEnabled && activeGuildId ? { guildId: activeGuildId } : 'skip'
   );
   const setupSummary = useConvexQuery(
     api.setupJobs.getMySetupSummaryByGuild,
@@ -1745,7 +1839,7 @@ function DashboardSetupRoute() {
   );
   const migrationJob = useConvexQuery(
     api.setupJobs.getMyLatestMigrationJobForGuild,
-    activeGuildId ? { guildId: activeGuildId } : 'skip'
+    automaticSetupEnabled && activeGuildId ? { guildId: activeGuildId } : 'skip'
   );
 
   const createOrResumeSetupJob = useConvexMutation(api.setupJobs.createOrResumeSetupJobByGuild);
@@ -1905,8 +1999,9 @@ function DashboardSetupRoute() {
     );
   }
 
-  const isLoading =
-    setupJob === undefined || setupSummary === undefined || migrationJob === undefined;
+  const isLoading = automaticSetupEnabled
+    ? setupJob === undefined || setupSummary === undefined || migrationJob === undefined
+    : setupSummary === undefined;
 
   if (isLoading) {
     return (
@@ -1917,6 +2012,23 @@ function DashboardSetupRoute() {
             <p className="intg-desc">Getting the latest setup status for this server.</p>
           </div>
         </section>
+      </div>
+    );
+  }
+
+  if (!automaticSetupEnabled) {
+    const manualSetupSummary = setupSummary ?? {
+      enabledRoleRuleCount: 0,
+      verificationPromptLive: false,
+      lastCompletedSetupAt: null,
+    };
+
+    return (
+      <div className="flex flex-col gap-5 pb-16">
+        <SetupManualOnlyView
+          connectedStoreCount={connectedStoreCount}
+          setupSummary={manualSetupSummary}
+        />
       </div>
     );
   }

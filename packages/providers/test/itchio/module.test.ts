@@ -245,7 +245,8 @@ describe('createItchioProviderModule', () => {
 });
 
 describe('createItchioLicenseVerification', () => {
-  it('validates a download key for the expected game', async () => {
+  it('rejects legacy creator-token download key verification and asks for buyer account linking', async () => {
+    let fetchCalled = false;
     const verification = createItchioLicenseVerification({
       logger,
       async getEncryptedCredential() {
@@ -254,8 +255,8 @@ describe('createItchioLicenseVerification', () => {
       async decryptCredential() {
         return 'creator-token';
       },
-      async fetchImpl(input) {
-        expect(String(input)).toContain('/game/42/download_keys?download_key=DOWNLOAD-KEY');
+      async fetchImpl() {
+        fetchCalled = true;
         return new Response(
           JSON.stringify({
             download_key: {
@@ -272,11 +273,11 @@ describe('createItchioLicenseVerification', () => {
     await expect(
       verification.verifyLicense('DOWNLOAD-KEY', '42', 'user-1', makeCtx())
     ).resolves.toEqual({
-      valid: true,
-      externalOrderId: '77',
-      providerProductId: '42',
-      providerUserId: '99',
+      valid: false,
+      error:
+        'itch.io verification now requires the buyer to sign in with itch.io. Restart verification and use the itch.io account link flow.',
     });
+    expect(fetchCalled).toBe(false);
   });
 });
 
@@ -348,6 +349,53 @@ describe('itch.io OAuth helpers', () => {
       }
 
       return new Response(JSON.stringify({ owned_keys: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    await expect(fetchItchioOwnedKeys('token', { fetchImpl })).resolves.toEqual([
+      {
+        ownedKeyId: '5001',
+        gameId: '42',
+        purchaseId: '9001',
+        gameTitle: 'Volcanic Sinkhole Battlemap',
+        gameUrl: 'https://creator.itch.io/volcanic-sinkhole-battlemap',
+      },
+    ]);
+    expect(seenUrls).toEqual([
+      'https://api.itch.io/profile/owned-keys?page=1',
+      'https://api.itch.io/profile/owned-keys?page=2',
+    ]);
+  });
+
+  it('normalizes owned library pages when owned_keys is returned as an object map', async () => {
+    const seenUrls: string[] = [];
+    const fetchImpl = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seenUrls.push(url);
+
+      if (url.endsWith('/profile/owned-keys?page=1')) {
+        return new Response(
+          JSON.stringify({
+            owned_keys: {
+              primary: {
+                id: 5001,
+                game_id: 42,
+                purchase_id: 9001,
+                game: {
+                  id: 42,
+                  title: 'Volcanic Sinkhole Battlemap',
+                  url: 'https://creator.itch.io/volcanic-sinkhole-battlemap',
+                },
+              },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(JSON.stringify({ owned_keys: {} }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });

@@ -16,8 +16,15 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { getProviderDescriptor, PROVIDER_REGISTRY } from '@yucp/providers/providerMetadata';
 import { RUNTIME_PROVIDER_KEYS } from '@yucp/providers/types';
-import { ALL_PROVIDER_RUNTIMES, PROVIDER_RUNTIMES } from './index';
+import { getVerificationConfig } from '../verification/verificationConfig';
+import {
+  ALL_PROVIDER_RUNTIMES,
+  getBuyerLinkPluginByMode,
+  listBuyerLinkPlugins,
+  PROVIDER_RUNTIMES,
+} from './index';
 import type { ConnectDisplayMeta } from './types';
 
 const ICONS_DIR = join(import.meta.dir, '../../public/Icons');
@@ -96,5 +103,103 @@ describe('provider plugin registry', () => {
   it('routes VRChat account linking through the connect-mode setup flow', () => {
     const vrchat = ALL_PROVIDER_RUNTIMES.find((provider) => provider.id === 'vrchat');
     expect(vrchat?.displayMeta?.userSetupPath).toBe('/setup/vrchat?mode=connect');
+  });
+
+  it('keeps active buyer OAuth descriptors executable through the buyer-link registry', () => {
+    const activeBuyerOAuthProviders = PROVIDER_REGISTRY.filter(
+      (provider) => provider.status === 'active' && provider.supportsBuyerOAuthLink
+    ).map((provider) => provider.providerKey);
+
+    expect(
+      listBuyerLinkPlugins()
+        .map((plugin) => plugin.oauth.providerId)
+        .sort()
+    ).toEqual([...activeBuyerOAuthProviders].sort());
+
+    for (const providerKey of activeBuyerOAuthProviders) {
+      const descriptor = getProviderDescriptor(providerKey);
+      const plugin = getBuyerLinkPluginByMode(providerKey);
+
+      expect(descriptor?.buyerVerificationMethods).toContain('account_link');
+      expect(plugin?.oauth.providerId).toBe(providerKey);
+      expect(getVerificationConfig(providerKey)?.providerId).toBe(providerKey);
+    }
+  });
+
+  it('keeps active reconciliation descriptors aligned with runtime backfill handlers', () => {
+    const runtimeProviderKeys = new Set<string>(RUNTIME_PROVIDER_KEYS);
+    const descriptorsWithReconciliation = PROVIDER_REGISTRY.filter(
+      (provider) =>
+        provider.status === 'active' &&
+        runtimeProviderKeys.has(provider.providerKey) &&
+        provider.capabilities.includes('reconciliation')
+    ).map((provider) => provider.providerKey);
+
+    expect(
+      ALL_PROVIDER_RUNTIMES.filter(
+        (provider): provider is (typeof ALL_PROVIDER_RUNTIMES)[number] & { backfill: object } =>
+          'backfill' in provider && provider.backfill != null
+      ).map((provider) => provider.id)
+    ).toEqual(descriptorsWithReconciliation);
+  });
+
+  it('keeps active runtime license-verification descriptors backed by executable handlers', () => {
+    const runtimeProviderKeys = new Set<string>(RUNTIME_PROVIDER_KEYS);
+    const descriptorsWithLicenseVerification = PROVIDER_REGISTRY.filter(
+      (provider) =>
+        provider.status === 'active' &&
+        runtimeProviderKeys.has(provider.providerKey) &&
+        provider.supportsLicenseVerify
+    ).map((provider) => provider.providerKey);
+
+    const runtimesWithLicenseVerification = new Set(
+      ALL_PROVIDER_RUNTIMES.filter((provider) => provider.verification != null).map(
+        (provider) => provider.id
+      )
+    );
+
+    for (const providerKey of descriptorsWithLicenseVerification) {
+      expect(runtimesWithLicenseVerification.has(providerKey)).toBe(true);
+    }
+  });
+
+  it('keeps active tier catalog descriptors aligned with runtime tier listing handlers', () => {
+    const runtimeProviderKeys = new Set<string>(RUNTIME_PROVIDER_KEYS);
+    const descriptorsWithTierCatalog = PROVIDER_REGISTRY.filter(
+      (provider) =>
+        provider.status === 'active' &&
+        runtimeProviderKeys.has(provider.providerKey) &&
+        provider.capabilities.includes('tier_catalog')
+    ).map((provider) => provider.providerKey);
+
+    const runtimesWithTierCatalog = new Set(
+      ALL_PROVIDER_RUNTIMES.filter((provider) => provider.tiers?.listProductTiers != null).map(
+        (provider) => provider.id
+      )
+    );
+
+    for (const providerKey of descriptorsWithTierCatalog) {
+      expect(runtimesWithTierCatalog.has(providerKey)).toBe(true);
+    }
+  });
+
+  it('keeps active tier entitlement descriptors aligned with runtime tier plugins', () => {
+    const runtimeProviderKeys = new Set<string>(RUNTIME_PROVIDER_KEYS);
+    const descriptorsWithTierEntitlements = PROVIDER_REGISTRY.filter(
+      (provider) =>
+        provider.status === 'active' &&
+        runtimeProviderKeys.has(provider.providerKey) &&
+        provider.capabilities.includes('tier_entitlements')
+    ).map((provider) => provider.providerKey);
+
+    const runtimesWithTierPlugins = new Set(
+      ALL_PROVIDER_RUNTIMES.filter((provider) => provider.tiers != null).map(
+        (provider) => provider.id
+      )
+    );
+
+    for (const providerKey of descriptorsWithTierEntitlements) {
+      expect(runtimesWithTierPlugins.has(providerKey)).toBe(true);
+    }
   });
 });

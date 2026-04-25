@@ -98,6 +98,51 @@ describe('license verification handler registry', () => {
     );
   });
 
+  it('uses creator identity for license lookup and buyer identity for account linking', async () => {
+    const convex = {
+      mutation: mock(async () => ({
+        success: true,
+        entitlementIds: ['ent_123'],
+      })),
+    };
+
+    const handler = getHandler('with-verification');
+    expect(handler).not.toBeNull();
+
+    await handler?.verify(
+      {
+        licenseKey: 'license_456',
+        productId: 'product_456',
+        creatorAuthUserId: 'creator_auth_user_123',
+        buyerAuthUserId: 'buyer_auth_user_456',
+        buyerSubjectId: 'buyer_subject_456',
+      } as never,
+      {
+        convexApiSecret: 'convex-api-secret',
+        convexUrl: 'https://convex.example',
+        encryptionSecret: 'encryption-secret',
+      } as never,
+      convex as never
+    );
+
+    expect(verificationPlugin.verifyLicense).toHaveBeenCalledWith(
+      'license_456',
+      'product_456',
+      'creator_auth_user_123',
+      expect.objectContaining({
+        authUserId: 'creator_auth_user_123',
+      })
+    );
+    expect(convex.mutation).toHaveBeenCalledWith(
+      'licenseVerification.completeLicenseVerification',
+      expect.objectContaining({
+        creatorAuthUserId: 'creator_auth_user_123',
+        buyerAuthUserId: 'buyer_auth_user_456',
+        subjectId: 'buyer_subject_456',
+      })
+    );
+  });
+
   it('returns null when a provider does not expose a verification plugin', () => {
     expect(getHandler('without-verification')).toBeNull();
   });

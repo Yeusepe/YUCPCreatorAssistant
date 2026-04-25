@@ -73,22 +73,6 @@
             animation: dash 0.6s ease-out forwards;
         }
 
-        .action-btn {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            color: #ffffff;
-        }
-
-        .action-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            transform: translateY(-2px);
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
-            border-color: rgba(255, 255, 255, 0.3);
-        }
-
         .fade-up {
             animation: fadeUp 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
             opacity: 0;
@@ -119,19 +103,12 @@
 <body>
     <!-- Full-page loading overlay (content injected by site.js) -->
     <div id="page-loading-overlay"></div>
-    </div>
-    <div id="page-content" style="display: none;">
-        <div id="bg-canvas-root"
-            style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -20; pointer-events: none;">
-        </div>
-        <!-- Playful Background Stickers -->
-        <div id="holo-clapstars-0"
-            class="absolute top-20 right-20 w-32 opacity-80 sticker pointer-events-auto z-0 h-32 hidden sm:block"
-            style="animation-delay: -2s;"></div>
-        <div id="holo-world-1"
-            class="absolute bottom-20 left-10 w-24 opacity-60 sticker pointer-events-auto z-0 h-24 hidden sm:block"
-            style="animation-delay: -5s;"></div>
 
+    <!-- Cloud background - must live outside #page-content so it initializes before reveal -->
+    <div id="bg-canvas-root" style="position:fixed;inset:0;z-index:0;pointer-events:none;"></div>
+    <div id="fg-canvas-root" style="position:fixed;inset:0;z-index:1;pointer-events:none;"></div>
+
+    <div id="page-content">
         <main class="text-center max-w-2xl w-full px-4 sm:px-6 relative z-10">
             <div class="success-checkmark">
                 <svg viewBox="0 0 100 100">
@@ -146,27 +123,10 @@
             </h1>
             <p class="text-lg sm:text-xl md:text-2xl text-[rgba(255,255,255,0.85)] mb-10 leading-relaxed fade-up"
                 style="animation-delay: 0.5s">
-                Your Discord® account has been verified. Your roles will be updated shortly. You can return to Discord®
-                now.
+                Your account has been verified. Your roles will be updated shortly.
             </p>
-            <div class="fade-up" style="animation-delay: 0.7s">
-                <a id="return-btn" href="#"
-                    class="action-btn inline-block w-full sm:w-auto px-8 py-4 sm:px-12 sm:py-5 rounded-full text-lg sm:text-xl font-black uppercase tracking-widest no-underline mb-4">
-                    Open Discord App
-                </a>
-                <br>
-                <a id="return-web-btn" href="#"
-                    class="text-sm text-white/50 hover:text-white transition-colors underline underline-offset-4 hidden"
-                    style="font-family:'Plus Jakarta Sans',sans-serif; font-weight: 600;">
-                    Or continue in browser
-                </a>
-            </div>
-            <div id="redirect-msg" class="mt-12 text-sm font-bold uppercase tracking-widest opacity-40 fade-up"
-                style="animation-delay: 0.9s">
-                Redirecting in 5 seconds...
-            </div>
-            <div id="close-msg" class="mt-12 text-sm font-bold uppercase tracking-widest opacity-40 fade-up"
-                style="animation-delay: 0.9s; display: none;">
+            <div id="status-msg" class="mt-4 text-sm font-bold uppercase tracking-widest opacity-40 fade-up"
+                style="animation-delay: 0.7s">
                 You can close this tab.
             </div>
         </main>
@@ -175,9 +135,7 @@
                 const params = new URLSearchParams(window.location.search);
                 const panelToken = params.get('panelToken');
                 const returnTo = params.get('returnTo');
-                const btn = document.getElementById('return-btn');
-                const redirectMsg = document.getElementById('redirect-msg');
-                const closeMsg = document.getElementById('close-msg');
+                const statusMsg = document.getElementById('status-msg');
 
                 if (panelToken) {
                     fetch('/api/verification/panel/refresh', {
@@ -209,46 +167,20 @@
 
                 if (safeReturnTo) {
                     const deepLink = safeReturnTo.replace(/^http(s)?:\/\/(ptb\.|canary\.)?discord\.com/, 'discord://-');
-                    btn.href = deepLink;
-                    btn.textContent = 'Open Discord App';
-
-                    const webBtn = document.getElementById('return-web-btn');
-                    if (webBtn) {
-                        webBtn.href = safeReturnTo;
-                        webBtn.classList.remove('hidden');
-                    }
-
                     let count = 5;
+                    statusMsg.textContent = 'Redirecting in ' + count + ' seconds...';
                     const interval = setInterval(function () {
                         count--;
-                        redirectMsg.textContent = count > 0 ? 'Redirecting to app in ' + count + ' second' + (count !== 1 ? 's' : '') + '...' : 'Redirecting...';
+                        statusMsg.textContent = count > 0
+                            ? 'Redirecting in ' + count + ' second' + (count !== 1 ? 's' : '') + '...'
+                            : 'Redirecting...';
                         if (count <= 0) {
                             clearInterval(interval);
                             window.location.href = deepLink;
-                            setTimeout(function () {
-                                window.location.href = safeReturnTo;
-                            }, 2500);
+                            setTimeout(function () { window.location.href = safeReturnTo; }, 2500);
                         }
                     }, 1000);
-                } else {
-                    btn.href = '#';
-                    btn.textContent = 'Close';
-                    btn.onclick = function () { window.close(); return false; };
-                    redirectMsg.style.display = 'none';
-                    closeMsg.style.display = 'block';
                 }
-
-                window.addEventListener('load', function () {
-                    if (typeof confetti === 'function') {
-                        confetti({
-                            particleCount: 150,
-                            spread: 100,
-                            origin: { y: 0.6 },
-                            colors: ['#ffeb3b', '#0ea5e9', '#00e676', '#ffffff'],
-                            disableForReducedMotion: true
-                        });
-                    }
-                });
             })();
         </script>
     </div>

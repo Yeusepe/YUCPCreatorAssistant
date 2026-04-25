@@ -9,6 +9,12 @@ const INTERNAL_ERROR_PATTERNS = [
   /unauthorized: invalid or missing api secret/i,
   /missingaccesstoken/i,
   /internal server error/i,
+  /unexpected token\b/i,
+  /failed to parse\b/i,
+  /\binvalid json\b/i,
+  /\bmalformed\b.*\b(payload|response|json)\b/i,
+  /\baccess[_ -]?token\b/i,
+  /\brefresh[_ -]?token\b/i,
 ];
 
 export function sanitizePublicErrorMessage(

@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { PROVIDER_REGISTRY } from '@yucp/providers/providerMetadata';
 import { setPinnedYucpRootsForTests } from '@yucp/shared/yucpTrust';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { getPublicKeyFromPrivate } from './lib/yucpCrypto';
@@ -23,6 +24,30 @@ async function seedExternalAccount(
       providerUserId: overrides.providerUserId ?? `provider-user-${now}`,
       providerUsername: overrides.providerUsername,
       status: overrides.status ?? 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+}
+
+async function seedVerificationBinding(
+  t: ReturnType<typeof makeTestConvex>,
+  args: {
+    authUserId: string;
+    subjectId: Id<'subjects'>;
+    externalAccountId: Id<'external_accounts'>;
+    status?: 'pending' | 'active' | 'revoked' | 'transferred' | 'quarantined';
+  }
+): Promise<Id<'bindings'>> {
+  return t.run(async (ctx) => {
+    const now = Date.now();
+    return await ctx.db.insert('bindings', {
+      authUserId: args.authUserId,
+      subjectId: args.subjectId,
+      externalAccountId: args.externalAccountId,
+      bindingType: 'verification',
+      status: args.status ?? 'active',
+      version: 1,
       createdAt: now,
       updatedAt: now,
     });
@@ -132,6 +157,194 @@ describe('verification intents buyer provider links', () => {
     expect(intent?.verifiedMethodKey).toBe('vrchat-link');
   });
 
+  it('canonicalizes legacy itch manual-license intents into buyer-provider-link verification', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-itch-legacy-link';
+    const subjectId = await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-itch-legacy-link',
+    });
+    const externalAccountId = await seedExternalAccount(t, {
+      provider: 'itchio',
+      providerUserId: 'itch-user-legacy',
+      providerUsername: 'LegacyItchBuyer',
+    });
+
+    await t.mutation(api.subjects.upsertBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      subjectId,
+      provider: 'itchio',
+      externalAccountId,
+      verificationMethod: 'account_link',
+    });
+
+    const { intentId } = await t.mutation(api.verificationIntents.createVerificationIntent, {
+      apiSecret: API_SECRET,
+      authUserId,
+      packageId: 'pkg-itch-legacy',
+      machineFingerprint: 'machine-itch-legacy',
+      codeChallenge: 'challenge-itch-legacy',
+      returnUrl: 'https://example.com/return',
+      requirements: [
+        {
+          methodKey: 'itchio-link',
+          providerKey: 'itchio',
+          kind: 'manual_license',
+          title: 'itch.io download key',
+          providerProductRef: '42',
+        },
+      ],
+    });
+
+    const storedIntent = await t.query(api.verificationIntents.getIntentRecord, {
+      apiSecret: API_SECRET,
+      authUserId,
+      intentId,
+    });
+
+    expect(storedIntent?.requirements).toMatchObject([
+      {
+        methodKey: 'itchio-link',
+        providerKey: 'itchio',
+        kind: 'buyer_provider_link',
+        providerProductRef: '42',
+      },
+    ]);
+
+    const result = await t.action(api.verificationIntents.verifyIntentWithBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      authUserId,
+      intentId,
+      methodKey: 'itchio-link',
+    });
+
+    expect(result).toEqual({ success: true });
+  });
+
+  it('preserves itch account-link product references across current and legacy intent shapes', async () => {
+    const cases = [
+      {
+        name: 'current buyer-provider-link shape preserves inline creator context',
+        authUserId: 'auth-itch-current-shape',
+        requirement: {
+          methodKey: 'itchio-link-current',
+          providerKey: 'itchio',
+          kind: 'buyer_provider_link' as const,
+          title: 'Linked itch.io account',
+          creatorAuthUserId: 'creator_current',
+          productId: 'product_current',
+          providerProductRef: 'current-game-id',
+        },
+        expectedRequirement: {
+          methodKey: 'itchio-link-current',
+          providerKey: 'itchio',
+          kind: 'buyer_provider_link',
+          creatorAuthUserId: 'creator_current',
+          productId: 'product_current',
+          providerProductRef: 'current-game-id',
+        },
+      },
+      {
+        name: 'legacy manual-license shape canonicalizes to buyer-provider-link while keeping providerProductRef',
+        authUserId: 'auth-itch-legacy-shape',
+        requirement: {
+          methodKey: 'itchio-link-legacy',
+          providerKey: 'itchio',
+          kind: 'manual_license' as const,
+          title: 'itch.io download key',
+          providerProductRef: 'legacy-game-id',
+        },
+        expectedRequirement: {
+          methodKey: 'itchio-link-legacy',
+          providerKey: 'itchio',
+          kind: 'buyer_provider_link',
+          providerProductRef: 'legacy-game-id',
+        },
+      },
+    ] as const;
+
+    const t = makeTestConvex();
+    for (const testCase of cases) {
+      await seedSubject(t, {
+        authUserId: testCase.authUserId,
+        primaryDiscordUserId: `discord-${testCase.authUserId}`,
+      });
+
+      const { intentId } = await t.mutation(api.verificationIntents.createVerificationIntent, {
+        apiSecret: API_SECRET,
+        authUserId: testCase.authUserId,
+        packageId: `pkg-${testCase.authUserId}`,
+        machineFingerprint: `machine-${testCase.authUserId}`,
+        codeChallenge: `challenge-${testCase.authUserId}`,
+        returnUrl: 'https://example.com/return',
+        requirements: [testCase.requirement],
+      });
+
+      const storedIntent = await t.query(api.verificationIntents.getIntentRecord, {
+        apiSecret: API_SECRET,
+        authUserId: testCase.authUserId,
+        intentId,
+      });
+
+      expect(storedIntent?.requirements, testCase.name).toMatchObject([
+        testCase.expectedRequirement,
+      ]);
+    }
+  });
+
+  it('canonicalizes legacy manual-license requirements across provider capability permutations', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-manual-license-permutations';
+    await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-manual-license-permutations',
+    });
+
+    const requirements = PROVIDER_REGISTRY.map((provider, index) => ({
+      methodKey: `${provider.providerKey}-legacy-manual-license`,
+      providerKey: provider.providerKey,
+      kind: 'manual_license' as const,
+      title: `${provider.label} proof`,
+      providerProductRef: `product-${index}`,
+    }));
+
+    const { intentId } = await t.mutation(api.verificationIntents.createVerificationIntent, {
+      apiSecret: API_SECRET,
+      authUserId,
+      packageId: 'pkg-manual-license-permutations',
+      machineFingerprint: 'machine-manual-license-permutations',
+      codeChallenge: 'challenge-manual-license-permutations',
+      returnUrl: 'https://example.com/return',
+      requirements,
+    });
+
+    const storedIntent = await t.query(api.verificationIntents.getIntentRecord, {
+      apiSecret: API_SECRET,
+      authUserId,
+      intentId,
+    });
+
+    expect(
+      storedIntent?.requirements.map((requirement) => ({
+        methodKey: requirement.methodKey,
+        providerKey: requirement.providerKey,
+        kind: requirement.kind,
+        providerProductRef: requirement.providerProductRef ?? null,
+      }))
+    ).toEqual(
+      PROVIDER_REGISTRY.map((provider, index) => ({
+        methodKey: `${provider.providerKey}-legacy-manual-license`,
+        providerKey: provider.providerKey,
+        kind:
+          provider.buyerVerificationMethods.includes('account_link') &&
+          !provider.buyerVerificationMethods.includes('license_key')
+            ? 'buyer_provider_link'
+            : 'manual_license',
+        providerProductRef: `product-${index}`,
+      }))
+    );
+  });
+
   it('keeps the intent pending and reports provider_link_missing when no buyer link exists', async () => {
     const t = makeTestConvex();
     const authUserId = 'auth-buyer-link-missing';
@@ -226,6 +439,56 @@ describe('verification intents buyer provider links', () => {
       authUserId,
     });
     expect(linksAfterRevoke).toHaveLength(0);
+  });
+
+  it('keeps a disconnected buyer provider link revoked after reconciliation runs again', async () => {
+    const t = makeTestConvex();
+    const authUserId = 'auth-buyer-link-disconnect';
+    const subjectId = await seedSubject(t, {
+      authUserId,
+      primaryDiscordUserId: 'discord-buyer-link-disconnect',
+    });
+    const externalAccountId = await seedExternalAccount(t, {
+      provider: 'vrchat',
+      providerUserId: 'vrchat-user-disconnect',
+      providerUsername: 'DisconnectMe',
+    });
+
+    const bindingId = await seedVerificationBinding(t, {
+      authUserId,
+      subjectId,
+      externalAccountId,
+    });
+
+    const linkId = await t.mutation(api.subjects.upsertBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      subjectId,
+      provider: 'vrchat',
+      externalAccountId,
+      verificationMethod: 'account_link',
+    });
+
+    const revokeResult = await t.mutation(api.subjects.revokeBuyerProviderLink, {
+      apiSecret: API_SECRET,
+      authUserId,
+      linkId,
+    });
+
+    expect(revokeResult.success).toBe(true);
+
+    await t.mutation(api.subjects.reconcileBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId,
+    });
+
+    const linksAfterReconcile = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: API_SECRET,
+      authUserId,
+    });
+    expect(linksAfterReconcile).toHaveLength(0);
+
+    const binding = await t.run(async (ctx) => ctx.db.get(bindingId));
+    expect(binding?.status).toBe('revoked');
   });
 
   it('lists buyer provider links across every active subject for the auth user', async () => {

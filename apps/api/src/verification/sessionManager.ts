@@ -19,6 +19,7 @@ import { createAuth } from '../auth';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { logger } from '../lib/logger';
 import { getStateStore } from '../lib/stateStore';
+import { ensureSubjectAuthUserId, SUBJECT_AUTH_USER_REQUIRED_ERROR } from '../lib/subjectIdentity';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 import { createApiVerificationSupportError } from '../lib/verificationSupport';
 import { getBuyerLinkPluginByMode, listBuyerLinkPlugins } from '../providers';
@@ -956,6 +957,9 @@ export function createVerificationRoutes(config: VerificationConfig) {
           provider?: string;
           productId?: string;
           authUserId?: string;
+          creatorAuthUserId?: string;
+          buyerAuthUserId?: string;
+          buyerSubjectId?: string;
           subjectId?: string;
           discordUserId?: string;
         }
@@ -968,13 +972,44 @@ export function createVerificationRoutes(config: VerificationConfig) {
       }
 
       const { handleCompleteLicense } = await import('./completeLicense');
-      const result = await handleCompleteLicense(config, {
-        licenseKey: body.licenseKey ?? '',
-        provider: body.provider,
-        productId: body.productId,
-        authUserId: body.authUserId ?? '',
-        subjectId: body.subjectId ?? '',
-      });
+      const hasExplicitIdentity =
+        body.creatorAuthUserId !== undefined ||
+        body.buyerAuthUserId !== undefined ||
+        body.buyerSubjectId !== undefined;
+      const legacyBuyerAuthUserId =
+        !hasExplicitIdentity && body.subjectId
+          ? await ensureSubjectAuthUserId(
+              getConvexClientFromUrl(config.convexUrl),
+              config.convexApiSecret,
+              body.subjectId
+            )
+          : null;
+      if (!hasExplicitIdentity && body.subjectId && !legacyBuyerAuthUserId) {
+        return Response.json(
+          { success: false, error: SUBJECT_AUTH_USER_REQUIRED_ERROR },
+          { status: 409 }
+        );
+      }
+      const result = await handleCompleteLicense(
+        config,
+        hasExplicitIdentity
+          ? {
+              licenseKey: body.licenseKey ?? '',
+              provider: body.provider,
+              productId: body.productId,
+              creatorAuthUserId: body.creatorAuthUserId ?? '',
+              buyerAuthUserId: body.buyerAuthUserId ?? '',
+              buyerSubjectId: body.buyerSubjectId ?? '',
+            }
+          : {
+              licenseKey: body.licenseKey ?? '',
+              provider: body.provider,
+              productId: body.productId,
+              creatorAuthUserId: body.authUserId ?? '',
+              buyerAuthUserId: legacyBuyerAuthUserId ?? '',
+              buyerSubjectId: body.subjectId ?? '',
+            }
+      );
 
       if (!result.success) {
         return Response.json(result, { status: 400 });
@@ -986,7 +1021,7 @@ export function createVerificationRoutes(config: VerificationConfig) {
         discordUserId: body?.discordUserId,
         error: err,
         stage: 'complete_license_verification',
-        authUserId: body?.authUserId,
+        authUserId: body?.buyerAuthUserId ?? body?.authUserId ?? body?.creatorAuthUserId,
       });
       return Response.json(
         { success: false, error: 'Internal server error', supportCode: support.supportCode },

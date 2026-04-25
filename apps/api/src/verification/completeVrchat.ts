@@ -9,18 +9,43 @@
 import { api } from '../../../../convex/_generated/api';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { logger } from '../lib/logger';
+import { ensureSubjectAuthUserId, SUBJECT_AUTH_USER_REQUIRED_ERROR } from '../lib/subjectIdentity';
 import { sanitizePublicErrorMessage } from '../lib/userFacingErrors';
 import type { VerificationConfig } from './verificationConfig';
 
 const GENERIC_ERROR = 'Verification failed. Please try again.';
 
-export interface CompleteVrchatInput {
-  authUserId: string;
-  subjectId: string;
+interface CompleteVrchatBaseInput {
   productId?: string;
   vrchatUserId: string;
   displayName: string;
   ownedAvatarIds: string[];
+}
+
+interface CompleteVrchatLegacyIdentityInput {
+  authUserId: string;
+  subjectId: string;
+  creatorAuthUserId?: never;
+  buyerAuthUserId?: never;
+  buyerSubjectId?: never;
+}
+
+interface CompleteVrchatExplicitIdentityInput {
+  creatorAuthUserId: string;
+  buyerAuthUserId: string;
+  buyerSubjectId: string;
+  authUserId?: never;
+  subjectId?: never;
+}
+
+export type CompleteVrchatInput = CompleteVrchatBaseInput &
+  (CompleteVrchatLegacyIdentityInput | CompleteVrchatExplicitIdentityInput);
+
+interface ResolvedCompleteVrchatInput extends CompleteVrchatBaseInput {
+  creatorAuthUserId: string;
+  buyerAuthUserId: string;
+  buyerSubjectId: string;
+  identityMode: 'legacy' | 'explicit';
 }
 
 export interface CompleteVrchatResult {
@@ -30,6 +55,62 @@ export interface CompleteVrchatResult {
   error?: string;
 }
 
+function resolveCompleteVrchatInput(
+  input: CompleteVrchatInput
+): { ok: true; value: ResolvedCompleteVrchatInput } | { ok: false; error: string } {
+  const hasLegacyIdentity = 'authUserId' in input || 'subjectId' in input;
+  const hasExplicitIdentity =
+    'creatorAuthUserId' in input || 'buyerAuthUserId' in input || 'buyerSubjectId' in input;
+
+  if (hasLegacyIdentity && hasExplicitIdentity) {
+    return {
+      ok: false,
+      error:
+        'Provide either authUserId/subjectId or creatorAuthUserId/buyerAuthUserId/buyerSubjectId',
+    };
+  }
+
+  if (hasExplicitIdentity) {
+    const { creatorAuthUserId, buyerAuthUserId, buyerSubjectId } =
+      input as CompleteVrchatExplicitIdentityInput;
+    if (!creatorAuthUserId) return { ok: false, error: 'Missing creator auth user ID' };
+    if (!buyerAuthUserId) return { ok: false, error: 'Missing buyer auth user ID' };
+    if (!buyerSubjectId) return { ok: false, error: 'Missing buyer subject ID' };
+
+    return {
+      ok: true,
+      value: {
+        productId: input.productId,
+        vrchatUserId: input.vrchatUserId,
+        displayName: input.displayName,
+        ownedAvatarIds: input.ownedAvatarIds,
+        creatorAuthUserId,
+        buyerAuthUserId,
+        buyerSubjectId,
+        identityMode: 'explicit',
+      },
+    };
+  }
+
+  const { authUserId, subjectId } = input as CompleteVrchatLegacyIdentityInput;
+  if (!authUserId) return { ok: false, error: 'Missing auth user ID' };
+  if (!subjectId) return { ok: false, error: 'Missing subject ID' };
+
+  return {
+    ok: true,
+    value: {
+      productId: input.productId,
+      vrchatUserId: input.vrchatUserId,
+      displayName: input.displayName,
+      ownedAvatarIds: input.ownedAvatarIds,
+      creatorAuthUserId: authUserId,
+      buyerAuthUserId: authUserId,
+      buyerSubjectId: subjectId,
+      identityMode: 'legacy',
+    },
+  };
+}
+
 /**
  * Handle complete-vrchat verification
  */
@@ -37,10 +118,13 @@ export async function handleCompleteVrchat(
   config: VerificationConfig,
   input: CompleteVrchatInput
 ): Promise<CompleteVrchatResult> {
-  const { authUserId, subjectId, vrchatUserId, displayName, ownedAvatarIds } = input;
+  const resolvedInput = resolveCompleteVrchatInput(input);
+  if (!resolvedInput.ok) {
+    return { success: false, error: resolvedInput.error };
+  }
 
-  if (!authUserId) return { success: false, error: 'Missing auth user ID' };
-  if (!subjectId) return { success: false, error: 'Missing subject ID' };
+  const { vrchatUserId, displayName, ownedAvatarIds } = resolvedInput.value;
+
   if (!vrchatUserId) return { success: false, error: 'Missing VRChat user ID' };
   if (!displayName) return { success: false, error: 'Missing VRChat display name' };
   if (!Array.isArray(ownedAvatarIds)) {
@@ -53,9 +137,24 @@ export async function handleCompleteVrchat(
 
   try {
     const convex = getConvexClientFromUrl(config.convexUrl);
+    let verificationInput = resolvedInput.value;
+    if (resolvedInput.value.identityMode === 'legacy') {
+      const buyerAuthUserId = await ensureSubjectAuthUserId(
+        convex,
+        config.convexApiSecret,
+        resolvedInput.value.buyerSubjectId
+      );
+      if (!buyerAuthUserId) {
+        return { success: false, error: SUBJECT_AUTH_USER_REQUIRED_ERROR };
+      }
+      verificationInput = {
+        ...resolvedInput.value,
+        buyerAuthUserId,
+      };
+    }
     const matches = await convex.query(api.role_rules.getVrchatCatalogProductsMatchingAvatars, {
       apiSecret: config.convexApiSecret,
-      authUserId,
+      authUserId: verificationInput.creatorAuthUserId,
       ownedAvatarIds,
     });
 
@@ -75,8 +174,9 @@ export async function handleCompleteVrchat(
       api.licenseVerification.completeLicenseVerification,
       {
         apiSecret: config.convexApiSecret,
-        authUserId,
-        subjectId,
+        creatorAuthUserId: verificationInput.creatorAuthUserId,
+        buyerAuthUserId: verificationInput.buyerAuthUserId,
+        subjectId: verificationInput.buyerSubjectId,
         provider: 'vrchat',
         providerUserId: vrchatUserId,
         providerUsername: displayName,
@@ -86,8 +186,9 @@ export async function handleCompleteVrchat(
 
     if (productsToGrant.length === 0) {
       logger.info('[completeVrchat] Linked VRChat account with no matching catalog products', {
-        authUserId,
-        subjectId,
+        creatorAuthUserId: verificationInput.creatorAuthUserId,
+        buyerAuthUserId: verificationInput.buyerAuthUserId,
+        buyerSubjectId: verificationInput.buyerSubjectId,
         provider: 'vrchat',
         ownedCount: ownedAvatarIds.length,
       });
@@ -101,8 +202,9 @@ export async function handleCompleteVrchat(
 
     if (mutationResult.success) {
       logger.info('[completeVrchat] Success', {
-        authUserId,
-        subjectId,
+        creatorAuthUserId: verificationInput.creatorAuthUserId,
+        buyerAuthUserId: verificationInput.buyerAuthUserId,
+        buyerSubjectId: verificationInput.buyerSubjectId,
         provider: 'vrchat',
         productCount: productsToGrant.length,
       });
@@ -117,8 +219,9 @@ export async function handleCompleteVrchat(
   } catch (err) {
     logger.error('Complete VRChat verification failed', {
       error: err instanceof Error ? err.message : String(err),
-      authUserId,
-      subjectId,
+      creatorAuthUserId: resolvedInput.value.creatorAuthUserId,
+      buyerAuthUserId: resolvedInput.value.buyerAuthUserId,
+      buyerSubjectId: resolvedInput.value.buyerSubjectId,
       provider: 'vrchat',
     });
     return {

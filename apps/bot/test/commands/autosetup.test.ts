@@ -11,7 +11,7 @@
  * must NOT trigger the session-expired message.
  */
 
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { ConvexHttpClient } from 'convex/browser';
 import {
   type ChatInputCommandInteraction,
@@ -36,12 +36,15 @@ let mockProductsResult: { products: Array<{ id: string; name: string }>; error?:
   products: [],
   error: undefined,
 };
+let mockProductsResultsByProvider:
+  | Partial<Record<string, { products: Array<{ id: string; name: string }>; error?: string }>>
+  | undefined;
 
 // Mock internalRpc BEFORE importing the command (bun:test hoists mock.module).
 mock.module('../../src/lib/internalRpc', () => ({
   createSetupSessionToken: createSetupSessionTokenMock,
-  listProviderProducts: mock((_provider: string, _authUserId: string) =>
-    Promise.resolve({ ...mockProductsResult })
+  listProviderProducts: mock((provider: string, _authUserId: string) =>
+    Promise.resolve({ ...(mockProductsResultsByProvider?.[provider] ?? mockProductsResult) })
   ),
   createDiscordRoleSetupSessionToken: mock(() => Promise.resolve(undefined)),
   getDiscordRoleSetupResult: mock(() => Promise.resolve({ completed: false })),
@@ -131,6 +134,19 @@ function lastReplyContent(editReply: ReturnType<typeof mock>): string {
   const calls = editReply.mock.calls;
   return JSON.stringify(calls[calls.length - 1][0]);
 }
+
+beforeEach(() => {
+  mockProductsResult = {
+    products: [],
+    error: undefined,
+  };
+  mockProductsResultsByProvider = undefined;
+  mockApiUrls = {
+    apiPublic: 'https://api.example.com',
+    apiInternal: 'https://api-internal.example.com',
+    webPublic: 'https://app.example.com',
+  };
+});
 
 describe('autosetup launcher', () => {
   it('shows a recoverable error instead of building a setup link on the API origin', async () => {
@@ -235,6 +251,64 @@ describe('autosetup migrate flow', () => {
     expect(content).toContain('reconnect');
   });
 
+  it('shows provider failure guidance instead of connect-first copy when a provider catalog call fails', async () => {
+    mockProductsResultsByProvider = {
+      gumroad: { products: [], error: 'provider_unavailable' },
+      jinxxy: {
+        products: [],
+        error: 'jinxxy is not connected. Connect it in your creator setup.',
+      },
+      lemonsqueezy: {
+        products: [],
+        error: 'lemonsqueezy is not connected. Connect it in your creator setup.',
+      },
+    };
+
+    await startSession('user_migrate_provider_failure');
+    const interaction = mockModeSelectInteraction('user_migrate_provider_failure', 'migrate');
+    await handleAutosetupModeSelect(
+      interaction as unknown as StringSelectMenuInteraction,
+      MOCK_CONVEX,
+      TEST_API_SECRET,
+      BASE_CTX.authUserId
+    );
+
+    const content = lastReplyContent(interaction.editReply as ReturnType<typeof mock>);
+    expect(content).toContain('No products found');
+    expect(content).toContain('Gumroad');
+    expect(content).toContain('try again');
+    expect(content).not.toContain('Connect Gumroad or Jinxxy first');
+    expect(content).not.toContain('expired');
+  });
+
+  it('shows malformed payload guidance when a provider returns invalid catalog data', async () => {
+    mockProductsResultsByProvider = {
+      gumroad: { products: [], error: 'malformed_payload' },
+      jinxxy: {
+        products: [],
+        error: 'jinxxy is not connected. Connect it in your creator setup.',
+      },
+      lemonsqueezy: {
+        products: [],
+        error: 'lemonsqueezy is not connected. Connect it in your creator setup.',
+      },
+    };
+
+    await startSession('user_migrate_malformed_payload');
+    const interaction = mockModeSelectInteraction('user_migrate_malformed_payload', 'migrate');
+    await handleAutosetupModeSelect(
+      interaction as unknown as StringSelectMenuInteraction,
+      MOCK_CONVEX,
+      TEST_API_SECRET,
+      BASE_CTX.authUserId
+    );
+
+    const content = lastReplyContent(interaction.editReply as ReturnType<typeof mock>);
+    expect(content).toContain('unexpected response');
+    expect(content).toContain('Gumroad');
+    expect(content).not.toContain('Connect Gumroad or Jinxxy first');
+  });
+
   it('proceeds when products are returned (does not show no-products message)', async () => {
     mockProductsResult = { products: [{ id: 'prod_1', name: 'My Product' }], error: undefined };
 
@@ -293,5 +367,35 @@ describe('autosetup roles flow', () => {
     expect(content).toContain('No products found');
     expect(content).toContain('expired');
     expect(content).toContain('reconnect');
+  });
+
+  it('shows provider failure guidance instead of connect-first copy when product loading fails', async () => {
+    mockProductsResultsByProvider = {
+      gumroad: { products: [], error: 'rate_limited' },
+      jinxxy: {
+        products: [],
+        error: 'jinxxy is not connected. Connect it in your creator setup.',
+      },
+      lemonsqueezy: {
+        products: [],
+        error: 'lemonsqueezy is not connected. Connect it in your creator setup.',
+      },
+    };
+
+    await startSession('user_roles_provider_failure');
+    const interaction = mockModeSelectInteraction('user_roles_provider_failure', 'roles_only');
+    await handleAutosetupModeSelect(
+      interaction as unknown as StringSelectMenuInteraction,
+      MOCK_CONVEX,
+      TEST_API_SECRET,
+      BASE_CTX.authUserId
+    );
+
+    const content = lastReplyContent(interaction.editReply as ReturnType<typeof mock>);
+    expect(content).toContain('No products found');
+    expect(content).toContain('Gumroad');
+    expect(content).toContain('try again');
+    expect(content).not.toContain('Connect your Gumroad or Jinxxy account first');
+    expect(content).not.toContain('expired');
   });
 });

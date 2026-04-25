@@ -18,6 +18,11 @@ let mockSelectedGuild = {
   name: 'Test Guild',
   tenantId: 'tenant-123',
 };
+let mockRuntimeConfig = {
+  automaticSetupEnabled: true,
+  browserAuthBaseUrl: 'https://app.example.com',
+  buildId: 'test-build',
+};
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -79,6 +84,11 @@ vi.mock('@/components/ui/YucpButton', () => ({
       {children}
     </button>
   ),
+}));
+
+vi.mock('@/lib/runtimeConfig', () => ({
+  getPublicRuntimeConfig: () => mockRuntimeConfig,
+  useRuntimeConfig: () => mockRuntimeConfig,
 }));
 
 vi.mock('@/hooks/useActiveDashboardContext', () => ({
@@ -149,6 +159,11 @@ describe('dashboard setup route', () => {
       id: 'guild-123',
       name: 'Test Guild',
       tenantId: 'tenant-123',
+    };
+    mockRuntimeConfig = {
+      automaticSetupEnabled: true,
+      browserAuthBaseUrl: 'https://app.example.com',
+      buildId: 'test-build',
     };
     useMutationMock.mockImplementation((mutation) => {
       switch (mutation) {
@@ -242,6 +257,37 @@ describe('dashboard setup route', () => {
     expect(screen.getByText('Setup choices')).toBeInTheDocument();
     expect(screen.getByText('Apply 1 change')).toBeInTheDocument();
     expect(screen.getByText('What will happen when you click Apply')).toBeInTheDocument();
+  });
+
+  it('falls back to manual setup guidance when automatic setup is disabled', () => {
+    mockRuntimeConfig = {
+      automaticSetupEnabled: false,
+      browserAuthBaseUrl: 'https://app.example.com',
+      buildId: 'test-build',
+    };
+    mockSetupRouteQueries({
+      setupJob: undefined,
+      setupSummary: {
+        enabledRoleRuleCount: 2,
+        verificationPromptLive: true,
+        lastCompletedSetupAt: Date.UTC(2026, 3, 12),
+      },
+      migrationJob: undefined,
+    });
+
+    const Component = DashboardSetupRoute.options.component;
+    if (!Component) {
+      throw new Error('Dashboard setup route component is not defined');
+    }
+
+    render(<Component />);
+
+    expect(screen.getByText('Server setup tools')).toBeInTheDocument();
+    expect(screen.getByText('Connect stores manually')).toBeInTheDocument();
+    expect(screen.getByText('Manage role mappings')).toBeInTheDocument();
+    expect(screen.getByText(/Use \/creator-admin spawn-verify in Discord/)).toBeInTheDocument();
+    expect(screen.queryByText(/automatic setup/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Start setup')).not.toBeInTheDocument();
   });
 
   it('shows a maintenance view when the server is already configured', () => {

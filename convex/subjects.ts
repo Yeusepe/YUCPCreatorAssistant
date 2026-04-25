@@ -6,6 +6,7 @@
  */
 
 import { v } from 'convex/values';
+import { components } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { internalMutation, internalQuery, mutation, query } from './_generated/server';
@@ -17,12 +18,14 @@ import {
   requireServiceActor,
 } from './lib/apiActor';
 import { requireApiSecret } from './lib/apiAuth';
+import { buildBetterAuthEqualityWhere } from './lib/betterAuthAdapter';
 import {
   type ExternalAccountIdentityCandidate,
   selectCanonicalExternalAccountCandidates,
 } from './lib/externalAccountIdentity';
 import { hasActiveBindingForSubject } from './lib/ownership';
 import { ProviderV } from './lib/providers';
+import { revokeBindingRecord } from './bindings';
 
 export const PublicSubjectSelector = v.union(
   v.object({
@@ -81,6 +84,152 @@ function formatBuyerProviderLinkLabel(
   account: Pick<Doc<'external_accounts'>, 'providerUserId' | 'providerUsername'>
 ) {
   return account.providerUsername?.trim() || account.providerUserId;
+}
+
+function buildLightAuthEmail(discordUserId: string) {
+  return `discord+${discordUserId}@buyers.yucp.invalid`;
+}
+
+function buildLightAuthMarker(discordUserId: string) {
+  return `light-discord:${discordUserId}`;
+}
+
+function buildLightAuthDisplayName(
+  subject: Pick<Doc<'subjects'>, 'displayName' | 'primaryDiscordUserId'>
+) {
+  const trimmed = subject.displayName?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : `Discord ${subject.primaryDiscordUserId}`;
+}
+
+export type CanonicalSubjectAuthResolution =
+  | {
+      kind: 'resolved';
+      authUserId: string;
+      source: 'better_auth' | 'existing_light';
+    }
+  | {
+      kind: 'materialize_light';
+      marker: string;
+    }
+  | {
+      kind: 'ambiguous';
+      authUserIds: string[];
+    };
+
+async function findBetterAuthUserIdByLightMarker(
+  ctx: Pick<MutationCtx, 'runQuery'>,
+  marker: string
+): Promise<string | null> {
+  const existingUser = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'user',
+    where: buildBetterAuthEqualityWhere([{ field: 'userId', value: marker }]),
+  })) as { id?: string; _id?: string } | null;
+
+  return existingUser?.id ?? existingUser?._id ?? null;
+}
+
+async function findBetterAuthUserIdsByDiscordUserId(
+  ctx: Pick<MutationCtx, 'runQuery'>,
+  discordUserId: string
+): Promise<string[]> {
+  const result = (await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    model: 'account',
+    where: buildBetterAuthEqualityWhere([
+      { field: 'accountId', value: discordUserId },
+      { field: 'providerId', value: 'discord' },
+    ]),
+    select: ['userId'],
+    paginationOpts: { cursor: null, numItems: 10 },
+  })) as { page?: Array<{ userId?: string | null }> } | null;
+
+  return Array.from(
+    new Set(
+      (result?.page ?? [])
+        .map((record) => record.userId?.trim())
+        .filter((userId): userId is string => Boolean(userId))
+    )
+  );
+}
+
+export async function detectCanonicalAuthResolutionForSubject(
+  ctx: Pick<MutationCtx, 'runQuery'>,
+  subject: Pick<Doc<'subjects'>, 'primaryDiscordUserId'>
+): Promise<CanonicalSubjectAuthResolution> {
+  const betterAuthUserIds = await findBetterAuthUserIdsByDiscordUserId(
+    ctx,
+    subject.primaryDiscordUserId
+  );
+  if (betterAuthUserIds.length === 1) {
+    return {
+      kind: 'resolved',
+      authUserId: betterAuthUserIds[0],
+      source: 'better_auth',
+    };
+  }
+  if (betterAuthUserIds.length > 1) {
+    return {
+      kind: 'ambiguous',
+      authUserIds: betterAuthUserIds,
+    };
+  }
+
+  const marker = buildLightAuthMarker(subject.primaryDiscordUserId);
+  const lightAuthUserId = await findBetterAuthUserIdByLightMarker(ctx, marker);
+  if (lightAuthUserId) {
+    return {
+      kind: 'resolved',
+      authUserId: lightAuthUserId,
+      source: 'existing_light',
+    };
+  }
+
+  return {
+    kind: 'materialize_light',
+    marker,
+  };
+}
+
+export async function ensureCanonicalAuthUserIdForSubject(
+  ctx: Pick<MutationCtx, 'runQuery' | 'runMutation'>,
+  subject: Pick<Doc<'subjects'>, 'displayName' | 'primaryDiscordUserId'>
+): Promise<{ authUserId: string; source: 'better_auth' | 'existing_light' | 'new_light' }> {
+  const resolution = await detectCanonicalAuthResolutionForSubject(ctx, subject);
+  if (resolution.kind === 'resolved') {
+    return {
+      authUserId: resolution.authUserId,
+      source: resolution.source,
+    };
+  }
+  if (resolution.kind === 'ambiguous') {
+    throw new Error(
+      `Ambiguous Better Auth ownership for Discord subject ${subject.primaryDiscordUserId}`
+    );
+  }
+
+  const now = Date.now();
+  await ctx.runMutation(components.betterAuth.adapter.create, {
+    input: {
+      model: 'user',
+      data: {
+        name: buildLightAuthDisplayName(subject),
+        email: buildLightAuthEmail(subject.primaryDiscordUserId),
+        emailVerified: false,
+        createdAt: now,
+        updatedAt: now,
+        userId: resolution.marker,
+      },
+    },
+  });
+
+  const authUserId = await findBetterAuthUserIdByLightMarker(ctx, resolution.marker);
+  if (!authUserId) {
+    throw new Error(`Failed to materialize auth user for Discord subject ${subject.primaryDiscordUserId}`);
+  }
+
+  return {
+    authUserId,
+    source: 'new_light',
+  };
 }
 
 export async function upsertBuyerProviderLinkRecord(
@@ -441,7 +590,7 @@ export const getSubjectWithAccounts = query({
     const actor = await requireApiActor(args.actor);
     const effectiveAuthUserId =
       args.authUserId ??
-      (actor.kind === 'auth_user' ? actor.authUserId : actor.authUserId ?? undefined);
+      (actor.kind === 'auth_user' ? actor.authUserId : (actor.authUserId ?? undefined));
     if (effectiveAuthUserId) {
       await requireDelegatedAuthUserActor(args.actor, effectiveAuthUserId);
     } else {
@@ -483,7 +632,7 @@ export const getSubjectWithAccounts = query({
             email?: string;
             avatarUrl?: string;
             profileUrl?: string;
-            rawData?: any;
+            rawData?: unknown;
           };
           lastValidatedAt?: number;
           status: 'active' | 'disconnected' | 'revoked';
@@ -628,7 +777,7 @@ export const listByAuthUser = query({
       const q = args.q.toLowerCase();
       all = all.filter(
         (s) =>
-          (s.displayName && s.displayName.toLowerCase().includes(q)) ||
+          s.displayName?.toLowerCase().includes(q) ||
           String(s._id).toLowerCase().includes(q) ||
           s.primaryDiscordUserId.includes(q)
       );
@@ -680,6 +829,66 @@ export const getSubjectIdByDiscordId = internalQuery({
     }
 
     return { found: true as const, subjectId: subject._id };
+  },
+});
+
+export const getSubjectIdentityById = internalQuery({
+  args: {
+    subjectId: v.id('subjects'),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id('subjects'),
+      authUserId: v.optional(v.string()),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const subject = await ctx.db.get(args.subjectId);
+    if (!subject) {
+      return null;
+    }
+
+    return {
+      _id: subject._id,
+      authUserId: subject.authUserId,
+    };
+  },
+});
+
+export const ensureAuthUserIdForSubject = mutation({
+  args: {
+    apiSecret: v.string(),
+    actor: ApiActorBindingV,
+    subjectId: v.id('subjects'),
+  },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    await requireServiceActor(args.actor, ['subjects:service']);
+
+    const subject = await ctx.db.get(args.subjectId);
+    if (!subject) {
+      throw new Error(`Subject not found: ${args.subjectId}`);
+    }
+
+    if (subject.authUserId) {
+      return subject.authUserId;
+    }
+
+    if (!subject.primaryDiscordUserId) {
+      throw new Error(`Subject ${args.subjectId} has no Discord identity to materialize`);
+    }
+
+    const resolved = await ensureCanonicalAuthUserIdForSubject(ctx, subject);
+    const now = Date.now();
+
+    await ctx.db.patch(subject._id, {
+      authUserId: resolved.authUserId,
+      updatedAt: now,
+    });
+
+    return resolved.authUserId;
   },
 });
 
@@ -953,6 +1162,31 @@ export const revokeBuyerProviderLink = mutation({
     const subject = await ctx.db.get(link.subjectId);
     if (!subject || subject.authUserId !== args.authUserId) {
       return { success: false };
+    }
+
+    const verificationBindings = await ctx.db
+      .query('bindings')
+      .withIndex('by_auth_user_subject', (q) =>
+        q.eq('authUserId', args.authUserId).eq('subjectId', subject._id)
+      )
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('externalAccountId'), link.externalAccountId),
+          q.eq(q.field('bindingType'), 'verification'),
+          q.or(q.eq(q.field('status'), 'active'), q.eq(q.field('status'), 'pending'))
+        )
+      )
+      .collect();
+
+    for (const binding of verificationBindings) {
+      await revokeBindingRecord(ctx, {
+        bindingId: binding._id,
+        expectedAuthUserId: args.authUserId,
+        reason: 'User disconnected buyer verification account',
+        actorType: 'subject',
+        actorId: args.authUserId,
+        cascadeToEntitlements: false,
+      });
     }
 
     await ctx.db.patch(link._id, {

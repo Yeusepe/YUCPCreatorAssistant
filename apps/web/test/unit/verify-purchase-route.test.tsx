@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockUseSearch = vi.fn();
 
@@ -71,6 +71,10 @@ function createWrapper() {
 }
 
 describe('verify purchase route', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     vi.resetAllMocks();
     mockUseSearch.mockReturnValue({
@@ -195,10 +199,34 @@ describe('verify purchase route', () => {
     await waitFor(() => expect(dashboardApi.listUserProviders).toHaveBeenCalled());
     await waitFor(() => expect(dashboardApi.listUserAccounts).toHaveBeenCalled());
 
-    expect(await screen.findByRole('button', { name: /loading/i })).toBeDisabled();
+    expect(await screen.findByLabelText('Loading store connections')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^sign in$/i })).not.toBeInTheDocument();
 
     deferredAccounts.resolve([]);
+  });
+
+  it('rejects invalid provider redirects before navigation', async () => {
+    vi.mocked(dashboardApi.listUserAccounts).mockResolvedValue([]);
+    vi.mocked(dashboardApi.startUserVerify).mockResolvedValue({
+      redirectUrl: 'https://evil.example/phishing',
+    });
+
+    const initialHref = window.location.href;
+    const Component = VerifyPurchaseRoute.options.component;
+    if (!Component) {
+      throw new Error('Verify purchase route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    const signInButton = await screen.findByRole('button', { name: 'Sign in' });
+    fireEvent.click(signInButton);
+
+    await waitFor(() =>
+      expect(screen.getByText('Could not connect, please try again')).toBeInTheDocument()
+    );
+    expect(window.location.href).toBe(initialHref);
+    expect(signInButton).toBeEnabled();
   });
 
   it('renders the shared cloud background like the dashboard shell', async () => {
@@ -284,6 +312,141 @@ describe('verify purchase route', () => {
         'discord-account-link'
       )
     );
+  });
+
+  it('refreshes the intent after an OAuth return fails so the no-purchase banner becomes visible immediately', async () => {
+    mockUseSearch.mockReturnValue({
+      intent: 'intent_itchio_no_purchase',
+      connected: 'itchio',
+    });
+
+    vi.mocked(accountApi.getUserVerificationIntent)
+      .mockResolvedValueOnce({
+        object: 'verification_intent',
+        id: 'intent_itchio_no_purchase',
+        packageId: 'pkg-itchio-1',
+        packageName: 'itch.io Package',
+        status: 'pending',
+        verificationUrl: '/verify/purchase?intent=intent_itchio_no_purchase',
+        returnUrl: 'https://localhost:3000/callback',
+        requirements: [
+          {
+            methodKey: 'itchio-oauth',
+            providerKey: 'itchio',
+            providerLabel: 'itch.io',
+            kind: 'buyer_provider_link',
+            title: 'itch.io account',
+            description: 'Connect the itch.io account you purchased with.',
+            creatorAuthUserId: 'creator-1',
+            productId: 'product-itchio-1',
+            providerProductRef: 'itchio-game-1',
+            capability: {
+              methodKind: 'buyer_provider_link',
+              completion: 'immediate',
+              actionLabel: 'Sign in with itch.io',
+            },
+          },
+        ],
+        verifiedMethodKey: null,
+        errorCode: null,
+        errorMessage: null,
+        grantToken: null,
+        grantAvailable: false,
+        expiresAt: Date.now() + 60_000,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+      .mockResolvedValueOnce({
+        object: 'verification_intent',
+        id: 'intent_itchio_no_purchase',
+        packageId: 'pkg-itchio-1',
+        packageName: 'itch.io Package',
+        status: 'failed',
+        verificationUrl: '/verify/purchase?intent=intent_itchio_no_purchase',
+        returnUrl: 'https://localhost:3000/callback',
+        requirements: [
+          {
+            methodKey: 'itchio-oauth',
+            providerKey: 'itchio',
+            providerLabel: 'itch.io',
+            kind: 'buyer_provider_link',
+            title: 'itch.io account',
+            description: 'Connect the itch.io account you purchased with.',
+            creatorAuthUserId: 'creator-1',
+            productId: 'product-itchio-1',
+            providerProductRef: 'itchio-game-1',
+            capability: {
+              methodKind: 'buyer_provider_link',
+              completion: 'immediate',
+              actionLabel: 'Sign in with itch.io',
+            },
+          },
+        ],
+        verifiedMethodKey: null,
+        errorCode: 'purchase_not_found',
+        errorMessage:
+          'No purchase was found for this itch.io account. If you just bought, please try again in a moment.',
+        grantToken: null,
+        grantAvailable: false,
+        expiresAt: Date.now() + 60_000,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+    vi.mocked(dashboardApi.listUserProviders).mockResolvedValue([
+      {
+        id: 'itchio',
+        label: 'itch.io',
+        icon: 'Itchio.png',
+        color: '#fa5c5c',
+        description: 'Store',
+      },
+    ]);
+    vi.mocked(dashboardApi.listUserAccounts).mockResolvedValue([
+      {
+        id: 'itchio-link-1',
+        provider: 'itchio',
+        label: 'Main itch.io',
+        connectionType: 'verification',
+        status: 'active',
+        webhookConfigured: false,
+        hasApiKey: false,
+        hasAccessToken: true,
+        providerUserId: 'itchio-user-1',
+        providerUsername: 'itch-buyer',
+        verificationMethod: 'account_link',
+        linkedAt: 10,
+        lastValidatedAt: 12,
+        expiresAt: null,
+        createdAt: 10,
+        updatedAt: 12,
+      },
+    ]);
+    vi.mocked(accountApi.verifyUserVerificationProviderLink).mockRejectedValue(
+      new Error(
+        'No purchase was found for this itch.io account. If you just bought, please try again in a moment.'
+      )
+    );
+
+    const Component = VerifyPurchaseRoute.options.component;
+    if (!Component) {
+      throw new Error('Verify purchase route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    await waitFor(() =>
+      expect(accountApi.verifyUserVerificationProviderLink).toHaveBeenCalledWith(
+        'intent_itchio_no_purchase',
+        'itchio-oauth'
+      )
+    );
+    await waitFor(() => expect(accountApi.getUserVerificationIntent).toHaveBeenCalledTimes(2));
+    expect(
+      await screen.findByText(
+        'No purchase was found for this itch.io account. If you just bought, please try again in a moment.'
+      )
+    ).toBeInTheDocument();
   });
 
   it('shows linked non-OAuth providers in the sign-in section when an account is already synced', async () => {

@@ -1,8 +1,10 @@
 import { VrchatApiClient } from '@yucp/providers';
 import type { StructuredLogger } from '@yucp/shared';
 import { createAuth, type VrchatOwnershipPayload } from '../auth';
+import { getConvexClientFromUrl } from '../lib/convex';
 import type { StateStore } from '../lib/stateStore';
 import { getStateStore } from '../lib/stateStore';
+import { ensureSubjectAuthUserId, SUBJECT_AUTH_USER_REQUIRED_ERROR } from '../lib/subjectIdentity';
 import type { VerificationConfig } from './verificationConfig';
 import {
   isAllowedVrchatOrigin,
@@ -155,9 +157,27 @@ async function finalizeVrchatOwnership({
   }
 
   const { handleCompleteVrchat } = await import('./completeVrchat');
+  const buyerAuthUserId = await ensureSubjectAuthUserId(
+    getConvexClientFromUrl(config.convexUrl),
+    config.convexApiSecret,
+    subjectId
+  );
+  if (!buyerAuthUserId) {
+    return jsonNoStore(
+      {
+        success: false,
+        error: SUBJECT_AUTH_USER_REQUIRED_ERROR,
+      },
+      {
+        status: 409,
+        headers: headers ?? withNoStore({ 'Content-Type': 'application/json' }),
+      }
+    );
+  }
   const result = await handleCompleteVrchat(config, {
-    authUserId,
-    subjectId,
+    creatorAuthUserId: authUserId,
+    buyerAuthUserId,
+    buyerSubjectId: subjectId,
     vrchatUserId: ownership.vrchatUserId,
     displayName: ownership.displayName,
     ownedAvatarIds: ownership.ownedAvatarIds,

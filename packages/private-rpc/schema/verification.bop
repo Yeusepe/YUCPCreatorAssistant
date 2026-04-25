@@ -15,6 +15,9 @@ message CompleteLicenseVerificationRequest {
   4 -> string subjectId;
   5 -> string discordUserId;
   6 -> string provider;
+  7 -> string creatorAuthUserId;
+  8 -> string buyerAuthUserId;
+  9 -> string buyerSubjectId;
 }
 
 message CompleteVrchatVerificationRequest {
@@ -23,6 +26,9 @@ message CompleteVrchatVerificationRequest {
   3 -> string username;
   4 -> string password;
   5 -> string twoFactorCode;
+  6 -> string creatorAuthUserId;
+  7 -> string buyerAuthUserId;
+  8 -> string buyerSubjectId;
 }
 
 message DisconnectVerificationRequest {

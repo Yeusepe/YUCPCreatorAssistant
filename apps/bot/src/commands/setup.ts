@@ -33,6 +33,27 @@ const ACTIVE_COMMERCE_PROVIDER_LIST = (() => {
   return `${labels.slice(0, -1).join(', ')}, or ${labels[labels.length - 1]}`;
 })();
 
+function buildDashboardUrl(args: {
+  baseUrl: string;
+  path?: '/dashboard' | '/dashboard/setup';
+  guildId: string;
+  tenantId?: string;
+  setupToken?: string;
+  connectToken?: string;
+}) {
+  const dashboardUrl = new URL(args.path ?? '/dashboard', args.baseUrl);
+  dashboardUrl.searchParams.set('guild_id', args.guildId);
+  if (args.tenantId) {
+    dashboardUrl.searchParams.set('tenant_id', args.tenantId);
+  }
+  const hash = new URLSearchParams({
+    ...(args.setupToken ? { s: args.setupToken } : {}),
+    ...(args.connectToken ? { token: args.connectToken } : {}),
+  }).toString();
+  dashboardUrl.hash = hash;
+  return dashboardUrl.toString();
+}
+
 export interface SetupContext {
   authUserId: string;
   guildLinkId: Id<'guild_links'>;
@@ -76,12 +97,18 @@ export async function runSetupStart(
     return;
   }
 
-  const dashboardUrl = `${apiBase}/dashboard/setup?tenant_id=${ctx.authUserId}&guild_id=${ctx.guildId}#s=${encodeURIComponent(setupToken)}`;
+  const dashboardUrl = buildDashboardUrl({
+    baseUrl: apiBase,
+    path: '/dashboard/setup',
+    guildId: ctx.guildId,
+    tenantId: ctx.authUserId,
+    setupToken,
+  });
 
   const embed = new EmbedBuilder()
     .setTitle(`${E.Wrench} Creator Setup`)
     .setDescription(
-      'Open the setup flow to connect your stores, review what YUCP found, and finish onboarding in one place.'
+      'Open the setup page for this server to use the manual setup tools, review the current state, and keep verification current.'
     )
     .setColor(0x5865f2)
     .addFields(
@@ -92,21 +119,24 @@ export async function runSetupStart(
         inline: false,
       },
       {
-        name: '2. Review the setup plan',
+        name: '2. Review product-role mappings',
         value:
-          'See the recommended roles, verification surface, and migration notes in one dedicated flow before you apply anything.',
+          'Use the dashboard tools to confirm which products should grant each Discord role for this server.',
         inline: false,
       },
       {
-        name: '3. Apply and monitor',
+        name: '3. Refresh verification',
         value:
-          'Launch the durable setup job from that page, then use Discord as your launcher and status surface.',
+          'Keep the verification prompt current after setup changes and come back to the setup page when you need to maintain this server.',
         inline: false,
       }
     );
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setLabel('Open Setup Flow').setStyle(ButtonStyle.Link).setURL(dashboardUrl)
+    new ButtonBuilder()
+      .setLabel('Open Setup Dashboard')
+      .setStyle(ButtonStyle.Link)
+      .setURL(dashboardUrl)
   );
 
   await interaction.editReply({
@@ -141,11 +171,20 @@ export async function runSetupStartUnconfigured(
     return;
   }
 
-  let dashboardUrl = `${linkBase}/dashboard/setup?guild_id=${guildId}`;
+  let dashboardUrl = buildDashboardUrl({
+    baseUrl: linkBase,
+    path: '/dashboard/setup',
+    guildId,
+  });
   try {
     const token = await createConnectToken({ discordUserId: interaction.user.id, guildId });
     if (token) {
-      dashboardUrl = `${linkBase}/dashboard/setup?guild_id=${guildId}#token=${token}`;
+      dashboardUrl = buildDashboardUrl({
+        baseUrl: linkBase,
+        path: '/dashboard/setup',
+        guildId,
+        connectToken: token,
+      });
     }
   } catch (_) {
     // Use URL without token as fallback
@@ -154,14 +193,14 @@ export async function runSetupStartUnconfigured(
   const embed = new EmbedBuilder()
     .setTitle(`${E.Wrench} Creator Setup`)
     .setDescription(
-      'This server is not yet registered. Sign in to the Creator Portal to link this server and connect your stores.'
+      'This server is not yet registered. Sign in to the Creator Dashboard to link it, then finish manual setup from the setup page.'
     )
     .setColor(0x5865f2)
     .addFields(
       {
         name: '1. Sign In & Register This Server',
         value:
-          'Click the button below. Sign in with your creator account and the portal will automatically link this server.',
+          'Click the button below, sign in with your creator account, and the dashboard will link this server for you.',
         inline: false,
       },
       {
@@ -170,16 +209,16 @@ export async function runSetupStartUnconfigured(
         inline: false,
       },
       {
-        name: '3. Follow the setup flow',
+        name: '3. Finish manual setup',
         value:
-          'After sign-in, stay on the dedicated setup page to connect your storefronts, review the plan, and apply setup for this server.',
+          'After sign-in, use the setup page to review the setup tools, role mappings, and verification surfaces for this server.',
         inline: false,
       }
     );
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setLabel('Sign In & Setup Server')
+      .setLabel('Sign In & Open Setup Dashboard')
       .setStyle(ButtonStyle.Link)
       .setURL(dashboardUrl)
   );

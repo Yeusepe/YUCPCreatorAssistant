@@ -14,6 +14,7 @@ import {
 } from '@yucp/private-rpc';
 import { getInternalRpcSharedSecret } from '@yucp/shared';
 import { getApiUrls } from './apiUrls';
+import { normalizeProviderTiers } from './internalRpcTiers';
 
 const INTERNAL_RPC_PATH = '/__internal/tempo';
 
@@ -156,6 +157,33 @@ export async function listProviderProducts(
   };
 }
 
+export async function listProviderTiers(
+  provider: string,
+  authUserId: string,
+  productId: string
+): Promise<{
+  error?: string;
+  tiers: Array<{
+    active: boolean;
+    amountCents?: number;
+    currency?: string;
+    description?: string;
+    id: string;
+    name: string;
+    productId: string;
+  }>;
+}> {
+  const response = await (await getClients()).catalog.listProviderTiers({
+    provider,
+    authUserId,
+    productId,
+  });
+  return {
+    tiers: normalizeProviderTiers(response.tiers),
+    error: response.error,
+  };
+}
+
 /** Resolve a human-readable display name for a product URL or ID. */
 export async function resolveProductName(params: {
   provider: string;
@@ -207,14 +235,29 @@ export async function bindVerifyPanel(params: {
   };
 }
 
-export async function completeLicenseVerification(params: {
-  discordUserId?: string;
-  licenseKey: string;
-  productId?: string;
-  provider?: string;
-  subjectId: string;
-  authUserId: string;
-}): Promise<VerificationResultResponse> {
+export async function completeLicenseVerification(
+  params: {
+    discordUserId?: string;
+    licenseKey: string;
+    productId?: string;
+    provider?: string;
+  } & (
+    | {
+        subjectId: string;
+        authUserId: string;
+        creatorAuthUserId?: never;
+        buyerAuthUserId?: never;
+        buyerSubjectId?: never;
+      }
+    | {
+        creatorAuthUserId: string;
+        buyerAuthUserId: string;
+        buyerSubjectId: string;
+        authUserId?: never;
+        subjectId?: never;
+      }
+  )
+): Promise<VerificationResultResponse> {
   const response = await (await getClients()).verification.completeLicenseVerification(params);
   return {
     success: response.success ?? false,
@@ -225,13 +268,28 @@ export async function completeLicenseVerification(params: {
   };
 }
 
-export async function completeVrchatVerification(params: {
-  password: string;
-  subjectId: string;
-  authUserId: string;
-  twoFactorCode?: string;
-  username: string;
-}): Promise<VerificationResultResponse> {
+export async function completeVrchatVerification(
+  params: {
+    password: string;
+    twoFactorCode?: string;
+    username: string;
+  } & (
+    | {
+        subjectId: string;
+        authUserId: string;
+        creatorAuthUserId?: never;
+        buyerAuthUserId?: never;
+        buyerSubjectId?: never;
+      }
+    | {
+        creatorAuthUserId: string;
+        buyerAuthUserId: string;
+        buyerSubjectId: string;
+        authUserId?: never;
+        subjectId?: never;
+      }
+  )
+): Promise<VerificationResultResponse> {
   const response = await (await getClients()).verification.completeVrchatVerification(params);
   return {
     success: response.success ?? false,

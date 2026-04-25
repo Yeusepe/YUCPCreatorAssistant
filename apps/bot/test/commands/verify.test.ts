@@ -206,6 +206,54 @@ describe('buildVerifyStatusReply', () => {
     expect(text).toContain('verificationMethod=account_link');
   });
 
+  it('prefers itch.io account linking over the legacy license modal flow', async () => {
+    const convex = makeConvex({ subjectFound: false, providers: ['itchio'] });
+
+    const reply = await buildVerifyStatusReply(
+      'user_verify_itch',
+      'auth_verify_itch',
+      'guild_verify_itch',
+      convex,
+      'api-secret',
+      'https://api.example.com'
+    );
+
+    const text = JSON.stringify(reply.components[0].toJSON());
+    expect(text).toContain(
+      'https://api.example.com/api/verification/begin?authUserId=auth_verify_itch&mode=itchio'
+    );
+    expect(text).toContain('verificationMethod=account_link');
+    expect(text).toContain('Connect itch.io');
+    expect(text).toContain('Available here: purchases from itch.io.');
+    expect(text).not.toContain('creator_verify:license:auth_verify_itch');
+    expect(text).not.toContain('license key');
+  });
+
+  it('shows reconnect guidance instead of a verified state when itch.io is linked but no matching entitlement exists', async () => {
+    const convex = makeConvex({
+      subjectFound: true,
+      linkedAccounts: [{ provider: 'itchio', status: 'active', _id: 'acct_itch_1' }],
+      entitlements: [],
+      guildProducts: [{ productId: 'prod_itch_1', displayName: 'itch.io Avatar' }],
+      providers: ['itchio'],
+    });
+
+    const reply = await buildVerifyStatusReply(
+      'user_verify_itch_missing',
+      'auth_verify_itch_missing',
+      'guild_verify_itch_missing',
+      convex,
+      'api-secret',
+      'https://api.example.com'
+    );
+
+    const text = JSON.stringify(reply.components[0].toJSON());
+    expect(text).toContain('We found a linked account, but nothing on it matches this server yet.');
+    expect(text).toContain('Double-check the account or key you used for purchases from itch.io');
+    expect(text).toContain('Disconnect itch.io');
+    expect(text).not.toContain("You're verified!");
+  });
+
   it('handles DM context (null guildId) gracefully without throwing', async () => {
     const convex = makeConvex({ subjectFound: false, providers: [] });
 

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PropsWithChildren, ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const routeSearch = vi.hoisted(() => ({
   value: {
@@ -31,6 +31,10 @@ vi.mock('@tanstack/react-router', () => ({
   ),
   Outlet: () => <div data-testid="dashboard-outlet" />,
   createFileRoute: () => (options: unknown) => ({
+    options,
+    useSearch: () => routeSearch.value,
+  }),
+  createLazyFileRoute: () => (options: unknown) => ({
     options,
     useSearch: () => routeSearch.value,
   }),
@@ -79,7 +83,13 @@ vi.mock('@/hooks/useTheme', () => ({
   })),
 }));
 
+let DashboardRoute: Awaited<typeof import('@/routes/_authenticated/dashboard.lazy')>['Route'];
+
 describe('dashboard layout bootstrap state', () => {
+  beforeAll(async () => {
+    ({ Route: DashboardRoute } = await import('@/routes/_authenticated/dashboard.lazy'));
+  });
+
   beforeEach(() => {
     document.body.innerHTML = '';
     routeSearch.value = {
@@ -101,6 +111,15 @@ describe('dashboard layout bootstrap state', () => {
     expect(html).toContain('>Server<');
     expect(html).not.toContain('Finalizing the server link and loading the dashboard.');
   });
-});
 
-import { Route as DashboardRoute } from '@/routes/_authenticated/dashboard';
+  it('does not render the server setup sidebar tab', () => {
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <DashboardRoute.options.component />
+      </QueryClientProvider>
+    );
+
+    expect(html).toContain('>General Settings<');
+    expect(html).not.toContain('href="/dashboard/setup"');
+  });
+});

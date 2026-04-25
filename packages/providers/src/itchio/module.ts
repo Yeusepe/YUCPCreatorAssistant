@@ -30,7 +30,8 @@ export const ITCHIO_DISPLAY_META = {
   dashboardIconBg: '#fa5c5c',
   dashboardQuickStartBg: 'rgba(250,92,92,0.12)',
   dashboardQuickStartBorder: 'rgba(250,92,92,0.32)',
-  dashboardServerTileHint: 'Allow users to verify itch.io download keys in this Discord server.',
+  dashboardServerTileHint:
+    'Allow buyers to sign in with itch.io to verify access in this Discord server.',
 } as const;
 
 const ITCHIO_SERVER_API_BASE = 'https://itch.io/api/1/key';
@@ -86,6 +87,17 @@ type ItchioGameRecord = {
   published?: boolean;
 };
 
+type ItchioOwnedKeyPayload = {
+  id?: number;
+  game_id?: number;
+  purchase_id?: number;
+  game?: {
+    id?: number;
+    title?: string;
+    url?: string;
+  };
+};
+
 function getFetch(ports: Pick<ItchioRuntimePorts, 'fetchImpl'>): ItchioFetchLike {
   return ports.fetchImpl ?? fetch;
 }
@@ -109,6 +121,18 @@ function normalizeItchioGames(games: unknown): ItchioGameRecord[] {
   if (games && typeof games === 'object') {
     return Object.values(games).filter((game): game is ItchioGameRecord =>
       Boolean(game && typeof game === 'object')
+    );
+  }
+  return [];
+}
+
+function normalizeItchioOwnedKeys(ownedKeys: unknown): ItchioOwnedKeyPayload[] {
+  if (Array.isArray(ownedKeys)) {
+    return ownedKeys;
+  }
+  if (ownedKeys && typeof ownedKeys === 'object') {
+    return Object.values(ownedKeys).filter((ownedKey): ownedKey is ItchioOwnedKeyPayload =>
+      Boolean(ownedKey && typeof ownedKey === 'object')
     );
   }
   return [];
@@ -216,19 +240,10 @@ export async function fetchItchioOwnedKeys(
 
     const data = await readItchioJson<{
       errors?: string[];
-      owned_keys?: Array<{
-        id?: number;
-        game_id?: number;
-        purchase_id?: number;
-        game?: {
-          id?: number;
-          title?: string;
-          url?: string;
-        };
-      }>;
+      owned_keys?: ItchioOwnedKeyPayload[] | Record<string, ItchioOwnedKeyPayload>;
     }>(response, { treatUnauthorizedAsExpired: true });
 
-    const pageRecords = (data.owned_keys ?? [])
+    const pageRecords = normalizeItchioOwnedKeys(data.owned_keys)
       .filter(
         (ownedKey): ownedKey is NonNullable<typeof ownedKey> & { id: number; game_id: number } =>
           ownedKey?.id != null && ownedKey.game_id != null
@@ -337,34 +352,14 @@ export async function verifyItchioDownloadKey(
 
 export function createItchioLicenseVerification<
   TClient extends ProviderRuntimeClient = ProviderRuntimeClient,
->(ports: ItchioRuntimePorts<TClient>): LicenseVerificationPlugin<TClient> {
+>(_ports: ItchioRuntimePorts<TClient>): LicenseVerificationPlugin<TClient> {
   return {
-    async verifyLicense(downloadKey, productId, authUserId, ctx) {
-      if (!productId) {
-        return { valid: false, error: 'Game ID is required for itch.io verification' };
-      }
-
-      const encryptedToken = await ports.getEncryptedCredential(authUserId, ctx);
-      if (!encryptedToken) {
-        return {
-          valid: false,
-          error: 'itch.io is not connected for this creator. Ask them to reconnect and try again.',
-        };
-      }
-
-      try {
-        const accessToken = await ports.decryptCredential(encryptedToken, ctx);
-        return await verifyItchioDownloadKey(downloadKey, productId, accessToken, ports);
-      } catch (error) {
-        if (error instanceof CredentialExpiredError) {
-          return {
-            valid: false,
-            error:
-              'The creator itch.io connection has expired. Ask them to reconnect the store and try again.',
-          };
-        }
-        throw error;
-      }
+    async verifyLicense(_downloadKey, _productId, _authUserId, _ctx) {
+      return {
+        valid: false,
+        error:
+          'itch.io verification now requires the buyer to sign in with itch.io. Restart verification and use the itch.io account link flow.',
+      };
     },
   };
 }

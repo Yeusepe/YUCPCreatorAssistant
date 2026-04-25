@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { makeTestConvex } from './testHelpers';
 
 const API_SECRET = 'test-secret';
+const previousAutomaticSetupFlag = process.env.YUCP_ENABLE_AUTOMATIC_SETUP;
 
 async function seedGuildLink(
   t: ReturnType<typeof makeTestConvex>,
@@ -46,6 +47,14 @@ async function seedProviderConnection(
 }
 
 describe('guild_links schema compatibility', () => {
+  beforeEach(() => {
+    process.env.YUCP_ENABLE_AUTOMATIC_SETUP = 'true';
+  });
+
+  afterEach(() => {
+    process.env.YUCP_ENABLE_AUTOMATIC_SETUP = previousAutomaticSetupFlag;
+  });
+
   it('accepts legacy verifyPromptMessage metadata on guild links', async () => {
     const t = makeTestConvex();
     const now = Date.now();

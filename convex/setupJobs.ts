@@ -1,4 +1,5 @@
 import { ConvexError, v } from 'convex/values';
+import { isAutomaticSetupEnabled } from '@yucp/shared/featureFlags';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { mutation, query } from './_generated/server';
@@ -115,6 +116,15 @@ const MigrationSourceStatus = v.union(
   v.literal('imported'),
   v.literal('failed')
 );
+
+const AUTOMATIC_SETUP_DISABLED_ERROR =
+  'Automatic setup is currently disabled. Use the setup dashboard for manual configuration.';
+
+function assertAutomaticSetupFeatureEnabled(): void {
+  if (!isAutomaticSetupEnabled(process.env)) {
+    throw new ConvexError(AUTOMATIC_SETUP_DISABLED_ERROR);
+  }
+}
 const MigrationMatchStrategy = v.union(
   v.literal('exact_name'),
   v.literal('alias'),
@@ -1072,6 +1082,10 @@ async function createOrResumeSetupJobImpl(
     preferences?: Partial<SetupPreferences>;
   }
 ) {
+  if (args.mode === 'automatic_setup') {
+    assertAutomaticSetupFeatureEnabled();
+  }
+
   const guildLink = await getOwnedGuildLinkOrThrow(ctx, args.guildLinkId, args.authUserId);
   const existing = await ctx.db
     .query('setup_jobs')
@@ -1219,6 +1233,8 @@ async function createMigrationJobImpl(
     sourceGuildId?: string;
   }
 ) {
+  assertAutomaticSetupFeatureEnabled();
+
   const guildLink = await getOwnedGuildLinkOrThrow(ctx, args.guildLinkId, args.authUserId);
   if (args.setupJobId) {
     const setupJob = await ctx.db.get(args.setupJobId);
@@ -1879,6 +1895,8 @@ export const applyRecommendedSetupByGuild = mutation({
     queued: v.boolean(),
   }),
   handler: async (ctx, args) => {
+    assertAutomaticSetupFeatureEnabled();
+
     const authUser = await getAuthenticatedAuthUser(ctx);
     if (!authUser) {
       throw new ConvexError('Unauthenticated');
@@ -1990,6 +2008,7 @@ export const applyRecommendedSetupForOwnerByGuild = mutation({
   }),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
+    assertAutomaticSetupFeatureEnabled();
 
     const guildLink = await getOwnedGuildLinkByDiscordGuildId(ctx, {
       authUserId: args.authUserId,
@@ -2133,6 +2152,8 @@ export const overrideRolePlanEntry = mutation({
   },
   returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
+    assertAutomaticSetupFeatureEnabled();
+
     const authUser = await getAuthenticatedAuthUser(ctx);
     if (!authUser) {
       throw new ConvexError('Unauthenticated');
@@ -2173,6 +2194,8 @@ export const updateSetupPreferencesByGuild = mutation({
   },
   returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
+    assertAutomaticSetupFeatureEnabled();
+
     const authUser = await getAuthenticatedAuthUser(ctx);
     if (!authUser) {
       throw new ConvexError('Unauthenticated');

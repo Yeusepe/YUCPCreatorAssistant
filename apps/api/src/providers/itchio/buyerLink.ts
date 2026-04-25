@@ -1,11 +1,14 @@
 import { CredentialExpiredError } from '@yucp/providers/contracts';
 import {
+  fetchItchioCredentialsInfo,
   fetchItchioCurrentUser,
   fetchItchioOwnedKeys,
   ITCHIO_PURPOSES,
+  itchioScopeSatisfied,
 } from '@yucp/providers/itchio/module';
 import { api, internal } from '../../../../../convex/_generated/api';
 import { decrypt, encrypt } from '../../lib/encrypt';
+import { resolveBuyerVerificationStoreContext } from '../../verification/buyerVerificationHelpers';
 import type {
   BuyerLinkPlugin,
   VerifyHostedBuyerLinkIntentInput,
@@ -16,12 +19,55 @@ const PROVIDER_LINK_EXPIRED_MESSAGE =
   'The linked itch.io account must be reconnected before it can be used.';
 const PURCHASE_NOT_FOUND_MESSAGE =
   'No purchase was found for this itch.io account. If you just bought, please try again in a moment.';
+const MISSING_PRODUCT_REF_MESSAGE =
+  'Verification method is missing the itch.io product reference required for linked account verification.';
+const REQUIRED_ITCHIO_BUYER_SCOPES = ['profile:me', 'profile:owned'] as const;
 
 interface ItchioBuyerLinkDeps {
   fetchCurrentUser?: typeof fetchItchioCurrentUser;
   fetchOwnedKeys?: typeof fetchItchioOwnedKeys;
   encryptCredential?: typeof encrypt;
   decryptCredential?: typeof decrypt;
+}
+
+async function backfillOwnedItchioEntitlements(
+  ownedKeys: Awaited<ReturnType<typeof fetchItchioOwnedKeys>>,
+  subjectId: string,
+  ctx: Parameters<BuyerLinkPlugin['fetchIdentity']>[1]
+): Promise<void> {
+  const seenEntitlementKeys = new Set<string>();
+
+  for (const ownedKey of ownedKeys) {
+    const product = await ctx.convex.query(api.yucpLicenses.lookupProductByProviderRef, {
+      apiSecret: ctx.apiSecret,
+      provider: 'itchio',
+      providerProductRef: ownedKey.gameId,
+    });
+    if (!product) {
+      continue;
+    }
+
+    const entitlementKey = `${product.authUserId}:${product.productId}:${ownedKey.ownedKeyId}`;
+    if (seenEntitlementKeys.has(entitlementKey)) {
+      continue;
+    }
+    seenEntitlementKeys.add(entitlementKey);
+
+    await ctx.convex.mutation(api.entitlements.grantEntitlement, {
+      apiSecret: ctx.apiSecret,
+      authUserId: product.authUserId,
+      subjectId,
+      productId: product.productId,
+      evidence: {
+        provider: 'itchio',
+        sourceReference: ownedKey.ownedKeyId,
+        rawEvidence: {
+          gameId: ownedKey.gameId,
+          purchaseId: ownedKey.purchaseId,
+        },
+      },
+    });
+  }
 }
 
 async function markIntentFailed(
@@ -57,6 +103,15 @@ export function createItchioBuyerLinkPlugin(deps: ItchioBuyerLinkDeps = {}): Buy
     },
 
     async fetchIdentity(accessToken) {
+      const credentialsInfo = await fetchItchioCredentialsInfo(accessToken, {});
+      const grantedScopes = credentialsInfo.scopes ?? [];
+      const missingScopes = REQUIRED_ITCHIO_BUYER_SCOPES.filter(
+        (requiredScope) => !itchioScopeSatisfied(grantedScopes, requiredScope)
+      );
+      if (missingScopes.length > 0) {
+        throw new Error(`Missing required itch.io scopes: ${missingScopes.join(', ')}`);
+      }
+
       const currentUser = await readCurrentUser(accessToken, {});
       return {
         providerUserId: currentUser.id,
@@ -79,6 +134,11 @@ export function createItchioBuyerLinkPlugin(deps: ItchioBuyerLinkDeps = {}): Buy
         oauthRefreshTokenEncrypted: input.refreshToken,
         oauthTokenExpiresAt: input.expiresAt,
       });
+    },
+
+    async afterLink(input, ctx) {
+      const ownedKeys = await readOwnedKeys(input.accessToken, {});
+      await backfillOwnedItchioEntitlements(ownedKeys, input.subjectId, ctx);
     },
 
     async verifyHostedIntent(input, ctx) {
@@ -172,11 +232,45 @@ export function createItchioBuyerLinkPlugin(deps: ItchioBuyerLinkDeps = {}): Buy
         );
       }
 
-      if (
-        !requirement.creatorAuthUserId ||
-        !requirement.productId ||
-        !requirement.providerProductRef
-      ) {
+      if (!requirement.providerProductRef) {
+        return await markIntentFailed(
+          input,
+          {
+            success: false,
+            errorCode: 'invalid_method',
+            errorMessage: MISSING_PRODUCT_REF_MESSAGE,
+          },
+          ctx.convex.mutation
+        );
+      }
+
+      let creatorAuthUserId = requirement.creatorAuthUserId;
+      let productId = requirement.productId;
+      if (!creatorAuthUserId || !productId) {
+        const storeContext = await resolveBuyerVerificationStoreContext(
+          {
+            providerId: 'itchio',
+            packageId: intent.packageId,
+            providerProductRef: requirement.providerProductRef,
+          },
+          ctx
+        );
+        if (!storeContext.ok) {
+          return await markIntentFailed(input, storeContext.result, ctx.convex.mutation);
+        }
+        creatorAuthUserId = storeContext.creatorAuthUserId;
+        productId = storeContext.creatorProductId;
+      }
+
+      const hasExistingEntitlement = await ctx.convex.query(
+        internal.yucpLicenses.checkSubjectEntitlement,
+        {
+          authUserId: creatorAuthUserId,
+          subjectId: subjectResult.subject._id,
+          productId,
+        }
+      );
+      if (hasExistingEntitlement) {
         await ctx.convex.mutation(internal.verificationIntents.markIntentVerified, {
           intentId: input.intentId,
           methodKey: input.methodKey,
@@ -210,11 +304,11 @@ export function createItchioBuyerLinkPlugin(deps: ItchioBuyerLinkDeps = {}): Buy
           ITCHIO_PURPOSES.buyerCredential
         );
         const ownedKeys = await readOwnedKeys(accessToken, {});
-        const matchedOwnedKey = ownedKeys.find(
+        const ownsRequiredProduct = ownedKeys.some(
           (ownedKey) => ownedKey.gameId === requirement.providerProductRef
         );
 
-        if (!matchedOwnedKey) {
+        if (!ownsRequiredProduct) {
           return await markIntentFailed(
             input,
             {
@@ -226,20 +320,27 @@ export function createItchioBuyerLinkPlugin(deps: ItchioBuyerLinkDeps = {}): Buy
           );
         }
 
-        await ctx.convex.mutation(api.entitlements.grantEntitlement, {
-          apiSecret: ctx.apiSecret,
-          authUserId: requirement.creatorAuthUserId,
-          subjectId: subjectResult.subject._id,
-          productId: requirement.productId,
-          evidence: {
-            provider: 'itchio',
-            sourceReference: matchedOwnedKey.ownedKeyId,
-            rawEvidence: {
-              gameId: matchedOwnedKey.gameId,
-              purchaseId: matchedOwnedKey.purchaseId,
+        await backfillOwnedItchioEntitlements(ownedKeys, subjectResult.subject._id, ctx);
+        const hasEntitlement = await ctx.convex.query(
+          internal.yucpLicenses.checkSubjectEntitlement,
+          {
+            authUserId: creatorAuthUserId,
+            subjectId: subjectResult.subject._id,
+            productId,
+          }
+        );
+        if (!hasEntitlement) {
+          return await markIntentFailed(
+            input,
+            {
+              success: false,
+              errorCode: 'purchase_not_found',
+              errorMessage: PURCHASE_NOT_FOUND_MESSAGE,
             },
-          },
-        });
+            ctx.convex.mutation
+          );
+        }
+
         await ctx.convex.mutation(internal.verificationIntents.markIntentVerified, {
           intentId: input.intentId,
           methodKey: input.methodKey,

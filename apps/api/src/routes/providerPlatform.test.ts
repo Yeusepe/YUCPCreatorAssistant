@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import type { Auth } from '../auth';
 
 const apiMock = {
@@ -26,6 +26,14 @@ const apiMock = {
   },
   verificationSessions: {
     createVerificationSession: 'verificationSessions.createVerificationSession',
+    completeVerificationSession: 'verificationSessions.completeVerificationSession',
+  },
+  licenseVerification: {
+    completeLicenseVerification: 'licenseVerification.completeLicenseVerification',
+  },
+  subjects: {
+    ensureSubjectForDiscord: 'subjects.ensureSubjectForDiscord',
+    getSubjectIdentityById: 'subjects.getSubjectIdentityById',
   },
   webhookIngestion: {
     insertWebhookEvent: 'webhookIngestion.insertWebhookEvent',
@@ -45,6 +53,7 @@ const decryptMock = mock(async (value: string) =>
   value.startsWith('enc:') ? value.slice(4) : value
 );
 const resolveSetupSessionMock = mock(async () => null);
+const ensureSubjectAuthUserIdMock = mock(async (): Promise<string | null> => 'buyer-user-1');
 
 mock.module('../../../../convex/_generated/api', () => ({
   api: apiMock,
@@ -69,6 +78,10 @@ mock.module('../lib/setupSession', () => ({
   resolveSetupSession: resolveSetupSessionMock,
 }));
 
+const subjectIdentityModule = await import('../lib/subjectIdentity');
+spyOn(subjectIdentityModule, 'ensureSubjectAuthUserId').mockImplementation(
+  ensureSubjectAuthUserIdMock
+);
 const { createProviderPlatformRoutes } = await import('./providerPlatform');
 
 function makePaginatedResponse<T>(type: string, items: Array<{ id: string; attributes: T }>) {
@@ -139,6 +152,8 @@ describe('provider platform routes', () => {
     encryptMock.mockClear();
     decryptMock.mockClear();
     resolveSetupSessionMock.mockClear();
+    ensureSubjectAuthUserIdMock.mockClear();
+    ensureSubjectAuthUserIdMock.mockResolvedValue('buyer-user-1');
 
     queryImpl = async (ref, args) => {
       if (ref === apiMock.creatorProfiles.getCreatorProfile) {
@@ -196,6 +211,9 @@ describe('provider platform routes', () => {
       if (ref === apiMock.providerPlatform.resolveTenantSubjectByEmailHash) {
         return 'subject_1';
       }
+      if (ref === apiMock.subjects.getSubjectIdentityById) {
+        return { _id: 'subject_1', authUserId: 'buyer-user-1' };
+      }
       throw new Error(`Unhandled query ${String(ref)} ${JSON.stringify(args)}`);
     };
 
@@ -221,6 +239,16 @@ describe('provider platform routes', () => {
           return 'evidence_1';
         case apiMock.verificationSessions.createVerificationSession:
           return { sessionId: 'verification_1', expiresAt: 1_700_000_000_000 };
+        case apiMock.verificationSessions.completeVerificationSession:
+          return {
+            success: true,
+            alreadyCompleted: false,
+            redirectUri: 'http://localhost:3001/done',
+          };
+        case apiMock.subjects.ensureSubjectForDiscord:
+          return { subjectId: 'subject_1', isNew: true };
+        case apiMock.licenseVerification.completeLicenseVerification:
+          return { success: true, entitlementIds: ['ent_123'] };
         case apiMock.webhookIngestion.insertWebhookEvent:
           return { duplicate: false };
         case apiMock.entitlements.grantEntitlement:
@@ -321,6 +349,20 @@ describe('provider platform routes', () => {
             },
           ])
         );
+      }
+      if (url.endsWith('/licenses/validate') && init?.method === 'POST') {
+        return makeJsonResponse({
+          valid: true,
+          license_key: { id: 'license_1' },
+          meta: {
+            customer_id: 2,
+            order_id: 100,
+            product_id: 1,
+            variant_id: 1,
+            user_name: 'Buyer User',
+            user_email: 'buyer@example.com',
+          },
+        });
       }
       if (url.endsWith('/webhooks') && init?.method === 'POST') {
         return makeJsonResponse({
@@ -428,6 +470,265 @@ describe('provider platform routes', () => {
         (call) => call[0] === apiMock.verificationSessions.createVerificationSession
       )
     ).toBe(true);
+  });
+
+  it('completes verification sessions with buyer-scoped linking when the buyer auth user differs', async () => {
+    queryImpl = async (ref, args) => {
+      if (ref === apiMock.creatorProfiles.getCreatorProfile)
+        return { authUserId: 'owner-user', ownerDiscordUserId: 'discord_owner' };
+      if (ref === apiMock.providerConnections.listConnections) {
+        return {
+          connections: [
+            {
+              id: 'conn_1',
+              provider: 'lemonsqueezy',
+              providerKey: 'lemonsqueezy',
+            },
+          ],
+        };
+      }
+      if (ref === apiMock.providerConnections.getConnectionForBackfill) {
+        return {
+          credentials: { api_token: 'enc:api-token' },
+        };
+      }
+      if (ref === apiMock.providerPlatform.listCatalogMappingsForConnection) {
+        return [
+          {
+            catalogProductId: 'catalog_1',
+            localProductId: 'local_product_1',
+            externalVariantId: '1',
+            externalProductId: '1',
+          },
+        ];
+      }
+      if (ref === apiMock.providerPlatform.listCatalogProductsForTenant) {
+        return [
+          {
+            _id: 'catalog_1',
+            productId: 'local_product_1',
+            provider: 'lemonsqueezy',
+            providerProductRef: '1',
+            status: 'active',
+          },
+        ];
+      }
+      if (ref === apiMock.subjects.getSubjectIdentityById) {
+        return { _id: 'subject_1', authUserId: 'buyer-user-1' };
+      }
+      throw new Error(`Unhandled query ${String(ref)} ${JSON.stringify(args)}`);
+    };
+
+    const response = await routes.handleRequest(
+      new Request('http://localhost:3001/v1/verification-sessions/verification_1/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          authUserId: 'user_abc1',
+          providerKey: 'lemonsqueezy',
+          connectionId: 'conn_1',
+          licenseKey: 'LIC-123',
+          subjectId: 'subject_1',
+        }),
+      })
+    );
+
+    expect(response?.status).toBe(200);
+    expect(mutationMock).toHaveBeenCalledWith(
+      apiMock.licenseVerification.completeLicenseVerification,
+      expect.objectContaining({
+        creatorAuthUserId: 'user_abc1',
+        buyerAuthUserId: 'buyer-user-1',
+        subjectId: 'subject_1',
+      })
+    );
+  });
+
+  it('continues completion by materializing a light buyer account for a Discord-only subject', async () => {
+    queryImpl = async (ref, args) => {
+      if (ref === apiMock.creatorProfiles.getCreatorProfile)
+        return { authUserId: 'owner-user', ownerDiscordUserId: 'discord_owner' };
+      if (ref === apiMock.providerConnections.listConnections) {
+        return {
+          connections: [
+            {
+              id: 'conn_1',
+              provider: 'lemonsqueezy',
+              providerKey: 'lemonsqueezy',
+            },
+          ],
+        };
+      }
+      if (ref === apiMock.providerConnections.getConnectionForBackfill) {
+        return {
+          credentials: { api_token: 'enc:api-token' },
+        };
+      }
+      if (ref === apiMock.providerPlatform.listCatalogMappingsForConnection) {
+        return [
+          {
+            catalogProductId: 'catalog_1',
+            localProductId: 'local_product_1',
+            externalVariantId: '1',
+            externalProductId: '1',
+          },
+        ];
+      }
+      if (ref === apiMock.providerPlatform.listCatalogProductsForTenant) {
+        return [
+          {
+            _id: 'catalog_1',
+            productId: 'local_product_1',
+            provider: 'lemonsqueezy',
+            providerProductRef: '1',
+            status: 'active',
+          },
+        ];
+      }
+      throw new Error(`Unhandled query ${String(ref)} ${JSON.stringify(args)}`);
+    };
+
+    ensureSubjectAuthUserIdMock.mockResolvedValueOnce('light-buyer-user-1');
+    const response = await routes.handleRequest(
+      new Request('http://localhost:3001/v1/verification-sessions/verification_1/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          authUserId: 'user_abc1',
+          providerKey: 'lemonsqueezy',
+          connectionId: 'conn_1',
+          licenseKey: 'LIC-123',
+          discordUserId: 'discord-buyer-only',
+        }),
+      })
+    );
+
+    expect(response?.status).toBe(200);
+    expect(mutationMock).toHaveBeenCalledWith(
+      apiMock.licenseVerification.completeLicenseVerification,
+      expect.objectContaining({
+        creatorAuthUserId: 'user_abc1',
+        buyerAuthUserId: 'light-buyer-user-1',
+      })
+    );
+  });
+
+  it('does not complete the session when license verification rejects the grant', async () => {
+    queryImpl = async (ref, args) => {
+      if (ref === apiMock.creatorProfiles.getCreatorProfile)
+        return { authUserId: 'owner-user', ownerDiscordUserId: 'discord_owner' };
+      if (ref === apiMock.providerConnections.listConnections) {
+        return {
+          connections: [
+            {
+              id: 'conn_1',
+              provider: 'lemonsqueezy',
+              providerKey: 'lemonsqueezy',
+            },
+          ],
+        };
+      }
+      if (ref === apiMock.providerConnections.getConnectionForBackfill) {
+        return {
+          credentials: { api_token: 'enc:api-token' },
+        };
+      }
+      if (ref === apiMock.providerPlatform.listCatalogMappingsForConnection) {
+        return [
+          {
+            catalogProductId: 'catalog_1',
+            localProductId: 'local_product_1',
+            externalVariantId: '1',
+            externalProductId: '1',
+          },
+        ];
+      }
+      if (ref === apiMock.providerPlatform.listCatalogProductsForTenant) {
+        return [
+          {
+            _id: 'catalog_1',
+            productId: 'local_product_1',
+            provider: 'lemonsqueezy',
+            providerProductRef: '1',
+            status: 'active',
+          },
+        ];
+      }
+      if (ref === apiMock.subjects.getSubjectIdentityById) {
+        return { _id: 'subject_1', authUserId: 'buyer-user-1' };
+      }
+      throw new Error(`Unhandled query ${String(ref)} ${JSON.stringify(args)}`);
+    };
+
+    mutationImpl = async (ref) => {
+      switch (ref) {
+        case apiMock.licenseVerification.completeLicenseVerification:
+          return { success: false, error: 'Verification already belongs to another buyer' };
+        case apiMock.providerConnections.createProviderConnection:
+          return 'conn_1';
+        case apiMock.providerConnections.putProviderCredential:
+          return 'credential_1';
+        case apiMock.providerConnections.upsertConnectionCapability:
+          return 'capability_1';
+        case apiMock.providerPlatform.updateProviderConnectionState:
+          return 'conn_1';
+        case apiMock.providerPlatform.upsertCatalogMapping:
+          return 'mapping_1';
+        case apiMock.providerPlatform.upsertProviderTransaction:
+          return 'transaction_1';
+        case apiMock.providerPlatform.upsertProviderMembership:
+          return 'membership_1';
+        case apiMock.providerPlatform.upsertProviderLicense:
+          return 'license_1';
+        case apiMock.providerPlatform.upsertEntitlementEvidence:
+          return 'evidence_1';
+        case apiMock.verificationSessions.createVerificationSession:
+          return { sessionId: 'verification_1', expiresAt: 1_700_000_000_000 };
+        case apiMock.verificationSessions.completeVerificationSession:
+          return {
+            success: true,
+            alreadyCompleted: false,
+            redirectUri: 'http://localhost:3001/done',
+          };
+        case apiMock.subjects.ensureSubjectForDiscord:
+          return { subjectId: 'subject_1', isNew: true };
+        case apiMock.webhookIngestion.insertWebhookEvent:
+          return { duplicate: false };
+        case apiMock.entitlements.grantEntitlement:
+          return { success: true, entitlementId: 'entitlement_1' };
+        default:
+          throw new Error(`Unhandled mutation ${String(ref)}`);
+      }
+    };
+
+    const response = await routes.handleRequest(
+      new Request('http://localhost:3001/v1/verification-sessions/verification_1/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          authUserId: 'user_abc1',
+          providerKey: 'lemonsqueezy',
+          connectionId: 'conn_1',
+          licenseKey: 'LIC-123',
+          subjectId: 'subject_1',
+        }),
+      })
+    );
+
+    expect(response?.status).toBe(409);
+    expect(await response?.json()).toMatchObject({
+      error: 'Verification already belongs to another buyer',
+    });
+    expect(
+      mutationMock.mock.calls.some(
+        (call) => call[0] === apiMock.providerPlatform.upsertEntitlementEvidence
+      )
+    ).toBe(false);
+    expect(
+      mutationMock.mock.calls.some(
+        (call) => call[0] === apiMock.verificationSessions.completeVerificationSession
+      )
+    ).toBe(false);
   });
 
   it('runs reconciliation jobs and persists canonical Lemon records', async () => {

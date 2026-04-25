@@ -871,6 +871,8 @@ const role_rules = defineTable({
   productId: v.string(),
   // Optional catalog product reference
   catalogProductId: v.optional(v.id('product_catalog')),
+  // Optional catalog tier reference for tier-specific rules
+  catalogTierId: v.optional(v.id('catalog_tiers')),
   // Discord role ID to assign (backward compat; use verifiedRoleIds when multiple)
   verifiedRoleId: v.string(),
   // Multiple Discord role IDs to assign when verified
@@ -902,6 +904,7 @@ const role_rules = defineTable({
   .index('by_guild_link', ['guildLinkId'])
   .index('by_product', ['productId'])
   .index('by_catalog_product', ['catalogProductId'])
+  .index('by_catalog_tier', ['catalogTierId'])
   .index('by_source_guild', ['sourceGuildId']);
 
 /**
@@ -1378,6 +1381,27 @@ const product_catalog = defineTable({
   .index('by_slug', ['canonicalSlug'])
   .index('by_status', ['status']);
 
+const catalog_tiers = defineTable({
+  authUserId: v.string(),
+  provider: Provider,
+  productId: v.string(),
+  catalogProductId: v.optional(v.id('product_catalog')),
+  providerProductRef: v.string(),
+  providerTierRef: v.string(),
+  displayName: v.string(),
+  description: v.optional(v.string()),
+  amountCents: v.optional(v.number()),
+  currency: v.optional(v.string()),
+  status: v.union(v.literal('active'), v.literal('archived')),
+  metadata: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index('by_auth_user', ['authUserId'])
+  .index('by_catalog_product', ['catalogProductId'])
+  .index('by_product', ['authUserId', 'productId'])
+  .index('by_provider_tier_ref', ['authUserId', 'provider', 'providerTierRef']);
+
 /**
  * Delivery Packages - distributable Unity/VPM package identities for Backstage Repos.
  * Separate from package_registry so namespace ownership and subscriber delivery stay decoupled.
@@ -1482,6 +1506,9 @@ const purchase_facts = defineTable({
   buyerEmailEncrypted: v.optional(v.string()),
   providerUserId: v.optional(v.string()),
   providerProductId: v.string(),
+  /** Provider-agnostic tier or variant ref recovered from purchase evidence. */
+  externalVariantId: v.optional(v.string()),
+  /** @deprecated Prefer externalVariantId for generic tier identity. */
   providerProductVersionId: v.optional(v.string()),
   paymentStatus: v.string(),
   lifecycleStatus: PurchaseFactLifecycleStatus,
@@ -2822,6 +2849,7 @@ export default defineSchema({
   delivery_package_products,
   delivery_package_releases,
   delivery_repo_tokens,
+  catalog_tiers,
   manual_licenses,
   purchase_facts,
   provider_connections,
