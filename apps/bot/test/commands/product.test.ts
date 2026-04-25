@@ -671,7 +671,8 @@ describe('product command', () => {
     const productSelect = mockStringSelect({
       userId: 'user_prod_jinxxy_price',
       guildId: 'guild_product_test',
-      customId: 'creator_product:catalog_select:jinxxy:user_prod_jinxxy_price:auth_product_jinxxy_price',
+      customId:
+        'creator_product:catalog_select:jinxxy:user_prod_jinxxy_price:auth_product_jinxxy_price',
       values: ['prod_1'],
     });
 

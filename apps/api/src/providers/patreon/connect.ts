@@ -21,6 +21,7 @@ import {
   PATREON_SHARED_CALLBACK_PATH,
   toPatreonVerificationConfig,
 } from './oauth';
+
 const PATREON_STATE_EXPIRY_MS = 10 * 60 * 1000;
 const PATREON_SCOPES = ['campaigns'].join(' ');
 const DEFAULT_PATREON_FETCH_TIMEOUT_MS = 10_000;

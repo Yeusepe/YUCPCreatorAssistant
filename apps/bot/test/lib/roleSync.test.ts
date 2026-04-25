@@ -315,7 +315,10 @@ describe('role sync service regressions', () => {
     );
     (
       service as unknown as {
-        fetchRoleRules: (authUserId: string, productId: string) => Promise<
+        fetchRoleRules: (
+          authUserId: string,
+          productId: string
+        ) => Promise<
           Array<{
             catalogTierId?: string;
             enabled: boolean;

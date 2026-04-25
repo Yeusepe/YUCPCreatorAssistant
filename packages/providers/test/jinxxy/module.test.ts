@@ -120,24 +120,24 @@ describe('createJinxxyProviderModule', () => {
     await expect(
       module.tiers?.listProductTiers('owner-key', 'product-1', makeCtx())
     ).resolves.toEqual([
-        {
-          id: 'version-1',
-          productId: 'product-1',
-          name: 'Regular License',
-          amountCents: 999,
-          currency: 'USD',
-          active: true,
-          metadata: { provider: 'jinxxy' },
-        },
-        {
-          id: 'version-2',
-          productId: 'product-1',
-          name: 'Commercial License',
-          amountCents: 9999,
-          currency: 'USD',
-          active: true,
-          metadata: { provider: 'jinxxy' },
-        },
+      {
+        id: 'version-1',
+        productId: 'product-1',
+        name: 'Regular License',
+        amountCents: 999,
+        currency: 'USD',
+        active: true,
+        metadata: { provider: 'jinxxy' },
+      },
+      {
+        id: 'version-2',
+        productId: 'product-1',
+        name: 'Commercial License',
+        amountCents: 9999,
+        currency: 'USD',
+        active: true,
+        metadata: { provider: 'jinxxy' },
+      },
     ]);
   });
 });

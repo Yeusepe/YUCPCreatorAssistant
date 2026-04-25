@@ -19,10 +19,7 @@ import type {
   GumroadProductVariant,
   GumroadRecurrencePrice,
 } from './types';
-import {
-  buildGumroadTierRef as createGumroadTierRef,
-  normalizeGumroadWhitespace,
-} from './types';
+import { buildGumroadTierRef as createGumroadTierRef, normalizeGumroadWhitespace } from './types';
 
 export const GUMROAD_PURPOSES = {
   credential: 'gumroad-oauth-access-token',
@@ -288,12 +285,12 @@ function buildMembershipTierRecords(product: GumroadProduct): ProviderTierRecord
   const membershipSelections =
     selections.length > 0
       ? selections
-        : [
-            {
-              variantTitle: 'Tier',
-              optionLabel: normalizeGumroadWhitespace(product.name),
-            },
-          ];
+      : [
+          {
+            variantTitle: 'Tier',
+            optionLabel: normalizeGumroadWhitespace(product.name),
+          },
+        ];
   const recurrences = normalizeGumroadRecurrences(product);
   const active = isGumroadProductActive(product);
   const currency = normalizeGumroadCurrency(product.currency) ?? 'USD';
