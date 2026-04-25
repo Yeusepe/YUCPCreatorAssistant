@@ -24,7 +24,14 @@ export interface CreatorBackstagePackageReleaseSummary {
   releaseStatus: 'draft' | 'published' | 'revoked' | 'superseded';
   repositoryVisibility: 'hidden' | 'listed';
   artifactKey?: string;
+  contentType?: string;
+  createdAt: number;
+  deliveryName?: string;
+  metadata?: unknown;
   publishedAt?: number;
+  unityVersion?: string;
+  updatedAt: number;
+  zipSha256?: string;
 }
 
 export interface CreatorBackstageProductPackageSummary {
@@ -36,6 +43,7 @@ export interface CreatorBackstageProductPackageSummary {
   defaultChannel?: string;
   latestPublishedVersion?: string;
   latestRelease: CreatorBackstagePackageReleaseSummary | null;
+  releases: CreatorBackstagePackageReleaseSummary[];
 }
 
 export interface CreatorBackstageProductSummary {

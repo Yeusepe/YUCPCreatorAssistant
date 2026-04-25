@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ComponentPropsWithoutRef, PropsWithChildren, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -210,8 +210,47 @@ describe('dashboard packages route', () => {
                 releaseStatus: 'published',
                 repositoryVisibility: 'listed',
                 artifactKey: 'artifact:creator-bundle',
+                contentType: 'application/zip',
+                createdAt: 1_710_000_000_000,
+                deliveryName: 'creator-bundle-1.2.3.zip',
+                metadata: { source: 'unitypackage' },
                 publishedAt: 1_710_000_100_000,
+                unityVersion: '2022.3',
+                updatedAt: 1_710_000_100_000,
+                zipSha256: 'a'.repeat(64),
               },
+              releases: [
+                {
+                  version: '1.2.3',
+                  channel: 'stable',
+                  releaseStatus: 'published',
+                  repositoryVisibility: 'listed',
+                  artifactKey: 'artifact:creator-bundle',
+                  contentType: 'application/zip',
+                  createdAt: 1_710_000_000_000,
+                  deliveryName: 'creator-bundle-1.2.3.zip',
+                  metadata: { source: 'unitypackage' },
+                  publishedAt: 1_710_000_100_000,
+                  unityVersion: '2022.3',
+                  updatedAt: 1_710_000_100_000,
+                  zipSha256: 'a'.repeat(64),
+                },
+                {
+                  version: '1.2.2',
+                  channel: 'stable',
+                  releaseStatus: 'superseded',
+                  repositoryVisibility: 'hidden',
+                  artifactKey: 'artifact:creator-bundle-older',
+                  contentType: 'application/zip',
+                  createdAt: 1_709_000_000_000,
+                  deliveryName: 'creator-bundle-1.2.2.zip',
+                  metadata: { source: 'zip' },
+                  publishedAt: 1_709_000_100_000,
+                  unityVersion: '2022.3',
+                  updatedAt: 1_709_000_100_000,
+                  zipSha256: 'b'.repeat(64),
+                },
+              ],
             },
           ],
           canonicalSlug: 'creator-bundle',
@@ -313,6 +352,24 @@ describe('dashboard packages route', () => {
     ).toHaveAttribute('src', 'https://public-files.gumroad.com/creator-bundle.png');
   });
 
+  it('opens a product link and shows previous uploads', async () => {
+    const Component = PackagesRoute.options.component;
+    if (!Component) {
+      throw new Error('Packages route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    await waitFor(() => expect(screen.getByText('2 storefronts')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /open upload history for creator bundle product/i }));
+
+    expect(screen.getByText('Product uploads')).toBeInTheDocument();
+    expect(screen.getByText('creator-bundle-1.2.3.zip')).toBeInTheDocument();
+    expect(screen.getByText('creator-bundle-1.2.2.zip')).toBeInTheDocument();
+    expect(screen.getByText(/SHA-256 a{64}/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copy package id/i })).toBeInTheDocument();
+  });
+
   it('renames a package from the dashboard manager', async () => {
     const Component = PackagesRoute.options.component;
     if (!Component) {
@@ -375,10 +432,12 @@ describe('dashboard packages route', () => {
     await screen.findByText('Hidden product links');
     const hiddenProductsDetails = screen.getByText('Hidden product links').closest('details');
     expect(hiddenProductsDetails?.open).toBe(false);
-    fireEvent.click(screen.getAllByRole('button', { name: /^hide$/i })[0]);
+    const mergedProductLane = screen.getByText('2 storefronts').closest('.pm-product-row');
+    expect(mergedProductLane).not.toBeNull();
+    fireEvent.click(within(mergedProductLane as HTMLElement).getByRole('button', { name: /^hide$/i }));
 
     await waitFor(() =>
-      expect(archiveCreatorBackstageProductMock.mock.calls[0]?.[0]).toEqual({
+      expect(archiveCreatorBackstageProductMock).toHaveBeenCalledWith({
         catalogProductId: 'product_1',
       })
     );

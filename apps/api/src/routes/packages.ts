@@ -53,8 +53,30 @@ type BackstageProductQueryResult = {
         releaseStatus: string;
         repositoryVisibility: 'hidden' | 'listed';
         artifactKey?: string;
+        contentType?: string;
+        createdAt: number;
+        deliveryName?: string;
+        metadata?: unknown;
         publishedAt?: number;
+        unityVersion?: string;
+        updatedAt: number;
+        zipSha256?: string;
       };
+      releases: Array<{
+        version: string;
+        channel: string;
+        releaseStatus: string;
+        repositoryVisibility: 'hidden' | 'listed';
+        artifactKey?: string;
+        contentType?: string;
+        createdAt: number;
+        deliveryName?: string;
+        metadata?: unknown;
+        publishedAt?: number;
+        unityVersion?: string;
+        updatedAt: number;
+        zipSha256?: string;
+      }>;
     }>;
   }>;
 };
@@ -221,9 +243,31 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
                   releaseStatus: pkg.latestRelease.releaseStatus,
                   repositoryVisibility: pkg.latestRelease.repositoryVisibility,
                   artifactKey: pkg.latestRelease.artifactKey,
+                  contentType: pkg.latestRelease.contentType,
+                  createdAt: pkg.latestRelease.createdAt,
+                  deliveryName: pkg.latestRelease.deliveryName,
+                  metadata: pkg.latestRelease.metadata,
                   publishedAt: pkg.latestRelease.publishedAt,
+                  unityVersion: pkg.latestRelease.unityVersion,
+                  updatedAt: pkg.latestRelease.updatedAt,
+                  zipSha256: pkg.latestRelease.zipSha256,
                 }
               : null,
+            releases: (pkg.releases ?? []).map((release) => ({
+              version: release.version,
+              channel: release.channel,
+              releaseStatus: release.releaseStatus,
+              repositoryVisibility: release.repositoryVisibility,
+              artifactKey: release.artifactKey,
+              contentType: release.contentType,
+              createdAt: release.createdAt,
+              deliveryName: release.deliveryName,
+              metadata: release.metadata,
+              publishedAt: release.publishedAt,
+              unityVersion: release.unityVersion,
+              updatedAt: release.updatedAt,
+              zipSha256: release.zipSha256,
+            })),
           })),
           canonicalSlug: product.canonicalSlug,
           catalogProductId: String(product._id),

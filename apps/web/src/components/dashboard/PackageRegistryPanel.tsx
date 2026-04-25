@@ -153,6 +153,18 @@ function formatRelativeTime(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short' });
 }
 
+function formatReleaseTimestamp(timestamp?: number): string {
+  if (!timestamp) {
+    return 'Pending publication';
+  }
+
+  return `${formatRelativeTime(timestamp)} · ${new Date(timestamp).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })}`;
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -167,6 +179,23 @@ function mapUploadStatus(status: SelectedUpload['status']): 'complete' | 'failed
   if (status === 'failed') return 'failed';
   if (status === 'uploading') return 'uploading';
   return 'complete';
+}
+
+function mapReleaseStatus(status: CreatorBackstageProductPackageSummary['latestRelease'] extends {
+  releaseStatus: infer T;
+}
+  ? T
+  : never): { status: 'active' | 'failed' | 'pending'; label: string } {
+  switch (status) {
+    case 'published':
+      return { status: 'active', label: 'Published' };
+    case 'revoked':
+      return { status: 'failed', label: 'Revoked' };
+    case 'superseded':
+      return { status: 'pending', label: 'Superseded' };
+    default:
+      return { status: 'pending', label: 'Draft' };
+  }
 }
 
 function normalizeComparableText(value?: string): string {
@@ -406,6 +435,7 @@ function ProductLaneCard({
   isArchiving,
   isRestoring,
   onArchive,
+  onOpenDetails,
   onPublish,
   onRestore,
 }: {
@@ -413,6 +443,7 @@ function ProductLaneCard({
   isArchiving: boolean;
   isRestoring: boolean;
   onArchive: (lane: ProductLane) => void;
+  onOpenDetails: (lane: ProductLane) => void;
   onPublish: (lane: ProductLane) => void;
   onRestore: (lane: ProductLane) => void;
 }) {
@@ -427,7 +458,12 @@ function ProductLaneCard({
   return (
     <Card className="pm-product-row rounded-2xl shadow-none">
       <Card.Content className="grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-        <div className="flex min-w-0 gap-3">
+        <button
+          type="button"
+          className="group flex min-w-0 gap-3 text-left"
+          aria-label={`Open upload history for ${lane.title}`}
+          onClick={() => onOpenDetails(lane)}
+        >
           <div className="pm-icon-shell flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl">
             {lane.thumbnailUrl ? (
               <img
@@ -449,7 +485,7 @@ function ProductLaneCard({
           </div>
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-foreground min-w-0 text-sm font-semibold leading-6">
+              <p className="text-foreground min-w-0 text-sm font-semibold leading-6 group-hover:underline">
                 {lane.title}
               </p>
               <Chip size="sm" variant="soft">
@@ -501,7 +537,7 @@ function ProductLaneCard({
               )}
             </div>
           </div>
-        </div>
+        </button>
         <div className="flex flex-wrap items-center gap-2 md:justify-end">
           <StatusChip
             status={
@@ -519,6 +555,10 @@ function ProductLaneCard({
                   : 'Needs release'
             }
           />
+          <Button size="sm" variant="ghost" onPress={() => onOpenDetails(lane)}>
+            <ExternalLink className="size-4" />
+            Manage
+          </Button>
           {!archived ? (
             <Button size="sm" variant="outline" isDisabled={busy} onPress={() => onPublish(lane)}>
               <ArrowUpFromLine className="size-4" />
@@ -557,6 +597,196 @@ function ProductLaneCard({
         </div>
       </Card.Content>
     </Card>
+  );
+}
+
+function ProductLaneDetailsSheet({
+  lane,
+  isOpen,
+  onCopyPackageId,
+  onOpenChange,
+  onPublish,
+}: {
+  lane: ProductLane | null;
+  isOpen: boolean;
+  onCopyPackageId: (packageId: string) => void;
+  onOpenChange: (isOpen: boolean) => void;
+  onPublish: (lane: ProductLane) => void;
+}) {
+  return (
+    <Sheet isOpen={isOpen} onOpenChange={onOpenChange}>
+      <Sheet.Backdrop variant="blur">
+        <Sheet.Content className="mx-auto max-h-[94vh] max-w-[860px]">
+          <Sheet.Dialog>
+            <Sheet.Handle />
+            <Sheet.CloseTrigger />
+            <Sheet.Header>
+              <Sheet.Heading>Product uploads</Sheet.Heading>
+            </Sheet.Header>
+            <Sheet.Body className="space-y-5">
+              {lane ? (
+                <>
+                  <Card className="pm-muted-card rounded-2xl shadow-none">
+                    <Card.Content className="space-y-4 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-foreground text-base font-semibold">{lane.title}</p>
+                          <p className="text-muted text-sm">
+                            {lane.products.length} storefront
+                            {lane.products.length === 1 ? '' : 's'} ·{' '}
+                            {lane.providerLabels.join(', ')}
+                          </p>
+                        </div>
+                        <Button size="sm" variant="outline" onPress={() => onPublish(lane)}>
+                          <ArrowUpFromLine className="size-4" />
+                          Upload package
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {lane.providerRefs.map((providerRef) => (
+                          <Chip key={providerRef} size="sm" variant="soft">
+                            {providerRef}
+                          </Chip>
+                        ))}
+                      </div>
+                    </Card.Content>
+                  </Card>
+
+                  {lane.packageLinks.length > 0 ? (
+                    lane.packageLinks.map((packageLink) => (
+                      <Card key={packageLink.packageId} className="pm-card rounded-2xl shadow-none">
+                        <Card.Header className="flex flex-wrap items-start justify-between gap-3 p-4 pb-2">
+                          <div className="space-y-1">
+                            <p className="text-foreground text-sm font-semibold">
+                              {packageLink.displayName ??
+                                packageLink.packageName ??
+                                packageLink.packageId}
+                            </p>
+                            <p className="text-muted break-all font-mono text-xs">
+                              {packageLink.packageId}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => onCopyPackageId(packageLink.packageId)}
+                            >
+                              <Copy className="size-4" />
+                              Copy package ID
+                            </Button>
+                            <Button size="sm" variant="outline" onPress={() => onPublish(lane)}>
+                              <ArrowUpFromLine className="size-4" />
+                              Upload new version
+                            </Button>
+                          </div>
+                        </Card.Header>
+                        <Card.Content className="space-y-3 p-4 pt-0">
+                          {packageLink.releases.length > 0 ? (
+                            packageLink.releases.map((release) => {
+                              const releaseBadge = mapReleaseStatus(release.releaseStatus);
+                              const isCurrentRelease =
+                                packageLink.latestRelease?.version === release.version &&
+                                packageLink.latestRelease?.channel === release.channel &&
+                                packageLink.latestRelease?.releaseStatus === release.releaseStatus;
+
+                              return (
+                                <div key={`${release.version}:${release.channel}:${release.updatedAt}`}>
+                                  <div className="pm-muted-panel space-y-3 rounded-2xl p-4">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                      <div className="space-y-1">
+                                        <p className="text-foreground text-sm font-medium">
+                                          {release.deliveryName ??
+                                            `${packageLink.packageId}-${release.version}.zip`}
+                                        </p>
+                                        <p className="text-muted text-xs">
+                                          {formatReleaseTimestamp(
+                                            release.publishedAt ?? release.updatedAt
+                                          )}
+                                        </p>
+                                      </div>
+                                      <div className="flex flex-wrap gap-2">
+                                        <StatusChip
+                                          status={releaseBadge.status}
+                                          label={releaseBadge.label}
+                                        />
+                                        {isCurrentRelease ? (
+                                          <Chip size="sm" variant="soft">
+                                            Current
+                                          </Chip>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      <Chip size="sm" variant="soft">
+                                        v{release.version}
+                                      </Chip>
+                                      <Chip size="sm" variant="soft">
+                                        {release.channel}
+                                      </Chip>
+                                      <Chip size="sm" variant="soft">
+                                        {release.repositoryVisibility === 'listed'
+                                          ? 'Listed'
+                                          : 'Hidden'}
+                                      </Chip>
+                                      {release.unityVersion ? (
+                                        <Chip size="sm" variant="soft">
+                                          Unity {release.unityVersion}
+                                        </Chip>
+                                      ) : null}
+                                      {release.contentType ? (
+                                        <Chip size="sm" variant="soft">
+                                          {release.contentType}
+                                        </Chip>
+                                      ) : null}
+                                    </div>
+                                    {release.zipSha256 ? (
+                                      <p className="text-muted break-all font-mono text-[11px]">
+                                        SHA-256 {release.zipSha256}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <EmptyState className="pm-empty-state rounded-2xl border border-dashed">
+                              <EmptyState.Header>
+                                <EmptyState.Media variant="icon">
+                                  <Package2 className="size-5" />
+                                </EmptyState.Media>
+                                <EmptyState.Title>No uploads yet</EmptyState.Title>
+                                <EmptyState.Description>
+                                  Upload the first package for this linked product to start its
+                                  release history.
+                                </EmptyState.Description>
+                              </EmptyState.Header>
+                            </EmptyState>
+                          )}
+                        </Card.Content>
+                      </Card>
+                    ))
+                  ) : (
+                    <EmptyState className="pm-empty-state rounded-2xl border border-dashed">
+                      <EmptyState.Header>
+                        <EmptyState.Media variant="icon">
+                          <Store />
+                        </EmptyState.Media>
+                        <EmptyState.Title>No package uploads yet</EmptyState.Title>
+                        <EmptyState.Description>
+                          This product link does not have a package yet. Upload one to create the
+                          first installable release.
+                        </EmptyState.Description>
+                      </EmptyState.Header>
+                    </EmptyState>
+                  )}
+                </>
+              ) : null}
+            </Sheet.Body>
+          </Sheet.Dialog>
+        </Sheet.Content>
+      </Sheet.Backdrop>
+    </Sheet>
   );
 }
 
@@ -736,8 +966,10 @@ export function PackageRegistryPanel({
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
   const [isArchivedProductsExpanded, setIsArchivedProductsExpanded] = useState(false);
   const [isPublishOpen, setIsPublishOpen] = useState(false);
+  const [isProductDetailsOpen, setIsProductDetailsOpen] = useState(false);
   const [isAdvancedPublishOptionsOpen, setIsAdvancedPublishOptionsOpen] = useState(false);
   const [publishDraft, setPublishDraft] = useState<PublishDraft>(() => buildDraftFromLane(null));
+  const [selectedProductLaneKey, setSelectedProductLaneKey] = useState<string | null>(null);
   const [selectedUpload, setSelectedUpload] = useState<SelectedUpload | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -1065,6 +1297,8 @@ export function PackageRegistryPanel({
     ).includes(normalizedSearch)
   );
   const selectedLane = productLanes.find((lane) => lane.laneKey === publishDraft.laneKey);
+  const selectedProductLane =
+    productLanes.find((lane) => lane.laneKey === selectedProductLaneKey) ?? null;
   const hasBlockingError =
     (packagesQuery.isError && !isDashboardAuthError(packagesQuery.error)) ||
     (productsQuery.isError && !isDashboardAuthError(productsQuery.error)) ||
@@ -1096,7 +1330,13 @@ export function PackageRegistryPanel({
     setPublishDraft(buildDraftFromLane(lane));
     setIsAdvancedPublishOptionsOpen(false);
     setSelectedUpload(null);
+    setIsProductDetailsOpen(false);
     setIsPublishOpen(true);
+  }
+
+  function openProductDetails(lane: ProductLane) {
+    setSelectedProductLaneKey(lane.laneKey);
+    setIsProductDetailsOpen(true);
   }
 
   function handleLaneSelection(key: Key | null) {
@@ -1409,6 +1649,7 @@ export function PackageRegistryPanel({
                             }
                             isRestoring={false}
                             onArchive={(targetLane) => archiveProductMutation.mutate(targetLane)}
+                            onOpenDetails={openProductDetails}
                             onPublish={openPublishSheet}
                             onRestore={() => {}}
                           />
@@ -1449,6 +1690,7 @@ export function PackageRegistryPanel({
                                       restoreProductMutation.isPending
                                     }
                                     onArchive={() => {}}
+                                    onOpenDetails={openProductDetails}
                                     onPublish={openPublishSheet}
                                     onRestore={(targetLane) =>
                                       restoreProductMutation.mutate(targetLane)
@@ -1524,6 +1766,16 @@ export function PackageRegistryPanel({
           </>
         )}
       </div>
+
+      <ProductLaneDetailsSheet
+        lane={selectedProductLane}
+        isOpen={isProductDetailsOpen}
+        onCopyPackageId={(packageId) =>
+          handleCopyValue(packageId, `Copied ${packageId} package ID`)
+        }
+        onOpenChange={setIsProductDetailsOpen}
+        onPublish={openPublishSheet}
+      />
 
       <Sheet isOpen={isPublishOpen} onOpenChange={setIsPublishOpen}>
         <Sheet.Backdrop variant="blur">

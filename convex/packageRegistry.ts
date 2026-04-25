@@ -60,17 +60,25 @@ type BackstagePackageSummary = {
   defaultChannel?: string;
   latestPublishedVersion?: string;
   latestPublishedAt?: number;
-  latestRelease: {
-    version: string;
-    channel: string;
-    releaseStatus: Doc<'delivery_package_releases'>['releaseStatus'];
-    repositoryVisibility: Doc<'delivery_package_releases'>['repositoryVisibility'];
-    artifactKey?: string;
-    signedArtifactId?: Id<'signed_release_artifacts'>;
-    zipSha256?: string;
-    metadata?: unknown;
-    publishedAt?: number;
-  } | null;
+  latestRelease: BackstageReleaseSummary | null;
+  releases: BackstageReleaseSummary[];
+};
+
+type BackstageReleaseSummary = {
+  version: string;
+  channel: string;
+  releaseStatus: Doc<'delivery_package_releases'>['releaseStatus'];
+  repositoryVisibility: Doc<'delivery_package_releases'>['repositoryVisibility'];
+  artifactKey?: string;
+  signedArtifactId?: Id<'signed_release_artifacts'>;
+  zipSha256?: string;
+  metadata?: unknown;
+  publishedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+  unityVersion?: string;
+  deliveryName?: string;
+  contentType?: string;
 };
 
 type RegistryReaderCtx = QueryCtx | MutationCtx;
@@ -122,6 +130,32 @@ function shouldReplaceLatestRelease(
     return false;
   }
   return compareReleaseRecency(candidate, existing) < 0;
+}
+
+function toBackstageReleaseSummary(
+  release: Doc<'delivery_package_releases'>,
+  artifactsById: Map<string, Doc<'signed_release_artifacts'>>
+): BackstageReleaseSummary {
+  const artifact = release.signedArtifactId
+    ? artifactsById.get(String(release.signedArtifactId))
+    : undefined;
+
+  return {
+    version: release.version,
+    channel: release.channel,
+    releaseStatus: release.releaseStatus,
+    repositoryVisibility: release.repositoryVisibility,
+    artifactKey: release.artifactKey,
+    signedArtifactId: release.signedArtifactId,
+    zipSha256: release.zipSha256,
+    metadata: release.metadata,
+    publishedAt: release.publishedAt,
+    createdAt: release.createdAt,
+    updatedAt: release.updatedAt,
+    unityVersion: release.unityVersion,
+    deliveryName: artifact?.deliveryName,
+    contentType: artifact?.contentType,
+  };
 }
 
 function compareBackstagePackages(
@@ -428,12 +462,37 @@ async function buildBackstagePackageMap(
     .query('delivery_package_releases')
     .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
     .collect();
+  const relevantReleases = releases.filter((release) =>
+    deliveryPackagesById.has(String(release.deliveryPackageId))
+  );
+  const signedArtifactIds = Array.from(
+    new Set(
+      relevantReleases
+        .map((release) => (release.signedArtifactId ? String(release.signedArtifactId) : null))
+        .filter((artifactId): artifactId is string => Boolean(artifactId))
+    )
+  );
+  const signedArtifacts = (
+    await Promise.all(
+      signedArtifactIds.map(async (artifactId) => {
+        return await ctx.db.get(artifactId as Id<'signed_release_artifacts'>);
+      })
+    )
+  ).filter(
+    (artifact): artifact is Doc<'signed_release_artifacts'> => artifact !== null
+  );
+  const signedArtifactsById = new Map(
+    signedArtifacts.map((artifact) => [String(artifact._id), artifact])
+  );
 
   const latestReleaseByPackageId = new Map<string, Doc<'delivery_package_releases'>>();
-  for (const release of releases) {
-    if (!deliveryPackagesById.has(String(release.deliveryPackageId))) {
-      continue;
-    }
+  const releasesByPackageId = new Map<string, Doc<'delivery_package_releases'>[]>();
+  for (const release of relevantReleases) {
+    const releaseKey = String(release.deliveryPackageId);
+    const existingReleases = releasesByPackageId.get(releaseKey) ?? [];
+    existingReleases.push(release);
+    releasesByPackageId.set(releaseKey, existingReleases);
+
     const existing = latestReleaseByPackageId.get(String(release.deliveryPackageId));
     if (shouldReplaceLatestRelease(release, existing)) {
       latestReleaseByPackageId.set(String(release.deliveryPackageId), release);
@@ -447,6 +506,10 @@ async function buildBackstagePackageMap(
       continue;
     }
 
+    const packageReleaseHistory = (releasesByPackageId.get(String(link.deliveryPackageId)) ?? [])
+      .slice()
+      .sort(compareReleaseRecency)
+      .map((release) => toBackstageReleaseSummary(release, signedArtifactsById));
     const latestRelease = latestReleaseByPackageId.get(String(link.deliveryPackageId)) ?? null;
     const summary: BackstagePackageSummary = {
       deliveryPackageId: deliveryPackage._id,
@@ -460,18 +523,9 @@ async function buildBackstagePackageMap(
       latestPublishedVersion: deliveryPackage.latestPublishedVersion,
       latestPublishedAt: deliveryPackage.latestPublishedAt,
       latestRelease: latestRelease
-        ? {
-            version: latestRelease.version,
-            channel: latestRelease.channel,
-            releaseStatus: latestRelease.releaseStatus,
-            repositoryVisibility: latestRelease.repositoryVisibility,
-            artifactKey: latestRelease.artifactKey,
-            signedArtifactId: latestRelease.signedArtifactId,
-            zipSha256: latestRelease.zipSha256,
-            metadata: latestRelease.metadata,
-            publishedAt: latestRelease.publishedAt,
-          }
+        ? toBackstageReleaseSummary(latestRelease, signedArtifactsById)
         : null,
+      releases: packageReleaseHistory,
     };
 
     const catalogProductKey = String(link.catalogProductId);
