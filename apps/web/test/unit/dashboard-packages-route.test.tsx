@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ComponentPropsWithoutRef, PropsWithChildren, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,20 +44,103 @@ vi.mock('@/hooks/useDashboardSession', () => ({
   isDashboardAuthError: vi.fn(() => false),
 }));
 
+vi.mock('@heroui-pro/react', () => {
+  const Div = ({
+    children,
+    isDisabled: _isDisabled,
+    isOpen: _isOpen,
+    onOpenChange: _onOpenChange,
+    onPress: _onPress,
+    ...props
+  }: PropsWithChildren<Record<string, unknown>>) => <div {...props}>{children}</div>;
+  const Input = ({
+    children: _children,
+    isDisabled: _isDisabled,
+    onOpenChange: _onOpenChange,
+    onPress: _onPress,
+    ...props
+  }: PropsWithChildren<Record<string, unknown>>) => <input {...props} />;
+
+  const DropZone = Object.assign(Div, {
+    Area: Div,
+    Description: Div,
+    FileFormatIcon: Div,
+    FileInfo: Div,
+    FileItem: Div,
+    FileList: Div,
+    FileMeta: Div,
+    FileName: Div,
+    FileProgress: Div,
+    FileProgressFill: Div,
+    FileProgressTrack: Div,
+    FileRemoveTrigger: Div,
+    Icon: Div,
+    Input,
+    Label: Div,
+    Trigger: Div,
+  });
+
+  const EmptyState = Object.assign(Div, {
+    Content: Div,
+    Description: Div,
+    Header: Div,
+    Media: Div,
+    Title: Div,
+  });
+
+  const ItemCard = Object.assign(Div, {
+    Action: Div,
+    Content: Div,
+    Description: Div,
+    Icon: Div,
+    Title: Div,
+  });
+
+  const Sheet = Object.assign(Div, {
+    Backdrop: Div,
+    Body: Div,
+    Close: Div,
+    CloseTrigger: Div,
+    Content: Div,
+    Dialog: Div,
+    Footer: Div,
+    Handle: Div,
+    Header: Div,
+    Heading: Div,
+  });
+
+  return {
+    DropZone,
+    EmptyState,
+    ItemCard,
+    Sheet,
+  };
+});
+
 vi.mock('@/lib/packages', () => ({
   archiveCreatorPackage: vi.fn(),
+  createBackstageReleaseUploadUrl: vi.fn(),
   deleteCreatorPackage: vi.fn(),
+  listCreatorBackstageProducts: vi.fn(),
   listCreatorPackages: vi.fn(),
+  publishBackstageRelease: vi.fn(),
   renameCreatorPackage: vi.fn(),
+  requestBackstageRepoAccess: vi.fn(),
   restoreCreatorPackage: vi.fn(),
+  uploadBackstageReleaseFile: vi.fn(),
 }));
 
 import * as packagesApi from '@/lib/packages';
 import { Route as PackagesRoute } from '@/routes/_authenticated/dashboard/packages.lazy';
 
-const archiveCreatorPackageMock = packagesApi.archiveCreatorPackage as ReturnType<typeof vi.fn>;
+const listCreatorBackstageProductsMock = packagesApi.listCreatorBackstageProducts as ReturnType<
+  typeof vi.fn
+>;
 const listCreatorPackagesMock = packagesApi.listCreatorPackages as ReturnType<typeof vi.fn>;
 const renameCreatorPackageMock = packagesApi.renameCreatorPackage as ReturnType<typeof vi.fn>;
+const requestBackstageRepoAccessMock = packagesApi.requestBackstageRepoAccess as ReturnType<
+  typeof vi.fn
+>;
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -104,14 +187,69 @@ describe('dashboard packages route', () => {
         },
       ],
     });
+    listCreatorBackstageProductsMock.mockResolvedValue({
+      products: [
+        {
+          aliases: ['Creator Bundle Product'],
+          backstagePackages: [
+            {
+              packageId: 'pkg.creator.bundle',
+              packageName: 'Creator Bundle',
+              displayName: 'Creator Bundle',
+              status: 'active',
+              repositoryVisibility: 'listed',
+              defaultChannel: 'stable',
+              latestPublishedVersion: '1.2.3',
+              latestRelease: {
+                version: '1.2.3',
+                channel: 'stable',
+                releaseStatus: 'published',
+                repositoryVisibility: 'listed',
+                artifactKey: 'artifact:creator-bundle',
+                publishedAt: 1_710_000_100_000,
+              },
+            },
+          ],
+          canonicalSlug: 'creator-bundle',
+          catalogProductId: 'product_1',
+          displayName: 'Creator Bundle Product',
+          productId: 'gumroad-product-1',
+          provider: 'gumroad',
+          providerProductRef: 'gumroad-product-1',
+          status: 'active',
+          supportsAutoDiscovery: true,
+          updatedAt: 1_710_000_100_000,
+        },
+        {
+          aliases: ['Creator Bundle Product'],
+          backstagePackages: [],
+          canonicalSlug: 'creator-bundle',
+          catalogProductId: 'product_2',
+          displayName: 'Creator Bundle Product',
+          productId: 'jinxxy-product-1',
+          provider: 'jinxxy',
+          providerProductRef: 'jinxxy-product-1',
+          status: 'active',
+          supportsAutoDiscovery: true,
+          updatedAt: 1_710_000_100_000,
+        },
+      ],
+    });
+    requestBackstageRepoAccessMock.mockResolvedValue({
+      creatorName: 'Mapache',
+      creatorRepoRef: 'mapache',
+      repositoryUrl: 'https://api.test/v1/backstage/repos/mapache/index.json',
+      repositoryName: 'Mapache Backstage Repos',
+      addRepoUrl:
+        'vcc://vpm/addRepo?url=https%3A%2F%2Fapi.test%2Fv1%2Fbackstage%2Frepos%2Fmapache%2Findex.json',
+      repoTokenHeader: 'X-YUCP-Repo-Token',
+      repoToken: 'ybt_example',
+      expiresAt: 1_710_000_100_000,
+    });
     renameCreatorPackageMock.mockResolvedValue({
       updated: true,
       packageId: 'pkg.creator.bundle',
       packageName: 'Creator Bundle+',
-    });
-    archiveCreatorPackageMock.mockResolvedValue({
-      archived: true,
-      packageId: 'pkg.creator.bundle',
     });
   });
 
@@ -119,7 +257,7 @@ describe('dashboard packages route', () => {
     cleanup();
   });
 
-  it('renders package names with package ids as secondary metadata', async () => {
+  it('renders repo access and product-linked release lanes', async () => {
     const Component = PackagesRoute.options.component;
     if (!Component) {
       throw new Error('Packages route component is not defined');
@@ -127,8 +265,14 @@ describe('dashboard packages route', () => {
 
     render(<Component />, { wrapper: createWrapper() });
 
-    await waitFor(() => expect(screen.getByDisplayValue('Creator Bundle')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('2 storefronts')).toBeInTheDocument());
+    expect(screen.getAllByText('Creator Bundle Product').length).toBeGreaterThan(0);
+    expect(screen.getByText('Mapache')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copy add-repo link/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /publish release/i }).length).toBeGreaterThan(0);
     expect(screen.getByText('pkg.creator.bundle')).toBeInTheDocument();
+    expect(screen.getByText('Drop a Unity package here')).toBeInTheDocument();
+    expect(document.querySelector('input[accept*=".unitypackage"]')).not.toBeNull();
   });
 
   it('renames a package from the dashboard manager', async () => {
@@ -139,10 +283,11 @@ describe('dashboard packages route', () => {
 
     render(<Component />, { wrapper: createWrapper() });
 
-    await waitFor(() => expect(screen.getByDisplayValue('Creator Bundle')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('pkg.creator.bundle')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /rename package/i }));
     const input = screen.getByDisplayValue('Creator Bundle');
     fireEvent.change(input, { target: { value: 'Creator Bundle+' } });
-    fireEvent.click(screen.getByRole('button', { name: /save name/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save package name/i }));
 
     await waitFor(() =>
       expect(renameCreatorPackageMock.mock.calls[0]?.[0]).toEqual({
@@ -160,13 +305,8 @@ describe('dashboard packages route', () => {
 
     render(<Component />, { wrapper: createWrapper() });
 
-    await waitFor(() => expect(screen.getByDisplayValue('Creator Bundle')).toBeInTheDocument());
-    const activeRow = screen.getByDisplayValue('Creator Bundle').closest('.account-list-row');
-    if (!(activeRow instanceof HTMLElement)) {
-      throw new Error('Active package row was not rendered');
-    }
-
-    const deleteButton = within(activeRow).getByRole('button', { name: /delete/i });
+    await waitFor(() => expect(screen.getByText('pkg.creator.bundle')).toBeInTheDocument());
+    const deleteButton = screen.getByRole('button', { name: /delete package/i });
     expect(deleteButton).toBeDisabled();
     expect(
       screen.getByText('Package has signing or license history and cannot be deleted.')
@@ -185,39 +325,13 @@ describe('dashboard packages route', () => {
       expect(listCreatorPackagesMock).toHaveBeenCalledWith({ includeArchived: true })
     );
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /archived packages \(1\)/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /archived package ids/i })).toBeInTheDocument()
     );
-    expect(screen.queryByDisplayValue('Legacy Bundle')).not.toBeInTheDocument();
+    expect(screen.queryByText('Legacy Bundle')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /archived packages \(1\)/i }));
+    fireEvent.click(screen.getByRole('button', { name: /archived package ids/i }));
 
-    expect(screen.getByDisplayValue('Legacy Bundle')).toBeDisabled();
-    expect(screen.getByRole('button', { name: /restore/i })).toBeInTheDocument();
-  });
-
-  it('updates the archived submenu count immediately after archiving', async () => {
-    const Component = PackagesRoute.options.component;
-    if (!Component) {
-      throw new Error('Packages route component is not defined');
-    }
-
-    render(<Component />, { wrapper: createWrapper() });
-
-    await waitFor(() => expect(screen.getByDisplayValue('Creator Bundle')).toBeInTheDocument());
-    const activeRow = screen.getByDisplayValue('Creator Bundle').closest('.account-list-row');
-    if (!(activeRow instanceof HTMLElement)) {
-      throw new Error('Active package row was not rendered');
-    }
-
-    fireEvent.click(within(activeRow).getByRole('button', { name: /archive/i }));
-
-    await waitFor(() =>
-      expect(archiveCreatorPackageMock.mock.calls[0]?.[0]).toEqual({
-        packageId: 'pkg.creator.bundle',
-      })
-    );
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /archived packages \(2\)/i })).toBeInTheDocument()
-    );
+    expect(screen.getByText('Legacy Bundle')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /restore package/i })).toBeInTheDocument();
   });
 });

@@ -2,6 +2,7 @@ import type { ApiActorBinding } from '@yucp/shared/apiActor';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import type { Auth } from '../auth';
+import { buildBackstageRepositoryUrls, getCreatorRepoIdentity } from '../lib/backstageRepoIdentity';
 import { createAuthUserActorBinding } from '../lib/apiActor';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { rejectCrossSiteRequest } from '../lib/csrf';
@@ -9,6 +10,9 @@ import { logger } from '../lib/logger';
 import { verifyBetterAuthAccessToken } from '../lib/oauthAccessToken';
 
 const PACKAGE_ID_RE = /^[a-z0-9\-_./:]{1,128}$/;
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
+const BACKSTAGE_REPO_TOKEN_HEADER = 'X-YUCP-Repo-Token';
+const BACKSTAGE_REPO_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type PackagesConfig = {
   apiBaseUrl: string;
@@ -16,6 +20,38 @@ export type PackagesConfig = {
   convexApiSecret: string;
   convexSiteUrl: string;
   convexUrl: string;
+};
+
+type BackstageProductQueryResult = {
+  data: Array<{
+    _id: string;
+    aliases?: string[];
+    canonicalSlug: string;
+    displayName: string;
+    productId: string;
+    provider: string;
+    providerProductRef: string;
+    status: string;
+    supportsAutoDiscovery: boolean;
+    updatedAt: number;
+    backstagePackages?: Array<{
+      packageId: string;
+      packageName?: string;
+      displayName?: string;
+      status: string;
+      repositoryVisibility: 'hidden' | 'listed';
+      defaultChannel?: string;
+      latestPublishedVersion?: string;
+      latestRelease: null | {
+        version: string;
+        channel: string;
+        releaseStatus: string;
+        repositoryVisibility: 'hidden' | 'listed';
+        artifactKey?: string;
+        publishedAt?: number;
+      };
+    }>;
+  }>;
 };
 
 function jsonResponse(body: object, status = 200): Response {
@@ -38,6 +74,13 @@ function assertPackageId(packageId: string): string {
     throw new Error('Invalid packageId format');
   }
   return normalized;
+}
+
+function buildBackstageAddRepoUrl(repositoryUrl: string, repoToken: string): string {
+  const addRepoUrl = new URL('vcc://vpm/addRepo');
+  addRepoUrl.searchParams.set('url', repositoryUrl);
+  addRepoUrl.searchParams.append('headers[]', `${BACKSTAGE_REPO_TOKEN_HEADER}:${repoToken}`);
+  return addRepoUrl.toString();
 }
 
 async function resolveViewer(
@@ -89,6 +132,113 @@ async function resolveViewer(
 }
 
 export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
+  async function getBackstageRepoAccess(request: Request): Promise<Response> {
+    const viewer = await resolveViewer(request, auth, config);
+    if (viewer instanceof Response) {
+      return viewer;
+    }
+    const convex = getConvexClientFromUrl(config.convexUrl, viewer.actorBinding);
+
+    try {
+      const subject = await convex.query(api.backstageRepos.getSubjectByAuthUserForApi, {
+        apiSecret: config.convexApiSecret,
+        authUserId: viewer.authUserId,
+      });
+      if (!subject) {
+        return jsonResponse({ error: 'No active subject found for this account' }, 404);
+      }
+
+      const now = Date.now();
+      const issued = await convex.mutation(api.backstageRepos.issueRepoTokenForApi, {
+        apiSecret: config.convexApiSecret,
+        authUserId: viewer.authUserId,
+        subjectId: subject._id,
+        label: 'Dashboard Backstage Repos',
+        expiresAt: now + BACKSTAGE_REPO_TOKEN_TTL_MS,
+      });
+      const creatorRepoIdentity = await getCreatorRepoIdentity({
+        convex,
+        convexApiSecret: config.convexApiSecret,
+        authUserId: viewer.authUserId,
+      });
+      const repositoryUrl = buildBackstageRepositoryUrls(
+        config.apiBaseUrl,
+        creatorRepoIdentity.creatorRepoRef
+      ).repositoryUrl;
+      return jsonResponse({
+        creatorName: creatorRepoIdentity.creatorName,
+        creatorRepoRef: creatorRepoIdentity.creatorRepoRef,
+        repositoryUrl,
+        repositoryName: creatorRepoIdentity.repositoryName,
+        addRepoUrl: buildBackstageAddRepoUrl(repositoryUrl, issued.token),
+        repoTokenHeader: BACKSTAGE_REPO_TOKEN_HEADER,
+        repoToken: issued.token,
+        expiresAt: issued.expiresAt,
+      });
+    } catch (error) {
+      logger.error('Failed to issue Backstage repo access for dashboard package routes', {
+        authUserId: viewer.authUserId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return jsonResponse({ error: 'Failed to issue Backstage repo access' }, 500);
+    }
+  }
+
+  async function listBackstageProducts(request: Request): Promise<Response> {
+    const viewer = await resolveViewer(request, auth, config);
+    if (viewer instanceof Response) {
+      return viewer;
+    }
+    const convex = getConvexClientFromUrl(config.convexUrl, viewer.actorBinding);
+
+    try {
+      const result = (await convex.query(api.packageRegistry.listByAuthUser, {
+        apiSecret: config.convexApiSecret,
+        authUserId: viewer.authUserId,
+      })) as BackstageProductQueryResult;
+
+      return jsonResponse({
+        products: result.data.map((product) => ({
+          aliases: product.aliases ?? [],
+          backstagePackages: (product.backstagePackages ?? []).map((pkg) => ({
+            packageId: pkg.packageId,
+            packageName: pkg.packageName,
+            displayName: pkg.displayName,
+            status: pkg.status,
+            repositoryVisibility: pkg.repositoryVisibility,
+            defaultChannel: pkg.defaultChannel,
+            latestPublishedVersion: pkg.latestPublishedVersion,
+            latestRelease: pkg.latestRelease
+              ? {
+                  version: pkg.latestRelease.version,
+                  channel: pkg.latestRelease.channel,
+                  releaseStatus: pkg.latestRelease.releaseStatus,
+                  repositoryVisibility: pkg.latestRelease.repositoryVisibility,
+                  artifactKey: pkg.latestRelease.artifactKey,
+                  publishedAt: pkg.latestRelease.publishedAt,
+                }
+              : null,
+          })),
+          canonicalSlug: product.canonicalSlug,
+          catalogProductId: String(product._id),
+          displayName: product.displayName,
+          productId: product.productId,
+          provider: product.provider,
+          providerProductRef: product.providerProductRef,
+          status: product.status,
+          supportsAutoDiscovery: product.supportsAutoDiscovery,
+          updatedAt: product.updatedAt,
+        })),
+      });
+    } catch (error) {
+      logger.error('Failed to list Backstage package products', {
+        authUserId: viewer.authUserId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return jsonResponse({ error: 'Failed to load Backstage products' }, 500);
+    }
+  }
+
   async function listPackages(request: Request): Promise<Response> {
     const viewer = await resolveViewer(request, auth, config);
     if (viewer instanceof Response) {
@@ -347,8 +497,10 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
 
     let body: {
       catalogProductId?: string;
+      catalogProductIds?: string[];
       storageId?: string;
       version?: string;
+      zipSha256?: string;
       channel?: string;
       packageName?: string;
       displayName?: string;
@@ -367,8 +519,30 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
       return jsonResponse({ error: 'Invalid JSON body' }, 400);
     }
 
-    if (!body.catalogProductId || !body.storageId || !body.version) {
-      return jsonResponse({ error: 'catalogProductId, storageId, and version are required' }, 400);
+    const catalogProductIds = Array.from(
+      new Set(
+        (Array.isArray(body.catalogProductIds)
+          ? body.catalogProductIds
+          : body.catalogProductId
+            ? [body.catalogProductId]
+            : []
+        )
+          .map((catalogProductId) => catalogProductId?.trim())
+          .filter((catalogProductId): catalogProductId is string => Boolean(catalogProductId))
+      )
+    );
+    const zipSha256 = body.zipSha256?.trim().toLowerCase();
+    if (catalogProductIds.length === 0 || !body.storageId || !body.version || !zipSha256) {
+      return jsonResponse(
+        { error: 'catalogProductIds, storageId, version, and zipSha256 are required' },
+        400
+      );
+    }
+    if (!SHA256_HEX_RE.test(zipSha256)) {
+      return jsonResponse(
+        { error: 'zipSha256 must be a lowercase 64-character SHA-256 hex digest' },
+        400
+      );
     }
 
     try {
@@ -376,10 +550,12 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
         apiSecret: config.convexApiSecret,
         actor: viewer.actorBinding,
         authUserId: viewer.authUserId,
-        catalogProductId: body.catalogProductId as Id<'product_catalog'>,
+        catalogProductId: catalogProductIds[0] as Id<'product_catalog'>,
+        catalogProductIds: catalogProductIds as Array<Id<'product_catalog'>>,
         packageId,
         storageId: body.storageId as Id<'_storage'>,
         version: body.version,
+        zipSha256,
         channel: body.channel,
         packageName: body.packageName,
         displayName: body.displayName,
@@ -404,6 +580,8 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
   }
 
   return {
+    getBackstageRepoAccess,
+    listBackstageProducts,
     listPackages,
     renamePackage,
     archivePackage,

@@ -1,8 +1,8 @@
 /**
- * Publish a Backstage VPM ZIP through the public API contract that the Unity exporter should use.
+ * Publish a Backstage package artifact through the public API contract that the Unity exporter should use.
  *
  * Usage:
- *   bun run publish:backstage-package -- --packageId com.yucp.example --catalogProductId product_123 --version 1.2.3 --sourcePath E:\exports\example.zip
+ *   bun run publish:backstage-package -- --packageId com.yucp.example --catalogProductId product_123 --version 1.2.3 --sourcePath E:\exports\example.unitypackage
  *   bun run publish:backstage-package -- --packageId com.yucp.example --catalogProductId product_123 --version 1.2.3 --storageId kg2abc123...
  *
  * Authentication:
@@ -10,8 +10,10 @@
  *   scope. The external Unity exporter can reuse the same OAuth token it already obtains for YUCP.
  */
 
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createReadStream, existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
+import { prepareBackstageArtifactForPublish } from '@yucp/shared/backstageVpmPackage';
 
 type FetchLike = typeof fetch;
 
@@ -23,6 +25,7 @@ export type PublishBackstagePackageConfig = {
   version: string;
   sourcePath?: string;
   storageId?: string;
+  zipSha256?: string;
   channel?: string;
   packageName?: string;
   displayName?: string;
@@ -54,6 +57,14 @@ export type PublishBackstagePackageResult = {
   channel: string;
 };
 
+function inferBackstageArtifactContentType(sourcePath: string): string {
+  return sourcePath.toLowerCase().endsWith('.unitypackage')
+    ? 'application/octet-stream'
+    : 'application/zip';
+}
+
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
+
 function trimOptional(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
@@ -79,7 +90,7 @@ export function printUsage(): void {
   console.log(`publish-backstage-package
 
 Usage:
-  bun run publish:backstage-package -- --packageId com.yucp.example --catalogProductId product_123 --version 1.2.3 --sourcePath E:\\exports\\example.zip
+  bun run publish:backstage-package -- --packageId com.yucp.example --catalogProductId product_123 --version 1.2.3 --sourcePath E:\\exports\\example.unitypackage
   bun run publish:backstage-package -- --packageId com.yucp.example --catalogProductId product_123 --version 1.2.3 --storageId kg2abc123...
 
 Options:
@@ -88,8 +99,9 @@ Options:
   --packageId <id>                  Backstage package id to publish.
   --catalogProductId <id>           Catalog product id that grants entitlement access.
   --version <value>                 Version string to publish.
-  --sourcePath <path>               ZIP file to upload before publishing.
+  --sourcePath <path>               Package artifact to upload before publishing.
   --storageId <id>                  Reuse an existing Convex Storage upload instead of uploading a file.
+  --zipSha256 <hex>                 SHA-256 digest for the artifact. Auto-computed when sourcePath is provided.
   --channel <value>                 Release channel. Defaults to stable.
   --packageName <value>             Optional package name metadata.
   --displayName <value>             Optional display name metadata.
@@ -98,8 +110,8 @@ Options:
   --defaultChannel <value>          Default channel metadata for the package.
   --unityVersion <value>            Optional Unity version metadata for the release.
   --metadataJson <json>             Optional release metadata JSON object.
-  --deliveryName <value>            Override the delivered ZIP filename.
-  --contentType <value>             Override the uploaded content type. Defaults to application/zip.
+  --deliveryName <value>            Override the delivered filename.
+  --contentType <value>             Override the uploaded content type. Defaults to an inferred value from the source file.
   --releaseStatus <value>           draft, published, revoked, or superseded. Defaults to published.
   --help                            Show this message.
 
@@ -123,6 +135,7 @@ export function resolvePublishBackstagePackageConfig(
       version: { type: 'string' },
       sourcePath: { type: 'string' },
       storageId: { type: 'string' },
+      zipSha256: { type: 'string' },
       channel: { type: 'string' },
       packageName: { type: 'string' },
       displayName: { type: 'string' },
@@ -147,11 +160,18 @@ export function resolvePublishBackstagePackageConfig(
 
   const sourcePath = trimOptional(values.sourcePath);
   const storageId = trimOptional(values.storageId);
+  const zipSha256 = trimOptional(values.zipSha256)?.toLowerCase();
   if (!sourcePath && !storageId) {
     throw new Error('Either sourcePath or storageId is required');
   }
   if (sourcePath && !existsSync(sourcePath)) {
-    throw new Error(`Backstage package ZIP not found: ${sourcePath}`);
+    throw new Error(`Backstage package artifact not found: ${sourcePath}`);
+  }
+  if (zipSha256 && !SHA256_HEX_RE.test(zipSha256)) {
+    throw new Error('zipSha256 must be a lowercase 64-character SHA-256 hex digest');
+  }
+  if (storageId && !sourcePath && !zipSha256) {
+    throw new Error('zipSha256 is required when publishing an existing storageId');
   }
 
   const repositoryVisibility = trimOptional(values.repositoryVisibility);
@@ -182,6 +202,7 @@ export function resolvePublishBackstagePackageConfig(
     version: trimRequired(values.version, 'version'),
     sourcePath,
     storageId,
+    zipSha256,
     channel: trimOptional(values.channel),
     packageName: trimOptional(values.packageName),
     displayName: trimOptional(values.displayName),
@@ -212,6 +233,15 @@ async function assertApiResponse<T>(response: Response, fallback: string): Promi
     throw new Error(payload?.error || `${fallback} (${response.status} ${response.statusText})`);
   }
   return payload as T;
+}
+
+export async function computeFileSha256(sourcePath: string): Promise<string> {
+  const hash = createHash('sha256');
+  const stream = createReadStream(sourcePath);
+  for await (const chunk of stream) {
+    hash.update(chunk);
+  }
+  return hash.digest('hex');
 }
 
 function buildApiUrl(apiBaseUrl: string, path: string): string {
@@ -245,10 +275,10 @@ export async function requestBackstageUploadUrl(
   return uploadUrl;
 }
 
-export async function uploadBackstagePackageZip(
+export async function uploadBackstagePackageArtifact(
   uploadUrl: string,
-  sourcePath: string,
-  contentType = 'application/zip',
+  artifactBody: BodyInit,
+  contentType: string,
   fetchImpl: FetchLike = fetch
 ): Promise<string> {
   const response = await fetchImpl(uploadUrl, {
@@ -256,15 +286,15 @@ export async function uploadBackstagePackageZip(
     headers: {
       'Content-Type': contentType,
     },
-    body: Bun.file(sourcePath),
+    body: artifactBody,
   });
   const payload = await assertApiResponse<UploadStorageResponse>(
     response,
-    'Failed to upload Backstage package ZIP'
+    'Failed to upload Backstage package artifact'
   );
   const storageId = trimOptional(payload.storageId);
   if (!storageId) {
-    throw new Error('Backstage ZIP upload did not return storageId');
+    throw new Error('Backstage artifact upload did not return storageId');
   }
   return storageId;
 }
@@ -272,6 +302,7 @@ export async function uploadBackstagePackageZip(
 export async function publishBackstageRelease(
   config: PublishBackstagePackageConfig,
   storageId: string,
+  zipSha256: string,
   fetchImpl: FetchLike = fetch
 ): Promise<PublishBackstagePackageResult> {
   const response = await fetchImpl(
@@ -289,6 +320,7 @@ export async function publishBackstageRelease(
         catalogProductId: config.catalogProductId,
         storageId,
         version: config.version,
+        zipSha256,
         ...(config.channel ? { channel: config.channel } : {}),
         ...(config.packageName ? { packageName: config.packageName } : {}),
         ...(config.displayName ? { displayName: config.displayName } : {}),
@@ -315,15 +347,55 @@ export async function publishBackstagePackage(
   config: PublishBackstagePackageConfig,
   fetchImpl: FetchLike = fetch
 ): Promise<PublishBackstagePackageResult> {
+  const sourcePath = config.sourcePath;
+  const sourceIsUnitypackage = sourcePath?.toLowerCase().endsWith('.unitypackage') ?? false;
+  const preparedArtifact =
+    sourcePath && sourceIsUnitypackage
+      ? await prepareBackstageArtifactForPublish({
+          packageId: config.packageId,
+          version: config.version,
+          displayName: config.displayName,
+          description: config.description,
+          unityVersion: config.unityVersion,
+          metadata: config.metadata,
+          deliveryName: config.deliveryName,
+          sourceBytes: new Uint8Array(await Bun.file(sourcePath).arrayBuffer()),
+          sourceFileName: sourcePath.split(/[\\/]/).pop() ?? sourcePath,
+        })
+      : null;
+  const zipSha256 =
+    preparedArtifact?.zipSha256 ||
+    config.zipSha256 ||
+    (sourcePath ? await computeFileSha256(sourcePath) : undefined);
+  if (!zipSha256) {
+    throw new Error('zipSha256 is required before publishing a Backstage artifact');
+  }
   const storageId =
     config.storageId ||
-    (await uploadBackstagePackageZip(
-      await requestBackstageUploadUrl(config, fetchImpl),
-      config.sourcePath as string,
-      config.contentType,
-      fetchImpl
-    ));
-  return await publishBackstageRelease(config, storageId, fetchImpl);
+     (await uploadBackstagePackageArtifact(
+       await requestBackstageUploadUrl(config, fetchImpl),
+       preparedArtifact ? preparedArtifact.bytes : Bun.file(sourcePath as string),
+       preparedArtifact?.contentType ??
+         config.contentType ??
+         inferBackstageArtifactContentType(sourcePath as string),
+       fetchImpl
+     ));
+  return await publishBackstageRelease(
+    {
+      ...config,
+      ...(preparedArtifact
+        ? {
+            contentType: preparedArtifact.contentType,
+            deliveryName: preparedArtifact.deliveryName,
+            metadata:
+              config.metadata === undefined ? preparedArtifact.metadata : config.metadata,
+          }
+        : {}),
+    },
+    storageId,
+    zipSha256,
+    fetchImpl
+  );
 }
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {

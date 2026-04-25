@@ -144,7 +144,10 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
     convexApiSecret: config.convexApiSecret,
   });
   const backstageRepoRoutes = createBackstageRepoRoutes({
+    auth: stubAuth,
     apiBaseUrl: baseUrl,
+    enableSessionAccess: true,
+    frontendBaseUrl: frontendUrl,
     convexApiSecret: config.convexApiSecret,
     convexSiteUrl: config.convexSiteUrl,
     convexUrl: config.convexUrl,
@@ -246,14 +249,16 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
       return webhookHandler(request);
     }
 
-    // Provider platform routes (/v1/*)
-    if (pathname.startsWith('/v1/')) {
+    // Provider platform routes (/v1/*) and session-backed Backstage access (/api/backstage/*)
+    if (pathname.startsWith('/v1/') || pathname.startsWith('/api/backstage/')) {
       const couplingResponse = await couplingLicenseRoutes.handleRequest(request);
       if (couplingResponse) return couplingResponse;
       const backstageResponse = await backstageRepoRoutes.handleRequest(request);
       if (backstageResponse) return backstageResponse;
-      const local = await providerPlatformRoutes.handleRequest(request);
-      if (local) return local;
+      if (pathname.startsWith('/v1/')) {
+        const local = await providerPlatformRoutes.handleRequest(request);
+        if (local) return local;
+      }
     }
 
     // Verification routes (license key, OAuth callbacks)

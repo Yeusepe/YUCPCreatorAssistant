@@ -7,7 +7,9 @@ import path from 'node:path';
 import {
   applyLocalDevDefaults,
   buildDevCommands,
+  describeCdngineStartup,
   getCdngineDir,
+  getCdngineStartMode,
   isProcessAlive,
   killProcessTree,
 } from './dev-supervisor';
@@ -211,20 +213,67 @@ describe('DevSupervisor', () => {
     expect(getCdngineDir({})).toBeNull();
   });
 
+  test('getCdngineStartMode defaults to server', () => {
+    expect(getCdngineStartMode({})).toBe('server');
+  });
+
+  test('getCdngineStartMode accepts demo', () => {
+    expect(getCdngineStartMode({ CDNGINE_START_MODE: 'demo' })).toBe('demo');
+  });
+
+  test('describeCdngineStartup explains how to enable cdngine when CDNGINE_DIR is unset', () => {
+    expect(describeCdngineStartup({})).toBe(
+      'cdngine disabled. Set CDNGINE_DIR in .env.local or .env.infisical to launch it.'
+    );
+  });
+
   test('getCdngineDir rejects an explicit CDNGINE_DIR that is missing', () => {
     expect(() =>
       getCdngineDir({ CDNGINE_DIR: path.join(os.tmpdir(), 'yucp-cdngine-missing-path') })
     ).toThrow('CDNGINE_DIR does not exist');
   });
 
-  test('buildDevCommands includes cdngine when the directory exists', async () => {
+  test('describeCdngineStartup reports the configured cdngine directory', async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yucp-cdngine-status-'));
+    expect(describeCdngineStartup({ CDNGINE_DIR: tempDir })).toBe(
+      `cdngine enabled via CDNGINE_DIR: ${tempDir} (mode: server)`
+    );
+  });
+
+  test('buildDevCommands starts the cdngine server by default when the directory exists', async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yucp-cdngine-build-'));
     const commands = buildDevCommands({ CDNGINE_DIR: tempDir }, false);
     expect(commands.some((command) => command.name === 'cdngine')).toBe(true);
     expect(commands.find((command) => command.name === 'cdngine')).toMatchObject({
       cwd: tempDir,
-      command: 'npm run start:demo',
+      command:
+        'npm start && npm run build -w @cdngine/auth && npm run build -w @cdngine/api && npm run build -w @cdngine/workflows && node ./apps/demo/scripts/start-demo-api.mjs',
     });
+  });
+
+  test('buildDevCommands can opt into the cdngine demo path explicitly', async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yucp-cdngine-demo-build-'));
+    const commands = buildDevCommands({ CDNGINE_DIR: tempDir, CDNGINE_START_MODE: 'demo' }, false);
+    expect(commands.find((command) => command.name === 'cdngine')).toMatchObject({
+      cwd: tempDir,
+      command: 'npm start && npm run demo:start',
+    });
+  });
+
+  test('buildDevCommands can opt into the cdngine stack bootstrap only', async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yucp-cdngine-stack-build-'));
+    const commands = buildDevCommands({ CDNGINE_DIR: tempDir, CDNGINE_START_MODE: 'stack' }, false);
+    expect(commands.find((command) => command.name === 'cdngine')).toMatchObject({
+      cwd: tempDir,
+      command: 'npm start',
+    });
+  });
+
+  test('buildDevCommands rejects an invalid CDNGINE_START_MODE', async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'yucp-cdngine-invalid-mode-'));
+    expect(() =>
+      buildDevCommands({ CDNGINE_DIR: tempDir, CDNGINE_START_MODE: 'invalid' }, false)
+    ).toThrow('CDNGINE_START_MODE must be "stack", "server", or "demo"');
   });
 
   test('buildDevCommands rejects a missing explicit CDNGINE_DIR', () => {

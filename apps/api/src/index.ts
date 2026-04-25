@@ -262,7 +262,10 @@ function initializeAuth(webhookBaseUrl?: string) {
     convexUrl,
   });
   backstageRepoRoutes = createBackstageRepoRoutes({
+    auth,
     apiBaseUrl: publicBaseUrl,
+    enableSessionAccess: (env.NODE_ENV ?? 'development') !== 'production',
+    frontendBaseUrl: frontendUrl,
     convexApiSecret: env.CONVEX_API_SECRET ?? '',
     convexSiteUrl,
     convexUrl,
@@ -569,7 +572,10 @@ async function routeRequest(request: Request): Promise<Response> {
     }
   }
 
-  if (pathname.startsWith('/v1/') && backstageRepoRoutes) {
+  if (
+    (pathname.startsWith('/v1/') || pathname.startsWith('/api/backstage/')) &&
+    backstageRepoRoutes
+  ) {
     const localBackstageResponse = await backstageRepoRoutes.handleRequest(request);
     if (localBackstageResponse) {
       return localBackstageResponse;
@@ -885,6 +891,18 @@ async function routeRequest(request: Request): Promise<Response> {
   }
   if (pathname === '/api/packages' && packageRoutes) {
     if (request.method === 'GET') return packageRoutes.listPackages(request);
+    return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+  if (pathname === '/api/packages/backstage/repo-access' && packageRoutes) {
+    if (request.method === 'GET') {
+      return packageRoutes.getBackstageRepoAccess(request);
+    }
+    return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+  if (pathname === '/api/packages/backstage/products' && packageRoutes) {
+    if (request.method === 'GET') {
+      return packageRoutes.listBackstageProducts(request);
+    }
     return Response.json({ error: 'Method not allowed' }, { status: 405 });
   }
   const packagesMatch = pathname.match(/^\/api\/packages\/([^/]+)$/);

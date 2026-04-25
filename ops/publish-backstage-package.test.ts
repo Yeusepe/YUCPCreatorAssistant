@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +22,7 @@ describe('publish-backstage-package', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'publish-backstage-package-'));
     const sourcePath = join(tempDir, 'example.zip');
     writeFileSync(sourcePath, Buffer.from('zip-bytes'));
+    const expectedSha = createHash('sha256').update('zip-bytes').digest('hex');
 
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const fetchImpl: typeof fetch = async (input, init) => {
@@ -84,6 +86,7 @@ describe('publish-backstage-package', () => {
       catalogProductId: 'product_123',
       storageId: 'storage_123',
       version: '1.2.3',
+      zipSha256: expectedSha,
     });
   });
 
@@ -116,6 +119,7 @@ describe('publish-backstage-package', () => {
         catalogProductId: 'product_123',
         version: '2.0.0',
         storageId: 'storage_existing',
+        zipSha256: 'b'.repeat(64),
         channel: 'beta',
       },
       fetchImpl
@@ -150,5 +154,60 @@ describe('publish-backstage-package', () => {
     expect(config.apiBaseUrl).toBe('https://api.test');
     expect(config.accessToken).toBe('oauth-token');
     expect(config.sourcePath).toBe(sourcePath);
+  });
+
+  it('wraps unitypackage source files into ZIP uploads before publishing', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'publish-backstage-package-'));
+    const sourcePath = join(tempDir, 'example.unitypackage');
+    writeFileSync(sourcePath, Buffer.from('unitypackage-bytes'));
+
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      calls.push({ url, init });
+      if (url.endsWith('/api/packages/com.yucp.example/backstage/upload-url')) {
+        return Response.json({
+          packageId: 'com.yucp.example',
+          uploadUrl: 'https://upload.test/backstage',
+        });
+      }
+      if (url === 'https://upload.test/backstage') {
+        return Response.json({ storageId: 'storage_789' });
+      }
+      if (url.endsWith('/api/packages/com.yucp.example/backstage/releases')) {
+        return new Response(
+          JSON.stringify({
+            deliveryPackageReleaseId: 'release_3',
+            artifactId: 'artifact_3',
+            artifactKey: 'backstage-package:com.yucp.example',
+            zipSha256: 'c'.repeat(64),
+            version: '3.0.0',
+            channel: 'stable',
+          }),
+          { status: 201, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    };
+
+    await publishBackstagePackage(
+      {
+        apiBaseUrl: 'https://api.test',
+        accessToken: 'oauth-token',
+        packageId: 'com.yucp.example',
+        catalogProductId: 'product_123',
+        version: '3.0.0',
+        sourcePath,
+      },
+      fetchImpl
+    );
+
+    expect(calls[1].init?.headers).toEqual({
+      'Content-Type': 'application/zip',
+    });
+    expect(JSON.parse(String(calls[2].init?.body))).toMatchObject({
+      deliveryName: 'com.yucp.example-3.0.0.zip',
+      contentType: 'application/zip',
+    });
   });
 });

@@ -1,4 +1,3 @@
-import { sha256Hex } from '@yucp/shared/crypto';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
@@ -10,6 +9,7 @@ const BACKSTAGE_ARTIFACT_KEY_PREFIX = 'backstage-package:';
 const BACKSTAGE_PACKAGE_PLATFORM = 'unity-vpm';
 const BACKSTAGE_PACKAGE_CONTENT_TYPE = 'application/zip';
 const BACKSTAGE_PACKAGE_ENVELOPE_CIPHER = 'none';
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 
 type BackstageRepoAccessRecord = {
   tokenId: Id<'delivery_repo_tokens'>;
@@ -46,6 +46,17 @@ function buildBackstageArtifactKey(packageId: string): string {
 function defaultBackstageDeliveryName(packageId: string, version: string): string {
   const packageToken = packageId.split('.').at(-1)?.trim() || 'package';
   return `${packageToken}-${version}.zip`;
+}
+
+function inferBackstageContentType(deliveryName: string, uploadedContentType?: string): string {
+  const explicitType = uploadedContentType?.trim();
+  if (explicitType) {
+    return explicitType;
+  }
+  if (deliveryName.toLowerCase().endsWith('.unitypackage')) {
+    return 'application/octet-stream';
+  }
+  return BACKSTAGE_PACKAGE_CONTENT_TYPE;
 }
 
 export const getSubjectByAuthUserForApi = query({
@@ -251,10 +262,12 @@ export const publishUploadedReleaseForAuthUser = action({
     apiSecret: v.string(),
     actor: ApiActorBindingV,
     authUserId: v.string(),
-    catalogProductId: v.id('product_catalog'),
+    catalogProductId: v.optional(v.id('product_catalog')),
+    catalogProductIds: v.optional(v.array(v.id('product_catalog'))),
     packageId: v.string(),
     storageId: v.id('_storage'),
     version: v.string(),
+    zipSha256: v.string(),
     channel: v.optional(v.string()),
     packageName: v.optional(v.string()),
     displayName: v.optional(v.string()),
@@ -291,19 +304,33 @@ export const publishUploadedReleaseForAuthUser = action({
       throw new Error(`Uploaded Backstage package not found: ${args.storageId}`);
     }
 
-    const bytes = new Uint8Array(await uploaded.arrayBuffer());
-    const zipSha256 = await sha256Hex(bytes);
+    const zipSha256 = args.zipSha256.trim().toLowerCase();
+    if (!SHA256_HEX_RE.test(zipSha256)) {
+      throw new Error('zipSha256 must be a lowercase 64-character SHA-256 hex digest.');
+    }
     const channel = (args.channel || '').trim() || 'stable';
     const artifactKey = buildBackstageArtifactKey(args.packageId);
+    const catalogProductIds = Array.from(
+      new Map(
+        (args.catalogProductIds ?? (args.catalogProductId ? [args.catalogProductId] : [])).map(
+          (catalogProductId) => [String(catalogProductId), catalogProductId]
+        )
+      ).values()
+    );
+    if (catalogProductIds.length === 0) {
+      throw new Error('At least one catalog product is required to publish a Backstage release.');
+    }
     const deliveryName =
       (args.deliveryName || '').trim() ||
       defaultBackstageDeliveryName(args.packageId, args.version);
-    const contentType =
-      (args.contentType || '').trim() || uploaded.type || BACKSTAGE_PACKAGE_CONTENT_TYPE;
+    const contentType = inferBackstageContentType(
+      deliveryName,
+      (args.contentType || '').trim() || uploaded.type
+    );
 
-    await ctx.runMutation(internal.packageRegistry.upsertDeliveryPackageForProduct, {
+    await ctx.runMutation(internal.packageRegistry.upsertDeliveryPackageForProducts, {
       authUserId: args.authUserId,
-      catalogProductId: args.catalogProductId,
+      catalogProductIds,
       packageId: args.packageId,
       packageName: args.packageName,
       displayName: args.displayName,
@@ -324,9 +351,9 @@ export const publishUploadedReleaseForAuthUser = action({
       envelopeCipher: BACKSTAGE_PACKAGE_ENVELOPE_CIPHER,
       envelopeIvBase64: '',
       ciphertextSha256: zipSha256,
-      ciphertextSize: bytes.byteLength,
+      ciphertextSize: uploaded.size,
       plaintextSha256: zipSha256,
-      plaintextSize: bytes.byteLength,
+      plaintextSize: uploaded.size,
     })) as Id<'signed_release_artifacts'>;
 
     await ctx.runMutation(internal.releaseArtifacts.recordArtifactPublishedAudit, {

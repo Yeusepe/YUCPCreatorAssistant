@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 
+let sessionImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
 let queryImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
 let mutationImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
 
@@ -12,6 +13,9 @@ mock.module('../../../../convex/_generated/api', () => ({
       touchRepoTokenForApi: 'backstageRepos.touchRepoTokenForApi',
       buildRepositoryForApi: 'backstageRepos.buildRepositoryForApi',
       resolvePackageDownloadForApi: 'backstageRepos.resolvePackageDownloadForApi',
+    },
+    creatorProfiles: {
+      getCreatorByAuthUser: 'creatorProfiles.getCreatorByAuthUser',
     },
   },
   internal: {},
@@ -36,17 +40,26 @@ const { createBackstageRepoRoutes } = await import('./backstageRepos');
 
 describe('backstage repo routes', () => {
   const routes = createBackstageRepoRoutes({
+    auth: {
+      getSession: (...args: unknown[]) =>
+        sessionImpl(...args) as Promise<{ user: { id: string } } | null>,
+    } as never,
     apiBaseUrl: 'https://api.test',
+    enableSessionAccess: true,
+    frontendBaseUrl: 'https://app.test',
     convexApiSecret: 'convex-secret',
     convexSiteUrl: 'https://convex.test',
     convexUrl: 'https://convex.cloud',
   });
 
   beforeEach(() => {
+    sessionImpl = async () => null;
     queryImpl = async (ref: unknown) => {
       switch (ref) {
         case 'backstageRepos.getSubjectByAuthUserForApi':
           return { _id: 'subject_1' };
+        case 'creatorProfiles.getCreatorByAuthUser':
+          return { _id: 'creator_1', name: '10705330', slug: 'mapache' };
         case 'backstageRepos.getRepoAccessByTokenForApi':
           return {
             tokenId: 'token_1',
@@ -108,15 +121,56 @@ describe('backstage repo routes', () => {
 
     expect(response?.status).toBe(200);
     await expect(response?.json()).resolves.toMatchObject({
-      repositoryUrl: 'https://api.test/v1/backstage/repos/index.json',
+      creatorName: 'Mapache',
+      creatorRepoRef: 'mapache',
+      repositoryUrl: 'https://api.test/v1/backstage/repos/mapache/index.json',
+      repositoryName: 'Mapache Backstage Repos',
       repoToken: 'ybt_example',
       repoTokenHeader: 'X-YUCP-Repo-Token',
     });
   });
 
+  it('issues a VCC add-repo link from the session-backed API route', async () => {
+    sessionImpl = async () => ({
+      user: {
+        id: 'auth-user-1',
+      },
+    });
+
+    const response = await routes.handleRequest(
+      new Request('https://api.test/api/backstage/repos/access?mode=redirect', {
+        headers: {
+          origin: 'https://app.test',
+        },
+      })
+    );
+
+    expect(response?.status).toBe(302);
+    expect(response?.headers.get('location')).toBe(
+      'vcc://vpm/addRepo?url=https%3A%2F%2Fapi.test%2Fv1%2Fbackstage%2Frepos%2Fmapache%2Findex.json&headers%5B%5D=X-YUCP-Repo-Token%3Aybt_example'
+    );
+  });
+
+  it('does not expose the session-backed API route when session access is disabled', async () => {
+    const disabledRoutes = createBackstageRepoRoutes({
+      apiBaseUrl: 'https://api.test',
+      enableSessionAccess: false,
+      frontendBaseUrl: 'https://app.test',
+      convexApiSecret: 'convex-secret',
+      convexSiteUrl: 'https://convex.test',
+      convexUrl: 'https://convex.cloud',
+    });
+
+    const response = await disabledRoutes.handleRequest(
+      new Request('https://api.test/api/backstage/repos/access')
+    );
+
+    expect(response).toBeNull();
+  });
+
   it('serves an entitled VPM repository document when the repo token header is present', async () => {
     const response = await routes.handleRequest(
-      new Request('https://api.test/v1/backstage/repos/index.json', {
+      new Request('https://api.test/v1/backstage/repos/mapache/index.json', {
         headers: {
           'X-YUCP-Repo-Token': 'ybt_example',
         },
@@ -141,7 +195,7 @@ describe('backstage repo routes', () => {
   it('redirects entitled package downloads through the signed artifact URL', async () => {
     const response = await routes.handleRequest(
       new Request(
-        'https://api.test/v1/backstage/package?packageId=com.yucp.example&version=1.2.3&channel=stable',
+        'https://api.test/v1/backstage/repos/mapache/package?packageId=com.yucp.example&version=1.2.3&channel=stable',
         {
           headers: {
             'X-YUCP-Repo-Token': 'ybt_example',

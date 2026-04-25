@@ -1,6 +1,6 @@
 import { createLazyFileRoute, Link } from '@tanstack/react-router';
 import { DashboardAuthRequiredState } from '@/components/dashboard/AuthRequiredState';
-import { DashboardGridSkeleton } from '@/components/dashboard/DashboardSkeletons';
+import { DashboardPackageRegistrySkeleton } from '@/components/dashboard/DashboardSkeletons';
 import { PackageRegistryPanel } from '@/components/dashboard/PackageRegistryPanel';
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
 import { useDashboardSession } from '@/hooks/useDashboardSession';
@@ -9,7 +9,9 @@ function DashboardPackagesPending() {
   return (
     <div id="tab-panel-packages" className="dashboard-tab-panel is-active" role="tabpanel">
       <div className="bento-grid">
-        <DashboardGridSkeleton cards={3} />
+        <section className="intg-card animate-in bento-col-12">
+          <DashboardPackageRegistrySkeleton rows={4} />
+        </section>
       </div>
     </div>
   );
@@ -76,7 +78,9 @@ export default function DashboardPackages() {
     return (
       <div id="tab-panel-packages" className="dashboard-tab-panel is-active" role="tabpanel">
         <div className="bento-grid">
-          <DashboardGridSkeleton cards={3} />
+          <section className="intg-card animate-in bento-col-12">
+            <DashboardPackageRegistrySkeleton rows={4} />
+          </section>
         </div>
       </div>
     );

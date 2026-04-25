@@ -33,7 +33,7 @@
     "contracts:check": "bun run --filter @yucp/private-rpc check:generated",
     "typecheck": "bun run contracts:check && tsc -b tsconfig.solution.json --pretty false && bun run --filter '@yucp/api' typecheck && bun run --filter '@yucp/bot' typecheck && bun run --filter '@yucp/web' typecheck",
     "test": "bun run test:fast",
-    "test:ops": "bun test ./ops/dev-supervisor.test.ts ./ops/convex-infisical-env.test.ts ./ops/convex-better-auth-compat.test.ts ./ops/web-vite-config.contract.test.ts ./ops/publish-backstage-package.test.ts ./ops/buyer-attribution-remediation.test.ts ./ops/subject-ownership-remediation.test.ts ./ops/provider-live-smoke.test.ts ./ops/production-regression-loop.test.ts",
+    "test:ops": "bun test ./ops/dev-supervisor.test.ts ./ops/convex-infisical-env.test.ts ./ops/convex-better-auth-compat.test.ts ./ops/web-vite-config.contract.test.ts ./ops/publish-backstage-package.test.ts ./ops/test-backstage-repo.test.ts ./ops/buyer-attribution-remediation.test.ts ./ops/subject-ownership-remediation.test.ts ./ops/provider-live-smoke.test.ts ./ops/production-regression-loop.test.ts",
     "test:external-integrations": "bun run ops/test-external-integrations.ts",
     "test:fast": "bun run test:ops && bun run --filter '@yucp/api' test && bun run --filter '@yucp/application' test && bun run --filter '@yucp/policy' test && bun run --filter '@yucp/providers' test && bun run --filter '@yucp/shared' test",
     "test:convex": "bun x vitest run --config convex/vitest.config.ts",
@@ -61,6 +61,7 @@
     "sync:convex:env:prod": "bun run --env-file=.env.infisical ops/sync-convex-env.ts --prod",
     "smoke:providers": "bun run ops/provider-live-smoke.ts",
     "smoke:providers:refresh-fixtures": "bun run ops/provider-live-smoke.ts --refresh-fixtures",
+    "smoke:backstage-repo": "bun run ops/test-backstage-repo.ts",
     "infisical:convex": "bun run --env-file=.env.infisical ops/infisical-convex-run.ts",
     "infisical:convex:prod": "bun run --env-file=.env.infisical ops/infisical-convex-run.ts --prod",
     "dev:api": "cross-env FRONTEND_URL=http://localhost:3000 bun run --watch apps/api/src/index.ts",
@@ -124,5 +125,10 @@
   "patchedDependencies": {
     "@convex-dev/better-auth@0.11.4": "patches/@convex-dev%2Fbetter-auth@0.11.4.patch",
     "@tanstack/start-server-core@1.167.1": "patches/@tanstack%2Fstart-server-core@1.167.1.patch"
-  }
+  },
+  "trustedDependencies": [
+    "heroui-pro",
+    "@heroui-pro/react",
+    "heroui-native-pro"
+  ]
 }

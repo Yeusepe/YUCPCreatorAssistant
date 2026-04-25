@@ -1,6 +1,10 @@
 import { sha256Hex } from '@yucp/shared/crypto';
 import { api } from '../../../../convex/_generated/api';
+import type { Auth } from '../auth';
+import type { CreatorRepoIdentity } from '../lib/backstageRepoIdentity';
+import { buildBackstageRepositoryUrls, getCreatorRepoIdentity } from '../lib/backstageRepoIdentity';
 import { getConvexClientFromUrl } from '../lib/convex';
+import { rejectCrossSiteRequest } from '../lib/csrf';
 import { logger } from '../lib/logger';
 import { verifyBetterAuthAccessToken } from '../lib/oauthAccessToken';
 
@@ -8,7 +12,10 @@ const BACKSTAGE_REPO_TOKEN_HEADER = 'X-YUCP-Repo-Token';
 const BACKSTAGE_REPO_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type BackstageRepoConfig = {
+  auth?: Auth;
   apiBaseUrl: string;
+  enableSessionAccess?: boolean;
+  frontendBaseUrl: string;
   convexApiSecret: string;
   convexSiteUrl: string;
   convexUrl: string;
@@ -35,35 +42,77 @@ function buildBackstageAddRepoUrl(repositoryUrl: string, repoToken: string): str
   return addRepoUrl.toString();
 }
 
+function parseCreatorRepoRoute(
+  pathname: string
+): { creatorRepoRef: string; routeType: 'index' | 'package' } | null {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts.length !== 5 || parts[0] !== 'v1' || parts[1] !== 'backstage' || parts[2] !== 'repos') {
+    return null;
+  }
+
+  const creatorRepoRef = decodeURIComponent(parts[3] ?? '').trim();
+  if (!creatorRepoRef) {
+    return null;
+  }
+
+  if (parts[4] === 'index.json') {
+    return { creatorRepoRef, routeType: 'index' };
+  }
+  if (parts[4] === 'package') {
+    return { creatorRepoRef, routeType: 'package' };
+  }
+  return null;
+}
+
+function getAllowedOrigins(config: BackstageRepoConfig): Set<string> {
+  return new Set([new URL(config.apiBaseUrl).origin, new URL(config.frontendBaseUrl).origin]);
+}
+
 async function authenticateBackstageAccess(
   request: Request,
-  config: BackstageRepoConfig
+  config: BackstageRepoConfig,
+  auth?: Auth
 ): Promise<{ authUserId: string } | Response> {
   const authHeader = request.headers.get('authorization')?.trim() ?? '';
-  if (!authHeader.startsWith('Bearer ')) {
+  if (authHeader.startsWith('Bearer ')) {
+    const verified = await verifyBetterAuthAccessToken(authHeader.slice('Bearer '.length).trim(), {
+      convexSiteUrl: config.convexSiteUrl,
+      audience: 'yucp-public-api',
+      requiredScopes: ['products:read'],
+      logger,
+      logContext: 'Backstage repo access token verification failed',
+    });
+    if (!verified.ok) {
+      if (verified.reason === 'insufficient_scope') {
+        return errorResponse('Token missing required scope: products:read', 403);
+      }
+      return errorResponse('Invalid or expired token', 401);
+    }
+
+    return { authUserId: verified.token.sub };
+  }
+
+  if (!auth) {
     return errorResponse('Authorization: Bearer <access_token> required', 401);
   }
 
-  const verified = await verifyBetterAuthAccessToken(authHeader.slice('Bearer '.length).trim(), {
-    convexSiteUrl: config.convexSiteUrl,
-    audience: 'yucp-public-api',
-    requiredScopes: ['products:read'],
-    logger,
-    logContext: 'Backstage repo access token verification failed',
-  });
-  if (!verified.ok) {
-    if (verified.reason === 'insufficient_scope') {
-      return errorResponse('Token missing required scope: products:read', 403);
-    }
-    return errorResponse('Invalid or expired token', 401);
+  const csrfBlock = rejectCrossSiteRequest(request, getAllowedOrigins(config));
+  if (csrfBlock) {
+    return csrfBlock;
   }
 
-  return { authUserId: verified.token.sub };
+  const session = await auth.getSession(request);
+  if (!session) {
+    return errorResponse('Authentication required', 401);
+  }
+
+  return { authUserId: session.user.id };
 }
 
 async function resolveRepoAccess(
   request: Request,
-  config: BackstageRepoConfig
+  config: BackstageRepoConfig,
+  expectedCreatorRepoRef?: string
 ): Promise<
   | {
       ok: true;
@@ -71,6 +120,7 @@ async function resolveRepoAccess(
       tokenId: string;
       authUserId: string;
       subjectId: string;
+      creatorRepoIdentity: CreatorRepoIdentity;
     }
   | { ok: false }
 > {
@@ -88,6 +138,15 @@ async function resolveRepoAccess(
     return { ok: false };
   }
 
+  const creatorRepoIdentity = await getCreatorRepoIdentity({
+    convex,
+    convexApiSecret: config.convexApiSecret,
+    authUserId: access.authUserId,
+  });
+  if (expectedCreatorRepoRef && creatorRepoIdentity.creatorRepoRef !== expectedCreatorRepoRef) {
+    return { ok: false };
+  }
+
   await convex.mutation(api.backstageRepos.touchRepoTokenForApi, {
     apiSecret: config.convexApiSecret,
     tokenId: access.tokenId,
@@ -99,19 +158,24 @@ async function resolveRepoAccess(
     tokenId: access.tokenId,
     authUserId: access.authUserId,
     subjectId: access.subjectId,
+    creatorRepoIdentity,
   };
 }
 
-async function issueRepoAccess(request: Request, config: BackstageRepoConfig): Promise<Response> {
-  const auth = await authenticateBackstageAccess(request, config);
-  if (auth instanceof Response) {
-    return auth;
+async function issueRepoAccess(
+  request: Request,
+  config: BackstageRepoConfig,
+  auth?: Auth
+): Promise<Response> {
+  const viewer = await authenticateBackstageAccess(request, config, auth);
+  if (viewer instanceof Response) {
+    return viewer;
   }
 
   const convex = getConvexClientFromUrl(config.convexUrl);
   const subject = await convex.query(api.backstageRepos.getSubjectByAuthUserForApi, {
     apiSecret: config.convexApiSecret,
-    authUserId: auth.authUserId,
+    authUserId: viewer.authUserId,
   });
   if (!subject) {
     return errorResponse('No active subject found for this account', 404);
@@ -120,13 +184,21 @@ async function issueRepoAccess(request: Request, config: BackstageRepoConfig): P
   const now = Date.now();
   const issued = await convex.mutation(api.backstageRepos.issueRepoTokenForApi, {
     apiSecret: config.convexApiSecret,
-    authUserId: auth.authUserId,
+    authUserId: viewer.authUserId,
     subjectId: subject._id,
     label: 'VCC Backstage Repos',
     expiresAt: now + BACKSTAGE_REPO_TOKEN_TTL_MS,
   });
 
-  const repositoryUrl = `${config.apiBaseUrl.replace(/\/$/, '')}/v1/backstage/repos/index.json`;
+  const creatorRepoIdentity = await getCreatorRepoIdentity({
+    convex,
+    convexApiSecret: config.convexApiSecret,
+    authUserId: viewer.authUserId,
+  });
+  const repositoryUrl = buildBackstageRepositoryUrls(
+    config.apiBaseUrl,
+    creatorRepoIdentity.creatorRepoRef
+  ).repositoryUrl;
   const addRepoUrl = buildBackstageAddRepoUrl(repositoryUrl, issued.token);
   const requestUrl = new URL(request.url);
   if (requestUrl.searchParams.get('mode') === 'redirect') {
@@ -134,7 +206,10 @@ async function issueRepoAccess(request: Request, config: BackstageRepoConfig): P
   }
 
   return jsonResponse({
+    creatorName: creatorRepoIdentity.creatorName,
+    creatorRepoRef: creatorRepoIdentity.creatorRepoRef,
     repositoryUrl,
+    repositoryName: creatorRepoIdentity.repositoryName,
     addRepoUrl,
     repoTokenHeader: BACKSTAGE_REPO_TOKEN_HEADER,
     repoToken: issued.token,
@@ -144,20 +219,27 @@ async function issueRepoAccess(request: Request, config: BackstageRepoConfig): P
 
 async function serveRepositoryIndex(
   request: Request,
-  config: BackstageRepoConfig
+  config: BackstageRepoConfig,
+  expectedCreatorRepoRef?: string
 ): Promise<Response> {
-  const access = await resolveRepoAccess(request, config);
+  const access = await resolveRepoAccess(request, config, expectedCreatorRepoRef);
   if (!access.ok) {
     return errorResponse('Repository not found', 404);
   }
 
   const convex = getConvexClientFromUrl(config.convexUrl);
+  const repositoryUrls = buildBackstageRepositoryUrls(
+    config.apiBaseUrl,
+    access.creatorRepoIdentity.creatorRepoRef
+  );
   const repository = await convex.query(api.backstageRepos.buildRepositoryForApi, {
     apiSecret: config.convexApiSecret,
     authUserId: access.authUserId,
     subjectId: access.subjectId,
-    repositoryUrl: `${config.apiBaseUrl.replace(/\/$/, '')}/v1/backstage/repos/index.json`,
-    packageBaseUrl: `${config.apiBaseUrl.replace(/\/$/, '')}/v1/backstage/package`,
+    repositoryId: access.creatorRepoIdentity.repositoryId,
+    repositoryName: access.creatorRepoIdentity.repositoryName,
+    repositoryUrl: repositoryUrls.repositoryUrl,
+    packageBaseUrl: repositoryUrls.packageBaseUrl,
     packageHeaders: {
       [BACKSTAGE_REPO_TOKEN_HEADER]: access.rawToken,
     },
@@ -168,9 +250,10 @@ async function serveRepositoryIndex(
 
 async function servePackageDownload(
   request: Request,
-  config: BackstageRepoConfig
+  config: BackstageRepoConfig,
+  expectedCreatorRepoRef?: string
 ): Promise<Response> {
-  const access = await resolveRepoAccess(request, config);
+  const access = await resolveRepoAccess(request, config, expectedCreatorRepoRef);
   if (!access.ok) {
     return errorResponse('Package not found', 404);
   }
@@ -202,8 +285,22 @@ export function createBackstageRepoRoutes(config: BackstageRepoConfig) {
   return {
     async handleRequest(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
+      const creatorRepoRoute = parseCreatorRepoRoute(url.pathname);
       if (request.method === 'GET' && url.pathname === '/v1/backstage/repos/access') {
         return await issueRepoAccess(request, config);
+      }
+      if (
+        request.method === 'GET' &&
+        url.pathname === '/api/backstage/repos/access' &&
+        config.enableSessionAccess === true
+      ) {
+        return await issueRepoAccess(request, config, config.auth);
+      }
+      if (request.method === 'GET' && creatorRepoRoute?.routeType === 'index') {
+        return await serveRepositoryIndex(request, config, creatorRepoRoute.creatorRepoRef);
+      }
+      if (request.method === 'GET' && creatorRepoRoute?.routeType === 'package') {
+        return await servePackageDownload(request, config, creatorRepoRoute.creatorRepoRef);
       }
       if (request.method === 'GET' && url.pathname === '/v1/backstage/repos/index.json') {
         return await serveRepositoryIndex(request, config);

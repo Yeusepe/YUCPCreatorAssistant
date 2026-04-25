@@ -24,6 +24,7 @@ const PREFIX_COLORS = {
 } as const;
 
 export type PrefixColor = keyof typeof PREFIX_COLORS;
+export type CdngineStartMode = 'stack' | 'server' | 'demo';
 
 export interface DevCommandSpec {
   name: string;
@@ -76,6 +77,46 @@ export function getCdngineDir(baseEnv: NodeJS.ProcessEnv = process.env): string 
   return configured;
 }
 
+export function getCdngineStartMode(baseEnv: NodeJS.ProcessEnv = process.env): CdngineStartMode {
+  const configured = baseEnv.CDNGINE_START_MODE?.trim().toLowerCase();
+  if (!configured) {
+    return 'server';
+  }
+
+  if (configured === 'stack' || configured === 'server' || configured === 'demo') {
+    return configured;
+  }
+
+  throw new Error(`CDNGINE_START_MODE must be "stack", "server", or "demo", got: ${configured}`);
+}
+
+function buildCdngineCommand(startMode: CdngineStartMode): string {
+  switch (startMode) {
+    case 'stack':
+      return 'npm start';
+    case 'server':
+      return [
+        'npm start',
+        'npm run build -w @cdngine/auth',
+        'npm run build -w @cdngine/api',
+        'npm run build -w @cdngine/workflows',
+        'node ./apps/demo/scripts/start-demo-api.mjs',
+      ].join(' && ');
+    case 'demo':
+      return 'npm start && npm run demo:start';
+  }
+}
+
+export function describeCdngineStartup(baseEnv: NodeJS.ProcessEnv = process.env): string {
+  const cdngineDir = getCdngineDir(baseEnv);
+  if (!cdngineDir) {
+    return 'cdngine disabled. Set CDNGINE_DIR in .env.local or .env.infisical to launch it.';
+  }
+
+  const startMode = getCdngineStartMode(baseEnv);
+  return `cdngine enabled via CDNGINE_DIR: ${cdngineDir} (mode: ${startMode})`;
+}
+
 export function buildDevCommands(
   baseEnv: NodeJS.ProcessEnv = process.env,
   infisical = false
@@ -83,10 +124,11 @@ export function buildDevCommands(
   const commands = [...(infisical ? INFISICAL_COMMANDS : DEFAULT_COMMANDS)];
   const cdngineDir = getCdngineDir(baseEnv);
   if (cdngineDir) {
+    const cdngineStartMode = getCdngineStartMode(baseEnv);
     commands.push({
       name: 'cdngine',
       color: 'cyan',
-      command: 'npm run start:demo',
+      command: buildCdngineCommand(cdngineStartMode),
       cwd: cdngineDir,
     });
   }
@@ -395,6 +437,7 @@ function signalExitCode(signal: NodeJS.Signals): number {
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   const infisical = argv.includes('--infisical');
   const env = infisical ? await loadInfisicalEnv() : applyLocalDevDefaults(process.env);
+  process.stdout.write(`${buildPrefix('dev', 'magenta')}${describeCdngineStartup(env)}\n`);
   const supervisor = new DevSupervisor(buildDevCommands(env, infisical), env, {
     prefixOutput: true,
   });

@@ -243,6 +243,111 @@ async function getOwnedDeliveryPackageByPackageId(
   return deliveryPackage;
 }
 
+async function upsertOwnedDeliveryPackage(
+  ctx: MutationCtx,
+  args: {
+    authUserId: string;
+    packageId: string;
+    packageName?: string;
+    displayName?: string;
+    description?: string;
+    repositoryVisibility?: Doc<'delivery_packages'>['repositoryVisibility'];
+    defaultChannel?: string;
+  }
+): Promise<Id<'delivery_packages'>> {
+  await assertPackageNamespaceOwnership(ctx, args.authUserId, args.packageId);
+
+  const now = Date.now();
+  const existing = await getOwnedDeliveryPackageByPackageId(ctx, args.authUserId, args.packageId);
+  const normalizedPackageName = normalizePackageName(args.packageName);
+  const normalizedDisplayName = normalizePackageName(args.displayName);
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      packageName: normalizedPackageName ?? existing.packageName,
+      displayName: normalizedDisplayName ?? existing.displayName,
+      description: args.description ?? existing.description,
+      repositoryVisibility: args.repositoryVisibility ?? existing.repositoryVisibility,
+      defaultChannel: args.defaultChannel ?? existing.defaultChannel,
+      status: existing.status === 'archived' ? 'active' : existing.status,
+      updatedAt: now,
+    });
+    return existing._id;
+  }
+
+  return await ctx.db.insert('delivery_packages', {
+    authUserId: args.authUserId,
+    packageId: args.packageId,
+    packageName: normalizedPackageName,
+    displayName: normalizedDisplayName,
+    description: args.description,
+    status: 'active',
+    repositoryVisibility: args.repositoryVisibility ?? 'hidden',
+    defaultChannel: args.defaultChannel,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+async function ensureActiveDeliveryPackageLinks(
+  ctx: MutationCtx,
+  args: {
+    authUserId: string;
+    catalogProductIds: ReadonlyArray<Id<'product_catalog'>>;
+    deliveryPackageId: Id<'delivery_packages'>;
+  }
+): Promise<void> {
+  const now = Date.now();
+  const uniqueCatalogProductIds = Array.from(
+    new Map(
+      args.catalogProductIds.map((catalogProductId) => [String(catalogProductId), catalogProductId])
+    ).values()
+  );
+
+  await Promise.all(
+    uniqueCatalogProductIds.map(async (catalogProductId) => {
+      await requireOwnedCatalogProduct(ctx, args.authUserId, catalogProductId);
+      const existingLinks = await ctx.db
+        .query('delivery_package_products')
+        .withIndex('by_auth_user_catalog_product', (q) =>
+          q.eq('authUserId', args.authUserId).eq('catalogProductId', catalogProductId)
+        )
+        .collect();
+
+      await Promise.all(
+        existingLinks.map(async (link) => {
+          const nextStatus =
+            String(link.deliveryPackageId) === String(args.deliveryPackageId)
+              ? 'active'
+              : 'archived';
+          if (link.status === nextStatus) {
+            return;
+          }
+          await ctx.db.patch(link._id, {
+            status: nextStatus,
+            updatedAt: now,
+          });
+        })
+      );
+
+      const matchingLink = existingLinks.find(
+        (link) => String(link.deliveryPackageId) === String(args.deliveryPackageId)
+      );
+      if (!matchingLink) {
+        await ctx.db.insert('delivery_package_products', {
+          authUserId: args.authUserId,
+          deliveryPackageId: args.deliveryPackageId,
+          catalogProductId,
+          status: 'active',
+          accessMode: 'entitlement',
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    })
+  );
+}
+
 async function buildBackstagePackageMap(
   ctx: RegistryReaderCtx,
   authUserId: string,
@@ -565,67 +670,62 @@ export const upsertDeliveryPackageForProduct = internalMutation({
     packageId: v.string(),
   }),
   handler: async (ctx, args) => {
-    await requireOwnedCatalogProduct(ctx, args.authUserId, args.catalogProductId);
-    await assertPackageNamespaceOwnership(ctx, args.authUserId, args.packageId);
+    const deliveryPackageId = await upsertOwnedDeliveryPackage(ctx, {
+      authUserId: args.authUserId,
+      packageId: args.packageId,
+      packageName: args.packageName,
+      displayName: args.displayName,
+      description: args.description,
+      repositoryVisibility: args.repositoryVisibility,
+      defaultChannel: args.defaultChannel,
+    });
+    await ensureActiveDeliveryPackageLinks(ctx, {
+      authUserId: args.authUserId,
+      catalogProductIds: [args.catalogProductId],
+      deliveryPackageId,
+    });
 
-    const now = Date.now();
-    const existing = await getOwnedDeliveryPackageByPackageId(ctx, args.authUserId, args.packageId);
-    const normalizedPackageName = normalizePackageName(args.packageName);
-    const normalizedDisplayName = normalizePackageName(args.displayName);
+    return {
+      deliveryPackageId,
+      packageId: args.packageId,
+    };
+  },
+});
 
-    let deliveryPackageId: Id<'delivery_packages'>;
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        packageName: normalizedPackageName ?? existing.packageName,
-        displayName: normalizedDisplayName ?? existing.displayName,
-        description: args.description ?? existing.description,
-        repositoryVisibility: args.repositoryVisibility ?? existing.repositoryVisibility,
-        defaultChannel: args.defaultChannel ?? existing.defaultChannel,
-        status: existing.status === 'archived' ? 'active' : existing.status,
-        updatedAt: now,
-      });
-      deliveryPackageId = existing._id;
-    } else {
-      deliveryPackageId = await ctx.db.insert('delivery_packages', {
-        authUserId: args.authUserId,
-        packageId: args.packageId,
-        packageName: normalizedPackageName,
-        displayName: normalizedDisplayName,
-        description: args.description,
-        status: 'active',
-        repositoryVisibility: args.repositoryVisibility ?? 'hidden',
-        defaultChannel: args.defaultChannel,
-        createdAt: now,
-        updatedAt: now,
-      });
+export const upsertDeliveryPackageForProducts = internalMutation({
+  args: {
+    authUserId: v.string(),
+    catalogProductIds: v.array(v.id('product_catalog')),
+    packageId: v.string(),
+    packageName: v.optional(v.string()),
+    displayName: v.optional(v.string()),
+    description: v.optional(v.string()),
+    repositoryVisibility: v.optional(DeliveryPackageVisibilityV),
+    defaultChannel: v.optional(v.string()),
+  },
+  returns: v.object({
+    deliveryPackageId: v.id('delivery_packages'),
+    packageId: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    if (args.catalogProductIds.length === 0) {
+      throw new ConvexError('At least one catalog product is required.');
     }
 
-    const existingLinks = await ctx.db
-      .query('delivery_package_products')
-      .withIndex('by_auth_user_catalog_product', (q) =>
-        q.eq('authUserId', args.authUserId).eq('catalogProductId', args.catalogProductId)
-      )
-      .collect();
-    const existingLink = existingLinks.find(
-      (link) => String(link.deliveryPackageId) === String(deliveryPackageId)
-    );
-
-    if (existingLink) {
-      await ctx.db.patch(existingLink._id, {
-        status: 'active',
-        updatedAt: now,
-      });
-    } else {
-      await ctx.db.insert('delivery_package_products', {
-        authUserId: args.authUserId,
-        deliveryPackageId,
-        catalogProductId: args.catalogProductId,
-        status: 'active',
-        accessMode: 'entitlement',
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
+    const deliveryPackageId = await upsertOwnedDeliveryPackage(ctx, {
+      authUserId: args.authUserId,
+      packageId: args.packageId,
+      packageName: args.packageName,
+      displayName: args.displayName,
+      description: args.description,
+      repositoryVisibility: args.repositoryVisibility,
+      defaultChannel: args.defaultChannel,
+    });
+    await ensureActiveDeliveryPackageLinks(ctx, {
+      authUserId: args.authUserId,
+      catalogProductIds: args.catalogProductIds,
+      deliveryPackageId,
+    });
 
     return {
       deliveryPackageId,
