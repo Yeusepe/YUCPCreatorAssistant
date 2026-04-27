@@ -19,6 +19,7 @@ export interface CreatorPackageListResponse {
 }
 
 export interface CreatorBackstagePackageReleaseSummary {
+  deliveryPackageReleaseId: string;
   version: string;
   channel: string;
   releaseStatus: 'draft' | 'published' | 'revoked' | 'superseded';
@@ -46,8 +47,34 @@ export interface CreatorBackstageProductPackageSummary {
   releases: CreatorBackstagePackageReleaseSummary[];
 }
 
+export type BackstageAccessSelector =
+  | {
+      kind: 'catalogProduct';
+      catalogProductId: string;
+    }
+  | {
+      kind: 'catalogTier';
+      catalogTierId: string;
+    };
+
+export interface CreatorBackstageCatalogTierSummary {
+  catalogTierId: string;
+  catalogProductId?: string;
+  provider: string;
+  providerTierRef: string;
+  displayName: string;
+  description?: string;
+  amountCents?: number;
+  currency?: string;
+  status: 'active' | 'archived';
+  metadata?: unknown;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface CreatorBackstageProductSummary {
   aliases: string[];
+  catalogTiers: CreatorBackstageCatalogTierSummary[];
   backstagePackages: CreatorBackstageProductPackageSummary[];
   canonicalSlug?: string;
   catalogProductId: string;
@@ -100,6 +127,7 @@ export interface BackstageReleaseUploadResult {
 export interface PublishBackstageReleaseInput {
   catalogProductId: string;
   catalogProductIds?: string[];
+  accessSelectors?: BackstageAccessSelector[];
   storageId: string;
   version: string;
   zipSha256: string;
@@ -190,6 +218,18 @@ export async function deleteCreatorBackstageProduct(input: { catalogProductId: s
     deleted: true;
     catalogProductId: string;
   }>(`/api/packages/backstage/products/${encodeURIComponent(input.catalogProductId)}`);
+}
+
+export async function archiveCreatorBackstageRelease(input: {
+  packageId: string;
+  deliveryPackageReleaseId: string;
+}) {
+  return await apiClient.post<{
+    archived: true;
+    deliveryPackageReleaseId: string;
+  }>(
+    `/api/packages/${encodeURIComponent(input.packageId)}/backstage/releases/${encodeURIComponent(input.deliveryPackageReleaseId)}/archive`
+  );
 }
 
 export async function createBackstageReleaseUploadUrl(input: { packageId: string }) {

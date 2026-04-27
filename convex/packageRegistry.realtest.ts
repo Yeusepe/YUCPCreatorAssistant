@@ -393,6 +393,99 @@ describe('packageRegistry', () => {
     ]);
   });
 
+  it('keeps multiple Backstage packages active for the same entitled catalog product', async () => {
+    const t = makeTestConvex();
+    const catalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-subscription',
+      provider: 'patreon',
+      providerProductRef: 'patreon-campaign-1',
+      displayName: 'Subscription Product',
+    });
+    const subjectId = await seedSubject(t, {
+      authUserId: 'auth-user-1',
+      primaryDiscordUserId: 'discord-subscription-user',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.subscription.core',
+      packageName: 'Subscription Core',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.subscription.addons',
+      packageName: 'Subscription Addons',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    await t.mutation(internal.packageRegistry.upsertDeliveryPackageForProduct, {
+      authUserId: 'auth-user-1',
+      catalogProductId,
+      packageId: 'com.yucp.subscription.core',
+      packageName: 'Subscription Core',
+      displayName: 'Subscription Core',
+      repositoryVisibility: 'listed',
+      defaultChannel: 'stable',
+    });
+    await t.mutation(internal.packageRegistry.upsertDeliveryPackageForProduct, {
+      authUserId: 'auth-user-1',
+      catalogProductId,
+      packageId: 'com.yucp.subscription.addons',
+      packageName: 'Subscription Addons',
+      displayName: 'Subscription Addons',
+      repositoryVisibility: 'listed',
+      defaultChannel: 'stable',
+    });
+
+    await t.mutation(internal.packageRegistry.recordDeliveryPackageRelease, {
+      authUserId: 'auth-user-1',
+      packageId: 'com.yucp.subscription.core',
+      version: '1.0.0',
+      channel: 'stable',
+      releaseStatus: 'published',
+      repositoryVisibility: 'listed',
+      artifactKey: 'subscription-core-stable',
+    });
+    await t.mutation(internal.packageRegistry.recordDeliveryPackageRelease, {
+      authUserId: 'auth-user-1',
+      packageId: 'com.yucp.subscription.addons',
+      version: '1.0.0',
+      channel: 'stable',
+      releaseStatus: 'published',
+      repositoryVisibility: 'listed',
+      artifactKey: 'subscription-addons-stable',
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert('entitlements', {
+        authUserId: 'auth-user-1',
+        subjectId,
+        productId: 'product-subscription',
+        sourceProvider: 'patreon',
+        sourceReference: 'patreon:member:member-1:campaign:campaign-1',
+        catalogProductId,
+        status: 'active',
+        grantedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const entitledPackages = await t.query(
+      internal.packageRegistry.listEntitledPackagesForSubject,
+      {
+        authUserId: 'auth-user-1',
+        subjectId,
+      }
+    );
+
+    expect(entitledPackages.map((pkg) => pkg.packageId).sort()).toEqual([
+      'com.yucp.subscription.addons',
+      'com.yucp.subscription.core',
+    ]);
+  });
+
   it('builds a VPM-style Backstage Repos document from entitled packages', async () => {
     const t = makeTestConvex();
     const catalogProductId = await seedCatalogProduct(t, {

@@ -4,6 +4,7 @@ import {
   getProviderDescriptor,
 } from '@yucp/providers/providerMetadata';
 import type { ApiActorBinding } from '@yucp/shared/apiActor';
+import { legacyProductIdsToSelectors, normalizeProductSelectorList } from '@yucp/shared/product';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import type { Auth } from '../auth';
@@ -45,6 +46,20 @@ type BackstageProductQueryResult = {
     canRestore?: boolean;
     canDelete?: boolean;
     deleteBlockedReason?: string;
+    catalogTiers?: Array<{
+      _id: string;
+      catalogProductId?: string;
+      provider: string;
+      providerTierRef: string;
+      displayName: string;
+      description?: string;
+      amountCents?: number;
+      currency?: string;
+      status: string;
+      metadata?: unknown;
+      createdAt: number;
+      updatedAt: number;
+    }>;
     backstagePackages?: Array<{
       packageId: string;
       packageName?: string;
@@ -54,6 +69,7 @@ type BackstageProductQueryResult = {
       defaultChannel?: string;
       latestPublishedVersion?: string;
       latestRelease: null | {
+        deliveryPackageReleaseId: string;
         version: string;
         channel: string;
         releaseStatus: string;
@@ -69,6 +85,7 @@ type BackstageProductQueryResult = {
         zipSha256?: string;
       };
       releases: Array<{
+        deliveryPackageReleaseId: string;
         version: string;
         channel: string;
         releaseStatus: string;
@@ -88,9 +105,7 @@ type BackstageProductQueryResult = {
 };
 
 type BackstageProductQueryRow = BackstageProductQueryResult['data'][number];
-type LiveProviderProduct = Awaited<
-  ReturnType<typeof listProviderProductsViaApi>
->['products'];
+type LiveProviderProduct = Awaited<ReturnType<typeof listProviderProductsViaApi>>['products'];
 type LiveProviderProductRecord = NonNullable<LiveProviderProduct>[number];
 type BackstageProductMetadataOverride = {
   displayName?: string;
@@ -150,6 +165,20 @@ function mapBackstageProductForResponse(
 ) {
   return {
     aliases: product.aliases ?? [],
+    catalogTiers: (product.catalogTiers ?? []).map((tier) => ({
+      catalogTierId: String(tier._id),
+      catalogProductId: tier.catalogProductId ? String(tier.catalogProductId) : undefined,
+      provider: tier.provider,
+      providerTierRef: tier.providerTierRef,
+      displayName: tier.displayName,
+      description: tier.description,
+      amountCents: tier.amountCents,
+      currency: tier.currency,
+      status: tier.status,
+      metadata: tier.metadata,
+      createdAt: tier.createdAt,
+      updatedAt: tier.updatedAt,
+    })),
     backstagePackages: (product.backstagePackages ?? []).map((pkg) => ({
       packageId: pkg.packageId,
       packageName: pkg.packageName,
@@ -160,6 +189,7 @@ function mapBackstageProductForResponse(
       latestPublishedVersion: pkg.latestPublishedVersion,
       latestRelease: pkg.latestRelease
         ? {
+            deliveryPackageReleaseId: pkg.latestRelease.deliveryPackageReleaseId,
             version: pkg.latestRelease.version,
             channel: pkg.latestRelease.channel,
             releaseStatus: pkg.latestRelease.releaseStatus,
@@ -176,6 +206,7 @@ function mapBackstageProductForResponse(
           }
         : null,
       releases: (pkg.releases ?? []).map((release) => ({
+        deliveryPackageReleaseId: release.deliveryPackageReleaseId,
         version: release.version,
         channel: release.channel,
         releaseStatus: release.releaseStatus,
@@ -753,6 +784,57 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
     }
   }
 
+  async function archiveBackstageRelease(
+    request: Request,
+    packageIdParam: string,
+    deliveryPackageReleaseId: string
+  ): Promise<Response> {
+    const viewer = await resolveViewer(request, auth, config);
+    if (viewer instanceof Response) {
+      return viewer;
+    }
+    const convex = getConvexClientFromUrl(config.convexUrl, viewer.actorBinding);
+
+    let packageId: string;
+    try {
+      packageId = assertPackageId(packageIdParam);
+    } catch (error) {
+      return jsonResponse(
+        { error: error instanceof Error ? error.message : 'Invalid packageId' },
+        400
+      );
+    }
+
+    try {
+      const result = await convex.mutation(api.packageRegistry.archiveReleaseForAuthUser, {
+        apiSecret: config.convexApiSecret,
+        actor: viewer.actorBinding,
+        authUserId: viewer.authUserId,
+        packageId,
+        deliveryPackageReleaseId: deliveryPackageReleaseId as Id<'delivery_package_releases'>,
+      });
+
+      if (!result.archived) {
+        const status =
+          result.reason === 'Delivery package not found.' ||
+          result.reason === 'Delivery package release not found.'
+            ? 404
+            : 409;
+        return jsonResponse({ error: result.reason }, status);
+      }
+
+      return jsonResponse(result);
+    } catch (error) {
+      logger.error('Failed to archive Backstage release', {
+        authUserId: viewer.authUserId,
+        packageId,
+        deliveryPackageReleaseId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return jsonResponse({ error: 'Failed to archive Backstage release' }, 500);
+    }
+  }
+
   async function createBackstageReleaseUploadUrl(
     request: Request,
     packageIdParam: string
@@ -816,6 +898,7 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
     let body: {
       catalogProductId?: string;
       catalogProductIds?: string[];
+      accessSelectors?: unknown[];
       storageId?: string;
       version?: string;
       zipSha256?: string;
@@ -849,10 +932,24 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
           .filter((catalogProductId): catalogProductId is string => Boolean(catalogProductId))
       )
     );
+    const accessSelectors = Array.from(
+      new Map(
+        (
+          Array.isArray(body.accessSelectors)
+            ? normalizeProductSelectorList(body.accessSelectors)
+            : legacyProductIdsToSelectors(catalogProductIds)
+        ).map((selector) => [
+          selector.kind === 'catalogTier'
+            ? `tier:${selector.catalogTierId}`
+            : `product:${selector.catalogProductId}`,
+          selector,
+        ])
+      ).values()
+    );
     const zipSha256 = body.zipSha256?.trim().toLowerCase();
-    if (catalogProductIds.length === 0 || !body.storageId || !body.version || !zipSha256) {
+    if (accessSelectors.length === 0 || !body.storageId || !body.version || !zipSha256) {
       return jsonResponse(
-        { error: 'catalogProductIds, storageId, version, and zipSha256 are required' },
+        { error: 'accessSelectors, storageId, version, and zipSha256 are required' },
         400
       );
     }
@@ -868,8 +965,17 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
         apiSecret: config.convexApiSecret,
         actor: viewer.actorBinding,
         authUserId: viewer.authUserId,
-        catalogProductId: catalogProductIds[0] as Id<'product_catalog'>,
-        catalogProductIds: catalogProductIds as Array<Id<'product_catalog'>>,
+        accessSelectors: accessSelectors.map((selector) =>
+          selector.kind === 'catalogTier'
+            ? {
+                kind: 'catalogTier' as const,
+                catalogTierId: selector.catalogTierId as Id<'catalog_tiers'>,
+              }
+            : {
+                kind: 'catalogProduct' as const,
+                catalogProductId: selector.catalogProductId as Id<'product_catalog'>,
+              }
+        ),
         packageId,
         storageId: body.storageId as Id<'_storage'>,
         version: body.version,
@@ -908,6 +1014,7 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
     archiveBackstageProduct,
     restoreBackstageProduct,
     deleteBackstageProduct,
+    archiveBackstageRelease,
     createBackstageReleaseUploadUrl,
     publishBackstageRelease,
   };

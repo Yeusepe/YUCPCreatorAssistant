@@ -1427,13 +1427,16 @@ const delivery_packages = defineTable({
   .index('by_auth_user_status', ['authUserId', 'status']);
 
 /**
- * Delivery Package Products - links creator storefront products to delivery packages.
- * Entitlements reach packages through these links via product_catalog.
+ * Delivery Package Products - links creator storefront products and tiers to delivery packages.
+ * Product-level rules unlock a package for any active entitlement on the catalog product.
+ * Tier-level rules narrow that access to specific catalog tiers while staying anchored to the
+ * owning catalog product for workspace listing and delete guards.
  */
 const delivery_package_products = defineTable({
   authUserId: v.string(),
   deliveryPackageId: v.id('delivery_packages'),
   catalogProductId: v.id('product_catalog'),
+  catalogTierId: v.optional(v.id('catalog_tiers')),
   status: DeliveryPackageLinkStatus,
   accessMode: v.literal('entitlement'),
   createdAt: v.number(),
@@ -1442,7 +1445,9 @@ const delivery_package_products = defineTable({
   .index('by_auth_user', ['authUserId'])
   .index('by_delivery_package', ['deliveryPackageId'])
   .index('by_catalog_product', ['catalogProductId'])
-  .index('by_auth_user_catalog_product', ['authUserId', 'catalogProductId']);
+  .index('by_catalog_tier', ['catalogTierId'])
+  .index('by_auth_user_catalog_product', ['authUserId', 'catalogProductId'])
+  .index('by_auth_user_catalog_tier', ['authUserId', 'catalogTierId']);
 
 /**
  * Delivery Package Releases - published package versions and delivery metadata.

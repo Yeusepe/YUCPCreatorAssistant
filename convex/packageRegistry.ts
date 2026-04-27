@@ -17,7 +17,7 @@
 
 import { sha256Hex } from '@yucp/shared/crypto';
 import { ConvexError, v } from 'convex/values';
-import { internal } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { internalMutation, internalQuery, mutation, query } from './_generated/server';
@@ -65,6 +65,7 @@ type BackstagePackageSummary = {
 };
 
 type BackstageReleaseSummary = {
+  deliveryPackageReleaseId: string;
   version: string;
   channel: string;
   releaseStatus: Doc<'delivery_package_releases'>['releaseStatus'];
@@ -81,7 +82,43 @@ type BackstageReleaseSummary = {
   contentType?: string;
 };
 
+const DeliveryAccessSelectorV = v.union(
+  v.object({
+    kind: v.literal('catalogProduct'),
+    catalogProductId: v.id('product_catalog'),
+  }),
+  v.object({
+    kind: v.literal('catalogTier'),
+    catalogTierId: v.id('catalog_tiers'),
+  })
+);
+
+type DeliveryAccessSelector =
+  | {
+      kind: 'catalogProduct';
+      catalogProductId: Id<'product_catalog'>;
+    }
+  | {
+      kind: 'catalogTier';
+      catalogTierId: Id<'catalog_tiers'>;
+    };
+
+type ResolvedDeliveryAccessSelector =
+  | {
+      kind: 'catalogProduct';
+      catalogProductId: Id<'product_catalog'>;
+    }
+  | {
+      kind: 'catalogTier';
+      catalogProductId: Id<'product_catalog'>;
+      catalogTierId: Id<'catalog_tiers'>;
+    };
+
 type RegistryReaderCtx = QueryCtx | MutationCtx;
+type DeliveryPackageMutationResult = {
+  deliveryPackageId: Id<'delivery_packages'>;
+  packageId: string;
+};
 
 function getPackageStatus(
   registration: Pick<Doc<'package_registry'>, 'status'>
@@ -147,6 +184,7 @@ function toBackstageReleaseSummary(
     : undefined;
 
   return {
+    deliveryPackageReleaseId: String(release._id),
     version: release.version,
     channel: release.channel,
     releaseStatus: release.releaseStatus,
@@ -251,6 +289,54 @@ async function requireOwnedCatalogProduct(
   return product;
 }
 
+async function requireOwnedCatalogTier(
+  ctx: RegistryReaderCtx,
+  authUserId: string,
+  catalogTierId: Id<'catalog_tiers'>
+): Promise<Doc<'catalog_tiers'>> {
+  const tier = await ctx.db.get(catalogTierId);
+  if (!tier || tier.authUserId !== authUserId) {
+    throw new ConvexError('Catalog tier not found.');
+  }
+  return tier;
+}
+
+function getResolvedDeliveryAccessSelectorKey(selector: ResolvedDeliveryAccessSelector): string {
+  return selector.kind === 'catalogTier'
+    ? `tier:${String(selector.catalogTierId)}`
+    : `product:${String(selector.catalogProductId)}`;
+}
+
+function getDeliveryPackageLinkSelectorKey(
+  link: Pick<Doc<'delivery_package_products'>, 'catalogProductId' | 'catalogTierId'>
+): string {
+  return link.catalogTierId
+    ? `tier:${String(link.catalogTierId)}`
+    : `product:${String(link.catalogProductId)}`;
+}
+
+async function resolveDeliveryAccessSelector(
+  ctx: RegistryReaderCtx,
+  authUserId: string,
+  selector: DeliveryAccessSelector
+): Promise<ResolvedDeliveryAccessSelector> {
+  if (selector.kind === 'catalogProduct') {
+    await requireOwnedCatalogProduct(ctx, authUserId, selector.catalogProductId);
+    return selector;
+  }
+
+  const catalogTier = await requireOwnedCatalogTier(ctx, authUserId, selector.catalogTierId);
+  if (!catalogTier.catalogProductId) {
+    throw new ConvexError('Catalog tier is missing its catalog product link.');
+  }
+  await requireOwnedCatalogProduct(ctx, authUserId, catalogTier.catalogProductId);
+  return {
+    kind: 'catalogTier',
+    catalogProductId: catalogTier.catalogProductId,
+    catalogTierId: selector.catalogTierId,
+  };
+}
+
 async function getProductDeleteBlockedReason(
   ctx: RegistryReaderCtx,
   authUserId: string,
@@ -319,6 +405,44 @@ async function getOwnedDeliveryPackageByPackageId(
   return deliveryPackage;
 }
 
+async function getOwnedDeliveryPackageRelease(
+  ctx: MutationCtx,
+  args: {
+    authUserId: string;
+    packageId: string;
+    deliveryPackageReleaseId: Id<'delivery_package_releases'>;
+  }
+): Promise<{
+  deliveryPackage: Doc<'delivery_packages'>;
+  release: Doc<'delivery_package_releases'>;
+  siblingReleases: Doc<'delivery_package_releases'>[];
+}> {
+  const deliveryPackage = await getOwnedDeliveryPackageByPackageId(
+    ctx,
+    args.authUserId,
+    args.packageId
+  );
+  if (!deliveryPackage) {
+    throw new ConvexError('Delivery package not found.');
+  }
+
+  const release = await ctx.db.get(args.deliveryPackageReleaseId);
+  if (
+    !release ||
+    release.authUserId !== args.authUserId ||
+    String(release.deliveryPackageId) !== String(deliveryPackage._id)
+  ) {
+    throw new ConvexError('Delivery package release not found.');
+  }
+
+  const siblingReleases = await ctx.db
+    .query('delivery_package_releases')
+    .withIndex('by_delivery_package', (q) => q.eq('deliveryPackageId', deliveryPackage._id))
+    .collect();
+
+  return { deliveryPackage, release, siblingReleases };
+}
+
 async function upsertOwnedDeliveryPackage(
   ctx: MutationCtx,
   args: {
@@ -369,80 +493,113 @@ async function ensureActiveDeliveryPackageLinks(
   ctx: MutationCtx,
   args: {
     authUserId: string;
-    catalogProductIds: ReadonlyArray<Id<'product_catalog'>>;
+    accessSelectors: ReadonlyArray<DeliveryAccessSelector>;
     deliveryPackageId: Id<'delivery_packages'>;
   }
 ): Promise<void> {
   const now = Date.now();
-  const uniqueCatalogProductIds = Array.from(
+  const resolvedSelectors = Array.from(
     new Map(
-      args.catalogProductIds.map((catalogProductId) => [String(catalogProductId), catalogProductId])
+      (
+        await Promise.all(
+          args.accessSelectors.map(async (selector) =>
+            resolveDeliveryAccessSelector(ctx, args.authUserId, selector)
+          )
+        )
+      ).map((selector) => [getResolvedDeliveryAccessSelectorKey(selector), selector])
     ).values()
   );
 
+  const existingLinks = (
+    await ctx.db
+      .query('delivery_package_products')
+      .withIndex('by_delivery_package', (q) => q.eq('deliveryPackageId', args.deliveryPackageId))
+      .collect()
+  ).filter((link) => link.authUserId === args.authUserId);
+
+  const nextSelectorKeys = new Set(
+    resolvedSelectors.map((selector) => getResolvedDeliveryAccessSelectorKey(selector))
+  );
+
   await Promise.all(
-    uniqueCatalogProductIds.map(async (catalogProductId) => {
-      await requireOwnedCatalogProduct(ctx, args.authUserId, catalogProductId);
-      const existingLinks = await ctx.db
-        .query('delivery_package_products')
-        .withIndex('by_auth_user_catalog_product', (q) =>
-          q.eq('authUserId', args.authUserId).eq('catalogProductId', catalogProductId)
-        )
-        .collect();
-
-      await Promise.all(
-        existingLinks.map(async (link) => {
-          const nextStatus =
-            String(link.deliveryPackageId) === String(args.deliveryPackageId)
-              ? 'active'
-              : 'archived';
-          if (link.status === nextStatus) {
-            return;
-          }
-          await ctx.db.patch(link._id, {
-            status: nextStatus,
-            updatedAt: now,
-          });
-        })
-      );
-
-      const matchingLink = existingLinks.find(
-        (link) => String(link.deliveryPackageId) === String(args.deliveryPackageId)
-      );
-      if (!matchingLink) {
-        await ctx.db.insert('delivery_package_products', {
-          authUserId: args.authUserId,
-          deliveryPackageId: args.deliveryPackageId,
-          catalogProductId,
-          status: 'active',
-          accessMode: 'entitlement',
-          createdAt: now,
-          updatedAt: now,
-        });
+    existingLinks.map(async (link) => {
+      const selectorKey = getDeliveryPackageLinkSelectorKey(link);
+      const nextStatus = nextSelectorKeys.has(selectorKey) ? 'active' : 'archived';
+      if (link.status === nextStatus) {
+        return;
       }
+      await ctx.db.patch(link._id, {
+        status: nextStatus,
+        updatedAt: now,
+      });
+    })
+  );
+
+  const existingLinkKeys = new Set(existingLinks.map((link) => getDeliveryPackageLinkSelectorKey(link)));
+  await Promise.all(
+    resolvedSelectors.map(async (selector) => {
+      const selectorKey = getResolvedDeliveryAccessSelectorKey(selector);
+      if (existingLinkKeys.has(selectorKey)) {
+        return;
+      }
+
+      await ctx.db.insert('delivery_package_products', {
+        authUserId: args.authUserId,
+        deliveryPackageId: args.deliveryPackageId,
+        catalogProductId: selector.catalogProductId,
+        ...(selector.kind === 'catalogTier' ? { catalogTierId: selector.catalogTierId } : {}),
+        status: 'active',
+        accessMode: 'entitlement',
+        createdAt: now,
+        updatedAt: now,
+      });
     })
   );
 }
 
-async function buildBackstagePackageMap(
-  ctx: RegistryReaderCtx,
-  authUserId: string,
-  catalogProductIds: ReadonlyArray<Id<'product_catalog'>>
-): Promise<Map<string, BackstagePackageSummary[]>> {
-  if (catalogProductIds.length === 0) {
-    return new Map();
+async function upsertDeliveryPackageWithSelectors(
+  ctx: MutationCtx,
+  args: {
+    authUserId: string;
+    accessSelectors: ReadonlyArray<DeliveryAccessSelector>;
+    packageId: string;
+    packageName?: string;
+    displayName?: string;
+    description?: string;
+    repositoryVisibility?: Doc<'delivery_packages'>['repositoryVisibility'];
+    defaultChannel?: string;
+  }
+): Promise<DeliveryPackageMutationResult> {
+  if (args.accessSelectors.length === 0) {
+    throw new ConvexError('At least one package access selector is required.');
   }
 
-  const catalogProductIdSet = new Set(catalogProductIds.map(String));
-  const links = (
-    await ctx.db
-      .query('delivery_package_products')
-      .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
-      .collect()
-  ).filter(
-    (link) => link.status === 'active' && catalogProductIdSet.has(String(link.catalogProductId))
-  );
+  const deliveryPackageId = await upsertOwnedDeliveryPackage(ctx, {
+    authUserId: args.authUserId,
+    packageId: args.packageId,
+    packageName: args.packageName,
+    displayName: args.displayName,
+    description: args.description,
+    repositoryVisibility: args.repositoryVisibility,
+    defaultChannel: args.defaultChannel,
+  });
+  await ensureActiveDeliveryPackageLinks(ctx, {
+    authUserId: args.authUserId,
+    accessSelectors: args.accessSelectors,
+    deliveryPackageId,
+  });
 
+  return {
+    deliveryPackageId,
+    packageId: args.packageId,
+  };
+}
+
+async function summarizeBackstagePackagesFromLinks(
+  ctx: RegistryReaderCtx,
+  authUserId: string,
+  links: ReadonlyArray<Doc<'delivery_package_products'>>
+): Promise<Map<string, BackstagePackageSummary[]>> {
   if (links.length === 0) {
     return new Map();
   }
@@ -484,9 +641,7 @@ async function buildBackstagePackageMap(
         return await ctx.db.get(artifactId as Id<'signed_release_artifacts'>);
       })
     )
-  ).filter(
-    (artifact): artifact is Doc<'signed_release_artifacts'> => artifact !== null
-  );
+  ).filter((artifact): artifact is Doc<'signed_release_artifacts'> => artifact !== null);
   const signedArtifactsById = new Map(
     signedArtifacts.map((artifact) => [String(artifact._id), artifact])
   );
@@ -505,10 +660,17 @@ async function buildBackstagePackageMap(
     }
   }
 
-  const summariesByCatalogProduct = new Map<string, BackstagePackageSummary[]>();
+  const summariesByCatalogProduct = new Map<string, Map<string, BackstagePackageSummary>>();
   for (const link of links) {
     const deliveryPackage = deliveryPackagesById.get(String(link.deliveryPackageId));
     if (!deliveryPackage) {
+      continue;
+    }
+    const catalogProductKey = String(link.catalogProductId);
+    const deliveryPackageKey = String(link.deliveryPackageId);
+    const summariesForProduct = summariesByCatalogProduct.get(catalogProductKey) ?? new Map();
+    if (summariesForProduct.has(deliveryPackageKey)) {
+      summariesByCatalogProduct.set(catalogProductKey, summariesForProduct);
       continue;
     }
 
@@ -533,18 +695,41 @@ async function buildBackstagePackageMap(
         : null,
       releases: packageReleaseHistory,
     };
-
-    const catalogProductKey = String(link.catalogProductId);
-    const existingSummaries = summariesByCatalogProduct.get(catalogProductKey) ?? [];
-    existingSummaries.push(summary);
-    summariesByCatalogProduct.set(catalogProductKey, existingSummaries);
+    summariesForProduct.set(deliveryPackageKey, summary);
+    summariesByCatalogProduct.set(catalogProductKey, summariesForProduct);
   }
 
-  for (const [catalogProductKey, summaries] of summariesByCatalogProduct) {
-    summariesByCatalogProduct.set(catalogProductKey, summaries.sort(compareBackstagePackages));
+  const summaries = new Map<string, BackstagePackageSummary[]>();
+  for (const [catalogProductKey, packageMap] of summariesByCatalogProduct) {
+    summaries.set(
+      catalogProductKey,
+      Array.from(packageMap.values()).sort(compareBackstagePackages)
+    );
   }
 
-  return summariesByCatalogProduct;
+  return summaries;
+}
+
+async function buildBackstagePackageMap(
+  ctx: RegistryReaderCtx,
+  authUserId: string,
+  catalogProductIds: ReadonlyArray<Id<'product_catalog'>>
+): Promise<Map<string, BackstagePackageSummary[]>> {
+  if (catalogProductIds.length === 0) {
+    return new Map();
+  }
+
+  const catalogProductIdSet = new Set(catalogProductIds.map(String));
+  const links = (
+    await ctx.db
+      .query('delivery_package_products')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
+      .collect()
+  ).filter(
+    (link) => link.status === 'active' && catalogProductIdSet.has(String(link.catalogProductId))
+  );
+
+  return await summarizeBackstagePackagesFromLinks(ctx, authUserId, links);
 }
 
 async function listEntitledBackstagePackages(
@@ -598,13 +783,52 @@ async function listEntitledBackstagePackages(
       catalogProductIds.map((catalogProductId) => [String(catalogProductId), catalogProductId])
     ).values()
   );
-  const backstagePackagesByCatalogProduct = await buildBackstagePackageMap(
+  const apiSecret = process.env.CONVEX_API_SECRET;
+  if (!apiSecret) {
+    throw new ConvexError('CONVEX_API_SECRET is required for tier entitlement resolution.');
+  }
+  const activeCatalogTierIds = Array.from(
+    new Map(
+      (
+        await Promise.all(
+          activeEntitlements.map(async (entitlement) =>
+            ctx.runQuery(api.catalogTiers.getActiveCatalogTierIdsForEntitlement, {
+              apiSecret,
+              entitlementId: entitlement._id,
+            })
+          )
+        )
+      )
+        .flat()
+        .map((catalogTierId: Id<'catalog_tiers'>) => [String(catalogTierId), catalogTierId])
+    ).values()
+  );
+  const directCatalogProductIdSet = new Set(uniqueCatalogProductIds.map(String));
+  const activeCatalogTierIdSet = new Set(activeCatalogTierIds.map(String));
+  const matchedLinks = (
+    await ctx.db
+      .query('delivery_package_products')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
+      .collect()
+  ).filter(
+    (link) =>
+      link.status === 'active' &&
+      (link.catalogTierId
+        ? activeCatalogTierIdSet.has(String(link.catalogTierId))
+        : directCatalogProductIdSet.has(String(link.catalogProductId)))
+  );
+  const backstagePackagesByCatalogProduct = await summarizeBackstagePackagesFromLinks(
     ctx,
     authUserId,
-    uniqueCatalogProductIds
+    matchedLinks
+  );
+  const matchedCatalogProductIds = Array.from(
+    new Map(
+      matchedLinks.map((link) => [String(link.catalogProductId), link.catalogProductId])
+    ).values()
   );
 
-  const entitledPackages = uniqueCatalogProductIds.flatMap((catalogProductId) => {
+  const entitledPackages = matchedCatalogProductIds.flatMap((catalogProductId) => {
     const summaries = backstagePackagesByCatalogProduct.get(String(catalogProductId)) ?? [];
     return summaries.map((summary) => ({
       catalogProductIds: [catalogProductId],
@@ -765,9 +989,48 @@ export const upsertDeliveryPackageForProduct = internalMutation({
     deliveryPackageId: v.id('delivery_packages'),
     packageId: v.string(),
   }),
+    handler: async (ctx, args) => {
+      const deliveryPackageId = await upsertOwnedDeliveryPackage(ctx, {
+        authUserId: args.authUserId,
+      packageId: args.packageId,
+      packageName: args.packageName,
+      displayName: args.displayName,
+      description: args.description,
+      repositoryVisibility: args.repositoryVisibility,
+      defaultChannel: args.defaultChannel,
+      });
+      await ensureActiveDeliveryPackageLinks(ctx, {
+        authUserId: args.authUserId,
+        accessSelectors: [{ kind: 'catalogProduct', catalogProductId: args.catalogProductId }],
+        deliveryPackageId,
+      });
+
+    return {
+      deliveryPackageId,
+      packageId: args.packageId,
+    };
+  },
+});
+
+export const upsertDeliveryPackageForAccessSelectors = internalMutation({
+  args: {
+    authUserId: v.string(),
+    accessSelectors: v.array(DeliveryAccessSelectorV),
+    packageId: v.string(),
+    packageName: v.optional(v.string()),
+    displayName: v.optional(v.string()),
+    description: v.optional(v.string()),
+    repositoryVisibility: v.optional(DeliveryPackageVisibilityV),
+    defaultChannel: v.optional(v.string()),
+  },
+  returns: v.object({
+    deliveryPackageId: v.id('delivery_packages'),
+    packageId: v.string(),
+  }),
   handler: async (ctx, args) => {
-    const deliveryPackageId = await upsertOwnedDeliveryPackage(ctx, {
+    return await upsertDeliveryPackageWithSelectors(ctx, {
       authUserId: args.authUserId,
+      accessSelectors: args.accessSelectors,
       packageId: args.packageId,
       packageName: args.packageName,
       displayName: args.displayName,
@@ -775,16 +1038,6 @@ export const upsertDeliveryPackageForProduct = internalMutation({
       repositoryVisibility: args.repositoryVisibility,
       defaultChannel: args.defaultChannel,
     });
-    await ensureActiveDeliveryPackageLinks(ctx, {
-      authUserId: args.authUserId,
-      catalogProductIds: [args.catalogProductId],
-      deliveryPackageId,
-    });
-
-    return {
-      deliveryPackageId,
-      packageId: args.packageId,
-    };
   },
 });
 
@@ -807,9 +1060,12 @@ export const upsertDeliveryPackageForProducts = internalMutation({
     if (args.catalogProductIds.length === 0) {
       throw new ConvexError('At least one catalog product is required.');
     }
-
-    const deliveryPackageId = await upsertOwnedDeliveryPackage(ctx, {
+    return await upsertDeliveryPackageWithSelectors(ctx, {
       authUserId: args.authUserId,
+      accessSelectors: args.catalogProductIds.map((catalogProductId) => ({
+        kind: 'catalogProduct' as const,
+        catalogProductId,
+      })),
       packageId: args.packageId,
       packageName: args.packageName,
       displayName: args.displayName,
@@ -817,16 +1073,6 @@ export const upsertDeliveryPackageForProducts = internalMutation({
       repositoryVisibility: args.repositoryVisibility,
       defaultChannel: args.defaultChannel,
     });
-    await ensureActiveDeliveryPackageLinks(ctx, {
-      authUserId: args.authUserId,
-      catalogProductIds: args.catalogProductIds,
-      deliveryPackageId,
-    });
-
-    return {
-      deliveryPackageId,
-      packageId: args.packageId,
-    };
   },
 });
 
@@ -935,6 +1181,76 @@ export const recordDeliveryPackageRelease = internalMutation({
 
     return {
       deliveryPackageReleaseId,
+    };
+  },
+});
+
+export const archiveReleaseForAuthUser = mutation({
+  args: {
+    apiSecret: v.string(),
+    actor: ApiActorBindingV,
+    authUserId: v.string(),
+    packageId: v.string(),
+    deliveryPackageReleaseId: v.id('delivery_package_releases'),
+  },
+  returns: v.union(
+    v.object({
+      archived: v.literal(true),
+      deliveryPackageReleaseId: v.id('delivery_package_releases'),
+    }),
+    v.object({
+      archived: v.literal(false),
+      reason: v.string(),
+    })
+  ),
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+    await requireDelegatedAuthUserActor(args.actor, args.authUserId);
+
+    let ownedRelease: Awaited<ReturnType<typeof getOwnedDeliveryPackageRelease>>;
+    try {
+      ownedRelease = await getOwnedDeliveryPackageRelease(ctx, args);
+    } catch (error) {
+      if (
+        error instanceof ConvexError &&
+        (error.message === 'Delivery package not found.' ||
+          error.message === 'Delivery package release not found.')
+      ) {
+        return { archived: false as const, reason: error.message };
+      }
+      throw error;
+    }
+
+    const { deliveryPackage, release, siblingReleases } = ownedRelease;
+    const latestRelease = siblingReleases.reduce<Doc<'delivery_package_releases'> | undefined>(
+      (current, candidate) =>
+        shouldReplaceLatestRelease(candidate, current) ? candidate : current,
+      undefined
+    );
+
+    if (latestRelease && String(latestRelease._id) === String(release._id)) {
+      return {
+        archived: false as const,
+        reason: 'Current uploads cannot be archived. Upload a new version first.',
+      };
+    }
+
+    const now = Date.now();
+    if (release.releaseStatus !== 'revoked' || release.repositoryVisibility !== 'hidden') {
+      await ctx.db.patch(release._id, {
+        releaseStatus: 'revoked',
+        repositoryVisibility: 'hidden',
+        updatedAt: now,
+      });
+    }
+
+    await ctx.db.patch(deliveryPackage._id, {
+      updatedAt: now,
+    });
+
+    return {
+      archived: true as const,
+      deliveryPackageReleaseId: release._id,
     };
   },
 });
@@ -1099,7 +1415,8 @@ export const listByAuthUser = query({
     if (args.status) {
       all = all.filter(
         (product) =>
-          getCatalogProductWorkspaceStatus(product) === args.status || product.status === args.status
+          getCatalogProductWorkspaceStatus(product) === args.status ||
+          product.status === args.status
       );
     }
 
@@ -1110,6 +1427,20 @@ export const listByAuthUser = query({
       if (idx !== -1) startIndex = idx + 1;
     }
     const data = all.slice(startIndex, startIndex + limit);
+    const catalogTiers = await ctx.db
+      .query('catalog_tiers')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
+      .collect();
+    const catalogTiersByProduct = new Map<string, Doc<'catalog_tiers'>[]>();
+    for (const tier of catalogTiers) {
+      if (!tier.catalogProductId) {
+        continue;
+      }
+      const productKey = String(tier.catalogProductId);
+      const existing = catalogTiersByProduct.get(productKey) ?? [];
+      existing.push(tier);
+      catalogTiersByProduct.set(productKey, existing);
+    }
     const backstagePackagesByCatalogProduct = await buildBackstagePackageMap(
       ctx,
       args.authUserId,
@@ -1127,6 +1458,9 @@ export const listByAuthUser = query({
         return {
           ...product,
           status,
+          catalogTiers: (catalogTiersByProduct.get(String(product._id)) ?? []).sort((left, right) =>
+            left.displayName.localeCompare(right.displayName)
+          ),
           backstagePackages: backstagePackagesByCatalogProduct.get(String(product._id)) ?? [],
           canArchive: status === 'active',
           canRestore: status === 'archived',
@@ -1558,8 +1892,13 @@ export const getByIdForAuthUser = query({
     const backstagePackagesByCatalogProduct = await buildBackstagePackageMap(ctx, args.authUserId, [
       args.catalogProductId,
     ]);
+    const catalogTiers = await ctx.db
+      .query('catalog_tiers')
+      .withIndex('by_catalog_product', (q) => q.eq('catalogProductId', args.catalogProductId))
+      .collect();
     return {
       ...doc,
+      catalogTiers,
       backstagePackages: backstagePackagesByCatalogProduct.get(String(doc._id)) ?? [],
     };
   },

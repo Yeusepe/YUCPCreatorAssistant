@@ -25,6 +25,7 @@ import { isDashboardAuthError, useDashboardSession } from '@/hooks/useDashboardS
 import { getAccountProviderIconPath } from '@/lib/account';
 import {
   archiveCreatorBackstageProduct,
+  archiveCreatorBackstageRelease,
   archiveCreatorPackage,
   type CreatorBackstagePackageReleaseSummary,
   type CreatorBackstageProductPackageSummary,
@@ -660,20 +661,24 @@ function ProductLaneCard({
 
 function ProductLaneDetailsSheet({
   isArchiving,
+  archivingReleaseId,
   isRestoring,
   lane,
   isOpen,
   onArchive,
+  onArchiveRelease,
   onCopyPackageId,
   onOpenChange,
   onPublish,
   onRestore,
 }: {
   isArchiving: boolean;
+  archivingReleaseId: string | null;
   isRestoring: boolean;
   lane: ProductLane | null;
   isOpen: boolean;
   onArchive: (lane: ProductLane) => void;
+  onArchiveRelease: (packageId: string, release: CreatorBackstagePackageReleaseSummary) => void;
   onCopyPackageId: (packageId: string) => void;
   onOpenChange: (isOpen: boolean) => void;
   onPublish: (lane: ProductLane) => void;
@@ -781,75 +786,101 @@ function ProductLaneDetailsSheet({
                           </div>
                         </Card.Header>
                         <Card.Content className="space-y-3 p-4 pt-0">
-                          {packageLink.releases.length > 0 ? (
-                            packageLink.releases.map((release) => {
-                              const releaseBadge = mapReleaseStatus(release.releaseStatus);
-                              const isCurrentRelease =
-                                packageLink.latestRelease?.version === release.version &&
-                                packageLink.latestRelease?.channel === release.channel &&
-                                packageLink.latestRelease?.releaseStatus === release.releaseStatus;
+                          {packageLink.releases.filter(
+                            (release) => release.releaseStatus !== 'revoked'
+                          ).length > 0 ? (
+                            packageLink.releases
+                              .filter((release) => release.releaseStatus !== 'revoked')
+                              .map((release) => {
+                                const releaseBadge = mapReleaseStatus(release.releaseStatus);
+                                const isCurrentRelease =
+                                  packageLink.latestRelease?.deliveryPackageReleaseId ===
+                                  release.deliveryPackageReleaseId;
+                                const isArchivingRelease =
+                                  archivingReleaseId === release.deliveryPackageReleaseId;
 
-                              return (
-                                <div
-                                  key={`${release.version}:${release.channel}:${release.updatedAt}`}
-                                >
-                                  <div className="pm-muted-panel space-y-3 rounded-2xl p-4">
-                                    <div className="flex flex-wrap items-start justify-between gap-3">
-                                      <div className="space-y-1">
-                                        <p className="text-foreground text-sm font-medium">
-                                          {release.deliveryName ??
-                                            `${packageLink.packageId}-${release.version}.zip`}
-                                        </p>
-                                        <p className="text-muted text-xs">
-                                          {formatReleaseTimestamp(
-                                            release.publishedAt ?? release.updatedAt
+                                return (
+                                  <div key={release.deliveryPackageReleaseId}>
+                                    <div className="pm-muted-panel space-y-3 rounded-2xl p-4">
+                                      <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="space-y-1">
+                                          <p className="text-foreground text-sm font-medium">
+                                            {release.deliveryName ??
+                                              `${packageLink.packageId}-${release.version}.zip`}
+                                          </p>
+                                          <p className="text-muted text-xs">
+                                            {formatReleaseTimestamp(
+                                              release.publishedAt ?? release.updatedAt
+                                            )}
+                                          </p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                          <StatusChip
+                                            status={releaseBadge.status}
+                                            label={releaseBadge.label}
+                                          />
+                                          {isCurrentRelease ? (
+                                            <Chip size="sm" variant="soft">
+                                              Current
+                                            </Chip>
+                                          ) : (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              isDisabled={
+                                                isArchivingRelease || lane.status === 'archived'
+                                              }
+                                              onPress={() =>
+                                                onArchiveRelease(packageLink.packageId, release)
+                                              }
+                                            >
+                                              {isArchivingRelease ? (
+                                                <span
+                                                  className="btn-loading-spinner"
+                                                  aria-hidden="true"
+                                                />
+                                              ) : (
+                                                <Archive className="size-4" />
+                                              )}
+                                              {isArchivingRelease
+                                                ? 'Archiving...'
+                                                : 'Archive upload'}
+                                            </Button>
                                           )}
-                                        </p>
+                                        </div>
                                       </div>
                                       <div className="flex flex-wrap gap-2">
-                                        <StatusChip
-                                          status={releaseBadge.status}
-                                          label={releaseBadge.label}
-                                        />
-                                        {isCurrentRelease ? (
+                                        <Chip size="sm" variant="soft">
+                                          v{release.version}
+                                        </Chip>
+                                        <Chip size="sm" variant="soft">
+                                          {release.channel}
+                                        </Chip>
+                                        <Chip size="sm" variant="soft">
+                                          {release.repositoryVisibility === 'listed'
+                                            ? 'Listed'
+                                            : 'Hidden'}
+                                        </Chip>
+                                        {release.unityVersion ? (
                                           <Chip size="sm" variant="soft">
-                                            Current
+                                            Unity {release.unityVersion}
+                                          </Chip>
+                                        ) : null}
+                                        {release.contentType ? (
+                                          <Chip size="sm" variant="soft">
+                                            {release.contentType}
                                           </Chip>
                                         ) : null}
                                       </div>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                      <Chip size="sm" variant="soft">
-                                        v{release.version}
-                                      </Chip>
-                                      <Chip size="sm" variant="soft">
-                                        {release.channel}
-                                      </Chip>
-                                      <Chip size="sm" variant="soft">
-                                        {release.repositoryVisibility === 'listed'
-                                          ? 'Listed'
-                                          : 'Hidden'}
-                                      </Chip>
-                                      {release.unityVersion ? (
-                                        <Chip size="sm" variant="soft">
-                                          Unity {release.unityVersion}
-                                        </Chip>
-                                      ) : null}
-                                      {release.contentType ? (
-                                        <Chip size="sm" variant="soft">
-                                          {release.contentType}
-                                        </Chip>
+                                      {release.zipSha256 ? (
+                                        <p className="text-muted break-all font-mono text-[11px]">
+                                          SHA-256 {release.zipSha256}
+                                        </p>
                                       ) : null}
                                     </div>
-                                    {release.zipSha256 ? (
-                                      <p className="text-muted break-all font-mono text-[11px]">
-                                        SHA-256 {release.zipSha256}
-                                      </p>
-                                    ) : null}
                                   </div>
-                                </div>
-                              );
-                            })
+                                );
+                              })
                           ) : (
                             <EmptyState className="pm-empty-state rounded-2xl border border-dashed">
                               <EmptyState.Header>
@@ -863,6 +894,48 @@ function ProductLaneDetailsSheet({
                               </EmptyState.Header>
                             </EmptyState>
                           )}
+                          {packageLink.releases.some(
+                            (release) => release.releaseStatus === 'revoked'
+                          ) ? (
+                            <details className="pm-muted-panel rounded-2xl p-4">
+                              <summary className="text-foreground cursor-pointer list-none text-sm font-medium">
+                                Archived uploads
+                              </summary>
+                              <div className="mt-4 space-y-3">
+                                {packageLink.releases
+                                  .filter((release) => release.releaseStatus === 'revoked')
+                                  .map((release) => (
+                                    <div
+                                      key={release.deliveryPackageReleaseId}
+                                      className="pm-muted-panel space-y-2 rounded-2xl p-4"
+                                    >
+                                      <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="space-y-1">
+                                          <p className="text-foreground text-sm font-medium">
+                                            {release.deliveryName ??
+                                              `${packageLink.packageId}-${release.version}.zip`}
+                                          </p>
+                                          <p className="text-muted text-xs">
+                                            {formatReleaseTimestamp(
+                                              release.publishedAt ?? release.updatedAt
+                                            )}
+                                          </p>
+                                        </div>
+                                        <StatusChip status="revoked" label="Archived" />
+                                      </div>
+                                      <div className="flex flex-wrap gap-2">
+                                        <Chip size="sm" variant="soft">
+                                          v{release.version}
+                                        </Chip>
+                                        <Chip size="sm" variant="soft">
+                                          {release.channel}
+                                        </Chip>
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            </details>
+                          ) : null}
                         </Card.Content>
                       </Card>
                     ))
@@ -1046,6 +1119,7 @@ export function PackageRegistryPanel({
   const [pendingRestoreId, setPendingRestoreId] = useState<string | null>(null);
   const [pendingProductArchiveKey, setPendingProductArchiveKey] = useState<string | null>(null);
   const [pendingProductRestoreKey, setPendingProductRestoreKey] = useState<string | null>(null);
+  const [pendingReleaseArchiveId, setPendingReleaseArchiveId] = useState<string | null>(null);
   const [isPublishOpen, setIsPublishOpen] = useState(false);
   const [isProductDetailsOpen, setIsProductDetailsOpen] = useState(false);
   const [publishDraft, setPublishDraft] = useState<PublishDraft>(() => buildDraftFromLane(null));
@@ -1231,6 +1305,33 @@ export function PackageRegistryPanel({
     onSettled: () => setPendingProductRestoreKey(null),
   });
 
+  const archiveReleaseMutation = useMutation({
+    mutationFn: ({
+      packageId,
+      deliveryPackageReleaseId,
+    }: {
+      packageId: string;
+      deliveryPackageReleaseId: string;
+    }) => archiveCreatorBackstageRelease({ packageId, deliveryPackageReleaseId }),
+    onMutate: ({ deliveryPackageReleaseId }) => {
+      setPendingReleaseArchiveId(deliveryPackageReleaseId);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: creatorBackstageProductsQueryKey });
+      toast.success('Old upload archived');
+    },
+    onError: (error) => {
+      if (isDashboardAuthError(error)) {
+        markSessionExpired();
+        return;
+      }
+      const errorMessage =
+        error instanceof Error ? error.message : 'This upload could not be archived.';
+      toast.error('Could not archive upload', { description: errorMessage });
+    },
+    onSettled: () => setPendingReleaseArchiveId(null),
+  });
+
   const publishMutation = useMutation({
     mutationFn: async (draft: PublishDraft) => {
       if (!selectedUpload?.file) {
@@ -1359,7 +1460,6 @@ export function PackageRegistryPanel({
   );
   const filteredProductLanes = activeProductLanes;
   const filteredLinkedLanes = filteredProductLanes.filter((lane) => lane.packageLinks.length > 0);
-  const filteredSetupLanes = filteredProductLanes.filter((lane) => lane.packageLinks.length === 0);
   const filteredArchivedProductLanes = archivedProductLanes.filter((lane) =>
     normalizeComparableText(
       `${lane.title} ${lane.providerLabels.join(' ')} ${lane.packageLinks
@@ -1483,9 +1583,6 @@ export function PackageRegistryPanel({
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="max-w-[64ch] space-y-1.5">
-            <p className="text-muted text-xs font-medium tracking-[0.14em] uppercase">
-              Custom VPM repo
-            </p>
             <h2 className="text-foreground text-[2rem] font-semibold leading-tight">{title}</h2>
             <p className="pm-copy text-sm leading-6">{description}</p>
           </div>
@@ -1577,35 +1674,6 @@ export function PackageRegistryPanel({
                 )}
               </Card.Content>
             </Card>
-
-            {filteredSetupLanes.length > 0 ? (
-              <Card className="pm-card rounded-2xl shadow-none">
-                <Card.Header className="flex flex-col gap-3 p-4 pb-2">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <StreamlineShippingBoxIcon className="size-6" />
-                      <p className="text-foreground text-lg font-semibold">Set up a new product</p>
-                    </div>
-                    <p className="pm-copy max-w-[52ch] text-sm leading-6">
-                      Pick a product that has never had an install ID, then upload its first
-                      package.
-                    </p>
-                  </div>
-                </Card.Header>
-                <Card.Content className="space-y-3 p-4 pt-0">
-                  {filteredSetupLanes.map((lane) => (
-                    <ProductLaneCard
-                      key={lane.laneKey}
-                      lane={lane}
-                      isRestoring={false}
-                      onOpenDetails={openProductDetails}
-                      onPublish={openPublishSheet}
-                      onRestore={() => {}}
-                    />
-                  ))}
-                </Card.Content>
-              </Card>
-            ) : null}
 
             <div className="pm-management-details rounded-2xl p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1841,6 +1909,7 @@ export function PackageRegistryPanel({
               archiveProductMutation.isPending
             : false
         }
+        archivingReleaseId={pendingReleaseArchiveId}
         isRestoring={
           selectedProductLane
             ? pendingProductRestoreKey === selectedProductLane.laneKey &&
@@ -1850,6 +1919,12 @@ export function PackageRegistryPanel({
         lane={selectedProductLane}
         isOpen={isProductDetailsOpen}
         onArchive={(lane) => archiveProductMutation.mutate(lane)}
+        onArchiveRelease={(packageId, release) =>
+          archiveReleaseMutation.mutate({
+            packageId,
+            deliveryPackageReleaseId: release.deliveryPackageReleaseId,
+          })
+        }
         onCopyPackageId={(packageId) =>
           handleCopyValue(packageId, `Copied install ID ${packageId}`)
         }

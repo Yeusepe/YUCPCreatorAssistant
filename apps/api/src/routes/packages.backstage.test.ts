@@ -32,6 +32,7 @@ mock.module('../../../../convex/_generated/api', () => ({
       archiveProductForAuthUser: 'packageRegistry.archiveProductForAuthUser',
       restoreProductForAuthUser: 'packageRegistry.restoreProductForAuthUser',
       deleteProductForAuthUser: 'packageRegistry.deleteProductForAuthUser',
+      archiveReleaseForAuthUser: 'packageRegistry.archiveReleaseForAuthUser',
     },
     providerConnections: {
       getConnectionStatus: 'providerConnections.getConnectionStatus',
@@ -129,6 +130,7 @@ describe('package Backstage publishing routes', () => {
                     defaultChannel: 'stable',
                     latestPublishedVersion: '1.2.3',
                     latestRelease: {
+                      deliveryPackageReleaseId: 'release_current',
                       version: '1.2.3',
                       channel: 'stable',
                       releaseStatus: 'published',
@@ -145,6 +147,7 @@ describe('package Backstage publishing routes', () => {
                     },
                     releases: [
                       {
+                        deliveryPackageReleaseId: 'release_current',
                         version: '1.2.3',
                         channel: 'stable',
                         releaseStatus: 'published',
@@ -160,6 +163,7 @@ describe('package Backstage publishing routes', () => {
                         zipSha256: 'a'.repeat(64),
                       },
                       {
+                        deliveryPackageReleaseId: 'release_old',
                         version: '1.2.2',
                         channel: 'stable',
                         releaseStatus: 'superseded',
@@ -200,6 +204,8 @@ describe('package Backstage publishing routes', () => {
           return 'https://upload.test/backstage';
         case 'packageRegistry.archiveProductForAuthUser':
           return { archived: true, catalogProductId: 'product_1' };
+        case 'packageRegistry.archiveReleaseForAuthUser':
+          return { archived: true, deliveryPackageReleaseId: 'release_old' };
         case 'packageRegistry.deleteProductForAuthUser':
           return { deleted: true, catalogProductId: 'product_2' };
         default:
@@ -341,6 +347,7 @@ describe('package Backstage publishing routes', () => {
               defaultChannel: 'stable',
               latestPublishedVersion: '1.2.3',
               latestRelease: {
+                deliveryPackageReleaseId: 'release_current',
                 version: '1.2.3',
                 channel: 'stable',
                 releaseStatus: 'published',
@@ -357,6 +364,7 @@ describe('package Backstage publishing routes', () => {
               },
               releases: [
                 {
+                  deliveryPackageReleaseId: 'release_current',
                   version: '1.2.3',
                   channel: 'stable',
                   releaseStatus: 'published',
@@ -372,6 +380,7 @@ describe('package Backstage publishing routes', () => {
                   zipSha256: 'a'.repeat(64),
                 },
                 {
+                  deliveryPackageReleaseId: 'release_old',
                   version: '1.2.2',
                   channel: 'stable',
                   releaseStatus: 'superseded',
@@ -620,6 +629,28 @@ describe('package Backstage publishing routes', () => {
     });
   });
 
+  it('archives old Backstage package releases through release mutations', async () => {
+    const response = await routes.archiveBackstageRelease(
+      new Request(
+        'https://api.test/api/packages/com.yucp.example/backstage/releases/release_old/archive',
+        {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer oauth-token',
+          },
+        }
+      ),
+      'com.yucp.example',
+      'release_old'
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      archived: true,
+      deliveryPackageReleaseId: 'release_old',
+    });
+  });
+
   it('publishes uploaded Backstage releases for the authenticated creator', async () => {
     const response = await routes.publishBackstageRelease(
       new Request('https://api.test/api/packages/com.yucp.example/backstage/releases', {
@@ -641,8 +672,10 @@ describe('package Backstage publishing routes', () => {
 
     expect(response.status).toBe(201);
     expect(lastActionArgs).toMatchObject({
-      catalogProductId: 'product_1',
-      catalogProductIds: ['product_1', 'product_2'],
+      accessSelectors: [
+        { kind: 'catalogProduct', catalogProductId: 'product_1' },
+        { kind: 'catalogProduct', catalogProductId: 'product_2' },
+      ],
       zipSha256: 'd'.repeat(64),
     });
     await expect(response.json()).resolves.toMatchObject({
@@ -678,6 +711,37 @@ describe('package Backstage publishing routes', () => {
       deliveryName: 'com.yucp.example-4.0.0.zip',
       contentType: 'application/zip',
       zipSha256: 'e'.repeat(64),
+    });
+  });
+
+  it('publishes uploaded Backstage releases with selector-based access rules', async () => {
+    const response = await routes.publishBackstageRelease(
+      new Request('https://api.test/api/packages/com.yucp.example/backstage/releases', {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer oauth-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          accessSelectors: [
+            { kind: 'catalogProduct', catalogProductId: 'product_1' },
+            { kind: 'catalogTier', catalogTierId: 'tier_1' },
+          ],
+          storageId: 'storage_1',
+          version: '5.0.0',
+          zipSha256: 'f'.repeat(64),
+        }),
+      }),
+      'com.yucp.example'
+    );
+
+    expect(response.status).toBe(201);
+    expect(lastActionArgs).toMatchObject({
+      accessSelectors: [
+        { kind: 'catalogProduct', catalogProductId: 'product_1' },
+        { kind: 'catalogTier', catalogTierId: 'tier_1' },
+      ],
+      zipSha256: 'f'.repeat(64),
     });
   });
 });

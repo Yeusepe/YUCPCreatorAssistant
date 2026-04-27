@@ -232,6 +232,7 @@ vi.mock('@/lib/certificates', () => ({
 
 vi.mock('@/lib/packages', () => ({
   archiveCreatorPackage: vi.fn(),
+  archiveCreatorBackstageRelease: vi.fn(),
   archiveCreatorBackstageProduct: vi.fn(),
   createBackstageReleaseUploadUrl: vi.fn(),
   listCreatorBackstageProducts: vi.fn(),
@@ -257,6 +258,9 @@ const listCreatorBackstageProductsMock = packagesApi.listCreatorBackstageProduct
 >;
 const listCreatorPackagesMock = packagesApi.listCreatorPackages as ReturnType<typeof vi.fn>;
 const renameCreatorPackageMock = packagesApi.renameCreatorPackage as ReturnType<typeof vi.fn>;
+const archiveCreatorBackstageReleaseMock = packagesApi.archiveCreatorBackstageRelease as ReturnType<
+  typeof vi.fn
+>;
 const archiveCreatorBackstageProductMock = packagesApi.archiveCreatorBackstageProduct as ReturnType<
   typeof vi.fn
 >;
@@ -352,6 +356,7 @@ describe('dashboard packages route', () => {
               defaultChannel: 'stable',
               latestPublishedVersion: '1.2.3',
               latestRelease: {
+                deliveryPackageReleaseId: 'release_current',
                 version: '1.2.3',
                 channel: 'stable',
                 releaseStatus: 'published',
@@ -368,6 +373,7 @@ describe('dashboard packages route', () => {
               },
               releases: [
                 {
+                  deliveryPackageReleaseId: 'release_current',
                   version: '1.2.3',
                   channel: 'stable',
                   releaseStatus: 'published',
@@ -383,6 +389,7 @@ describe('dashboard packages route', () => {
                   zipSha256: 'a'.repeat(64),
                 },
                 {
+                  deliveryPackageReleaseId: 'release_old',
                   version: '1.2.2',
                   channel: 'stable',
                   releaseStatus: 'superseded',
@@ -469,6 +476,10 @@ describe('dashboard packages route', () => {
       archived: true,
       catalogProductId: 'product_1',
     });
+    archiveCreatorBackstageReleaseMock.mockResolvedValue({
+      archived: true,
+      deliveryPackageReleaseId: 'release_old',
+    });
   });
 
   afterEach(() => {
@@ -500,7 +511,7 @@ describe('dashboard packages route', () => {
     ).toHaveAttribute('src', 'https://public-files.gumroad.com/creator-bundle.png');
   });
 
-  it('renders unlinked storefront groups in a separate setup section', async () => {
+  it('keeps first-upload products behind the upload button instead of a separate setup section', async () => {
     listCreatorBackstageProductsMock.mockResolvedValue({
       products: [
         {
@@ -515,6 +526,7 @@ describe('dashboard packages route', () => {
               defaultChannel: 'stable',
               latestPublishedVersion: '1.2.3',
               latestRelease: {
+                deliveryPackageReleaseId: 'release_current',
                 version: '1.2.3',
                 channel: 'stable',
                 releaseStatus: 'published',
@@ -590,11 +602,11 @@ describe('dashboard packages route', () => {
 
     render(<Component />, { wrapper: createWrapper() });
 
-    await waitFor(() => expect(screen.getByText('Set up a new product')).toBeInTheDocument());
-    expect(screen.getAllByText('Song Thing').length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/Needs first install ID · 2 storefronts · Gumroad, Jinxxy/i)
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /upload a package/i })).toBeInTheDocument()
+    );
+    expect(screen.queryByText('Set up a new product')).toBeNull();
+    expect(screen.queryByText('Song Thing')).toBeNull();
   });
 
   it('merges storefront rows when linked package IDs match even if slugs and names drift', async () => {
@@ -612,6 +624,7 @@ describe('dashboard packages route', () => {
               defaultChannel: 'stable',
               latestPublishedVersion: '2.4.0',
               latestRelease: {
+                deliveryPackageReleaseId: 'song_release_current',
                 version: '2.4.0',
                 channel: 'stable',
                 releaseStatus: 'published',
@@ -656,6 +669,7 @@ describe('dashboard packages route', () => {
               defaultChannel: 'stable',
               latestPublishedVersion: '2.4.0',
               latestRelease: {
+                deliveryPackageReleaseId: 'song_release_current',
                 version: '2.4.0',
                 channel: 'stable',
                 releaseStatus: 'published',
@@ -807,6 +821,31 @@ describe('dashboard packages route', () => {
     expect(screen.getByText('creator-bundle-1.2.2.zip')).toBeInTheDocument();
     expect(screen.getByText(/SHA-256 a{64}/i)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /copy install id/i }).length).toBeGreaterThan(0);
+  });
+
+  it('archives an old upload from the past uploads sheet', async () => {
+    const Component = PackagesRoute.options.component;
+    if (!Component) {
+      throw new Error('Packages route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    await waitFor(() =>
+      expect(screen.getByText(/Install ID:\s*pkg\.creator\.bundle/i)).toBeInTheDocument()
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: /open past uploads for creator bundle product/i })
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /archive upload/i }));
+
+    await waitFor(() =>
+      expect(archiveCreatorBackstageReleaseMock).toHaveBeenCalledWith({
+        packageId: 'pkg.creator.bundle',
+        deliveryPackageReleaseId: 'release_old',
+      })
+    );
   });
 
   it('renames a package from the dashboard manager', async () => {

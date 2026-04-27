@@ -10,6 +10,16 @@ const BACKSTAGE_PACKAGE_PLATFORM = 'unity-vpm';
 const BACKSTAGE_PACKAGE_CONTENT_TYPE = 'application/zip';
 const BACKSTAGE_PACKAGE_ENVELOPE_CIPHER = 'none';
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
+const BackstageAccessSelectorV = v.union(
+  v.object({
+    kind: v.literal('catalogProduct'),
+    catalogProductId: v.id('product_catalog'),
+  }),
+  v.object({
+    kind: v.literal('catalogTier'),
+    catalogTierId: v.id('catalog_tiers'),
+  })
+);
 
 type BackstageRepoAccessRecord = {
   tokenId: Id<'delivery_repo_tokens'>;
@@ -264,6 +274,7 @@ export const publishUploadedReleaseForAuthUser = action({
     authUserId: v.string(),
     catalogProductId: v.optional(v.id('product_catalog')),
     catalogProductIds: v.optional(v.array(v.id('product_catalog'))),
+    accessSelectors: v.optional(v.array(BackstageAccessSelectorV)),
     packageId: v.string(),
     storageId: v.id('_storage'),
     version: v.string(),
@@ -310,15 +321,27 @@ export const publishUploadedReleaseForAuthUser = action({
     }
     const channel = (args.channel || '').trim() || 'stable';
     const artifactKey = buildBackstageArtifactKey(args.packageId);
-    const catalogProductIds = Array.from(
+    const accessSelectors = Array.from(
       new Map(
-        (args.catalogProductIds ?? (args.catalogProductId ? [args.catalogProductId] : [])).map(
-          (catalogProductId) => [String(catalogProductId), catalogProductId]
-        )
+        (
+          args.accessSelectors ??
+          (args.catalogProductIds ?? (args.catalogProductId ? [args.catalogProductId] : [])).map(
+            (catalogProductId) =>
+              ({
+                kind: 'catalogProduct' as const,
+                catalogProductId,
+              }) satisfies { kind: 'catalogProduct'; catalogProductId: Id<'product_catalog'> }
+          )
+        ).map((selector) => [
+          selector.kind === 'catalogTier'
+            ? `tier:${String(selector.catalogTierId)}`
+            : `product:${String(selector.catalogProductId)}`,
+          selector,
+        ])
       ).values()
     );
-    if (catalogProductIds.length === 0) {
-      throw new Error('At least one catalog product is required to publish a Backstage release.');
+    if (accessSelectors.length === 0) {
+      throw new Error('At least one package access selector is required to publish a Backstage release.');
     }
     const deliveryName =
       (args.deliveryName || '').trim() ||
@@ -328,9 +351,9 @@ export const publishUploadedReleaseForAuthUser = action({
       (args.contentType || '').trim() || uploaded.type
     );
 
-    await ctx.runMutation(internal.packageRegistry.upsertDeliveryPackageForProducts, {
+    await ctx.runMutation(internal.packageRegistry.upsertDeliveryPackageForAccessSelectors, {
       authUserId: args.authUserId,
-      catalogProductIds,
+      accessSelectors,
       packageId: args.packageId,
       packageName: args.packageName,
       displayName: args.displayName,
