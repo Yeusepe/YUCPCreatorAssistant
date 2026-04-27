@@ -1,14 +1,4 @@
-import {
-  Button,
-  Card,
-  Chip,
-  ListBox,
-  ScrollShadow,
-  Select,
-  Separator,
-  TextArea,
-  Tooltip,
-} from '@heroui/react';
+import { Button, Card, Chip, ListBox, Select, TextArea, Tooltip } from '@heroui/react';
 import { DropZone, EmptyState, Sheet } from '@heroui-pro/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -23,12 +13,11 @@ import {
   Search,
   ShieldCheck,
   Store,
-  Trash2,
 } from 'lucide-react';
 import type { ComponentPropsWithoutRef, Key, ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { AccountInlineError } from '@/components/account/AccountPage';
-import { StatusChip } from '@/components/ui/StatusChip';
+import { type BadgeStatus, StatusChip } from '@/components/ui/StatusChip';
 import { useToast } from '@/components/ui/Toast';
 import { YucpButton } from '@/components/ui/YucpButton';
 import { YucpInput } from '@/components/ui/YucpInput';
@@ -37,13 +26,12 @@ import { getAccountProviderIconPath } from '@/lib/account';
 import {
   archiveCreatorBackstageProduct,
   archiveCreatorPackage,
+  type CreatorBackstagePackageReleaseSummary,
   type CreatorBackstageProductPackageSummary,
   type CreatorBackstageProductSummary,
   type CreatorPackageListResponse,
   type CreatorPackageSummary,
   createBackstageReleaseUploadUrl,
-  deleteCreatorBackstageProduct,
-  deleteCreatorPackage,
   listCreatorBackstageProducts,
   listCreatorPackages,
   publishBackstageRelease,
@@ -181,16 +169,15 @@ function mapUploadStatus(status: SelectedUpload['status']): 'complete' | 'failed
   return 'complete';
 }
 
-function mapReleaseStatus(status: CreatorBackstageProductPackageSummary['latestRelease'] extends {
-  releaseStatus: infer T;
-}
-  ? T
-  : never): { status: 'active' | 'failed' | 'pending'; label: string } {
+function mapReleaseStatus(status: CreatorBackstagePackageReleaseSummary['releaseStatus']): {
+  status: Extract<BadgeStatus, 'active' | 'pending' | 'revoked'>;
+  label: string;
+} {
   switch (status) {
     case 'published':
       return { status: 'active', label: 'Published' };
     case 'revoked':
-      return { status: 'failed', label: 'Revoked' };
+      return { status: 'revoked', label: 'Revoked' };
     case 'superseded':
       return { status: 'pending', label: 'Superseded' };
     default:
@@ -209,23 +196,96 @@ function normalizeComparableText(value?: string): string {
     .replace(/\s+/g, ' ');
 }
 
-function buildProductLaneKey(product: CreatorBackstageProductSummary): string {
-  const normalizedSlug = normalizeComparableText(product.canonicalSlug);
-  if (normalizedSlug) {
-    return `slug:${normalizedSlug}`;
+type ProductLaneMatchKeys = {
+  fallbackKey: string;
+  packageKeys: string[];
+  slugKeys: string[];
+  softKeys: string[];
+};
+
+type ProductLaneGroup = {
+  packageKeys: Set<string>;
+  products: CreatorBackstageProductSummary[];
+  slugKeys: Set<string>;
+  softKeys: Set<string>;
+};
+
+function buildUniqueMatchKeys(values: Array<string | undefined>, prefix: string): string[] {
+  const normalizedValues = values
+    .map((value) => normalizeComparableText(value))
+    .filter(Boolean)
+    .map((value) => `${prefix}:${value}`);
+  return Array.from(new Set(normalizedValues));
+}
+
+function buildProductLaneMatchKeys(product: CreatorBackstageProductSummary): ProductLaneMatchKeys {
+  return {
+    fallbackKey: `product:${String(product.catalogProductId)}`,
+    packageKeys: buildUniqueMatchKeys(
+      (product.backstagePackages ?? []).map((backstagePackage) => backstagePackage.packageId),
+      'package'
+    ),
+    slugKeys: buildUniqueMatchKeys([product.canonicalSlug], 'slug'),
+    softKeys: buildUniqueMatchKeys(
+      [...(product.aliases ?? []), product.displayName, product.providerProductRef],
+      'soft'
+    ),
+  };
+}
+
+function groupHasMatch(groupKeys: Set<string>, keys: string[]): boolean {
+  return keys.some((key) => groupKeys.has(key));
+}
+
+function collectMatchingProductLaneGroupIndexes(
+  groups: ProductLaneGroup[],
+  matchKeys: ProductLaneMatchKeys
+): number[] {
+  if (matchKeys.packageKeys.length > 0) {
+    const packageMatches = groups.flatMap((group, index) =>
+      groupHasMatch(group.packageKeys, matchKeys.packageKeys) ? [index] : []
+    );
+    if (packageMatches.length > 0) {
+      return packageMatches;
+    }
   }
 
-  const normalizedAlias = (product.aliases ?? []).map(normalizeComparableText).find(Boolean);
-  if (normalizedAlias) {
-    return `alias:${normalizedAlias}`;
+  if (matchKeys.slugKeys.length > 0) {
+    const slugMatches = groups.flatMap((group, index) =>
+      groupHasMatch(group.slugKeys, matchKeys.slugKeys) ? [index] : []
+    );
+    if (slugMatches.length > 0) {
+      return slugMatches;
+    }
   }
 
-  const normalizedDisplayName = normalizeComparableText(product.displayName);
-  if (normalizedDisplayName) {
-    return `display:${normalizedDisplayName}`;
+  if (matchKeys.packageKeys.length === 0 && matchKeys.softKeys.length > 0) {
+    const softMatches = groups.flatMap((group, index) =>
+      groupHasMatch(group.softKeys, matchKeys.softKeys) ? [index] : []
+    );
+    if (softMatches.length > 0) {
+      return softMatches;
+    }
   }
 
-  return `product:${normalizeComparableText(product.productId)}`;
+  return [];
+}
+
+function appendProductLaneGroup(
+  group: ProductLaneGroup,
+  product: CreatorBackstageProductSummary,
+  matchKeys: ProductLaneMatchKeys
+) {
+  group.products.push(product);
+  for (const key of matchKeys.packageKeys) {
+    group.packageKeys.add(key);
+  }
+  for (const key of matchKeys.slugKeys) {
+    group.slugKeys.add(key);
+  }
+  for (const key of matchKeys.softKeys) {
+    group.softKeys.add(key);
+  }
 }
 
 function compareBackstagePackageLinks(
@@ -237,17 +297,66 @@ function compareBackstagePackageLinks(
   return leftLabel.localeCompare(rightLabel) || left.packageId.localeCompare(right.packageId);
 }
 
-function buildProductLanes(products: CreatorBackstageProductSummary[]): ProductLane[] {
-  const groupedProducts = new Map<string, CreatorBackstageProductSummary[]>();
-  for (const product of products) {
-    const laneKey = buildProductLaneKey(product);
-    const existingProducts = groupedProducts.get(laneKey) ?? [];
-    existingProducts.push(product);
-    groupedProducts.set(laneKey, existingProducts);
+export function buildProductLanes(products: CreatorBackstageProductSummary[]): ProductLane[] {
+  const groups: ProductLaneGroup[] = [];
+  const prioritizedProducts = [...products].sort((left, right) => {
+    const leftHasPackages = left.backstagePackages.length > 0 ? 1 : 0;
+    const rightHasPackages = right.backstagePackages.length > 0 ? 1 : 0;
+    return rightHasPackages - leftHasPackages;
+  });
+
+  for (const product of prioritizedProducts) {
+    const matchKeys = buildProductLaneMatchKeys(product);
+    const matchingIndexes = collectMatchingProductLaneGroupIndexes(groups, matchKeys);
+
+    if (matchingIndexes.length === 0) {
+      const newGroup: ProductLaneGroup = {
+        packageKeys: new Set<string>(),
+        products: [],
+        slugKeys: new Set<string>(),
+        softKeys: new Set<string>([matchKeys.fallbackKey]),
+      };
+      appendProductLaneGroup(newGroup, product, matchKeys);
+      groups.push(newGroup);
+      continue;
+    }
+
+    const [targetIndex, ...mergeIndexes] = matchingIndexes;
+    const targetGroup = groups[targetIndex];
+    if (!targetGroup) {
+      continue;
+    }
+
+    appendProductLaneGroup(targetGroup, product, matchKeys);
+
+    for (const mergeIndex of [...mergeIndexes].sort((left, right) => right - left)) {
+      const mergeGroup = groups[mergeIndex];
+      if (!mergeGroup) {
+        continue;
+      }
+      for (const mergedProduct of mergeGroup.products) {
+        targetGroup.products.push(mergedProduct);
+      }
+      for (const key of mergeGroup.packageKeys) {
+        targetGroup.packageKeys.add(key);
+      }
+      for (const key of mergeGroup.slugKeys) {
+        targetGroup.slugKeys.add(key);
+      }
+      for (const key of mergeGroup.softKeys) {
+        targetGroup.softKeys.add(key);
+      }
+      groups.splice(mergeIndex, 1);
+    }
   }
 
-  return Array.from(groupedProducts.entries())
-    .map(([laneKey, laneProducts]) => {
+  return groups
+    .map((group) => {
+      const laneProducts = group.products;
+      const laneKey =
+        Array.from(group.packageKeys)[0] ??
+        Array.from(group.slugKeys)[0] ??
+        Array.from(group.softKeys)[0];
       const primaryTitle =
         laneProducts.find((product) => product.displayName?.trim())?.displayName?.trim() ??
         laneProducts[0]?.productId ??
@@ -267,6 +376,11 @@ function buildProductLanes(products: CreatorBackstageProductSummary[]): ProductL
       const providerRefs = laneProducts.map(
         (product) => `${formatProviderLabel(product.provider)} · ${product.providerProductRef}`
       );
+      const status: ProductLane['status'] = laneProducts.every(
+        (product) => product.status === 'archived'
+      )
+        ? 'archived'
+        : 'active';
 
       return {
         catalogProductIds: laneProducts.map((product) => product.catalogProductId),
@@ -280,9 +394,7 @@ function buildProductLanes(products: CreatorBackstageProductSummary[]): ProductL
         ),
         providerLabels,
         providerRefs,
-        status: laneProducts.every((product) => product.status === 'archived')
-          ? 'archived'
-          : 'active',
+        status,
         thumbnailUrl: laneProducts.find((product) => product.thumbnailUrl)?.thumbnailUrl,
         title: primaryTitle,
       };
@@ -303,6 +415,11 @@ function buildDraftFromLane(lane?: ProductLane | null): PublishDraft {
     repositoryVisibility: linkedPackage?.repositoryVisibility ?? 'listed',
     unityVersion: '',
   };
+}
+
+function formatLaneStorefrontSummary(lane: ProductLane): string {
+  const storefrontLabel = `${lane.products.length} storefront${lane.products.length === 1 ? '' : 's'}`;
+  return `${storefrontLabel} · ${lane.providerLabels.join(', ')}`;
 }
 
 function StreamlineLinkChainIcon(props: ComponentPropsWithoutRef<'svg'>) {
@@ -432,17 +549,13 @@ function IconActionButton({
 
 function ProductLaneCard({
   lane,
-  isArchiving,
   isRestoring,
-  onArchive,
   onOpenDetails,
   onPublish,
   onRestore,
 }: {
   lane: ProductLane;
-  isArchiving: boolean;
   isRestoring: boolean;
-  onArchive: (lane: ProductLane) => void;
   onOpenDetails: (lane: ProductLane) => void;
   onPublish: (lane: ProductLane) => void;
   onRestore: (lane: ProductLane) => void;
@@ -450,18 +563,33 @@ function ProductLaneCard({
   const linkedPackage = lane.primaryPackage;
   const providerIconPath = getAccountProviderIconPath(lane.products[0]?.provider);
   const hasPackageConflict = lane.packageLinks.length > 1;
-  const storefrontCount = lane.products.length;
-  const storefrontLabel = `${storefrontCount} storefront${storefrontCount === 1 ? '' : 's'}`;
   const archived = lane.status === 'archived';
-  const busy = isArchiving || isRestoring;
+  const busy = isRestoring;
+  const primaryActionLabel = archived
+    ? 'Restore'
+    : hasPackageConflict
+      ? 'Pick ID'
+      : linkedPackage
+        ? 'Upload'
+        : 'Set up';
+  const rowSummary = hasPackageConflict
+    ? 'Choose the install ID you want to keep using before you upload.'
+    : linkedPackage
+      ? [
+          `Install ID: ${linkedPackage.packageId}`,
+          linkedPackage.latestPublishedVersion
+            ? `Live version ${linkedPackage.latestPublishedVersion}`
+            : 'No live update yet',
+        ].join(' · ')
+      : `Needs first install ID · ${formatLaneStorefrontSummary(lane)}`;
 
   return (
-    <Card className="pm-product-row rounded-2xl shadow-none">
-      <Card.Content className="grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+    <Card className="pm-product-row rounded-xl shadow-none">
+      <Card.Content className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
         <button
           type="button"
-          className="group flex min-w-0 gap-3 text-left"
-          aria-label={`Open upload history for ${lane.title}`}
+          className="group flex min-w-0 flex-1 gap-3 text-left"
+          aria-label={`Open past uploads for ${lane.title}`}
           onClick={() => onOpenDetails(lane)}
         >
           <div className="pm-icon-shell flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl">
@@ -483,86 +611,30 @@ function ProductLaneCard({
               <Store className="size-5" />
             )}
           </div>
-          <div className="min-w-0 space-y-2">
+          <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-foreground min-w-0 text-sm font-semibold leading-6 group-hover:underline">
+              <p className="text-foreground min-w-0 truncate text-sm font-semibold leading-6 group-hover:underline">
                 {lane.title}
               </p>
-              <Chip size="sm" variant="soft">
-                {storefrontLabel}
-              </Chip>
+              {hasPackageConflict ? (
+                <Chip color="warning" size="sm" variant="soft">
+                  Pick install ID
+                </Chip>
+              ) : null}
               {archived ? (
                 <Chip size="sm" variant="soft">
                   Hidden
                 </Chip>
               ) : null}
-              {lane.providerLabels.map((providerLabel) => (
-                <Chip key={providerLabel} size="sm" variant="soft">
-                  {providerLabel}
-                </Chip>
-              ))}
             </div>
-            <div className="flex flex-wrap gap-2">
-              {hasPackageConflict ? (
-                <>
-                  <Chip color="warning" size="sm" variant="soft">
-                    Multiple package IDs linked
-                  </Chip>
-                  {lane.packageLinks.map((packageLink) => (
-                    <Chip key={packageLink.packageId} size="sm" variant="soft">
-                      {packageLink.displayName ?? packageLink.packageName ?? packageLink.packageId}
-                    </Chip>
-                  ))}
-                </>
-              ) : linkedPackage ? (
-                <>
-                  <Chip size="sm" variant="soft">
-                    {linkedPackage.displayName ??
-                      linkedPackage.packageName ??
-                      linkedPackage.packageId}
-                  </Chip>
-                  <Chip size="sm" variant="soft">
-                    {linkedPackage.latestPublishedVersion
-                      ? `v${linkedPackage.latestPublishedVersion}`
-                      : 'Version pending'}
-                  </Chip>
-                  <Chip size="sm" variant="soft">
-                    {linkedPackage.repositoryVisibility === 'listed' ? 'Listed' : 'Hidden'}
-                  </Chip>
-                </>
-              ) : (
-                <Chip size="sm" variant="soft">
-                  No package
-                </Chip>
-              )}
-            </div>
+            <p className="pm-copy break-all text-sm leading-6">{rowSummary}</p>
           </div>
         </button>
         <div className="flex flex-wrap items-center gap-2 md:justify-end">
-          <StatusChip
-            status={
-              hasPackageConflict
-                ? 'pending'
-                : linkedPackage?.latestRelease?.releaseStatus === 'published'
-                  ? 'active'
-                  : 'pending'
-            }
-            label={
-              hasPackageConflict
-                ? 'Needs relink'
-                : linkedPackage?.latestRelease?.releaseStatus === 'published'
-                  ? 'Published'
-                  : 'Needs release'
-            }
-          />
-          <Button size="sm" variant="ghost" onPress={() => onOpenDetails(lane)}>
-            <ExternalLink className="size-4" />
-            Manage
-          </Button>
           {!archived ? (
             <Button size="sm" variant="outline" isDisabled={busy} onPress={() => onPublish(lane)}>
               <ArrowUpFromLine className="size-4" />
-              Upload
+              {primaryActionLabel}
             </Button>
           ) : null}
           {archived ? (
@@ -579,21 +651,7 @@ function ProductLaneCard({
               )}
               {isRestoring ? 'Restoring...' : 'Restore'}
             </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              isDisabled={busy || !lane.canArchive}
-              onPress={() => onArchive(lane)}
-            >
-              {isArchiving ? (
-                <span className="btn-loading-spinner" aria-hidden="true" />
-              ) : (
-                <Archive className="size-4" />
-              )}
-              {isArchiving ? 'Hiding...' : 'Hide'}
-            </Button>
-          )}
+          ) : null}
         </div>
       </Card.Content>
     </Card>
@@ -601,17 +659,25 @@ function ProductLaneCard({
 }
 
 function ProductLaneDetailsSheet({
+  isArchiving,
+  isRestoring,
   lane,
   isOpen,
+  onArchive,
   onCopyPackageId,
   onOpenChange,
   onPublish,
+  onRestore,
 }: {
+  isArchiving: boolean;
+  isRestoring: boolean;
   lane: ProductLane | null;
   isOpen: boolean;
+  onArchive: (lane: ProductLane) => void;
   onCopyPackageId: (packageId: string) => void;
   onOpenChange: (isOpen: boolean) => void;
   onPublish: (lane: ProductLane) => void;
+  onRestore: (lane: ProductLane) => void;
 }) {
   return (
     <Sheet isOpen={isOpen} onOpenChange={onOpenChange}>
@@ -621,7 +687,7 @@ function ProductLaneDetailsSheet({
             <Sheet.Handle />
             <Sheet.CloseTrigger />
             <Sheet.Header>
-              <Sheet.Heading>Product uploads</Sheet.Heading>
+              <Sheet.Heading>Past uploads</Sheet.Heading>
             </Sheet.Header>
             <Sheet.Body className="space-y-5">
               {lane ? (
@@ -631,16 +697,49 @@ function ProductLaneDetailsSheet({
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="space-y-1">
                           <p className="text-foreground text-base font-semibold">{lane.title}</p>
-                          <p className="text-muted text-sm">
+                          <p className="pm-subtle-copy text-sm">
                             {lane.products.length} storefront
                             {lane.products.length === 1 ? '' : 's'} ·{' '}
                             {lane.providerLabels.join(', ')}
                           </p>
                         </div>
-                        <Button size="sm" variant="outline" onPress={() => onPublish(lane)}>
-                          <ArrowUpFromLine className="size-4" />
-                          Upload package
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                          {lane.status === 'archived' ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              isDisabled={isRestoring || !lane.canRestore}
+                              onPress={() => onRestore(lane)}
+                            >
+                              {isRestoring ? (
+                                <span className="btn-loading-spinner" aria-hidden="true" />
+                              ) : (
+                                <RefreshCcw className="size-4" />
+                              )}
+                              {isRestoring ? 'Restoring...' : 'Restore'}
+                            </Button>
+                          ) : (
+                            <>
+                              <Button size="sm" variant="outline" onPress={() => onPublish(lane)}>
+                                <ArrowUpFromLine className="size-4" />
+                                Upload update
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                isDisabled={isArchiving || !lane.canArchive}
+                                onPress={() => onArchive(lane)}
+                              >
+                                {isArchiving ? (
+                                  <span className="btn-loading-spinner" aria-hidden="true" />
+                                ) : (
+                                  <Archive className="size-4" />
+                                )}
+                                {isArchiving ? 'Hiding...' : 'Hide link'}
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {lane.providerRefs.map((providerRef) => (
@@ -673,11 +772,11 @@ function ProductLaneDetailsSheet({
                               onPress={() => onCopyPackageId(packageLink.packageId)}
                             >
                               <Copy className="size-4" />
-                              Copy package ID
+                              Copy install ID
                             </Button>
                             <Button size="sm" variant="outline" onPress={() => onPublish(lane)}>
                               <ArrowUpFromLine className="size-4" />
-                              Upload new version
+                              Upload update
                             </Button>
                           </div>
                         </Card.Header>
@@ -691,7 +790,9 @@ function ProductLaneDetailsSheet({
                                 packageLink.latestRelease?.releaseStatus === release.releaseStatus;
 
                               return (
-                                <div key={`${release.version}:${release.channel}:${release.updatedAt}`}>
+                                <div
+                                  key={`${release.version}:${release.channel}:${release.updatedAt}`}
+                                >
                                   <div className="pm-muted-panel space-y-3 rounded-2xl p-4">
                                     <div className="flex flex-wrap items-start justify-between gap-3">
                                       <div className="space-y-1">
@@ -757,8 +858,7 @@ function ProductLaneDetailsSheet({
                                 </EmptyState.Media>
                                 <EmptyState.Title>No uploads yet</EmptyState.Title>
                                 <EmptyState.Description>
-                                  Upload the first package for this linked product to start its
-                                  release history.
+                                  Upload the first update for this install ID to start its history.
                                 </EmptyState.Description>
                               </EmptyState.Header>
                             </EmptyState>
@@ -774,8 +874,8 @@ function ProductLaneDetailsSheet({
                         </EmptyState.Media>
                         <EmptyState.Title>No package uploads yet</EmptyState.Title>
                         <EmptyState.Description>
-                          This product link does not have a package yet. Upload one to create the
-                          first installable release.
+                          This product does not have an install ID yet. Upload one to create the
+                          first installable update.
                         </EmptyState.Description>
                       </EmptyState.Header>
                     </EmptyState>
@@ -822,10 +922,11 @@ function PackageRegistryItem({
   const archived = pkg.status === 'archived';
   const busy = isSaving || isArchiving || isRestoring;
   const nameChanged = editName.trim() !== (pkg.packageName ?? '').trim();
+  const packageMeta = `Updated ${formatRelativeTime(pkg.updatedAt)} · ${archived ? 'Hidden' : 'Active'}`;
 
   return (
-    <Card className="pm-package-row rounded-2xl shadow-none">
-      <Card.Content className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+    <Card className="pm-package-row rounded-xl shadow-none">
+      <Card.Content className="grid gap-3 p-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div className="flex min-w-0 gap-3">
           <div className="pm-icon-shell flex size-11 shrink-0 items-center justify-center rounded-xl">
             {archived ? (
@@ -836,7 +937,7 @@ function PackageRegistryItem({
           </div>
           <div className="min-w-0 space-y-2">
             {isEditing ? (
-              <div className="w-full space-y-3">
+              <div className="w-full space-y-2">
                 <YucpInput
                   aria-label="Package name"
                   value={editName}
@@ -844,38 +945,20 @@ function PackageRegistryItem({
                   isDisabled={isSaving}
                   onValueChange={onEditChange}
                 />
-                <div className="flex flex-wrap items-center gap-2">
-                  <Chip
-                    className="max-w-full break-all font-mono text-[11px]"
-                    size="sm"
-                    variant="soft"
-                  >
-                    {pkg.packageId}
-                  </Chip>
-                  <Chip size="sm" variant="soft">
-                    Updated {formatRelativeTime(pkg.updatedAt)}
-                  </Chip>
-                </div>
+                <p className="text-muted break-all font-mono text-xs leading-5">{pkg.packageId}</p>
+                <p className="text-muted text-sm">{packageMeta}</p>
               </div>
             ) : (
-              <>
-                <div className="space-y-1">
-                  <p className="text-foreground text-sm font-semibold leading-6">
-                    {pkg.packageName || 'Unnamed package'}
-                  </p>
-                  <p className="text-muted break-all font-mono text-xs leading-5">
-                    {pkg.packageId}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Chip size="sm" variant="soft">
-                    Updated {formatRelativeTime(pkg.updatedAt)}
-                  </Chip>
-                  <Chip color={archived ? 'default' : 'success'} size="sm" variant="soft">
-                    {archived ? 'Hidden' : 'Active'}
-                  </Chip>
-                </div>
-              </>
+              <div className="space-y-1">
+                <p className="text-foreground text-sm font-semibold leading-6">
+                  {pkg.packageName || 'Unnamed package'}
+                </p>
+                <p className="text-muted break-all text-xs leading-5">
+                  <span className="font-mono">{pkg.packageId}</span>
+                  <span aria-hidden="true"> · </span>
+                  <span>{packageMeta}</span>
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -902,7 +985,7 @@ function PackageRegistryItem({
             </>
           ) : (
             <>
-              <IconActionButton label="Copy package ID" onPress={onCopyId}>
+              <IconActionButton label="Copy install ID" onPress={onCopyId}>
                 <Copy className="size-4" />
               </IconActionButton>
               {!archived ? (
@@ -949,8 +1032,8 @@ function PackageRegistryItem({
 }
 
 export function PackageRegistryPanel({
-  className = 'intg-card bento-col-12',
-  description = 'Upload releases, keep package IDs stable, and clean up old identities from one place.',
+  className = 'bento-col-12',
+  description = 'Pick a product and upload the file.',
   title = 'Packages',
 }: PackageRegistryPanelProps) {
   const queryClient = useQueryClient();
@@ -963,11 +1046,8 @@ export function PackageRegistryPanel({
   const [pendingRestoreId, setPendingRestoreId] = useState<string | null>(null);
   const [pendingProductArchiveKey, setPendingProductArchiveKey] = useState<string | null>(null);
   const [pendingProductRestoreKey, setPendingProductRestoreKey] = useState<string | null>(null);
-  const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
-  const [isArchivedProductsExpanded, setIsArchivedProductsExpanded] = useState(false);
   const [isPublishOpen, setIsPublishOpen] = useState(false);
   const [isProductDetailsOpen, setIsProductDetailsOpen] = useState(false);
-  const [isAdvancedPublishOptionsOpen, setIsAdvancedPublishOptionsOpen] = useState(false);
   const [publishDraft, setPublishDraft] = useState<PublishDraft>(() => buildDraftFromLane(null));
   const [selectedProductLaneKey, setSelectedProductLaneKey] = useState<string | null>(null);
   const [selectedUpload, setSelectedUpload] = useState<SelectedUpload | null>(null);
@@ -1227,7 +1307,6 @@ export function PackageRegistryPanel({
         description: `${packageId}@${result.version} is now on ${result.channel}.`,
       });
       setIsPublishOpen(false);
-      setIsAdvancedPublishOptionsOpen(false);
       setPublishDraft(buildDraftFromLane(null));
       setSelectedUpload(null);
     },
@@ -1271,9 +1350,6 @@ export function PackageRegistryPanel({
   const activeProductLanes = productLanes.filter((lane) => lane.status === 'active');
   const archivedProductLanes = productLanes.filter((lane) => lane.status === 'archived');
   const linkedLanes = activeProductLanes.filter((lane) => lane.packageLinks.length > 0);
-  const listedLanes = linkedLanes.filter(
-    (lane) => lane.primaryPackage?.latestRelease?.releaseStatus === 'published'
-  );
   const normalizedSearch = normalizeComparableText(searchQuery);
   const filteredActivePackages = activePackages.filter((pkg) =>
     normalizeComparableText(`${pkg.packageName ?? ''} ${pkg.packageId}`).includes(normalizedSearch)
@@ -1282,12 +1358,10 @@ export function PackageRegistryPanel({
     normalizeComparableText(`${pkg.packageName ?? ''} ${pkg.packageId}`).includes(normalizedSearch)
   );
   const unlinkedLanes = activeProductLanes.filter((lane) => lane.packageLinks.length === 0);
-  const filteredProductLanes = activeProductLanes.filter((lane) =>
-    normalizeComparableText(
-      `${lane.title} ${lane.providerLabels.join(' ')} ${lane.packageLinks
-        .map((packageLink) => packageLink.packageId)
-        .join(' ')}`
-    ).includes(normalizedSearch)
+  const filteredProductLanes = activeProductLanes;
+  const filteredLinkedLanes = filteredProductLanes.filter((lane) => lane.packageLinks.length > 0);
+  const filteredUnlinkedLanes = filteredProductLanes.filter(
+    (lane) => lane.packageLinks.length === 0
   );
   const filteredArchivedProductLanes = archivedProductLanes.filter((lane) =>
     normalizeComparableText(
@@ -1308,10 +1382,26 @@ export function PackageRegistryPanel({
       (productsQuery.isLoading && !productsQuery.data) ||
       (repoAccessQuery.isLoading && !repoAccessQuery.data)) &&
     !hasBlockingError;
+  const selectedLaneHasSinglePackage = Boolean(
+    selectedLane?.primaryPackage && selectedLane.packageLinks.length === 1
+  );
+  const installIdSuggestions = selectedLane
+    ? selectedLane.packageLinks.length > 1
+      ? selectedLane.packageLinks.slice(0, 4).map((packageLink) => ({
+          packageId: packageLink.packageId,
+          label: packageLink.displayName ?? packageLink.packageName ?? packageLink.packageId,
+        }))
+      : selectedLane.packageLinks.length === 0
+        ? activePackages.slice(0, 4).map((pkg) => ({
+            packageId: pkg.packageId,
+            label: pkg.packageName ?? pkg.packageId,
+          }))
+        : []
+    : [];
 
   function handleCopyId(packageId: string) {
     copyToClipboard(packageId).then((ok) => {
-      if (ok) toast.success('Package ID copied');
+      if (ok) toast.success('Install ID copied');
       else toast.error('Could not copy to clipboard');
     });
   }
@@ -1327,8 +1417,14 @@ export function PackageRegistryPanel({
   }
 
   function openPublishSheet(lane?: ProductLane | null) {
-    setPublishDraft(buildDraftFromLane(lane));
-    setIsAdvancedPublishOptionsOpen(false);
+    const defaultLane =
+      lane ??
+      (linkedLanes.length === 1
+        ? linkedLanes[0]
+        : activeProductLanes.length === 1
+          ? activeProductLanes[0]
+          : null);
+    setPublishDraft(buildDraftFromLane(defaultLane));
     setSelectedUpload(null);
     setIsProductDetailsOpen(false);
     setIsPublishOpen(true);
@@ -1387,43 +1483,21 @@ export function PackageRegistryPanel({
 
   return (
     <section className={className}>
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="max-w-[68ch] space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="pm-icon-shell flex size-10 items-center justify-center rounded-xl">
-                <Package2 className="text-accent size-5" />
-              </div>
-              <Chip color="accent" size="sm" variant="soft">
-                {activePackages.length} active
-              </Chip>
-              {unlinkedLanes.length > 0 ? (
-                <Chip color="warning" size="sm" variant="soft">
-                  {unlinkedLanes.length} need upload
-                </Chip>
-              ) : null}
-            </div>
-            <h2 className="text-foreground text-3xl font-semibold leading-tight">{title}</h2>
-            <p className="text-muted text-sm leading-6">{description}</p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-[64ch] space-y-1.5">
+            <p className="text-muted text-xs font-medium tracking-[0.14em] uppercase">
+              Custom VPM repo
+            </p>
+            <h2 className="text-foreground text-[2rem] font-semibold leading-tight">{title}</h2>
+            <p className="pm-copy text-sm leading-6">{description}</p>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <YucpButton yucp="secondary" pill onPress={() => openPublishSheet(null)}>
               <ArrowUpFromLine className="size-4" />
-              Upload package
+              Upload update
             </YucpButton>
-            {repoAccessQuery.data?.addRepoUrl ? (
-              <YucpButton
-                yucp="ghost"
-                pill
-                onPress={() => {
-                  window.location.href = repoAccessQuery.data?.addRepoUrl ?? '';
-                }}
-              >
-                <ExternalLink className="size-4" />
-                Open in VCC
-              </YucpButton>
-            ) : null}
           </div>
         </div>
 
@@ -1432,7 +1506,7 @@ export function PackageRegistryPanel({
         ) : null}
 
         {isWorkspaceLoading ? (
-          <Card className="pm-card rounded-3xl shadow-none">
+          <Card className="pm-card rounded-2xl shadow-none">
             <Card.Content className="flex flex-col gap-5 p-6 md:flex-row md:items-center md:justify-between">
               <div className="flex min-w-0 gap-4">
                 <div className="pm-icon-shell text-accent flex size-12 shrink-0 items-center justify-center rounded-2xl">
@@ -1441,7 +1515,7 @@ export function PackageRegistryPanel({
                 <div className="min-w-0 space-y-1">
                   <p className="text-foreground text-base font-semibold">Loading packages</p>
                   <p className="text-muted text-sm">
-                    Syncing package IDs, product links, and repo access.
+                    Syncing install IDs, product links, and repo access.
                   </p>
                 </div>
               </div>
@@ -1452,294 +1526,130 @@ export function PackageRegistryPanel({
             </Card.Content>
           </Card>
         ) : (
-          <>
-            <Card className="pm-card rounded-3xl shadow-none">
-              <Card.Header className="flex flex-col gap-4 p-5 pb-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4">
+            <Card className="pm-card rounded-2xl shadow-none">
+              <Card.Header className="flex flex-col gap-3 p-4 pb-2">
                 <div className="space-y-1">
-                  <p className="text-foreground text-lg font-semibold">Your packages</p>
-                  <p className="text-muted text-sm">
-                    Rename, hide, restore, copy IDs, and upload new versions.
+                  <div className="flex items-center gap-2">
+                    <StreamlineLinkChainIcon className="size-6" />
+                    <p className="text-foreground text-lg font-semibold">
+                      Products ready for an update
+                    </p>
+                  </div>
+                  <p className="pm-copy max-w-[52ch] text-sm leading-6">
+                    Choose a product below, then upload the new file.
                   </p>
                 </div>
-                <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[320px] sm:flex-row">
-                  <div className="relative min-w-0 flex-1">
-                    <Search className="text-muted pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                    <YucpInput
-                      aria-label="Search packages"
-                      className="w-full pl-9"
-                      placeholder="Search packages"
-                      value={searchQuery}
-                      onValueChange={setSearchQuery}
-                    />
-                  </div>
-                  <Button variant="outline" onPress={() => openPublishSheet(null)}>
-                    <ArrowUpFromLine className="size-4" />
-                    Upload
-                  </Button>
-                </div>
               </Card.Header>
-              <Card.Content className="space-y-4 p-5 pt-0">
-                <div className="flex flex-wrap gap-2">
-                  <Chip color="success" size="sm" variant="soft">
-                    {activePackages.length} active
-                  </Chip>
-                  <Chip size="sm" variant="soft">
-                    {listedLanes.length} published
-                  </Chip>
-                  <Chip size="sm" variant="soft">
-                    {archivedPackages.length} hidden
-                  </Chip>
-                </div>
-
-                {packages.length === 0 ? (
+              <Card.Content className="space-y-4 p-4 pt-0">
+                {activeProductLanes.length === 0 && archivedProductLanes.length === 0 ? (
                   <EmptyState className="pm-empty-state rounded-2xl border border-dashed">
                     <EmptyState.Header>
                       <EmptyState.Media variant="icon">
-                        <FolderUp />
+                        <Store />
                       </EmptyState.Media>
-                      <EmptyState.Title>No packages yet</EmptyState.Title>
+                      <EmptyState.Title>No catalog products yet</EmptyState.Title>
                       <EmptyState.Description>
-                        Upload a Unity package and choose a package ID to create the first one.
+                        Sync or create creator products first. Once a product exists, you can attach
+                        a package upload to it here.
                       </EmptyState.Description>
                     </EmptyState.Header>
-                    <EmptyState.Content>
-                      <Button size="sm" variant="outline" onPress={() => openPublishSheet(null)}>
-                        Upload first package
-                      </Button>
-                    </EmptyState.Content>
                   </EmptyState>
                 ) : (
-                  <>
-                    {filteredActivePackages.length > 0 ? (
-                      <div className="space-y-3">
-                        {filteredActivePackages.map((pkg) => (
-                          <PackageRegistryItem
-                            key={pkg.packageId}
-                            pkg={pkg}
-                            isEditing={editingId === pkg.packageId}
-                            editName={
-                              editingId === pkg.packageId ? editingName : (pkg.packageName ?? '')
-                            }
-                            isSaving={pendingSaveId === pkg.packageId && renameMutation.isPending}
-                            isArchiving={
-                              pendingArchiveId === pkg.packageId && archiveMutation.isPending
-                            }
-                            isRestoring={false}
-                            onEditStart={() => {
-                              setEditingId(pkg.packageId);
-                              setEditingName(pkg.packageName ?? '');
-                            }}
-                            onEditCancel={() => setEditingId(null)}
-                            onEditChange={setEditingName}
-                            onSave={() =>
-                              renameMutation.mutate({
-                                packageId: pkg.packageId,
-                                packageName: editingName.trim(),
-                              })
-                            }
-                            onArchive={() => archiveMutation.mutate({ packageId: pkg.packageId })}
-                            onRestore={() => {}}
-                            onCopyId={() => handleCopyId(pkg.packageId)}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="pm-muted-panel text-muted rounded-2xl p-4 text-sm">
-                        No active packages match your search.
+                  <div className="space-y-3">
+                    {filteredLinkedLanes.map((lane) => (
+                      <ProductLaneCard
+                        key={lane.laneKey}
+                        lane={lane}
+                        isRestoring={false}
+                        onOpenDetails={openProductDetails}
+                        onPublish={openPublishSheet}
+                        onRestore={() => {}}
+                      />
+                    ))}
+                    {filteredLinkedLanes.length === 0 ? (
+                      <p className="pm-muted-panel pm-subtle-copy rounded-2xl p-4 text-sm">
+                        Nothing is ready yet. Open More tools to set up the first product.
                       </p>
-                    )}
-
-                    {archivedPackages.length > 0 ? (
-                      <details
-                        className="pm-muted-panel rounded-2xl p-4"
-                        open={isArchivedExpanded}
-                        onToggle={(event) =>
-                          setIsArchivedExpanded((event.currentTarget as HTMLDetailsElement).open)
-                        }
-                      >
-                        <summary className="text-foreground flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium">
-                          <span className="flex items-center gap-2">
-                            <Archive className="size-4" />
-                            Hidden packages
-                          </span>
-                          <Chip size="sm" variant="soft">
-                            {archivedPackages.length}
-                          </Chip>
-                        </summary>
-                        <div className="mt-4 space-y-3">
-                          {filteredArchivedPackages.length > 0 ? (
-                            filteredArchivedPackages.map((pkg) => (
-                              <PackageRegistryItem
-                                key={pkg.packageId}
-                                pkg={pkg}
-                                isEditing={false}
-                                editName={pkg.packageName ?? ''}
-                                isSaving={false}
-                                isArchiving={false}
-                                isRestoring={
-                                  pendingRestoreId === pkg.packageId && restoreMutation.isPending
-                                }
-                                onEditStart={() => {}}
-                                onEditCancel={() => {}}
-                                onEditChange={() => {}}
-                                onSave={() => {}}
-                                onArchive={() => {}}
-                                onRestore={() =>
-                                  restoreMutation.mutate({ packageId: pkg.packageId })
-                                }
-                                onCopyId={() => handleCopyId(pkg.packageId)}
-                              />
-                            ))
-                          ) : (
-                            <p className="text-muted text-sm">
-                              No hidden packages match your search.
-                            </p>
-                          )}
-                        </div>
-                      </details>
                     ) : null}
-                  </>
+                  </div>
                 )}
               </Card.Content>
             </Card>
 
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <Card className="pm-card rounded-3xl shadow-none">
-                <Card.Header className="flex flex-col gap-4 p-5 pb-3">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+            <details className="pm-management-details rounded-2xl p-4">
+              <summary className="text-foreground flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium">
+                <span>More tools</span>
+              </summary>
+              <div className="mt-4 space-y-4">
+                <p className="pm-subtle-copy max-w-[58ch] text-sm leading-6">
+                  Open this only when you need setup, repo install links, or install ID cleanup.
+                </p>
+
+                {unlinkedLanes.length > 0 ? (
+                  <section className="pm-tool-section space-y-3">
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <StreamlineLinkChainIcon className="size-6" />
-                        <p className="text-foreground text-lg font-semibold">Product links</p>
-                      </div>
-                      <p className="text-muted max-w-[62ch] text-sm">
-                        These products can receive package uploads. Items marked "needs upload" are
-                        not installable yet.
+                      <p className="text-foreground text-sm font-semibold">Set up a new product</p>
+                      <p className="pm-subtle-copy text-sm">
+                        Use this only when a product has never had an install ID before.
                       </p>
                     </div>
-                    <Chip size="sm" variant="soft">
-                      {activeProductLanes.length} products
-                    </Chip>
-                  </div>
-                </Card.Header>
-                <Card.Content className="p-5 pt-0">
-                  {activeProductLanes.length === 0 && archivedProductLanes.length === 0 ? (
-                    <EmptyState className="pm-empty-state rounded-2xl border border-dashed">
-                      <EmptyState.Header>
-                        <EmptyState.Media variant="icon">
-                          <Store />
-                        </EmptyState.Media>
-                        <EmptyState.Title>No catalog products yet</EmptyState.Title>
-                        <EmptyState.Description>
-                          Sync or create creator products first. Once a product exists, you can
-                          attach a package upload to it here.
-                        </EmptyState.Description>
-                      </EmptyState.Header>
-                    </EmptyState>
-                  ) : (
-                    <ScrollShadow className="max-h-[520px] overflow-y-auto pr-1">
-                      <div className="space-y-3">
-                        {filteredProductLanes.map((lane) => (
+                    <div className="space-y-3">
+                      {filteredUnlinkedLanes.length > 0 ? (
+                        filteredUnlinkedLanes.map((lane) => (
                           <ProductLaneCard
                             key={lane.laneKey}
                             lane={lane}
-                            isArchiving={
-                              pendingProductArchiveKey === lane.laneKey &&
-                              archiveProductMutation.isPending
-                            }
                             isRestoring={false}
-                            onArchive={(targetLane) => archiveProductMutation.mutate(targetLane)}
                             onOpenDetails={openProductDetails}
                             onPublish={openPublishSheet}
                             onRestore={() => {}}
                           />
-                        ))}
-                        {filteredProductLanes.length === 0 ? (
-                          <p className="pm-muted-panel text-muted rounded-2xl p-4 text-sm">
-                            No active product links match your search.
-                          </p>
-                        ) : null}
-                        {archivedProductLanes.length > 0 ? (
-                          <details
-                            className="pm-muted-panel rounded-2xl p-4"
-                            open={isArchivedProductsExpanded}
-                            onToggle={(event) =>
-                              setIsArchivedProductsExpanded(
-                                (event.currentTarget as HTMLDetailsElement).open
-                              )
-                            }
-                          >
-                            <summary className="text-foreground flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium">
-                              <span className="flex items-center gap-2">
-                                <Archive className="size-4" />
-                                Hidden product links
-                              </span>
-                              <Chip size="sm" variant="soft">
-                                {archivedProductLanes.length}
-                              </Chip>
-                            </summary>
-                            <div className="mt-4 space-y-3">
-                              {filteredArchivedProductLanes.length > 0 ? (
-                                filteredArchivedProductLanes.map((lane) => (
-                                  <ProductLaneCard
-                                    key={lane.laneKey}
-                                    lane={lane}
-                                    isArchiving={false}
-                                    isRestoring={
-                                      pendingProductRestoreKey === lane.laneKey &&
-                                      restoreProductMutation.isPending
-                                    }
-                                    onArchive={() => {}}
-                                    onOpenDetails={openProductDetails}
-                                    onPublish={openPublishSheet}
-                                    onRestore={(targetLane) =>
-                                      restoreProductMutation.mutate(targetLane)
-                                    }
-                                  />
-                                ))
-                              ) : (
-                                <p className="text-muted text-sm">
-                                  No hidden product links match your search.
-                                </p>
-                              )}
-                            </div>
-                          </details>
-                        ) : null}
-                      </div>
-                    </ScrollShadow>
-                  )}
-                </Card.Content>
-              </Card>
+                        ))
+                      ) : (
+                        <p className="pm-subtle-copy text-sm">
+                          No products still need first-time setup.
+                        </p>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
 
-              <Card className="pm-card rounded-3xl shadow-none">
-                <Card.Header className="p-5 pb-2">
+                <section className="pm-tool-section space-y-3">
                   <div className="space-y-1">
-                    <p className="text-foreground text-lg font-semibold">VCC repo</p>
-                    <p className="text-muted text-sm">Copy install links when you need them.</p>
-                  </div>
-                </Card.Header>
-                <Card.Content className="space-y-4 p-5 pt-0">
-                  {repoAccessQuery.data?.creatorRepoRef ? (
-                    <div className="space-y-2">
-                      <Chip size="sm" variant="soft">
+                    <p className="text-foreground text-sm font-semibold">Add this repo in VCC</p>
+                    <p className="pm-subtle-copy text-sm">
+                      Send this to yourself or a tester when the repo needs to be added in VCC.
+                    </p>
+                    {repoAccessQuery.data?.creatorRepoRef ? (
+                      <p className="pm-subtle-copy break-all font-mono text-xs">
                         {repoAccessQuery.data.creatorName ??
                           repoAccessQuery.data.repositoryName ??
                           'Backstage repo'}
-                      </Chip>
-                      <p className="text-muted break-all font-mono text-xs">
+                        {' · '}
                         {repoAccessQuery.data.creatorRepoRef}
                       </p>
-                    </div>
-                  ) : null}
-                  <Separator />
-                  <div className="flex flex-col gap-2">
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {repoAccessQuery.data?.addRepoUrl ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onPress={() => {
+                          window.location.href = repoAccessQuery.data?.addRepoUrl ?? '';
+                        }}
+                      >
+                        <ExternalLink className="size-4" />
+                        Open in VCC
+                      </Button>
+                    ) : null}
                     <Button
-                      className="justify-start"
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
                       onPress={() =>
                         repoAccessQuery.data?.addRepoUrl
-                          ? handleCopyValue(repoAccessQuery.data.addRepoUrl, 'Add-repo link copied')
+                          ? handleCopyValue(repoAccessQuery.data.addRepoUrl, 'VCC link copied')
                           : Promise.resolve(false)
                       }
                     >
@@ -1747,7 +1657,6 @@ export function PackageRegistryPanel({
                       Copy VCC link
                     </Button>
                     <Button
-                      className="justify-start"
                       size="sm"
                       variant="ghost"
                       onPress={() =>
@@ -1760,134 +1669,216 @@ export function PackageRegistryPanel({
                       Copy repo URL
                     </Button>
                   </div>
-                </Card.Content>
-              </Card>
-            </div>
-          </>
+                </section>
+
+                <section className="pm-tool-section space-y-4">
+                  <div className="space-y-1">
+                    <p className="text-foreground text-sm font-semibold">Manage install IDs</p>
+                    <p className="pm-subtle-copy max-w-[58ch] text-sm leading-6">
+                      These are the package IDs buyers install from your repo. Open this to rename,
+                      copy, or hide old ones.
+                    </p>
+                  </div>
+                  {packages.length === 0 ? (
+                    <EmptyState className="pm-empty-state rounded-2xl border border-dashed">
+                      <EmptyState.Header>
+                        <EmptyState.Media variant="icon">
+                          <FolderUp />
+                        </EmptyState.Media>
+                        <EmptyState.Title>No install IDs yet</EmptyState.Title>
+                        <EmptyState.Description>
+                          Upload the first package to create one.
+                        </EmptyState.Description>
+                      </EmptyState.Header>
+                    </EmptyState>
+                  ) : (
+                    <>
+                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[320px] sm:flex-row">
+                        <div className="relative min-w-0 flex-1">
+                          <Search className="pm-subtle-copy pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                          <YucpInput
+                            aria-label="Search install IDs"
+                            className="w-full pl-9"
+                            placeholder="Find an install ID"
+                            value={searchQuery}
+                            onValueChange={setSearchQuery}
+                          />
+                        </div>
+                      </div>
+                      <p className="pm-subtle-copy text-sm">
+                        {activePackages.length} active · {archivedPackages.length} hidden
+                      </p>
+                      {filteredActivePackages.length > 0 ? (
+                        <div className="space-y-3">
+                          {filteredActivePackages.map((pkg) => (
+                            <PackageRegistryItem
+                              key={pkg.packageId}
+                              pkg={pkg}
+                              isEditing={editingId === pkg.packageId}
+                              editName={
+                                editingId === pkg.packageId ? editingName : (pkg.packageName ?? '')
+                              }
+                              isSaving={pendingSaveId === pkg.packageId && renameMutation.isPending}
+                              isArchiving={
+                                pendingArchiveId === pkg.packageId && archiveMutation.isPending
+                              }
+                              isRestoring={false}
+                              onEditStart={() => {
+                                setEditingId(pkg.packageId);
+                                setEditingName(pkg.packageName ?? '');
+                              }}
+                              onEditCancel={() => setEditingId(null)}
+                              onEditChange={setEditingName}
+                              onSave={() =>
+                                renameMutation.mutate({
+                                  packageId: pkg.packageId,
+                                  packageName: editingName.trim(),
+                                })
+                              }
+                              onArchive={() => archiveMutation.mutate({ packageId: pkg.packageId })}
+                              onRestore={() => {}}
+                              onCopyId={() => handleCopyId(pkg.packageId)}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="pm-muted-panel pm-subtle-copy rounded-2xl p-4 text-sm">
+                          No install IDs match that search.
+                        </p>
+                      )}
+
+                      {archivedPackages.length > 0 ? (
+                        <details className="pm-muted-panel rounded-2xl p-4">
+                          <summary className="text-foreground flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium">
+                            <span className="flex items-center gap-2">
+                              <Archive className="size-4" />
+                              Hidden install IDs
+                            </span>
+                            <Chip size="sm" variant="soft">
+                              {archivedPackages.length}
+                            </Chip>
+                          </summary>
+                          <div className="mt-4 space-y-3">
+                            {filteredArchivedPackages.length > 0 ? (
+                              filteredArchivedPackages.map((pkg) => (
+                                <PackageRegistryItem
+                                  key={pkg.packageId}
+                                  pkg={pkg}
+                                  isEditing={false}
+                                  editName={pkg.packageName ?? ''}
+                                  isSaving={false}
+                                  isArchiving={false}
+                                  isRestoring={
+                                    pendingRestoreId === pkg.packageId && restoreMutation.isPending
+                                  }
+                                  onEditStart={() => {}}
+                                  onEditCancel={() => {}}
+                                  onEditChange={() => {}}
+                                  onSave={() => {}}
+                                  onArchive={() => {}}
+                                  onRestore={() =>
+                                    restoreMutation.mutate({ packageId: pkg.packageId })
+                                  }
+                                  onCopyId={() => handleCopyId(pkg.packageId)}
+                                />
+                              ))
+                            ) : (
+                              <p className="pm-subtle-copy text-sm">
+                                No hidden install IDs match that search.
+                              </p>
+                            )}
+                          </div>
+                        </details>
+                      ) : null}
+                    </>
+                  )}
+                </section>
+
+                {archivedProductLanes.length > 0 ? (
+                  <section className="pm-tool-section space-y-3">
+                    <div className="space-y-1">
+                      <p className="text-foreground text-sm font-semibold">Hidden product links</p>
+                      <p className="pm-subtle-copy text-sm">
+                        Restore these when you want the product back in your upload list.
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      {filteredArchivedProductLanes.length > 0 ? (
+                        filteredArchivedProductLanes.map((lane) => (
+                          <ProductLaneCard
+                            key={lane.laneKey}
+                            lane={lane}
+                            isRestoring={
+                              pendingProductRestoreKey === lane.laneKey &&
+                              restoreProductMutation.isPending
+                            }
+                            onOpenDetails={openProductDetails}
+                            onPublish={openPublishSheet}
+                            onRestore={(targetLane) => restoreProductMutation.mutate(targetLane)}
+                          />
+                        ))
+                      ) : (
+                        <p className="pm-subtle-copy text-sm">
+                          No hidden product links match that search.
+                        </p>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
+            </details>
+          </div>
         )}
       </div>
 
       <ProductLaneDetailsSheet
+        isArchiving={
+          selectedProductLane
+            ? pendingProductArchiveKey === selectedProductLane.laneKey &&
+              archiveProductMutation.isPending
+            : false
+        }
+        isRestoring={
+          selectedProductLane
+            ? pendingProductRestoreKey === selectedProductLane.laneKey &&
+              restoreProductMutation.isPending
+            : false
+        }
         lane={selectedProductLane}
         isOpen={isProductDetailsOpen}
+        onArchive={(lane) => archiveProductMutation.mutate(lane)}
         onCopyPackageId={(packageId) =>
-          handleCopyValue(packageId, `Copied ${packageId} package ID`)
+          handleCopyValue(packageId, `Copied install ID ${packageId}`)
         }
         onOpenChange={setIsProductDetailsOpen}
         onPublish={openPublishSheet}
+        onRestore={(lane) => restoreProductMutation.mutate(lane)}
       />
 
       <Sheet isOpen={isPublishOpen} onOpenChange={setIsPublishOpen}>
         <Sheet.Backdrop variant="blur">
-          <Sheet.Content className="mx-auto max-h-[94vh] max-w-[720px]">
-            <Sheet.Dialog>
+          <Sheet.Content className="pm-sheet-content mx-auto max-h-[94vh] max-w-[680px]">
+            <Sheet.Dialog className="pm-sheet-dialog">
               <Sheet.Handle />
               <Sheet.CloseTrigger />
-              <Sheet.Header>
-                <Sheet.Heading>Upload package</Sheet.Heading>
+              <Sheet.Header className="pm-sheet-header">
+                <Sheet.Heading>Upload an update</Sheet.Heading>
+                <p className="pm-copy text-sm leading-6">
+                  Pick the product, add the file, and publish.
+                </p>
               </Sheet.Header>
               <Sheet.Body className="space-y-5">
-                <Select
-                  aria-label="Product"
-                  className="w-full"
-                  placeholder="Choose product"
-                  selectedKey={publishDraft.laneKey || null}
-                  onSelectionChange={handleLaneSelection}
-                >
-                  <Select.Trigger>
-                    <Select.Value />
-                    <Select.Indicator />
-                  </Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      {activeProductLanes.map((lane) => (
-                        <ListBox.Item key={lane.laneKey} id={lane.laneKey} textValue={lane.title}>
-                          <div className="flex flex-col">
-                            <span>{lane.title}</span>
-                            <span className="text-muted text-xs">
-                              {lane.products.length} storefront
-                              {lane.products.length === 1 ? '' : 's'} ·{' '}
-                              {lane.providerLabels.join(', ')}
-                            </span>
-                          </div>
-                          <ListBox.ItemIndicator />
-                        </ListBox.Item>
-                      ))}
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
-
-                {selectedLane ? (
-                  <Card className="pm-muted-card rounded-2xl shadow-none">
-                    <Card.Content className="space-y-3 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <p className="text-foreground text-sm font-medium">
-                            {selectedLane.title}
-                          </p>
-                          <p className="text-muted text-sm">
-                            {selectedLane.products.length} storefront
-                            {selectedLane.products.length === 1 ? '' : 's'} ·{' '}
-                            {selectedLane.providerLabels.join(', ')}
-                          </p>
-                        </div>
-                        {selectedLane.packageLinks.length > 1 ? (
-                          <Chip color="warning" size="sm" variant="soft">
-                            Multiple package IDs linked
-                          </Chip>
-                        ) : selectedLane.primaryPackage ? (
-                          <Chip size="sm" variant="soft">
-                            Current package {selectedLane.primaryPackage.packageId}
-                          </Chip>
-                        ) : (
-                          <Chip size="sm" variant="soft">
-                            New package link
-                          </Chip>
-                        )}
-                      </div>
-                    </Card.Content>
-                  </Card>
-                ) : null}
-
-                <div className="grid gap-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                  {selectedLane?.primaryPackage && selectedLane.packageLinks.length === 1 ? (
-                    <Card className="pm-muted-card rounded-2xl shadow-none">
-                      <Card.Content className="space-y-2 p-4">
-                        <p className="text-muted text-xs font-medium tracking-[0.12em] uppercase">
-                          Package ID
-                        </p>
-                        <p className="text-foreground break-all font-mono text-sm">
-                          {selectedLane.primaryPackage.packageId}
-                        </p>
-                        <p className="text-muted text-xs leading-5">
-                          This product already has a stable package ID.
-                        </p>
-                      </Card.Content>
-                    </Card>
-                  ) : (
-                    <YucpInput
-                      aria-label="Package ID"
-                      placeholder="com.yucp.package.name"
-                      value={publishDraft.packageId}
-                      onValueChange={(value) =>
-                        setPublishDraft((current) => ({
-                          ...current,
-                          packageId: value,
-                        }))
-                      }
-                    />
-                  )}
-
+                <div className="pm-sheet-section space-y-4 rounded-[20px] p-4">
+                  <div className="space-y-1">
+                    <p className="text-foreground text-sm font-semibold">Product</p>
+                    <p className="pm-subtle-copy text-sm">Choose what this update belongs to.</p>
+                  </div>
                   <Select
-                    aria-label="Repository visibility"
+                    aria-label="Product"
                     className="w-full"
-                    selectedKey={publishDraft.repositoryVisibility}
-                    onSelectionChange={(key) =>
-                      setPublishDraft((current) => ({
-                        ...current,
-                        repositoryVisibility: String(key ?? 'listed') as 'hidden' | 'listed',
-                      }))
-                    }
+                    placeholder="Choose a product"
+                    selectedKey={publishDraft.laneKey || null}
+                    onSelectionChange={handleLaneSelection}
                   >
                     <Select.Trigger>
                       <Select.Value />
@@ -1895,181 +1886,303 @@ export function PackageRegistryPanel({
                     </Select.Trigger>
                     <Select.Popover>
                       <ListBox>
-                        <ListBox.Item id="listed" textValue="Listed">
-                          Listed in repo
-                          <ListBox.ItemIndicator />
-                        </ListBox.Item>
-                        <ListBox.Item id="hidden" textValue="Hidden">
-                          Hidden until you are ready
-                          <ListBox.ItemIndicator />
-                        </ListBox.Item>
+                        {activeProductLanes.map((lane) => (
+                          <ListBox.Item key={lane.laneKey} id={lane.laneKey} textValue={lane.title}>
+                            <div className="flex flex-col">
+                              <span>{lane.title}</span>
+                              <span className="pm-subtle-copy text-xs">
+                                {lane.products.length} storefront
+                                {lane.products.length === 1 ? '' : 's'} ·{' '}
+                                {lane.providerLabels.join(', ')}
+                              </span>
+                            </div>
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
                       </ListBox>
                     </Select.Popover>
                   </Select>
-                </div>
-
-                {!selectedLane?.primaryPackage && activePackages.length > 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-muted text-sm">Reuse an existing package ID</p>
-                    <div className="flex flex-wrap gap-2">
-                      {activePackages.slice(0, 6).map((pkg) => (
-                        <Button
-                          key={pkg.packageId}
-                          size="sm"
-                          variant="ghost"
-                          onPress={() =>
-                            setPublishDraft((current) => ({
-                              ...current,
-                              packageId: pkg.packageId,
-                              displayName:
-                                current.displayName || pkg.packageName || current.displayName,
-                            }))
-                          }
-                        >
-                          <Package2 className="size-4" />
-                          {pkg.packageName ?? pkg.packageId}
-                        </Button>
-                      ))}
+                  {selectedLane ? (
+                    <div className="pm-inline-note rounded-[18px] p-3">
+                      <p className="pm-subtle-copy text-sm leading-6">
+                        {selectedLaneHasSinglePackage
+                          ? 'This keeps the same install ID buyers already use.'
+                          : selectedLane.packageLinks.length > 1
+                            ? 'This product has more than one install ID. Pick the one you want below.'
+                            : 'This product needs its first install ID.'}
+                      </p>
                     </div>
-                  </div>
-                ) : null}
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <YucpInput
-                    aria-label="Version"
-                    placeholder="1.0.0"
-                    value={publishDraft.version}
-                    onValueChange={(value) =>
-                      setPublishDraft((current) => ({
-                        ...current,
-                        version: value,
-                      }))
-                    }
-                  />
-                  <YucpInput
-                    aria-label="Unity version"
-                    placeholder="Unity version (optional)"
-                    value={publishDraft.unityVersion}
-                    onValueChange={(value) =>
-                      setPublishDraft((current) => ({
-                        ...current,
-                        unityVersion: value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <details
-                  className="pm-muted-panel rounded-2xl p-4"
-                  open={isAdvancedPublishOptionsOpen}
-                  onToggle={(event) =>
-                    setIsAdvancedPublishOptionsOpen(
-                      (event.currentTarget as HTMLDetailsElement).open
-                    )
-                  }
-                >
-                  <summary className="text-foreground cursor-pointer list-none text-sm font-medium">
-                    Advanced options
-                  </summary>
-                  <div className="mt-4 space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <YucpInput
-                        aria-label="Display name"
-                        placeholder="Subscriber-facing package name"
-                        value={publishDraft.displayName}
-                        onValueChange={(value) =>
-                          setPublishDraft((current) => ({
-                            ...current,
-                            displayName: value,
-                          }))
-                        }
-                      />
-                      <YucpInput
-                        aria-label="Channel"
-                        placeholder="stable"
-                        value={publishDraft.channel}
-                        onValueChange={(value) =>
-                          setPublishDraft((current) => ({
-                            ...current,
-                            channel: value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <TextArea
-                      aria-label="Release description"
-                      placeholder="What changed in this package release?"
-                      variant="secondary"
-                      value={publishDraft.description}
-                      onChange={(event) =>
-                        setPublishDraft((current) => ({
-                          ...current,
-                          description: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </details>
-
-                <DropZone className="w-full">
-                  <DropZone.Area onDrop={handleDrop as never}>
-                    <DropZone.Icon>
-                      <StreamlineShippingBoxIcon className="size-8" />
-                    </DropZone.Icon>
-                    <DropZone.Label>Drop a Unity package here</DropZone.Label>
-                    <DropZone.Description>
-                      Use a .unitypackage, or a legacy .zip bundle when migrating older packages.
-                    </DropZone.Description>
-                    <DropZone.Trigger isDisabled={publishMutation.isPending}>
-                      Choose package file
-                    </DropZone.Trigger>
-                  </DropZone.Area>
-                  <DropZone.Input
-                    accept={UNITYPACKAGE_ACCEPT_VALUE}
-                    onSelect={(fileList) => handleUploadSelection(fileList.item(0))}
-                  />
-
-                  {selectedUpload ? (
-                    <DropZone.FileList>
-                      <DropZone.FileItem status={mapUploadStatus(selectedUpload.status)}>
-                        <DropZone.FileFormatIcon
-                          color={selectedUpload.artifactKind === 'unitypackage' ? 'blue' : 'orange'}
-                          format={selectedUpload.artifactKind === 'unitypackage' ? 'UNITY' : 'ZIP'}
-                        />
-                        <DropZone.FileInfo>
-                          <DropZone.FileName>{selectedUpload.file.name}</DropZone.FileName>
-                          <DropZone.FileMeta>
-                            {formatFileSize(selectedUpload.file.size)}
-                            {' | '}
-                            {selectedUpload.artifactKind === 'unitypackage'
-                              ? 'Unity package'
-                              : 'Legacy ZIP'}
-                            {selectedUpload.status === 'ready' ? ' | Ready to publish' : null}
-                            {selectedUpload.status === 'uploading' ? ' | Uploading…' : null}
-                            {selectedUpload.status === 'complete' ? ' | Uploaded' : null}
-                            {selectedUpload.status === 'failed' ? ' | Upload failed' : null}
-                          </DropZone.FileMeta>
-                          {selectedUpload.status === 'uploading' ? (
-                            <DropZone.FileProgress value={66}>
-                              <DropZone.FileProgressTrack>
-                                <DropZone.FileProgressFill />
-                              </DropZone.FileProgressTrack>
-                            </DropZone.FileProgress>
-                          ) : null}
-                          {selectedUpload.errorMessage ? (
-                            <DropZone.FileMeta>{selectedUpload.errorMessage}</DropZone.FileMeta>
-                          ) : null}
-                        </DropZone.FileInfo>
-                        <DropZone.FileRemoveTrigger
-                          aria-label={`Remove ${selectedUpload.file.name}`}
-                          onPress={() => setSelectedUpload(null)}
-                        />
-                      </DropZone.FileItem>
-                    </DropZone.FileList>
                   ) : null}
-                </DropZone>
+                </div>
+
+                {selectedLane ? (
+                  <>
+                    <div className="pm-sheet-section space-y-4 rounded-[20px] p-4">
+                      <div className="pm-form-grid">
+                        <div className="pm-field-stack">
+                          <p className="pm-field-label">
+                            {selectedLaneHasSinglePackage ? 'Install ID' : 'Install ID to use'}
+                          </p>
+                          {selectedLaneHasSinglePackage && selectedLane.primaryPackage ? (
+                            <div className="pm-static-field" id="package-release-package-id">
+                              <p className="text-foreground break-all font-mono text-sm">
+                                {selectedLane.primaryPackage.packageId}
+                              </p>
+                              <p className="pm-subtle-copy text-xs">
+                                Buyers keep using this same install ID.
+                              </p>
+                            </div>
+                          ) : (
+                            <YucpInput
+                              id="package-release-package-id"
+                              aria-label="Install ID"
+                              placeholder="com.yourname.product"
+                              value={publishDraft.packageId}
+                              onValueChange={(value) =>
+                                setPublishDraft((current) => ({
+                                  ...current,
+                                  packageId: value,
+                                }))
+                              }
+                            />
+                          )}
+                        </div>
+                        <div className="pm-field-stack">
+                          <p className="pm-field-label">Version</p>
+                          <YucpInput
+                            id="package-release-version"
+                            aria-label="Version"
+                            placeholder="1.0.0"
+                            value={publishDraft.version}
+                            onValueChange={(value) =>
+                              setPublishDraft((current) => ({
+                                ...current,
+                                version: value,
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      {!selectedLaneHasSinglePackage && installIdSuggestions.length > 0 ? (
+                        <div className="pm-inline-note rounded-[18px] p-3">
+                          <p className="text-foreground text-sm font-semibold">
+                            Already have an install ID?
+                          </p>
+                          <p className="pm-subtle-copy mt-1 text-sm">
+                            Pick one below if buyers should keep using an existing install ID.
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {installIdSuggestions.map((suggestion) => (
+                              <Button
+                                key={suggestion.packageId}
+                                size="sm"
+                                variant="ghost"
+                                onPress={() =>
+                                  setPublishDraft((current) => ({
+                                    ...current,
+                                    packageId: suggestion.packageId,
+                                  }))
+                                }
+                              >
+                                <Package2 className="size-4" />
+                                {suggestion.label}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="pm-sheet-section space-y-4 rounded-[20px] p-4">
+                      <div className="pm-field-stack">
+                        <p className="pm-field-label">Release file</p>
+                        <p className="pm-subtle-copy text-sm">
+                          Use a `.unitypackage`, or a legacy `.zip` if you are moving older uploads.
+                        </p>
+                        <DropZone className="pm-upload-dropzone w-full">
+                          <DropZone.Area onDrop={handleDrop as never}>
+                            <DropZone.Icon>
+                              <StreamlineShippingBoxIcon className="size-8" />
+                            </DropZone.Icon>
+                            <DropZone.Label>Drop the update file here</DropZone.Label>
+                            <DropZone.Description>
+                              Or choose it from your computer.
+                            </DropZone.Description>
+                            <DropZone.Trigger isDisabled={publishMutation.isPending}>
+                              Choose update file
+                            </DropZone.Trigger>
+                          </DropZone.Area>
+                          <DropZone.Input
+                            accept={UNITYPACKAGE_ACCEPT_VALUE}
+                            aria-label="Choose update file"
+                            onSelect={(fileList) => handleUploadSelection(fileList.item(0))}
+                          />
+
+                          {selectedUpload ? (
+                            <DropZone.FileList>
+                              <DropZone.FileItem status={mapUploadStatus(selectedUpload.status)}>
+                                <DropZone.FileFormatIcon
+                                  color={
+                                    selectedUpload.artifactKind === 'unitypackage'
+                                      ? 'blue'
+                                      : 'orange'
+                                  }
+                                  format={
+                                    selectedUpload.artifactKind === 'unitypackage' ? 'UNITY' : 'ZIP'
+                                  }
+                                />
+                                <DropZone.FileInfo>
+                                  <DropZone.FileName>{selectedUpload.file.name}</DropZone.FileName>
+                                  <DropZone.FileMeta>
+                                    {formatFileSize(selectedUpload.file.size)}
+                                    {' | '}
+                                    {selectedUpload.artifactKind === 'unitypackage'
+                                      ? 'Unity package'
+                                      : 'Legacy ZIP'}
+                                    {selectedUpload.status === 'ready'
+                                      ? ' | Ready to publish'
+                                      : null}
+                                    {selectedUpload.status === 'uploading' ? ' | Uploading…' : null}
+                                    {selectedUpload.status === 'complete' ? ' | Uploaded' : null}
+                                    {selectedUpload.status === 'failed' ? ' | Upload failed' : null}
+                                  </DropZone.FileMeta>
+                                  {selectedUpload.status === 'uploading' ? (
+                                    <DropZone.FileProgress value={66}>
+                                      <DropZone.FileProgressTrack>
+                                        <DropZone.FileProgressFill />
+                                      </DropZone.FileProgressTrack>
+                                    </DropZone.FileProgress>
+                                  ) : null}
+                                  {selectedUpload.errorMessage ? (
+                                    <DropZone.FileMeta>
+                                      {selectedUpload.errorMessage}
+                                    </DropZone.FileMeta>
+                                  ) : null}
+                                </DropZone.FileInfo>
+                                <DropZone.FileRemoveTrigger
+                                  aria-label={`Remove ${selectedUpload.file.name}`}
+                                  onPress={() => setSelectedUpload(null)}
+                                />
+                              </DropZone.FileItem>
+                            </DropZone.FileList>
+                          ) : null}
+                        </DropZone>
+                      </div>
+
+                      <details className="pm-muted-panel rounded-2xl p-4">
+                        <summary className="text-foreground cursor-pointer list-none text-sm font-medium">
+                          More options
+                        </summary>
+                        <div className="mt-4 space-y-4">
+                          <div className="pm-form-grid">
+                            <div className="pm-field-stack">
+                              <p className="pm-field-label">Unity version</p>
+                              <YucpInput
+                                aria-label="Unity version"
+                                placeholder="Optional"
+                                value={publishDraft.unityVersion}
+                                onValueChange={(value) =>
+                                  setPublishDraft((current) => ({
+                                    ...current,
+                                    unityVersion: value,
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="pm-field-stack">
+                              <p className="pm-field-label">Visibility</p>
+                              <Select
+                                aria-label="Repository visibility"
+                                className="w-full"
+                                selectedKey={publishDraft.repositoryVisibility}
+                                onSelectionChange={(key) =>
+                                  setPublishDraft((current) => ({
+                                    ...current,
+                                    repositoryVisibility: String(key ?? 'listed') as
+                                      | 'hidden'
+                                      | 'listed',
+                                  }))
+                                }
+                              >
+                                <Select.Trigger>
+                                  <Select.Value />
+                                  <Select.Indicator />
+                                </Select.Trigger>
+                                <Select.Popover>
+                                  <ListBox>
+                                    <ListBox.Item id="listed" textValue="Listed">
+                                      Visible in VCC now
+                                      <ListBox.ItemIndicator />
+                                    </ListBox.Item>
+                                    <ListBox.Item id="hidden" textValue="Hidden">
+                                      Keep hidden for now
+                                      <ListBox.ItemIndicator />
+                                    </ListBox.Item>
+                                  </ListBox>
+                                </Select.Popover>
+                              </Select>
+                            </div>
+                          </div>
+                          <div className="pm-form-grid">
+                            <div className="pm-field-stack">
+                              <p className="pm-field-label">Display name</p>
+                              <YucpInput
+                                aria-label="Display name"
+                                placeholder="Buyer-facing package name"
+                                value={publishDraft.displayName}
+                                onValueChange={(value) =>
+                                  setPublishDraft((current) => ({
+                                    ...current,
+                                    displayName: value,
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="pm-field-stack">
+                              <p className="pm-field-label">Channel</p>
+                              <YucpInput
+                                aria-label="Channel"
+                                placeholder="stable"
+                                value={publishDraft.channel}
+                                onValueChange={(value) =>
+                                  setPublishDraft((current) => ({
+                                    ...current,
+                                    channel: value,
+                                  }))
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div className="pm-field-stack">
+                            <p className="pm-field-label">Release notes</p>
+                            <TextArea
+                              aria-label="Release notes"
+                              placeholder="What changed in this update?"
+                              variant="secondary"
+                              value={publishDraft.description}
+                              onChange={(event) =>
+                                setPublishDraft((current) => ({
+                                  ...current,
+                                  description: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+                  </>
+                ) : (
+                  <div className="pm-inline-note rounded-[18px] p-4">
+                    <p className="text-foreground text-sm font-semibold">Pick a product first</p>
+                    <p className="pm-subtle-copy mt-1 text-sm leading-6">
+                      After that, the install ID, version, and upload box will show up here.
+                    </p>
+                  </div>
+                )}
               </Sheet.Body>
-              <Sheet.Footer>
+              <Sheet.Footer className="pm-sheet-footer">
                 <Sheet.Close>
                   <Button variant="secondary">Cancel</Button>
                 </Sheet.Close>
@@ -2085,7 +2198,7 @@ export function PackageRegistryPanel({
                   onPress={() => publishMutation.mutate(publishDraft)}
                 >
                   <ArrowUpFromLine className="size-4" />
-                  Upload package
+                  Upload update
                 </YucpButton>
               </Sheet.Footer>
             </Sheet.Dialog>

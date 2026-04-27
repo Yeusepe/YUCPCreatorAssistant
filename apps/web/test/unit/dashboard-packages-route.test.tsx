@@ -18,6 +18,103 @@ vi.mock('@tanstack/react-router', () => ({
   createLazyFileRoute: () => (options: unknown) => ({ options }),
 }));
 
+vi.mock('@heroui/react', () => {
+  const Div = ({
+    children,
+    isDisabled: _isDisabled,
+    isIconOnly: _isIconOnly,
+    selectedKey: _selectedKey,
+    textValue: _textValue,
+    onSelectionChange: _onSelectionChange,
+    onOpenChange: _onOpenChange,
+    onPress: _onPress,
+    ...props
+  }: PropsWithChildren<Record<string, unknown>>) => <div {...props}>{children}</div>;
+
+  const Button = ({
+    children,
+    isDisabled,
+    isIconOnly: _isIconOnly,
+    onPress,
+    type = 'button',
+    ...props
+  }: PropsWithChildren<Record<string, unknown>>) => (
+    <button
+      type={typeof type === 'string' ? type : 'button'}
+      disabled={Boolean(isDisabled)}
+      onClick={typeof onPress === 'function' ? () => onPress() : undefined}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+
+  const Input = ({
+    children: _children,
+    isDisabled,
+    disabled,
+    onChange,
+    ...props
+  }: PropsWithChildren<Record<string, unknown>>) => (
+    <input disabled={Boolean(isDisabled ?? disabled)} onChange={onChange as never} {...props} />
+  );
+
+  const TextArea = ({
+    children,
+    isDisabled,
+    disabled,
+    onChange,
+    ...props
+  }: PropsWithChildren<Record<string, unknown>>) => (
+    <textarea disabled={Boolean(isDisabled ?? disabled)} onChange={onChange as never} {...props}>
+      {typeof children === 'string' ? children : undefined}
+    </textarea>
+  );
+
+  const Chip = ({ children, ...props }: PropsWithChildren<Record<string, unknown>>) => (
+    <span {...props}>{children}</span>
+  );
+
+  const Card = Object.assign(Div, {
+    Header: Div,
+    Content: Div,
+    Footer: Div,
+  });
+
+  const ListBox = Object.assign(Div, {
+    Item: Div,
+    ItemIndicator: Div,
+    Section: Div,
+  });
+
+  const Select = Object.assign(Div, {
+    Trigger: Div,
+    Value: Div,
+    Indicator: Div,
+    Popover: Div,
+  });
+
+  const Skeleton = ({ children, ...props }: PropsWithChildren<Record<string, unknown>>) => (
+    <div {...props}>{children}</div>
+  );
+
+  const Tooltip = Object.assign(({ children }: PropsWithChildren) => <>{children}</>, {
+    Content: Div,
+  });
+
+  return {
+    Button,
+    Card,
+    Chip,
+    ListBox,
+    Select,
+    Skeleton,
+    TextArea,
+    Tooltip,
+    Input,
+  };
+});
+
 vi.mock('@/components/ui/Toast', () => ({
   useToast: vi.fn(() => ({
     error: vi.fn(),
@@ -149,6 +246,7 @@ vi.mock('@/lib/packages', () => ({
 
 import * as certificateApi from '@/lib/certificates';
 import * as packagesApi from '@/lib/packages';
+import { buildProductLanes } from '@/components/dashboard/PackageRegistryPanel';
 import { Route as PackagesRoute } from '@/routes/_authenticated/dashboard/packages.lazy';
 
 const listCreatorCertificatesMock = certificateApi.listCreatorCertificates as ReturnType<
@@ -385,20 +483,172 @@ describe('dashboard packages route', () => {
 
     render(<Component />, { wrapper: createWrapper() });
 
-    await waitFor(() => expect(screen.getByText('2 storefronts')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/Install ID:\s*pkg\.creator\.bundle/i)).toBeInTheDocument()
+    );
     expect(screen.getAllByText('Creator Bundle Product').length).toBeGreaterThan(0);
-    expect(screen.getByText('Mapache')).toBeInTheDocument();
+    expect(screen.getByText(/Mapache/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /open in vcc/i })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /upload package/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /upload update/i }).length).toBeGreaterThan(0);
     expect(screen.getByText('pkg.creator.bundle')).toBeInTheDocument();
-    expect(screen.getByText('Drop a Unity package here')).toBeInTheDocument();
-    expect(document.querySelector('input[accept*=".unitypackage"]')).not.toBeNull();
     expect(
       document.querySelector('img[src="https://public-files.gumroad.com/creator-bundle.png"]')
     ).not.toBeNull();
     expect(
       document.querySelector('img[src="https://public-files.gumroad.com/creator-bundle.png"]')
     ).toHaveAttribute('src', 'https://public-files.gumroad.com/creator-bundle.png');
+  });
+
+  it('merges storefront rows when linked package IDs match even if slugs and names drift', async () => {
+    listCreatorBackstageProductsMock.mockResolvedValue({
+      products: [
+        {
+          aliases: ['Song'],
+          backstagePackages: [
+            {
+              packageId: 'pkg.song.bundle',
+              packageName: 'Song Bundle',
+              displayName: 'Song Bundle',
+              status: 'active',
+              repositoryVisibility: 'listed',
+              defaultChannel: 'stable',
+              latestPublishedVersion: '2.4.0',
+              latestRelease: {
+                version: '2.4.0',
+                channel: 'stable',
+                releaseStatus: 'published',
+                repositoryVisibility: 'listed',
+                artifactKey: 'artifact:song-bundle',
+                contentType: 'application/zip',
+                createdAt: 1_710_000_000_000,
+                deliveryName: 'song-bundle-2.4.0.zip',
+                metadata: { source: 'unitypackage' },
+                publishedAt: 1_710_000_100_000,
+                unityVersion: '2022.3',
+                updatedAt: 1_710_000_100_000,
+                zipSha256: 'c'.repeat(64),
+              },
+              releases: [],
+            },
+          ],
+          canonicalSlug: 'song-deluxe-gumroad',
+          catalogProductId: 'song_gumroad',
+          displayName: 'Song Deluxe',
+          thumbnailUrl: 'https://public-files.gumroad.com/song-deluxe.png',
+          productId: 'gumroad-song-1',
+          provider: 'gumroad',
+          providerProductRef: 'gumroad-song-1',
+          status: 'active',
+          supportsAutoDiscovery: true,
+          updatedAt: 1_710_000_100_000,
+          canArchive: true,
+          canRestore: false,
+          canDelete: false,
+          deleteBlockedReason: 'Product has package history.',
+        },
+        {
+          aliases: ['Song'],
+          backstagePackages: [
+            {
+              packageId: 'pkg.song.bundle',
+              packageName: 'Song Bundle',
+              displayName: 'Song Bundle',
+              status: 'active',
+              repositoryVisibility: 'listed',
+              defaultChannel: 'stable',
+              latestPublishedVersion: '2.4.0',
+              latestRelease: {
+                version: '2.4.0',
+                channel: 'stable',
+                releaseStatus: 'published',
+                repositoryVisibility: 'listed',
+                artifactKey: 'artifact:song-bundle',
+                contentType: 'application/zip',
+                createdAt: 1_710_000_000_000,
+                deliveryName: 'song-bundle-2.4.0.zip',
+                metadata: { source: 'unitypackage' },
+                publishedAt: 1_710_000_100_000,
+                unityVersion: '2022.3',
+                updatedAt: 1_710_000_100_000,
+                zipSha256: 'c'.repeat(64),
+              },
+              releases: [],
+            },
+          ],
+          canonicalSlug: 'song-deluxe-jinxxy',
+          catalogProductId: 'song_jinxxy',
+          displayName: 'Song: Deluxe Edition',
+          productId: 'jinxxy-song-1',
+          provider: 'jinxxy',
+          providerProductRef: 'jinxxy-song-1',
+          status: 'active',
+          supportsAutoDiscovery: true,
+          updatedAt: 1_710_000_100_000,
+          canArchive: true,
+          canRestore: false,
+          canDelete: true,
+        },
+      ],
+    });
+
+    const Component = PackagesRoute.options.component;
+    if (!Component) {
+      throw new Error('Packages route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Install ID:\s*pkg\.song\.bundle\s+·\s+Live version 2\.4\.0/i)
+      ).toBeInTheDocument()
+    );
+    expect(screen.getAllByText(/Song/i).length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.pm-product-row')).toHaveLength(1);
+    expect(
+      document.querySelector('img[src="https://public-files.gumroad.com/song-deluxe.png"]')
+    ).not.toBeNull();
+  });
+
+  it('merges storefront rows through shared aliases even when canonical slugs differ', async () => {
+    const lanes = buildProductLanes([
+      {
+        aliases: ['Song'],
+        backstagePackages: [],
+        canonicalSlug: 'gumroad-song-release',
+        catalogProductId: 'song_alias_gumroad',
+        displayName: 'Song Release',
+        productId: 'gumroad-song-alias',
+        provider: 'gumroad',
+        providerProductRef: 'gumroad-song-alias',
+        status: 'active',
+        supportsAutoDiscovery: true,
+        updatedAt: 1_710_000_100_000,
+        canArchive: true,
+        canRestore: false,
+        canDelete: true,
+      },
+      {
+        aliases: ['Song'],
+        backstagePackages: [],
+        canonicalSlug: 'patreon-song-membership',
+        catalogProductId: 'song_alias_patreon',
+        displayName: 'Song Members Tier',
+        productId: 'patreon-song-alias',
+        provider: 'patreon',
+        providerProductRef: 'patreon-song-alias',
+        status: 'active',
+        supportsAutoDiscovery: true,
+        updatedAt: 1_710_000_100_000,
+        canArchive: true,
+        canRestore: false,
+        canDelete: true,
+      },
+    ]);
+
+    expect(lanes).toHaveLength(1);
+    expect(lanes[0]?.products).toHaveLength(2);
+    expect(lanes[0]?.providerLabels).toEqual(['Gumroad', 'Patreon']);
   });
 
   it('shows the Polar upgrade gate when the custom VPM repo entitlement is missing', async () => {
@@ -447,16 +697,18 @@ describe('dashboard packages route', () => {
 
     render(<Component />, { wrapper: createWrapper() });
 
-    await waitFor(() => expect(screen.getByText('2 storefronts')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/Install ID:\s*pkg\.creator\.bundle/i)).toBeInTheDocument()
+    );
     fireEvent.click(
-      screen.getByRole('button', { name: /open upload history for creator bundle product/i })
+      screen.getByRole('button', { name: /open past uploads for creator bundle product/i })
     );
 
-    expect(screen.getByText('Product uploads')).toBeInTheDocument();
+    expect(screen.getByText('Past uploads')).toBeInTheDocument();
     expect(screen.getByText('creator-bundle-1.2.3.zip')).toBeInTheDocument();
     expect(screen.getByText('creator-bundle-1.2.2.zip')).toBeInTheDocument();
     expect(screen.getByText(/SHA-256 a{64}/i)).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /copy package id/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /copy install id/i }).length).toBeGreaterThan(0);
   });
 
   it('renames a package from the dashboard manager', async () => {
@@ -505,8 +757,8 @@ describe('dashboard packages route', () => {
     await waitFor(() =>
       expect(listCreatorPackagesMock).toHaveBeenCalledWith({ includeArchived: true })
     );
-    await screen.findByText('Hidden packages');
-    const hiddenPackagesDetails = screen.getByText('Hidden packages').closest('details');
+    await screen.findByText('Hidden install IDs');
+    const hiddenPackagesDetails = screen.getByText('Hidden install IDs').closest('details');
     expect(hiddenPackagesDetails?.open).toBe(false);
   });
 
@@ -521,11 +773,16 @@ describe('dashboard packages route', () => {
     await screen.findByText('Hidden product links');
     const hiddenProductsDetails = screen.getByText('Hidden product links').closest('details');
     expect(hiddenProductsDetails?.open).toBe(false);
-    const mergedProductLane = screen.getByText('2 storefronts').closest('.pm-product-row');
+    const mergedProductLane = screen
+      .getByText(/Install ID:\s*pkg\.creator\.bundle/i)
+      .closest('.pm-product-row');
     expect(mergedProductLane).not.toBeNull();
     fireEvent.click(
-      within(mergedProductLane as HTMLElement).getByRole('button', { name: /^hide$/i })
+      within(mergedProductLane as HTMLElement).getByRole('button', {
+        name: /open past uploads for creator bundle product/i,
+      })
     );
+    fireEvent.click(screen.getByRole('button', { name: /hide link/i }));
 
     await waitFor(() =>
       expect(archiveCreatorBackstageProductMock).toHaveBeenCalledWith({

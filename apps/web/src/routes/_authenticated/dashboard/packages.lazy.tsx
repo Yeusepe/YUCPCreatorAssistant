@@ -64,7 +64,7 @@ export default function DashboardPackages() {
         <DashboardAuthRequiredState
           id="packages-auth"
           title="Sign in to manage packages"
-          description="Your session expired. Sign in again to rename packages, delete unused packages, or reuse a package ID in Unity."
+          description="Your session expired. Sign in again to upload updates, manage install IDs, or add your repo in VCC."
         />
       </div>
     );
@@ -88,7 +88,7 @@ export default function DashboardPackages() {
                 <h1 className="intg-title">Creator scope required</h1>
                 <p className="intg-desc">
                   Package ownership belongs to your creator account. Open the root dashboard to
-                  manage package IDs.
+                  manage install IDs.
                 </p>
               </div>
             </div>

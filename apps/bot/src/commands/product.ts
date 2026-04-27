@@ -603,6 +603,7 @@ export async function handleProductTypeSelect(
         id: string;
         name: string;
         productUrl?: string;
+        thumbnailUrl?: string;
       }> = data.products ?? [];
       if (products.length === 0) {
         await interaction.editReply({

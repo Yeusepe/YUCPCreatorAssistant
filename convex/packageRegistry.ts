@@ -93,6 +93,12 @@ function isArchivedRegistration(registration: Pick<Doc<'package_registry'>, 'sta
   return getPackageStatus(registration) === 'archived';
 }
 
+function getCatalogProductWorkspaceStatus(
+  product: Pick<Doc<'product_catalog'>, 'status'>
+): 'active' | 'archived' {
+  return product.status === 'hidden' ? 'archived' : 'active';
+}
+
 function normalizePackageName(packageName: string | undefined): string | undefined {
   if (typeof packageName !== 'string') {
     return undefined;
@@ -1091,7 +1097,10 @@ export const listByAuthUser = query({
       all = all.filter((p) => p.provider === args.provider);
     }
     if (args.status) {
-      all = all.filter((p) => p.status === args.status);
+      all = all.filter(
+        (product) =>
+          getCatalogProductWorkspaceStatus(product) === args.status || product.status === args.status
+      );
     }
 
     const limit = Math.min(args.limit ?? 50, 100);
@@ -1114,11 +1123,13 @@ export const listByAuthUser = query({
           args.authUserId,
           product._id
         );
+        const status = getCatalogProductWorkspaceStatus(product);
         return {
           ...product,
+          status,
           backstagePackages: backstagePackagesByCatalogProduct.get(String(product._id)) ?? [],
-          canArchive: product.status === 'active',
-          canRestore: product.status === 'archived',
+          canArchive: status === 'active',
+          canRestore: status === 'archived',
           canDelete: deleteBlockedReason === undefined,
           deleteBlockedReason,
         };
@@ -1154,9 +1165,9 @@ export const archiveProductForAuthUser = mutation({
     requireApiSecret(args.apiSecret);
     await requireDelegatedAuthUserActor(args.actor, args.authUserId);
     const product = await requireOwnedCatalogProduct(ctx, args.authUserId, args.catalogProductId);
-    if (product.status !== 'archived') {
+    if (product.status !== 'hidden') {
       await ctx.db.patch(product._id, {
-        status: 'archived',
+        status: 'hidden',
         updatedAt: Date.now(),
       });
     }
@@ -1185,7 +1196,7 @@ export const restoreProductForAuthUser = mutation({
     requireApiSecret(args.apiSecret);
     await requireDelegatedAuthUserActor(args.actor, args.authUserId);
     const product = await requireOwnedCatalogProduct(ctx, args.authUserId, args.catalogProductId);
-    if (product.status === 'archived') {
+    if (product.status === 'hidden') {
       await ctx.db.patch(product._id, {
         status: 'active',
         updatedAt: Date.now(),

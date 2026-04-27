@@ -19,7 +19,7 @@ export function PackageRegistryAccessGate({
   const description =
     mode === 'error'
       ? 'Refresh your billing state and try again.'
-      : 'Manage package IDs and VCC install links through Polar. Upgrade billing to unlock the custom VPM repo.';
+      : 'Manage install IDs and VCC links through Polar. Upgrade billing to unlock the custom VPM repo.';
 
   return (
     <section className={className}>

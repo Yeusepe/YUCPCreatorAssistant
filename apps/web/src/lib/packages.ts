@@ -56,7 +56,7 @@ export interface CreatorBackstageProductSummary {
   productId: string;
   provider: string;
   providerProductRef: string;
-  status: string;
+  status: 'active' | 'archived';
   supportsAutoDiscovery: boolean;
   updatedAt: number;
   canArchive: boolean;

@@ -9,6 +9,13 @@ import {
 } from '@/components/ui/YucpSkeleton';
 
 const copySectionStyle: CSSProperties = { flex: 1 };
+const packageWorkspaceCardKeys = [
+  'registry-summary',
+  'package-health',
+  'package-targets',
+  'package-activity',
+] as const;
+const packageWorkspaceSideKeys = ['repo-access', 'release-targets', 'supporting-actions'] as const;
 
 type DashboardActionRowSkeletonProps = {
   count?: number;
@@ -273,10 +280,9 @@ export function DashboardBackstageWorkspaceSkeleton() {
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {Array.from({ length: 4 }, (_, index) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+              {packageWorkspaceCardKeys.map((key) => (
                 <div
-                  key={index}
+                  key={key}
                   className="rounded-2xl border border-border/60 bg-surface-secondary/60 p-4"
                 >
                   <div className="space-y-3">
@@ -305,10 +311,9 @@ export function DashboardBackstageWorkspaceSkeleton() {
               <SkeletonLine width="70%" className="skeleton-line-muted" />
             </div>
             <div className="space-y-3">
-              {Array.from({ length: 3 }, (_, index) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+              {packageWorkspaceSideKeys.map((key) => (
                 <div
-                  key={index}
+                  key={key}
                   className="rounded-2xl border border-border/60 bg-surface-secondary/60 p-4"
                 >
                   <div className="space-y-3">
