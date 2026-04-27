@@ -244,9 +244,9 @@ vi.mock('@/lib/packages', () => ({
   uploadBackstageReleaseFile: vi.fn(),
 }));
 
+import { buildProductLanes } from '@/components/dashboard/PackageRegistryPanel';
 import * as certificateApi from '@/lib/certificates';
 import * as packagesApi from '@/lib/packages';
-import { buildProductLanes } from '@/components/dashboard/PackageRegistryPanel';
 import { Route as PackagesRoute } from '@/routes/_authenticated/dashboard/packages.lazy';
 
 const listCreatorCertificatesMock = certificateApi.listCreatorCertificates as ReturnType<
@@ -489,7 +489,8 @@ describe('dashboard packages route', () => {
     expect(screen.getAllByText('Creator Bundle Product').length).toBeGreaterThan(0);
     expect(screen.getByText(/Mapache/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /open in vcc/i })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /upload update/i }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /upload a package/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^upload$/i }).length).toBeGreaterThan(0);
     expect(screen.getByText('pkg.creator.bundle')).toBeInTheDocument();
     expect(
       document.querySelector('img[src="https://public-files.gumroad.com/creator-bundle.png"]')
@@ -497,6 +498,103 @@ describe('dashboard packages route', () => {
     expect(
       document.querySelector('img[src="https://public-files.gumroad.com/creator-bundle.png"]')
     ).toHaveAttribute('src', 'https://public-files.gumroad.com/creator-bundle.png');
+  });
+
+  it('renders unlinked storefront groups in a separate setup section', async () => {
+    listCreatorBackstageProductsMock.mockResolvedValue({
+      products: [
+        {
+          aliases: ['Creator Bundle Product'],
+          backstagePackages: [
+            {
+              packageId: 'pkg.creator.bundle',
+              packageName: 'Creator Bundle',
+              displayName: 'Creator Bundle',
+              status: 'active',
+              repositoryVisibility: 'listed',
+              defaultChannel: 'stable',
+              latestPublishedVersion: '1.2.3',
+              latestRelease: {
+                version: '1.2.3',
+                channel: 'stable',
+                releaseStatus: 'published',
+                repositoryVisibility: 'listed',
+                artifactKey: 'artifact:creator-bundle',
+                contentType: 'application/zip',
+                createdAt: 1_710_000_000_000,
+                deliveryName: 'creator-bundle-1.2.3.zip',
+                metadata: { source: 'unitypackage' },
+                publishedAt: 1_710_000_100_000,
+                unityVersion: '2022.3',
+                updatedAt: 1_710_000_100_000,
+                zipSha256: 'a'.repeat(64),
+              },
+              releases: [],
+            },
+          ],
+          canonicalSlug: 'creator-bundle',
+          catalogProductId: 'product_1',
+          displayName: 'Creator Bundle Product',
+          thumbnailUrl: 'https://public-files.gumroad.com/creator-bundle.png',
+          productId: 'gumroad-product-1',
+          provider: 'gumroad',
+          providerProductRef: 'gumroad-product-1',
+          status: 'active',
+          supportsAutoDiscovery: true,
+          updatedAt: 1_710_000_100_000,
+          canArchive: true,
+          canRestore: false,
+          canDelete: false,
+          deleteBlockedReason: 'Product has package history.',
+        },
+        {
+          aliases: ['Song Thing'],
+          backstagePackages: [],
+          canonicalSlug: 'song-thing',
+          catalogProductId: 'song_gumroad',
+          displayName: 'Song Thing',
+          thumbnailUrl: 'https://public-files.gumroad.com/song-thing.png',
+          productId: 'gumroad-song-thing',
+          provider: 'gumroad',
+          providerProductRef: 'gumroad-song-thing',
+          status: 'active',
+          supportsAutoDiscovery: true,
+          updatedAt: 1_710_000_200_000,
+          canArchive: true,
+          canRestore: false,
+          canDelete: true,
+        },
+        {
+          aliases: ['Song Thing'],
+          backstagePackages: [],
+          canonicalSlug: 'song-thing',
+          catalogProductId: 'song_jinxxy',
+          displayName: 'Song Thing',
+          productId: 'jinxxy-song-thing',
+          provider: 'jinxxy',
+          providerProductRef: 'jinxxy-song-thing',
+          status: 'active',
+          supportsAutoDiscovery: false,
+          updatedAt: 1_710_000_300_000,
+          canArchive: true,
+          canRestore: false,
+          canDelete: true,
+        },
+      ],
+    });
+
+    const Component = PackagesRoute.options.component;
+    if (!Component) {
+      throw new Error('Packages route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    await waitFor(() => expect(screen.getByText('Set up a new product')).toBeInTheDocument());
+    expect(screen.getAllByText('Song Thing').length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/Needs first install ID · 2 storefronts · Gumroad, Jinxxy/i)
+    ).toBeInTheDocument();
   });
 
   it('merges storefront rows when linked package IDs match even if slugs and names drift', async () => {

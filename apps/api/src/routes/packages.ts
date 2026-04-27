@@ -1,7 +1,13 @@
+import {
+  buildCatalogProductUrl,
+  CATALOG_SYNC_PROVIDER_KEYS,
+  getProviderDescriptor,
+} from '@yucp/providers/providerMetadata';
 import type { ApiActorBinding } from '@yucp/shared/apiActor';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import type { Auth } from '../auth';
+import { listProviderProductsViaApi } from '../internalRpc/router';
 import { createAuthUserActorBinding } from '../lib/apiActor';
 import { buildBackstageRepositoryUrls, getCreatorRepoIdentity } from '../lib/backstageRepoIdentity';
 import { getConvexClientFromUrl } from '../lib/convex';
@@ -81,6 +87,16 @@ type BackstageProductQueryResult = {
   }>;
 };
 
+type BackstageProductQueryRow = BackstageProductQueryResult['data'][number];
+type LiveProviderProduct = Awaited<
+  ReturnType<typeof listProviderProductsViaApi>
+>['products'];
+type LiveProviderProductRecord = NonNullable<LiveProviderProduct>[number];
+type BackstageProductMetadataOverride = {
+  displayName?: string;
+  thumbnailUrl?: string;
+};
+
 function jsonResponse(body: object, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -108,6 +124,182 @@ function buildBackstageAddRepoUrl(repositoryUrl: string, repoToken: string): str
   addRepoUrl.searchParams.set('url', repositoryUrl);
   addRepoUrl.searchParams.append('headers[]', `${BACKSTAGE_REPO_TOKEN_HEADER}:${repoToken}`);
   return addRepoUrl.toString();
+}
+
+function buildBackstageProductRecordKey(provider: string, providerProductRef: string): string {
+  return `${provider.trim().toLowerCase()}:${providerProductRef.trim()}`;
+}
+
+function buildLiveProductMetadataOverride(
+  product: LiveProviderProductRecord
+): BackstageProductMetadataOverride | null {
+  const displayName = product.name?.trim();
+  const thumbnailUrl = product.thumbnailUrl?.trim();
+  if (!displayName && !thumbnailUrl) {
+    return null;
+  }
+  return {
+    ...(displayName ? { displayName } : {}),
+    ...(thumbnailUrl ? { thumbnailUrl } : {}),
+  };
+}
+
+function mapBackstageProductForResponse(
+  product: BackstageProductQueryRow,
+  override?: BackstageProductMetadataOverride
+) {
+  return {
+    aliases: product.aliases ?? [],
+    backstagePackages: (product.backstagePackages ?? []).map((pkg) => ({
+      packageId: pkg.packageId,
+      packageName: pkg.packageName,
+      displayName: pkg.displayName,
+      status: pkg.status,
+      repositoryVisibility: pkg.repositoryVisibility,
+      defaultChannel: pkg.defaultChannel,
+      latestPublishedVersion: pkg.latestPublishedVersion,
+      latestRelease: pkg.latestRelease
+        ? {
+            version: pkg.latestRelease.version,
+            channel: pkg.latestRelease.channel,
+            releaseStatus: pkg.latestRelease.releaseStatus,
+            repositoryVisibility: pkg.latestRelease.repositoryVisibility,
+            artifactKey: pkg.latestRelease.artifactKey,
+            contentType: pkg.latestRelease.contentType,
+            createdAt: pkg.latestRelease.createdAt,
+            deliveryName: pkg.latestRelease.deliveryName,
+            metadata: pkg.latestRelease.metadata,
+            publishedAt: pkg.latestRelease.publishedAt,
+            unityVersion: pkg.latestRelease.unityVersion,
+            updatedAt: pkg.latestRelease.updatedAt,
+            zipSha256: pkg.latestRelease.zipSha256,
+          }
+        : null,
+      releases: (pkg.releases ?? []).map((release) => ({
+        version: release.version,
+        channel: release.channel,
+        releaseStatus: release.releaseStatus,
+        repositoryVisibility: release.repositoryVisibility,
+        artifactKey: release.artifactKey,
+        contentType: release.contentType,
+        createdAt: release.createdAt,
+        deliveryName: release.deliveryName,
+        metadata: release.metadata,
+        publishedAt: release.publishedAt,
+        unityVersion: release.unityVersion,
+        updatedAt: release.updatedAt,
+        zipSha256: release.zipSha256,
+      })),
+    })),
+    canonicalSlug: product.canonicalSlug,
+    catalogProductId: String(product._id),
+    displayName: override?.displayName ?? product.displayName,
+    thumbnailUrl: override?.thumbnailUrl ?? product.thumbnailUrl,
+    productId: product.productId,
+    provider: product.provider,
+    providerProductRef: product.providerProductRef,
+    status: product.status,
+    supportsAutoDiscovery: product.supportsAutoDiscovery,
+    updatedAt: product.updatedAt,
+    canArchive: product.canArchive ?? product.status === 'active',
+    canRestore: product.canRestore ?? product.status === 'archived',
+    canDelete: product.canDelete ?? false,
+    deleteBlockedReason: product.deleteBlockedReason,
+  };
+}
+
+async function reconcileBackstageCatalogFromConnectedProviders(args: {
+  convex: ReturnType<typeof getConvexClientFromUrl>;
+  config: PackagesConfig;
+  authUserId: string;
+  existingProducts: BackstageProductQueryRow[];
+}): Promise<{ refreshCatalog: boolean; overrides: Map<string, BackstageProductMetadataOverride> }> {
+  const connectionStatus = (await args.convex.query(api.providerConnections.getConnectionStatus, {
+    apiSecret: args.config.convexApiSecret,
+    authUserId: args.authUserId,
+  })) as Record<string, boolean>;
+
+  const connectedCatalogProviders = CATALOG_SYNC_PROVIDER_KEYS.filter(
+    (providerKey) => connectionStatus[providerKey]
+  );
+  if (connectedCatalogProviders.length === 0) {
+    return { refreshCatalog: false, overrides: new Map() };
+  }
+
+  const knownProducts = new Set(
+    args.existingProducts.map((product) =>
+      buildBackstageProductRecordKey(product.provider, product.providerProductRef)
+    )
+  );
+  const overrides = new Map<string, BackstageProductMetadataOverride>();
+  let refreshCatalog = false;
+
+  for (const provider of connectedCatalogProviders) {
+    try {
+      const liveProducts = await listProviderProductsViaApi(
+        {
+          apiBaseUrl: args.config.apiBaseUrl,
+          convexApiSecret: args.config.convexApiSecret,
+        },
+        {
+          authUserId: args.authUserId,
+          provider,
+        }
+      );
+
+      for (const liveProduct of liveProducts.products ?? []) {
+        const providerProductRef = liveProduct.id?.trim();
+        if (!providerProductRef) {
+          continue;
+        }
+
+        const productKey = buildBackstageProductRecordKey(provider, providerProductRef);
+        const override = buildLiveProductMetadataOverride(liveProduct);
+        if (override) {
+          overrides.set(productKey, override);
+        }
+
+        if (knownProducts.has(productKey)) {
+          continue;
+        }
+
+        const canonicalUrl =
+          liveProduct.productUrl?.trim() ?? buildCatalogProductUrl(provider, providerProductRef);
+        if (!canonicalUrl) {
+          logger.warn('Skipping Backstage provider product without canonical URL', {
+            authUserId: args.authUserId,
+            provider,
+            providerProductRef,
+          });
+          continue;
+        }
+
+        await args.convex.mutation(api.role_rules.addCatalogProduct, {
+          apiSecret: args.config.convexApiSecret,
+          authUserId: args.authUserId,
+          productId: providerProductRef,
+          providerProductRef,
+          provider,
+          canonicalUrl,
+          supportsAutoDiscovery: getProviderDescriptor(provider)?.supportsAutoDiscovery ?? false,
+          ...(liveProduct.name?.trim() ? { displayName: liveProduct.name.trim() } : {}),
+          ...(liveProduct.thumbnailUrl?.trim()
+            ? { thumbnailUrl: liveProduct.thumbnailUrl.trim() }
+            : {}),
+        });
+        knownProducts.add(productKey);
+        refreshCatalog = true;
+      }
+    } catch (error) {
+      logger.warn('Failed to reconcile Backstage provider products from live catalog', {
+        authUserId: args.authUserId,
+        provider,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { refreshCatalog, overrides };
 }
 
 async function resolveViewer(
@@ -219,71 +411,35 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
     const convex = getConvexClientFromUrl(config.convexUrl, viewer.actorBinding);
 
     try {
-      const result = (await convex.query(api.packageRegistry.listByAuthUser, {
+      let result = (await convex.query(api.packageRegistry.listByAuthUser, {
         apiSecret: config.convexApiSecret,
         actor: viewer.actorBinding,
         authUserId: viewer.authUserId,
       })) as BackstageProductQueryResult;
 
+      const { refreshCatalog, overrides } = await reconcileBackstageCatalogFromConnectedProviders({
+        convex,
+        config,
+        authUserId: viewer.authUserId,
+        existingProducts: result.data,
+      });
+      if (refreshCatalog) {
+        result = (await convex.query(api.packageRegistry.listByAuthUser, {
+          apiSecret: config.convexApiSecret,
+          actor: viewer.actorBinding,
+          authUserId: viewer.authUserId,
+        })) as BackstageProductQueryResult;
+      }
+
       return jsonResponse({
-        products: result.data.map((product) => ({
-          aliases: product.aliases ?? [],
-          backstagePackages: (product.backstagePackages ?? []).map((pkg) => ({
-            packageId: pkg.packageId,
-            packageName: pkg.packageName,
-            displayName: pkg.displayName,
-            status: pkg.status,
-            repositoryVisibility: pkg.repositoryVisibility,
-            defaultChannel: pkg.defaultChannel,
-            latestPublishedVersion: pkg.latestPublishedVersion,
-            latestRelease: pkg.latestRelease
-              ? {
-                  version: pkg.latestRelease.version,
-                  channel: pkg.latestRelease.channel,
-                  releaseStatus: pkg.latestRelease.releaseStatus,
-                  repositoryVisibility: pkg.latestRelease.repositoryVisibility,
-                  artifactKey: pkg.latestRelease.artifactKey,
-                  contentType: pkg.latestRelease.contentType,
-                  createdAt: pkg.latestRelease.createdAt,
-                  deliveryName: pkg.latestRelease.deliveryName,
-                  metadata: pkg.latestRelease.metadata,
-                  publishedAt: pkg.latestRelease.publishedAt,
-                  unityVersion: pkg.latestRelease.unityVersion,
-                  updatedAt: pkg.latestRelease.updatedAt,
-                  zipSha256: pkg.latestRelease.zipSha256,
-                }
-              : null,
-            releases: (pkg.releases ?? []).map((release) => ({
-              version: release.version,
-              channel: release.channel,
-              releaseStatus: release.releaseStatus,
-              repositoryVisibility: release.repositoryVisibility,
-              artifactKey: release.artifactKey,
-              contentType: release.contentType,
-              createdAt: release.createdAt,
-              deliveryName: release.deliveryName,
-              metadata: release.metadata,
-              publishedAt: release.publishedAt,
-              unityVersion: release.unityVersion,
-              updatedAt: release.updatedAt,
-              zipSha256: release.zipSha256,
-            })),
-          })),
-          canonicalSlug: product.canonicalSlug,
-          catalogProductId: String(product._id),
-          displayName: product.displayName,
-          thumbnailUrl: product.thumbnailUrl,
-          productId: product.productId,
-          provider: product.provider,
-          providerProductRef: product.providerProductRef,
-          status: product.status,
-          supportsAutoDiscovery: product.supportsAutoDiscovery,
-          updatedAt: product.updatedAt,
-          canArchive: product.canArchive ?? product.status === 'active',
-          canRestore: product.canRestore ?? product.status === 'archived',
-          canDelete: product.canDelete ?? false,
-          deleteBlockedReason: product.deleteBlockedReason,
-        })),
+        products: result.data.map((product) =>
+          mapBackstageProductForResponse(
+            product,
+            overrides.get(
+              buildBackstageProductRecordKey(product.provider, product.providerProductRef)
+            )
+          )
+        ),
       });
     } catch (error) {
       logger.error('Failed to list Backstage package products', {

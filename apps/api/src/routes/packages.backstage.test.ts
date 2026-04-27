@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test';
 let mutationImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
 let actionImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
 let queryImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
+let listProviderProductsViaApiImpl: (...args: unknown[]) => Promise<unknown> = async () => ({
+  products: [],
+});
 let lastActionArgs: unknown;
 
 mock.module('../../../../convex/_generated/api', () => ({
@@ -30,6 +33,12 @@ mock.module('../../../../convex/_generated/api', () => ({
       restoreProductForAuthUser: 'packageRegistry.restoreProductForAuthUser',
       deleteProductForAuthUser: 'packageRegistry.deleteProductForAuthUser',
     },
+    providerConnections: {
+      getConnectionStatus: 'providerConnections.getConnectionStatus',
+    },
+    role_rules: {
+      addCatalogProduct: 'role_rules.addCatalogProduct',
+    },
   },
   internal: {},
   components: {},
@@ -52,6 +61,10 @@ mock.module('../lib/oauthAccessToken', () => ({
 
 mock.module('../lib/apiActor', () => ({
   createAuthUserActorBinding: async () => 'actor-binding',
+}));
+
+mock.module('../internalRpc/router', () => ({
+  listProviderProductsViaApi: (...args: unknown[]) => listProviderProductsViaApiImpl(...args),
 }));
 
 const { createPackageRoutes } = await import('./packages');
@@ -85,6 +98,8 @@ describe('package Backstage publishing routes', () => {
             image: null,
             discordUserId: 'discord-user-1',
           };
+        case 'providerConnections.getConnectionStatus':
+          return {};
         case 'packageRegistry.listByAuthUser':
           return {
             data: [
@@ -172,6 +187,7 @@ describe('package Backstage publishing routes', () => {
       }
     };
     lastActionArgs = undefined;
+    listProviderProductsViaApiImpl = async () => ({ products: [] });
     mutationImpl = async (ref: unknown) => {
       switch (ref) {
         case 'backstageRepos.issueRepoTokenForApi':
@@ -387,6 +403,186 @@ describe('package Backstage publishing routes', () => {
           supportsAutoDiscovery: true,
           updatedAt: 1_710_000_000_000,
           deleteBlockedReason: 'Product has package history.',
+        },
+      ],
+    });
+  });
+
+  it('syncs connected provider products into the Backstage picker before listing products', async () => {
+    let syncedCatalog = false;
+    const catalogUpserts: Array<Record<string, unknown>> = [];
+
+    queryImpl = async (ref: unknown) => {
+      switch (ref) {
+        case 'providerConnections.getConnectionStatus':
+          return {
+            gumroad: true,
+            jinxxy: true,
+            patreon: false,
+          };
+        case 'packageRegistry.listByAuthUser':
+          return {
+            data: syncedCatalog
+              ? [
+                  {
+                    _id: 'product_song_gumroad',
+                    aliases: [],
+                    productId: 'QAJc7ErxdAC815P5P8R89g==',
+                    provider: 'gumroad',
+                    providerProductRef: 'QAJc7ErxdAC815P5P8R89g==',
+                    displayName: 'Song Thing | Your Spotify® library within VRChat | VRCFury Ready',
+                    canonicalSlug: 'song-thing',
+                    status: 'active',
+                    supportsAutoDiscovery: true,
+                    updatedAt: 1_710_000_000_000,
+                    canArchive: true,
+                    canDelete: true,
+                    canRestore: false,
+                    backstagePackages: [],
+                  },
+                  {
+                    _id: 'product_song_jinxxy',
+                    aliases: [],
+                    productId: '3788600424102102387',
+                    provider: 'jinxxy',
+                    providerProductRef: '3788600424102102387',
+                    displayName: 'Song Thing | Your Spotify® library within VRChat | VRCFury Ready',
+                    canonicalSlug: 'song-thing',
+                    status: 'active',
+                    supportsAutoDiscovery: false,
+                    updatedAt: 1_710_000_000_001,
+                    canArchive: true,
+                    canDelete: true,
+                    canRestore: false,
+                    backstagePackages: [],
+                  },
+                ]
+              : [
+                  {
+                    _id: 'product_song_gumroad',
+                    aliases: [],
+                    productId: 'QAJc7ErxdAC815P5P8R89g==',
+                    provider: 'gumroad',
+                    providerProductRef: 'QAJc7ErxdAC815P5P8R89g==',
+                    displayName: 'Song Thing | Your Spotify® library within VRChat | VRCFury Ready',
+                    canonicalSlug: 'song-thing',
+                    status: 'active',
+                    supportsAutoDiscovery: true,
+                    updatedAt: 1_710_000_000_000,
+                    canArchive: true,
+                    canDelete: true,
+                    canRestore: false,
+                    backstagePackages: [],
+                  },
+                ],
+            hasMore: false,
+            nextCursor: null,
+          };
+        default:
+          return [];
+      }
+    };
+
+    listProviderProductsViaApiImpl = async (_config: unknown, request: unknown) => {
+      const provider = (request as { provider?: string }).provider;
+      if (provider === 'gumroad') {
+        return {
+          products: [
+            {
+              id: 'QAJc7ErxdAC815P5P8R89g==',
+              name: 'Song Thing | Your Spotify® library within VRChat | VRCFury Ready',
+              productUrl: 'https://yeusepe.gumroad.com/l/songthing',
+              thumbnailUrl: 'https://public-files.gumroad.com/song-thing.png',
+            },
+          ],
+        };
+      }
+      if (provider === 'jinxxy') {
+        return {
+          products: [
+            {
+              id: '3788600424102102387',
+              name: 'Song Thing | Your Spotify® library within VRChat | VRCFury Ready',
+            },
+          ],
+        };
+      }
+      return { products: [] };
+    };
+
+    mutationImpl = async (ref: unknown, args: unknown) => {
+      if (ref === 'role_rules.addCatalogProduct') {
+        catalogUpserts.push(args as Record<string, unknown>);
+        syncedCatalog = true;
+        return {
+          productId: (args as { productId: string }).productId,
+          catalogProductId:
+            (args as { provider: string }).provider === 'gumroad'
+              ? 'product_song_gumroad'
+              : 'product_song_jinxxy',
+        };
+      }
+      return null;
+    };
+
+    const response = await routes.listBackstageProducts(
+      new Request('https://api.test/api/packages/backstage/products', {
+        method: 'GET',
+        headers: {
+          authorization: 'Bearer oauth-token',
+        },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(catalogUpserts).toHaveLength(1);
+    expect(catalogUpserts).toEqual([
+      {
+        apiSecret: 'convex-secret',
+        authUserId: 'auth-user-1',
+        productId: '3788600424102102387',
+        providerProductRef: '3788600424102102387',
+        provider: 'jinxxy',
+        canonicalUrl: 'https://jinxxy.app/products/3788600424102102387',
+        supportsAutoDiscovery: false,
+        displayName: 'Song Thing | Your Spotify® library within VRChat | VRCFury Ready',
+      },
+    ]);
+    await expect(response.json()).resolves.toEqual({
+      products: [
+        {
+          aliases: [],
+          backstagePackages: [],
+          canArchive: true,
+          canDelete: true,
+          canRestore: false,
+          canonicalSlug: 'song-thing',
+          catalogProductId: 'product_song_gumroad',
+          displayName: 'Song Thing | Your Spotify® library within VRChat | VRCFury Ready',
+          thumbnailUrl: 'https://public-files.gumroad.com/song-thing.png',
+          productId: 'QAJc7ErxdAC815P5P8R89g==',
+          provider: 'gumroad',
+          providerProductRef: 'QAJc7ErxdAC815P5P8R89g==',
+          status: 'active',
+          supportsAutoDiscovery: true,
+          updatedAt: 1_710_000_000_000,
+        },
+        {
+          aliases: [],
+          backstagePackages: [],
+          canArchive: true,
+          canDelete: true,
+          canRestore: false,
+          canonicalSlug: 'song-thing',
+          catalogProductId: 'product_song_jinxxy',
+          displayName: 'Song Thing | Your Spotify® library within VRChat | VRCFury Ready',
+          thumbnailUrl: undefined,
+          productId: '3788600424102102387',
+          provider: 'jinxxy',
+          providerProductRef: '3788600424102102387',
+          status: 'active',
+          supportsAutoDiscovery: false,
+          updatedAt: 1_710_000_000_001,
         },
       ],
     });

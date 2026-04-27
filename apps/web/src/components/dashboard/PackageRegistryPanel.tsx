@@ -1357,12 +1357,9 @@ export function PackageRegistryPanel({
   const filteredArchivedPackages = archivedPackages.filter((pkg) =>
     normalizeComparableText(`${pkg.packageName ?? ''} ${pkg.packageId}`).includes(normalizedSearch)
   );
-  const unlinkedLanes = activeProductLanes.filter((lane) => lane.packageLinks.length === 0);
   const filteredProductLanes = activeProductLanes;
   const filteredLinkedLanes = filteredProductLanes.filter((lane) => lane.packageLinks.length > 0);
-  const filteredUnlinkedLanes = filteredProductLanes.filter(
-    (lane) => lane.packageLinks.length === 0
-  );
+  const filteredSetupLanes = filteredProductLanes.filter((lane) => lane.packageLinks.length === 0);
   const filteredArchivedProductLanes = archivedProductLanes.filter((lane) =>
     normalizeComparableText(
       `${lane.title} ${lane.providerLabels.join(' ')} ${lane.packageLinks
@@ -1484,7 +1481,7 @@ export function PackageRegistryPanel({
   return (
     <section className={className}>
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="max-w-[64ch] space-y-1.5">
             <p className="text-muted text-xs font-medium tracking-[0.14em] uppercase">
               Custom VPM repo
@@ -1493,11 +1490,15 @@ export function PackageRegistryPanel({
             <p className="pm-copy text-sm leading-6">{description}</p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <YucpButton yucp="secondary" pill onPress={() => openPublishSheet(null)}>
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            <Button
+              variant="outline"
+              className="pm-upload-button rounded-full px-4"
+              onPress={() => openPublishSheet(null)}
+            >
               <ArrowUpFromLine className="size-4" />
-              Upload update
-            </YucpButton>
+              Upload a package
+            </Button>
           </div>
         </div>
 
@@ -1527,7 +1528,7 @@ export function PackageRegistryPanel({
           </Card>
         ) : (
           <div className="flex flex-col gap-4">
-            <Card className="pm-card rounded-2xl shadow-none">
+            <Card className="pm-card pm-primary-panel rounded-2xl shadow-none">
               <Card.Header className="flex flex-col gap-3 p-4 pb-2">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -1569,7 +1570,7 @@ export function PackageRegistryPanel({
                     ))}
                     {filteredLinkedLanes.length === 0 ? (
                       <p className="pm-muted-panel pm-subtle-copy rounded-2xl p-4 text-sm">
-                        Nothing is ready yet. Open More tools to set up the first product.
+                        Nothing is ready yet. Use Upload a package to add the first product.
                       </p>
                     ) : null}
                   </div>
@@ -1577,99 +1578,101 @@ export function PackageRegistryPanel({
               </Card.Content>
             </Card>
 
+            {filteredSetupLanes.length > 0 ? (
+              <Card className="pm-card rounded-2xl shadow-none">
+                <Card.Header className="flex flex-col gap-3 p-4 pb-2">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <StreamlineShippingBoxIcon className="size-6" />
+                      <p className="text-foreground text-lg font-semibold">Set up a new product</p>
+                    </div>
+                    <p className="pm-copy max-w-[52ch] text-sm leading-6">
+                      Pick a product that has never had an install ID, then upload its first
+                      package.
+                    </p>
+                  </div>
+                </Card.Header>
+                <Card.Content className="space-y-3 p-4 pt-0">
+                  {filteredSetupLanes.map((lane) => (
+                    <ProductLaneCard
+                      key={lane.laneKey}
+                      lane={lane}
+                      isRestoring={false}
+                      onOpenDetails={openProductDetails}
+                      onPublish={openPublishSheet}
+                      onRestore={() => {}}
+                    />
+                  ))}
+                </Card.Content>
+              </Card>
+            ) : null}
+
+            <div className="pm-management-details rounded-2xl p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <p className="text-foreground text-sm font-semibold">Add this repo in VCC</p>
+                  <p className="pm-subtle-copy text-sm">
+                    Send this to yourself or a tester when the repo needs to be added in VCC.
+                  </p>
+                  {repoAccessQuery.data?.creatorRepoRef ? (
+                    <p className="pm-subtle-copy break-all font-mono text-xs">
+                      {repoAccessQuery.data.creatorName ??
+                        repoAccessQuery.data.repositoryName ??
+                        'Backstage repo'}
+                      {' · '}
+                      {repoAccessQuery.data.creatorRepoRef}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2 md:justify-end">
+                  {repoAccessQuery.data?.addRepoUrl ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onPress={() => {
+                        window.location.href = repoAccessQuery.data?.addRepoUrl ?? '';
+                      }}
+                    >
+                      <ExternalLink className="size-4" />
+                      Open in VCC
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onPress={() =>
+                      repoAccessQuery.data?.addRepoUrl
+                        ? handleCopyValue(repoAccessQuery.data.addRepoUrl, 'VCC link copied')
+                        : Promise.resolve(false)
+                    }
+                  >
+                    <Copy className="size-4" />
+                    Copy VCC link
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onPress={() =>
+                      repoAccessQuery.data?.repositoryUrl
+                        ? handleCopyValue(repoAccessQuery.data.repositoryUrl, 'Repo URL copied')
+                        : Promise.resolve(false)
+                    }
+                  >
+                    <Copy className="size-4" />
+                    Copy repo URL
+                  </Button>
+                </div>
+              </div>
+            </div>
+
             <details className="pm-management-details rounded-2xl p-4">
               <summary className="text-foreground flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium">
                 <span>More tools</span>
               </summary>
               <div className="mt-4 space-y-4">
                 <p className="pm-subtle-copy max-w-[58ch] text-sm leading-6">
-                  Open this only when you need setup, repo install links, or install ID cleanup.
+                  Open this only when you need install ID cleanup or hidden links.
                 </p>
-
-                {unlinkedLanes.length > 0 ? (
-                  <section className="pm-tool-section space-y-3">
-                    <div className="space-y-1">
-                      <p className="text-foreground text-sm font-semibold">Set up a new product</p>
-                      <p className="pm-subtle-copy text-sm">
-                        Use this only when a product has never had an install ID before.
-                      </p>
-                    </div>
-                    <div className="space-y-3">
-                      {filteredUnlinkedLanes.length > 0 ? (
-                        filteredUnlinkedLanes.map((lane) => (
-                          <ProductLaneCard
-                            key={lane.laneKey}
-                            lane={lane}
-                            isRestoring={false}
-                            onOpenDetails={openProductDetails}
-                            onPublish={openPublishSheet}
-                            onRestore={() => {}}
-                          />
-                        ))
-                      ) : (
-                        <p className="pm-subtle-copy text-sm">
-                          No products still need first-time setup.
-                        </p>
-                      )}
-                    </div>
-                  </section>
-                ) : null}
-
-                <section className="pm-tool-section space-y-3">
-                  <div className="space-y-1">
-                    <p className="text-foreground text-sm font-semibold">Add this repo in VCC</p>
-                    <p className="pm-subtle-copy text-sm">
-                      Send this to yourself or a tester when the repo needs to be added in VCC.
-                    </p>
-                    {repoAccessQuery.data?.creatorRepoRef ? (
-                      <p className="pm-subtle-copy break-all font-mono text-xs">
-                        {repoAccessQuery.data.creatorName ??
-                          repoAccessQuery.data.repositoryName ??
-                          'Backstage repo'}
-                        {' · '}
-                        {repoAccessQuery.data.creatorRepoRef}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {repoAccessQuery.data?.addRepoUrl ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onPress={() => {
-                          window.location.href = repoAccessQuery.data?.addRepoUrl ?? '';
-                        }}
-                      >
-                        <ExternalLink className="size-4" />
-                        Open in VCC
-                      </Button>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onPress={() =>
-                        repoAccessQuery.data?.addRepoUrl
-                          ? handleCopyValue(repoAccessQuery.data.addRepoUrl, 'VCC link copied')
-                          : Promise.resolve(false)
-                      }
-                    >
-                      <Copy className="size-4" />
-                      Copy VCC link
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onPress={() =>
-                        repoAccessQuery.data?.repositoryUrl
-                          ? handleCopyValue(repoAccessQuery.data.repositoryUrl, 'Repo URL copied')
-                          : Promise.resolve(false)
-                      }
-                    >
-                      <Copy className="size-4" />
-                      Copy repo URL
-                    </Button>
-                  </div>
-                </section>
 
                 <section className="pm-tool-section space-y-4">
                   <div className="space-y-1">
@@ -1862,16 +1865,18 @@ export function PackageRegistryPanel({
               <Sheet.Handle />
               <Sheet.CloseTrigger />
               <Sheet.Header className="pm-sheet-header">
-                <Sheet.Heading>Upload an update</Sheet.Heading>
+                <Sheet.Heading>Upload a package</Sheet.Heading>
                 <p className="pm-copy text-sm leading-6">
-                  Pick the product, add the file, and publish.
+                  Pick the product, add the file, and publish it.
                 </p>
               </Sheet.Header>
               <Sheet.Body className="space-y-5">
                 <div className="pm-sheet-section space-y-4 rounded-[20px] p-4">
                   <div className="space-y-1">
                     <p className="text-foreground text-sm font-semibold">Product</p>
-                    <p className="pm-subtle-copy text-sm">Choose what this update belongs to.</p>
+                    <p className="pm-subtle-copy text-sm">
+                      Choose what this file belongs to. If it is new here, this upload adds it.
+                    </p>
                   </div>
                   <Select
                     aria-label="Product"
@@ -1894,6 +1899,10 @@ export function PackageRegistryPanel({
                                 {lane.products.length} storefront
                                 {lane.products.length === 1 ? '' : 's'} ·{' '}
                                 {lane.providerLabels.join(', ')}
+                                {' · '}
+                                {lane.packageLinks.length > 0
+                                  ? 'Ready for updates'
+                                  : 'Needs first upload'}
                               </span>
                             </div>
                             <ListBox.ItemIndicator />
@@ -2198,7 +2207,7 @@ export function PackageRegistryPanel({
                   onPress={() => publishMutation.mutate(publishDraft)}
                 >
                   <ArrowUpFromLine className="size-4" />
-                  Upload update
+                  Upload package
                 </YucpButton>
               </Sheet.Footer>
             </Sheet.Dialog>
