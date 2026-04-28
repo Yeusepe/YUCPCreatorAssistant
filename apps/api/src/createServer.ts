@@ -20,6 +20,7 @@ import type { Auth } from './auth';
 import { validateCouplingServiceBaseUrl } from './lib/couplingRuntimeConfig';
 import { applyResponseSecurityHeaders } from './lib/httpSecurity';
 import { createLegacyFrontendMovedResponse, isLegacyFrontendAsset } from './lib/legacyFrontend';
+import { buildYucpKeysResponse } from './lib/yucpKeys';
 import {
   createAccountSecurityRoutes,
   createBackstageRepoRoutes,
@@ -208,6 +209,10 @@ export async function createServer(config: TestServerConfig): Promise<TestServer
     if (pathname === '/tokens.css') {
       const file = Bun.file(`${import.meta.dir}/../public/tokens.css`);
       return new Response(file, { headers: { 'Content-Type': 'text/css; charset=utf-8' } });
+    }
+
+    if (pathname === '/v1/keys' && request.method === 'GET') {
+      return buildYucpKeysResponse();
     }
 
     if (

@@ -25,6 +25,7 @@ import {
   withApiRequestSpan,
 } from './lib/observability';
 import { detectTunnelUrl } from './lib/tunnel';
+import { buildYucpKeysResponse } from './lib/yucpKeys';
 import {
   createAccountSecurityRoutes,
   createBackstageRepoRoutes,
@@ -479,6 +480,10 @@ async function routeRequest(request: Request): Promise<Response> {
     return new Response(file, {
       headers: { 'Content-Type': 'text/css; charset=utf-8' },
     });
+  }
+
+  if (pathname === '/v1/keys' && request.method === 'GET') {
+    return buildYucpKeysResponse();
   }
 
   // Handle /Icons/ even with path prefix (e.g. /api/Icons/ when API has base path)
