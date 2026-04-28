@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
-  shouldResolveLinkedEntitlementRequirements,
   type HostedVerificationIntentRecord,
+  shouldResolveLinkedEntitlementRequirements,
 } from './hostedIntents';
 
 function createIntent(
@@ -9,20 +9,13 @@ function createIntent(
 ): HostedVerificationIntentRecord {
   return {
     _id: 'intent_1' as never,
-    _creationTime: Date.now(),
     authUserId: 'buyer-auth-user',
-    subjectId: undefined,
     packageId: 'pkg_1',
     packageName: 'Package',
-    machineFingerprint: 'machine',
-    codeChallenge: 'challenge',
     returnUrl: 'http://localhost:3000/access/catalog_1',
     requirements,
     status: 'pending',
-    idempotencyKey: undefined,
     verifiedMethodKey: undefined,
-    verificationGrantJti: undefined,
-    verificationGrantExpiresAt: undefined,
     errorCode: undefined,
     errorMessage: undefined,
     expiresAt: Date.now() + 60_000,

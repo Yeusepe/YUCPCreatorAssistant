@@ -15,7 +15,6 @@ import { requestUserBackstageRepoAccess } from '@/lib/backstageAccess';
 import {
   getProviderIconPath,
   listUserAccounts,
-  listUserProviders,
   startUserVerify,
   type UserAccountConnection,
   type UserProvider,
@@ -23,7 +22,6 @@ import {
 } from '@/lib/dashboard';
 import { getSafeInternalRedirectTarget } from '@/lib/safeRedirects';
 import {
-  areVerifyPurchaseConnectionQueriesSettled,
   getPurchaseIntentLoadErrorState,
   getVisiblePurchaseVerificationError,
   shouldAutoCheckExistingEntitlement,
@@ -631,10 +629,7 @@ function VerifyPurchasePage() {
     queryKey: ['vp-intent', intentId],
     queryFn: () => getUserVerificationIntent(intentId),
     enabled: intentId.length > 0,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      return data?.status === 'pending' ? 3000 : false;
-    },
+    refetchInterval: false,
   });
 
   const intent = intentQuery.data;
@@ -643,17 +638,9 @@ function VerifyPurchasePage() {
     [intent]
   );
 
-  const providersQuery = useQuery({
-    queryKey: ['vp-providers'],
-    queryFn: listUserProviders,
-    enabled: intent != null,
-    staleTime: 60_000,
-    placeholderData: (previousData) => previousData,
-  });
-
   const accountsQuery = useQuery({
     queryKey: ['vp-accounts'],
-    queryFn: listUserAccounts,
+    queryFn: () => listUserAccounts({ refresh: Boolean(justConnectedProvider) }),
     enabled: intent != null,
     staleTime: 30_000,
     placeholderData: (previousData) => previousData,
@@ -718,11 +705,6 @@ function VerifyPurchasePage() {
     staleTime: 60_000,
   });
 
-  const providersByKey = useMemo(
-    () => new Map((providersQuery.data ?? []).map((p) => [p.id, p])),
-    [providersQuery.data]
-  );
-
   const accountsByProvider = useMemo(() => {
     const m = new Map<string, UserAccountConnection[]>();
     for (const acc of accountsQuery.data ?? []) {
@@ -733,16 +715,7 @@ function VerifyPurchasePage() {
     return m;
   }, [accountsQuery.data]);
 
-  const connectionQueriesSettled = areVerifyPurchaseConnectionQueriesSettled({
-    accounts: {
-      data: accountsQuery.data,
-      isError: accountsQuery.isError,
-    },
-    providers: {
-      data: providersQuery.data,
-      isError: providersQuery.isError,
-    },
-  });
+  const connectionQueriesSettled = accountsQuery.data !== undefined || accountsQuery.isError;
 
   const hasEntitlementMethod =
     intent?.requirements.some((r) => r.kind === 'existing_entitlement') ?? false;
@@ -1064,7 +1037,7 @@ function VerifyPurchasePage() {
                       intentId={intentId}
                       requirement={req}
                       linkedAccounts={accountsByProvider.get(req.providerKey) ?? []}
-                      provider={providersByKey.get(req.providerKey) ?? null}
+                      provider={null}
                       verifiedMethodKey={verifiedMethodKey}
                       onSuccess={invalidateIntent}
                     />
@@ -1075,7 +1048,7 @@ function VerifyPurchasePage() {
                       intentId={intentId}
                       requirement={req}
                       linkedAccounts={accountsByProvider.get(req.providerKey) ?? []}
-                      provider={providersByKey.get(req.providerKey) ?? null}
+                      provider={null}
                       verifiedMethodKey={verifiedMethodKey}
                       onSuccess={invalidateIntent}
                     />
@@ -1101,7 +1074,7 @@ function VerifyPurchasePage() {
                   key={req.methodKey}
                   intentId={intentId}
                   requirement={req}
-                  provider={providersByKey.get(req.providerKey) ?? null}
+                  provider={null}
                   verifiedMethodKey={verifiedMethodKey}
                   onSuccess={invalidateIntent}
                 />
@@ -1117,7 +1090,7 @@ function VerifyPurchasePage() {
                   key={req.methodKey}
                   intentId={intentId}
                   requirement={req}
-                  provider={providersByKey.get(req.providerKey) ?? null}
+                  provider={null}
                   verifiedMethodKey={verifiedMethodKey}
                   isAutoChecking={isAutoChecking}
                   onSuccess={invalidateIntent}

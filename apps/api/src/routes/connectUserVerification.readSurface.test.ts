@@ -354,7 +354,7 @@ describe('GET /api/connect/user/accounts', () => {
   it('reconciles buyer provider links only when refresh=1 is requested', async () => {
     const store = createBuyerProviderLinkStore([
       createBuyerProviderLinkRecord({
-        authUserId: 'buyer_auth_user_B',
+        ownerAuthUserId: 'buyer_auth_user_B',
       }),
     ]);
     convexQueryMock.mockImplementation(async (reference: unknown, args: unknown) => {
