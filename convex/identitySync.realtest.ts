@@ -437,4 +437,59 @@ describe('external account', () => {
     expect(links[0]?.provider).toBe('discord');
     expect(links[0]?.providerUserId).toBe('discord-provider-accounts-1');
   });
+
+  it('given an existing provider-owned buyer subject, when a different auth user syncs the same provider account, then ownership is not rebound', async () => {
+    const t = makeTestConvex();
+
+    const ownerSync = await t.mutation(api.identitySync.syncUserFromProvider, {
+      apiSecret: 'test-secret',
+      authUserId: 'buyer-auth-owner',
+      provider: 'itchio',
+      providerUserId: 'itch-buyer-42',
+      username: 'itch-owner',
+    });
+
+    await t.mutation(api.subjects.upsertBuyerProviderLink, {
+      apiSecret: 'test-secret',
+      subjectId: ownerSync.subjectId,
+      provider: 'itchio',
+      externalAccountId: ownerSync.externalAccountId,
+      verificationMethod: 'account_link',
+    });
+
+    await expect(
+      t.mutation(api.identitySync.syncUserFromProvider, {
+        apiSecret: 'test-secret',
+        authUserId: 'buyer-auth-intruder',
+        provider: 'itchio',
+        providerUserId: 'itch-buyer-42',
+        username: 'itch-intruder',
+      })
+    ).rejects.toThrow('already linked to a different YUCP account');
+
+    const ownerLinks = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: 'test-secret',
+      authUserId: 'buyer-auth-owner',
+    });
+    const intruderLinks = await t.query(api.subjects.listBuyerProviderLinksForAuthUser, {
+      apiSecret: 'test-secret',
+      authUserId: 'buyer-auth-intruder',
+    });
+
+    expect(ownerLinks).toHaveLength(1);
+    expect(ownerLinks[0]).toMatchObject({
+      provider: 'itchio',
+      providerUserId: 'itch-buyer-42',
+      providerUsername: 'itch-owner',
+    });
+    expect(intruderLinks).toHaveLength(0);
+
+    const subject = await t.run(async (ctx) =>
+      ctx.db
+        .query('subjects')
+        .withIndex('by_discord_user', (q) => q.eq('primaryDiscordUserId', 'itchio:itch-buyer-42'))
+        .first()
+    );
+    expect(subject?.authUserId).toBe('buyer-auth-owner');
+  });
 });

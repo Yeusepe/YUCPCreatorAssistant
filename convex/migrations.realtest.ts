@@ -988,4 +988,96 @@ describe('subject ownership remediation', () => {
     });
     expect(newOwnerLinks).toHaveLength(1);
   });
+
+  it('marks provider-scoped subjects with conflicting active auth bindings as ambiguous instead of auto-repairing them', async () => {
+    const t = makeTestConvex() as ComponentAwareTestConvex;
+    t.registerComponent('betterAuth', betterAuthSchema, import.meta.glob('./betterAuth/**/*.ts'));
+    const now = Date.now();
+
+    const subjectId = await t.run(async (ctx) => {
+      return await ctx.db.insert('subjects', {
+        primaryDiscordUserId: 'itchio:itch-buyer-42',
+        authUserId: 'buyer-auth-intruder',
+        displayName: 'Provider Scoped Buyer',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await t.run(async (ctx) => {
+      const externalAccountId = await ctx.db.insert('external_accounts', {
+        provider: 'itchio',
+        providerUserId: 'itch-buyer-42',
+        providerUsername: 'itch-owner',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await ctx.db.insert('buyer_provider_links', {
+        subjectId,
+        provider: 'itchio',
+        externalAccountId,
+        verificationMethod: 'account_link',
+        status: 'active',
+        linkedAt: now,
+        lastValidatedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await ctx.db.insert('bindings', {
+        authUserId: 'buyer-auth-owner',
+        subjectId,
+        externalAccountId,
+        bindingType: 'verification',
+        status: 'active',
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await ctx.db.insert('bindings', {
+        authUserId: 'buyer-auth-intruder',
+        subjectId,
+        externalAccountId,
+        bindingType: 'verification',
+        status: 'active',
+        version: 1,
+        createdAt: now + 1,
+        updatedAt: now + 1,
+      });
+    });
+
+    const report = await t.query(internal.migrations.listSubjectOwnershipRemediationCandidates, {
+      limit: 10,
+    });
+
+    expect(report.candidates).toEqual([
+      expect.objectContaining({
+        subjectId,
+        currentAuthUserId: 'buyer-auth-intruder',
+        discordUserId: 'itchio:itch-buyer-42',
+        ambiguousAuthUserIds: ['buyer-auth-intruder', 'buyer-auth-owner'],
+        resolution: 'ambiguous',
+        repairable: false,
+      }),
+    ]);
+
+    const result = await t.mutation(internal.migrations.repairSubjectOwnershipCandidates, {
+      subjectIds: [subjectId],
+    });
+
+    expect(result).toMatchObject({
+      repairedSubjects: 0,
+      createdLightAuthUsers: 0,
+      skippedSubjects: [
+        {
+          subjectId,
+          reason: 'Subject ownership is ambiguous and requires manual review',
+        },
+      ],
+    });
+  });
 });

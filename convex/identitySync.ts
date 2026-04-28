@@ -86,6 +86,19 @@ export function buildDiscordProfileUrl(discordUserId: string): string {
   return `https://discord.com/users/${discordUserId}`;
 }
 
+function assertProviderSubjectOwnership(
+  existingAuthUserId: string | undefined,
+  requestedAuthUserId: string | undefined
+) {
+  if (
+    existingAuthUserId &&
+    requestedAuthUserId &&
+    existingAuthUserId !== requestedAuthUserId
+  ) {
+    throw new Error('This provider account is already linked to a different YUCP account.');
+  }
+}
+
 async function migrateBuyerScopedRecords(
   ctx: Pick<MutationCtx, 'db'>,
   {
@@ -625,6 +638,7 @@ export const syncUserFromProvider = mutation({
         .withIndex('by_discord_user', (q) => q.eq('primaryDiscordUserId', providerFallbackId))
         .first();
       if (existingSubject) {
+        assertProviderSubjectOwnership(existingSubject.authUserId, args.authUserId);
         await ctx.db.patch(existingSubject._id, {
           primaryDiscordUserId: args.discordUserId,
           displayName: username ?? existingSubject.displayName,
@@ -635,6 +649,7 @@ export const syncUserFromProvider = mutation({
     }
 
     if (existingSubject) {
+      assertProviderSubjectOwnership(existingSubject.authUserId, args.authUserId);
       subjectId = existingSubject._id;
       await ctx.db.patch(subjectId, {
         ...(args.authUserId ? { authUserId: args.authUserId } : {}),

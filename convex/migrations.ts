@@ -127,6 +127,10 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
   return Array.from(new Map(items.map((item) => [item.id, item])).values());
 }
 
+function isProviderScopedSubjectIdentity(primaryDiscordUserId: string): boolean {
+  return primaryDiscordUserId.includes(':');
+}
+
 async function listRelatedBuyerProviderLinks(
   ctx: Pick<QueryCtx, 'db'>,
   subjectId: Id<'subjects'>,
@@ -168,6 +172,39 @@ async function listRelatedVerificationBindings(
   const relatedBindings: SubjectOwnershipRelatedBinding[] = [];
   for (const binding of bindings) {
     if (binding.bindingType !== 'verification' || !REPORTABLE_BINDING_STATUSES.has(binding.status)) {
+      continue;
+    }
+
+    const externalAccount = await ctx.db.get(binding.externalAccountId);
+    relatedBindings.push({
+      id: binding._id,
+      authUserId: binding.authUserId,
+      status: binding.status,
+      createdAt: binding.createdAt,
+      updatedAt: binding.updatedAt,
+      externalAccountId: binding.externalAccountId,
+      provider: externalAccount?.provider,
+      providerUserId: externalAccount?.providerUserId,
+      providerUsername: externalAccount?.providerUsername,
+    });
+  }
+
+  return relatedBindings;
+}
+
+async function listAllRelatedVerificationBindings(
+  ctx: Pick<QueryCtx, 'db'>,
+  subjectId: Id<'subjects'>
+): Promise<SubjectOwnershipRelatedBinding[]> {
+  const bindings = (await ctx.db.query('bindings').collect()) as Doc<'bindings'>[];
+
+  const relatedBindings: SubjectOwnershipRelatedBinding[] = [];
+  for (const binding of bindings) {
+    if (
+      binding.subjectId !== subjectId ||
+      binding.bindingType !== 'verification' ||
+      !REPORTABLE_BINDING_STATUSES.has(binding.status)
+    ) {
       continue;
     }
 
@@ -389,6 +426,35 @@ async function buildSubjectOwnershipCandidate(
     return null;
   }
 
+  const relatedBuyerProviderLinks = await listRelatedBuyerProviderLinks(ctx, subject._id);
+  const relatedVerificationBindings = await listAllRelatedVerificationBindings(ctx, subject._id);
+
+  if (isProviderScopedSubjectIdentity(subject.primaryDiscordUserId)) {
+    const conflictingAuthUserIds = Array.from(
+      new Set(
+        relatedVerificationBindings
+          .map((binding) => binding.authUserId)
+          .filter((authUserId) => authUserId !== subject.authUserId)
+      )
+    );
+
+    if (conflictingAuthUserIds.length === 0) {
+      return null;
+    }
+
+    return {
+      subjectId: subject._id,
+      currentAuthUserId: subject.authUserId,
+      discordUserId: subject.primaryDiscordUserId,
+      subjectDisplayName: subject.displayName,
+      ambiguousAuthUserIds: [subject.authUserId, ...conflictingAuthUserIds].sort(),
+      resolution: 'ambiguous',
+      relatedBuyerProviderLinks,
+      relatedVerificationBindings,
+      repairable: false,
+    };
+  }
+
   const resolution = await detectCanonicalAuthResolutionForSubject(ctx, subject);
   if (resolution.kind === 'resolved' && resolution.authUserId === subject.authUserId) {
     return null;
@@ -411,8 +477,8 @@ async function buildSubjectOwnershipCandidate(
         : resolution.kind === 'materialize_light'
           ? 'new_light'
           : 'ambiguous',
-    relatedBuyerProviderLinks: await listRelatedBuyerProviderLinks(ctx, subject._id),
-    relatedVerificationBindings: await listRelatedVerificationBindings(ctx, subject._id, subject.authUserId),
+    relatedBuyerProviderLinks,
+    relatedVerificationBindings,
     repairable: resolution.kind !== 'ambiguous',
   };
 }
