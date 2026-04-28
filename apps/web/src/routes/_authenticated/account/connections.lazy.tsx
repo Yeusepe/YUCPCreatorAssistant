@@ -23,6 +23,7 @@ import { useToast } from '@/components/ui/Toast';
 import { YucpButton } from '@/components/ui/YucpButton';
 import {
   disconnectUserAccount,
+  getUserAccountsQueryKey,
   listUserAccounts,
   listUserProviders,
   startUserVerify,
@@ -273,7 +274,7 @@ function AccountConnections() {
   });
 
   const accountsQuery = useQuery({
-    queryKey: ['user-accounts'],
+    queryKey: getUserAccountsQueryKey(),
     queryFn: listUserAccounts,
   });
 

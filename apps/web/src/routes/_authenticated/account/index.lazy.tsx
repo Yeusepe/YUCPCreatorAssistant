@@ -13,7 +13,7 @@ import { useAccountShell } from '@/hooks/useAccountShell';
 import { listUserLicenses, listUserOAuthGrants } from '@/lib/account';
 import { authClient } from '@/lib/auth-client';
 import { listCreatorCertificates } from '@/lib/certificates';
-import { listUserAccounts } from '@/lib/dashboard';
+import { getUserAccountsQueryKey, listUserAccounts } from '@/lib/dashboard';
 import { api } from '../../../../../../convex/_generated/api';
 
 function AccountProfilePending() {
@@ -41,7 +41,7 @@ function AccountProfile() {
     staleTime: 60_000,
   });
   const accountsQuery = useQuery({
-    queryKey: ['user-accounts'],
+    queryKey: getUserAccountsQueryKey(),
     queryFn: listUserAccounts,
   });
   const licensesQuery = useQuery({

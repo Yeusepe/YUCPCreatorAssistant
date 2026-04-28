@@ -599,9 +599,7 @@ describe('dashboard packages route', () => {
     await waitFor(() =>
       expect(screen.getByText(/Install ID:\s*pkg\.creator\.bundle/i)).toBeInTheDocument()
     );
-    expect(
-      screen.getByText(/Add the YUCP access page link to your store page/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Share your YUCP access page link/i)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /copy store-page link/i }).length).toBeGreaterThan(
       0
     );

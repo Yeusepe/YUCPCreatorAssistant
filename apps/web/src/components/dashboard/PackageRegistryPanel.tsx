@@ -1739,11 +1739,11 @@ export function PackageRegistryPanel({
               </Card.Header>
               <Card.Content className="space-y-4 p-4 pt-0">
                 <div className="pm-inline-note rounded-[18px] p-3">
-                  <p className="text-foreground text-sm font-semibold">How customers should join</p>
+                  <p className="text-foreground text-sm font-semibold">Customer setup steps</p>
                   <p className="pm-subtle-copy mt-1 text-sm leading-6">
-                    Add the YUCP access page link to your store page, download instructions, or
-                    post-purchase CTA. Buyers should start there, sign in, verify their purchase,
-                    and then click Add to VCC.
+                    Share your YUCP access page link in the store page, download notes, or
+                    post-purchase message. Then tell buyers to sign in, verify their purchase, and
+                    click Add to VCC.
                   </p>
                 </div>
                 {activeProductLanes.length === 0 && archivedProductLanes.length === 0 ? (
