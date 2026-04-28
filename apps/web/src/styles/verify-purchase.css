@@ -54,6 +54,10 @@
   opacity: 1;
 }
 
+.vp-main--buyer-access {
+  max-width: 720px;
+}
+
 /* === Card === */
 
 .vp-card {

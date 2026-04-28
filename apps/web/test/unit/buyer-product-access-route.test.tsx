@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockUseParams = vi.fn();
 const mockUseSearch = vi.fn();
+const mockUseLoaderData = vi.fn();
 
 type MockLinkProps = ComponentPropsWithoutRef<'a'> & {
   children?: ReactNode;
@@ -20,6 +21,7 @@ vi.mock('@tanstack/react-router', () => ({
     options,
     useParams: () => mockUseParams(),
     useSearch: () => mockUseSearch(),
+    useLoaderData: () => mockUseLoaderData(),
   }),
   createLazyFileRoute: () => (options: unknown) => ({ options }),
 }));
@@ -77,12 +79,16 @@ vi.mock('@/lib/packages', () => ({
 
 vi.mock('@/lib/productAccess', () => ({
   createBuyerProductAccessVerificationIntent: vi.fn(),
-  getBuyerProductAccess: vi.fn(),
 }));
 
 import * as packagesApi from '@/lib/packages';
 import * as productAccessApi from '@/lib/productAccess';
+import { fetchBuyerProductAccess } from '@/lib/server/productAccess';
 import { Route as BuyerProductAccessRoute } from '../../src/routes/access.$catalogProductId';
+
+vi.mock('@/lib/server/productAccess', () => ({
+  fetchBuyerProductAccess: vi.fn(),
+}));
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -99,10 +105,40 @@ function createWrapper() {
 }
 
 describe('buyer product access route', () => {
+  const buyerAccessResponse = {
+    product: {
+      catalogProductId: 'catalog_123',
+      displayName: 'Avatar Bundle',
+      canonicalSlug: 'avatar-bundle',
+      thumbnailUrl: null,
+      provider: 'gumroad',
+      providerLabel: 'Gumroad',
+      storefrontUrl: 'https://store.test/product',
+      accessPagePath: '/access/catalog_123',
+      packagePreview: [
+        {
+          packageId: 'com.yucp.avatar.bundle',
+          packageName: null,
+          displayName: 'Avatar Bundle',
+          defaultChannel: null,
+          latestPublishedVersion: '1.2.0',
+          latestPublishedAt: null,
+          repositoryVisibility: 'hidden' as const,
+        },
+      ],
+    },
+    accessState: {
+      hasActiveEntitlement: false,
+      requiresVerification: true,
+      hasPublishedPackages: true,
+    },
+  };
+
   beforeEach(() => {
     vi.resetAllMocks();
     mockUseParams.mockReturnValue({ catalogProductId: 'catalog_123' });
     mockUseSearch.mockReturnValue({});
+    mockUseLoaderData.mockReturnValue(buyerAccessResponse);
     mockAuthState.isAuthenticated = true;
     mockAuthState.isPending = false;
   });
@@ -112,34 +148,6 @@ describe('buyer product access route', () => {
   });
 
   it('shows purchase verification as the primary buyer action before access is unlocked', async () => {
-    vi.mocked(productAccessApi.getBuyerProductAccess).mockResolvedValue({
-      product: {
-        catalogProductId: 'catalog_123',
-        displayName: 'Avatar Bundle',
-        canonicalSlug: 'avatar-bundle',
-        thumbnailUrl: null,
-        provider: 'gumroad',
-        providerLabel: 'Gumroad',
-        storefrontUrl: 'https://store.test/product',
-        accessPagePath: '/access/catalog_123',
-        packagePreview: [
-          {
-            packageId: 'com.yucp.avatar.bundle',
-            packageName: null,
-            displayName: 'Avatar Bundle',
-            defaultChannel: null,
-            latestPublishedVersion: '1.2.0',
-            latestPublishedAt: null,
-            repositoryVisibility: 'hidden',
-          },
-        ],
-      },
-      accessState: {
-        hasActiveEntitlement: false,
-        requiresVerification: true,
-        hasPublishedPackages: true,
-      },
-    });
     vi.mocked(productAccessApi.createBuyerProductAccessVerificationIntent).mockResolvedValue({
       verificationUrl: 'http://localhost:3000/verify/purchase?intent=intent_123',
     });
@@ -173,34 +181,6 @@ describe('buyer product access route', () => {
 
   it('asks the buyer to sign in before starting verification when the route is opened anonymously', async () => {
     mockAuthState.isAuthenticated = false;
-    vi.mocked(productAccessApi.getBuyerProductAccess).mockResolvedValue({
-      product: {
-        catalogProductId: 'catalog_123',
-        displayName: 'Avatar Bundle',
-        canonicalSlug: 'avatar-bundle',
-        thumbnailUrl: null,
-        provider: 'gumroad',
-        providerLabel: 'Gumroad',
-        storefrontUrl: 'https://store.test/product',
-        accessPagePath: '/access/catalog_123',
-        packagePreview: [
-          {
-            packageId: 'com.yucp.avatar.bundle',
-            packageName: null,
-            displayName: 'Avatar Bundle',
-            defaultChannel: null,
-            latestPublishedVersion: '1.2.0',
-            latestPublishedAt: null,
-            repositoryVisibility: 'hidden',
-          },
-        ],
-      },
-      accessState: {
-        hasActiveEntitlement: false,
-        requiresVerification: true,
-        hasPublishedPackages: true,
-      },
-    });
 
     const Component = BuyerProductAccessRoute.options.component;
     if (!Component) {
@@ -217,28 +197,8 @@ describe('buyer product access route', () => {
   });
 
   it('prioritizes Add to VCC and keeps manual repo details hidden until expanded', async () => {
-    vi.mocked(productAccessApi.getBuyerProductAccess).mockResolvedValue({
-      product: {
-        catalogProductId: 'catalog_123',
-        displayName: 'Avatar Bundle',
-        canonicalSlug: 'avatar-bundle',
-        thumbnailUrl: null,
-        provider: 'gumroad',
-        providerLabel: 'Gumroad',
-        storefrontUrl: 'https://store.test/product',
-        accessPagePath: '/access/catalog_123',
-        packagePreview: [
-          {
-            packageId: 'com.yucp.avatar.bundle',
-            packageName: null,
-            displayName: 'Avatar Bundle',
-            defaultChannel: null,
-            latestPublishedVersion: '1.2.0',
-            latestPublishedAt: null,
-            repositoryVisibility: 'hidden',
-          },
-        ],
-      },
+    mockUseLoaderData.mockReturnValue({
+      ...buyerAccessResponse,
       accessState: {
         hasActiveEntitlement: true,
         requiresVerification: false,
@@ -264,7 +224,7 @@ describe('buyer product access route', () => {
     render(<Component />, { wrapper: createWrapper() });
 
     expect(await screen.findByRole('button', { name: 'Add to VCC' })).toBeInTheDocument();
-    expect(await screen.findByText('Owned product context')).toBeInTheDocument();
+    expect(await screen.findByText('Need the repo URL instead?')).toBeInTheDocument();
     expect(screen.queryByText('https://repo.test/private.json')).not.toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole('button', { name: /show manual setup/i }));
@@ -279,5 +239,25 @@ describe('buyer product access route', () => {
       )
     );
     expect(toastSuccessMock).toHaveBeenCalledWith('Repo URL copied');
+  });
+
+  it('loads buyer access through the route loader before render', async () => {
+    const loader = BuyerProductAccessRoute.options.loader;
+    if (!loader) {
+      throw new Error('Buyer product access route loader is not defined');
+    }
+
+    vi.mocked(fetchBuyerProductAccess).mockResolvedValue(buyerAccessResponse);
+
+    const result = await loader({
+      params: { catalogProductId: 'catalog_123' },
+    } as never);
+
+    expect(fetchBuyerProductAccess).toHaveBeenCalledWith({
+      data: {
+        catalogProductId: 'catalog_123',
+      },
+    });
+    expect(result).toEqual(buyerAccessResponse);
   });
 });

@@ -1,16 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronUp, ExternalLink, Package, ShieldCheck, Store } from 'lucide-react';
+import type { PropsWithChildren } from 'react';
 import { useEffect, useState } from 'react';
 import { CloudBackground } from '@/components/three/CloudBackground';
 import { useToast } from '@/components/ui/Toast';
-import { YucpButton } from '@/components/ui/YucpButton';
 import { usePublicAuth } from '@/hooks/usePublicAuth';
 import { requestBackstageRepoAccess } from '@/lib/packages';
-import {
-  createBuyerProductAccessVerificationIntent,
-  getBuyerProductAccess,
-} from '@/lib/productAccess';
+import { createBuyerProductAccessVerificationIntent } from '@/lib/productAccess';
+import { routeStyleHrefs, routeStylesheetLinks } from '@/lib/routeStyles';
+import { fetchBuyerProductAccess } from '@/lib/server/productAccess';
 
 export const Route = createFileRoute('/access/$catalogProductId')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -19,9 +18,36 @@ export const Route = createFileRoute('/access/$catalogProductId')({
   }),
   head: () => ({
     meta: [{ title: 'Product Access | YUCP' }],
+    links: routeStylesheetLinks(routeStyleHrefs.verifyPurchase),
   }),
+  pendingComponent: BuyerProductAccessPending,
+  errorComponent: BuyerProductAccessError,
+  loader: async ({ params }) =>
+    fetchBuyerProductAccess({
+      data: {
+        catalogProductId: params.catalogProductId,
+      },
+    }),
   component: BuyerProductAccessPage,
 });
+
+function PageShell({
+  children,
+  isVisible = true,
+}: PropsWithChildren<{
+  isVisible?: boolean;
+}>) {
+  return (
+    <div className="vp-page">
+      <CloudBackground variant="default" />
+      <div className="vp-wrapper">
+        <main className={`vp-main vp-main--buyer-access${isVisible ? ' is-visible' : ''}`}>
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
 
 function ProductPreview({
   packageId,
@@ -33,18 +59,42 @@ function ProductPreview({
   latestPublishedVersion: string | null;
 }>) {
   return (
-    <div className="rounded-2xl border border-black/10 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-      <p className="text-sm font-semibold text-slate-900 dark:text-white">
-        {displayName ?? packageId}
-      </p>
-      <p className="mt-1 break-all font-mono text-xs text-slate-600 dark:text-slate-300">
-        {packageId}
-      </p>
-      <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-        {latestPublishedVersion
-          ? `Latest version ${latestPublishedVersion}`
-          : 'Waiting for first live version'}
-      </p>
+    <div className="vp-method-row">
+      <div className="vp-method-row-info">
+        <div className="vp-method-provider">
+          <Package className="size-4 text-white/65" />
+          <span className="vp-provider-label-text">Included package</span>
+        </div>
+        <p className="vp-method-title">{displayName ?? packageId}</p>
+        <p className="vp-method-desc break-all font-mono">{packageId}</p>
+      </div>
+      <div className="vp-method-row-action">
+        <span className="vp-status-badge vp-status-badge--none">
+          {latestPublishedVersion ? `v${latestPublishedVersion}` : 'Pending'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function JourneyStep({
+  step,
+  title,
+  description,
+}: Readonly<{
+  step: string;
+  title: string;
+  description: string;
+}>) {
+  return (
+    <div className="vp-method-row">
+      <div className="vp-method-row-info">
+        <div className="vp-method-provider">
+          <span className="vp-provider-label-text">{step}</span>
+        </div>
+        <p className="vp-method-title">{title}</p>
+        <p className="vp-method-desc">{description}</p>
+      </div>
     </div>
   );
 }
@@ -52,10 +102,16 @@ function ProductPreview({
 function BuyerProductAccessPage() {
   const { catalogProductId } = Route.useParams();
   const search = Route.useSearch();
+  const accessData = Route.useLoaderData();
   const toast = useToast();
   const { isAuthenticated, isPending: isAuthPending, signIn } = usePublicAuth();
+  const [isVisible, setIsVisible] = useState(false);
   const [isStartingVerification, setIsStartingVerification] = useState(false);
   const [isManualSetupOpen, setIsManualSetupOpen] = useState(false);
+
+  useEffect(() => {
+    setIsVisible(true);
+  }, []);
 
   useEffect(() => {
     if (!search.grant || typeof window === 'undefined') {
@@ -67,18 +123,13 @@ function BuyerProductAccessPage() {
     window.history.replaceState({}, '', url.toString());
   }, [search.grant]);
 
-  const accessQuery = useQuery({
-    queryKey: ['buyer-product-access', catalogProductId],
-    queryFn: () => getBuyerProductAccess(catalogProductId),
-  });
-
   const repoAccessQuery = useQuery({
     queryKey: ['buyer-backstage-repo-access', catalogProductId],
     queryFn: requestBackstageRepoAccess,
     enabled:
       isAuthenticated &&
-      accessQuery.data?.accessState.hasActiveEntitlement === true &&
-      accessQuery.data.accessState.hasPublishedPackages,
+      accessData.accessState.hasActiveEntitlement === true &&
+      accessData.accessState.hasPublishedPackages,
     retry: false,
   });
 
@@ -99,152 +150,111 @@ function BuyerProductAccessPage() {
     }
   }
 
-  if (accessQuery.isLoading) {
-    return (
-      <div className="min-h-screen bg-slate-100 dark:bg-slate-950">
-        <CloudBackground variant="default" />
-        <main className="mx-auto flex min-h-screen max-w-5xl items-center px-4 py-16">
-          <div className="w-full rounded-[28px] border border-black/10 bg-white/75 p-8 shadow-xl backdrop-blur dark:border-white/10 dark:bg-slate-900/80">
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-              Loading product access...
-            </p>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (accessQuery.isError || !accessQuery.data) {
-    return (
-      <div className="min-h-screen bg-slate-100 dark:bg-slate-950">
-        <CloudBackground variant="default" />
-        <main className="mx-auto flex min-h-screen max-w-5xl items-center px-4 py-16">
-          <div className="w-full rounded-[28px] border border-rose-200 bg-white/85 p-8 shadow-xl backdrop-blur dark:border-rose-500/40 dark:bg-slate-900/90">
-            <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
-              We could not load this product access page.
-            </p>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              Open the link again from your store receipt or your library, then try once more.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <Link
-                to="/account/licenses"
-                className="btn-ghost inline-flex items-center justify-center"
-              >
-                Open verified purchases
-              </Link>
-            </div>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  const { product, accessState } = accessQuery.data;
+  const { product, accessState } = accessData;
   const hasAccess = accessState.hasActiveEntitlement;
   const packageCount = product.packagePreview.length;
   const packageCountLabel = `${packageCount} Unity package${packageCount === 1 ? '' : 's'}`;
-  const productSummary = packageCount
-    ? `This purchase unlocks ${packageCountLabel.toLowerCase()} for your YUCP account.`
-    : 'This purchase will unlock your Unity package access once publishing is ready.';
-  const primaryAction = hasAccess
-    ? 'Add to VCC'
+  const heroCopy = hasAccess
+    ? 'This buyer account is already entitled. Add the repo in VCC, then continue in Unity.'
     : isAuthenticated
-      ? 'Verify purchase'
-      : 'Sign in to continue';
+      ? 'You are signed in. Continue to the same purchase verification screen used by the OAuth flow to verify the store account or license you purchased with.'
+      : 'Sign in with the YUCP Discord account that should own this purchase in VCC, then continue to purchase verification.';
+  const flowNote = hasAccess
+    ? 'The repo handoff is being prepared for this entitled buyer account.'
+    : isAuthenticated
+      ? 'Verification happens on the hosted purchase verification page. When it succeeds, you come back here ready for VCC.'
+      : 'Your YUCP account becomes the home for this purchase. Keep using the same account in VCC.';
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950">
-      <CloudBackground variant="default" />
-      <main className="mx-auto flex min-h-screen max-w-5xl items-center px-4 py-10 sm:px-6 lg:px-8">
-        <div className="grid w-full gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.9fr)]">
-          <section className="rounded-[32px] border border-black/10 bg-white/80 p-6 shadow-xl backdrop-blur dark:border-white/10 dark:bg-slate-900/85 sm:p-8">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-              <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-[24px] border border-black/10 bg-slate-50 shadow-sm dark:border-white/10 dark:bg-slate-950/60">
-                {product.thumbnailUrl ? (
-                  <img
-                    src={product.thumbnailUrl}
-                    alt=""
-                    aria-hidden="true"
-                    className="size-full object-cover"
-                  />
-                ) : (
-                  <Store className="size-8 text-slate-500 dark:text-slate-300" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-                  Buyer access
-                </p>
-                <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-4xl">
-                  {product.displayName}
-                </h1>
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-300 sm:text-base">
-                  {hasAccess
-                    ? 'This YUCP account already owns access. Use one Add to VCC action to open your private repo, then install the packages you own in Unity.'
-                    : 'Sign in with the YUCP account you want to use in VCC, then verify the store account or license you purchased with.'}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-3 py-1 dark:border-white/10 dark:bg-white/5">
-                    <Store className="size-3.5" />
-                    Bought on {product.providerLabel}
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-3 py-1 dark:border-white/10 dark:bg-white/5">
-                    <Package className="size-3.5" />
-                    {packageCountLabel}
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-3 py-1 dark:border-white/10 dark:bg-white/5">
-                    <ShieldCheck className="size-3.5" />
-                    Private per account
-                  </span>
-                </div>
-              </div>
+    <PageShell isVisible={isVisible}>
+      <div className="vp-card fade-up" style={{ animationDelay: '0.1s' }}>
+        <div className="vp-card-header">
+          <p className="vp-eyebrow">Buyer access</p>
+          <h1 className="vp-package-name">{product.displayName}</h1>
+          <p className="vp-card-subtitle">{heroCopy}</p>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white/70">
+              <Store className="size-3.5" />
+              Bought on {product.providerLabel}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white/70">
+              <Package className="size-3.5" />
+              {packageCountLabel}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white/70">
+              <ShieldCheck className="size-3.5" />
+              Private per account
+            </span>
+          </div>
+
+          {search.intent_id ? (
+            <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+              Purchase confirmed. Continue with VCC below.
             </div>
+          ) : null}
 
-            {search.intent_id ? (
-              <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200">
-                Purchase confirmed. VCC comes next.
-              </div>
-            ) : null}
+          {!accessState.hasPublishedPackages ? (
+            <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              This product is linked, but the creator has not published a package yet.
+            </div>
+          ) : null}
+        </div>
 
-            {!accessState.hasPublishedPackages ? (
-              <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
-                This product is linked, but the creator has not published a package yet.
-              </div>
-            ) : null}
+        {hasAccess ? (
+          <div className="vp-checking-section">
+            {repoAccessQuery.isLoading ? (
+              <>
+                <span className="vp-spinner vp-spinner--lg" aria-hidden="true" />
+                <p className="vp-loading-text">Preparing your VCC access...</p>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="vp-primary-btn disabled:pointer-events-none disabled:opacity-60"
+                disabled={!repoAccessQuery.data?.addRepoUrl}
+                onClick={() => {
+                  if (repoAccessQuery.data?.addRepoUrl) {
+                    window.location.href = repoAccessQuery.data.addRepoUrl;
+                  }
+                }}
+              >
+                Add to VCC
+              </button>
+            )}
 
-            <div className="mt-8 rounded-[28px] border border-black/10 bg-slate-50/80 p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/45 sm:p-6">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                {hasAccess ? 'Add this product to VCC' : 'Unlock this product in VCC'}
+            <p className="vp-section-desc mb-0 max-w-[32rem] text-center">{flowNote}</p>
+
+            {repoAccessQuery.isError ? (
+              <p className="vp-method-error">
+                We could not prepare your repo handoff. Refresh and try again.
               </p>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {hasAccess
-                  ? 'Use the main button to open your entitled YUCP repo in VCC. Advanced repo details stay hidden unless you need a manual setup path.'
-                  : 'This flow only verifies ownership and prepares your private VCC repo. Nothing installs until you finish the Add to VCC step.'}
-              </p>
-
-              <div className="mt-5 flex flex-wrap gap-3">
-                {hasAccess ? (
-                  <YucpButton
-                    yucp="primary"
-                    pill
-                    isLoading={repoAccessQuery.isLoading}
-                    isDisabled={!repoAccessQuery.data?.addRepoUrl}
-                    onPress={() => {
-                      if (repoAccessQuery.data?.addRepoUrl) {
-                        window.location.href = repoAccessQuery.data.addRepoUrl;
-                      }
-                    }}
-                  >
-                    {repoAccessQuery.isLoading ? 'Preparing VCC...' : primaryAction}
-                  </YucpButton>
-                ) : (
-                  <YucpButton
-                    yucp="primary"
-                    pill
-                    isLoading={isStartingVerification}
-                    isDisabled={!accessState.hasPublishedPackages || isAuthPending}
-                    onPress={async () => {
+            ) : null}
+          </div>
+        ) : (
+          <div className="vp-oauth-section">
+            <p className="vp-section-eyebrow">Buyer verification</p>
+            <p className="vp-section-desc">{flowNote}</p>
+            <div className="vp-oauth-buttons">
+              <div className="vp-oauth-row vp-oauth-row--enter">
+                <div className="vp-oauth-row-left">
+                  <div className="vp-oauth-row-text">
+                    <span className="vp-oauth-label">Discord sign-in</span>
+                    <span className="vp-oauth-account">
+                      {isAuthenticated
+                        ? 'Signed in. Continue to purchase verification.'
+                        : 'Sign in with the buyer account you will use in VCC.'}
+                    </span>
+                  </div>
+                </div>
+                <div className="vp-oauth-row-right">
+                  <button
+                    type="button"
+                    className={`vp-oauth-verify-btn${isStartingVerification ? ' btn-loading' : ''}`}
+                    disabled={
+                      !accessState.hasPublishedPackages || isAuthPending || isStartingVerification
+                    }
+                    onClick={async () => {
                       if (!isAuthenticated) {
                         await signIn(window.location.href);
                         return;
@@ -267,217 +277,188 @@ function BuyerProductAccessPage() {
                       }
                     }}
                   >
-                    {isStartingVerification ? 'Starting verification...' : primaryAction}
-                  </YucpButton>
-                )}
-
-                <Link
-                  to="/account/licenses"
-                  className="btn-ghost inline-flex items-center justify-center rounded-full px-5 py-2.5"
-                >
-                  Open verified purchases
-                </Link>
+                    {isStartingVerification ? (
+                      <>
+                        <span className="btn-loading-spinner" aria-hidden="true" />
+                        Starting verification...
+                      </>
+                    ) : isAuthenticated ? (
+                      'Verify purchase'
+                    ) : (
+                      'Sign in to continue'
+                    )}
+                  </button>
+                </div>
               </div>
+            </div>
+          </div>
+        )}
 
-              {repoAccessQuery.isError ? (
-                <p className="mt-4 text-sm text-rose-700 dark:text-rose-300">
-                  We could not prepare your repo handoff. Refresh the page and try again.
-                </p>
-              ) : null}
+        {hasAccess ? (
+          <>
+            <div className="vp-methods-divider">
+              <span className="vp-methods-divider-label">Manual setup</span>
+            </div>
+            <section className="vp-section">
+              <div className="vp-method-row">
+                <div className="vp-method-row-info">
+                  <p className="vp-method-title">Need the repo URL instead?</p>
+                  <p className="vp-method-desc">
+                    {repoAccessQuery.data?.repositoryUrl
+                      ? 'Keep using Add to VCC for the normal flow. Only open manual setup if VCC does not launch or support asks for the repo URL.'
+                      : 'Manual repo details appear after your private repo handoff is ready.'}
+                  </p>
+                </div>
+                <div className="vp-method-row-action">
+                  <button
+                    type="button"
+                    className="vp-action-btn"
+                    disabled={!repoAccessQuery.data?.repositoryUrl}
+                    onClick={() => setIsManualSetupOpen((current) => !current)}
+                  >
+                    {isManualSetupOpen ? (
+                      <>
+                        <ChevronUp className="size-4" />
+                        Hide manual setup
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="size-4" />
+                        Show manual setup
+                      </>
+                    )}
+                  </button>
+                </div>
 
-              {hasAccess ? (
-                <div className="mt-5 rounded-2xl border border-black/10 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                        Need the manual repo path?
-                      </p>
-                      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                        Keep using Add to VCC for the normal flow. Only open manual setup if VCC
-                        does not launch or support asks for the repo URL.
-                      </p>
-                    </div>
-                    <YucpButton
-                      yucp="ghost"
-                      isDisabled={!repoAccessQuery.data?.repositoryUrl}
-                      onPress={() => setIsManualSetupOpen((current) => !current)}
-                    >
-                      {isManualSetupOpen ? (
-                        <>
-                          <ChevronUp className="size-4" />
-                          Hide manual setup
-                        </>
-                      ) : (
-                        <>
-                          <ChevronDown className="size-4" />
-                          Show manual setup
-                        </>
-                      )}
-                    </YucpButton>
-                  </div>
-
-                  {!repoAccessQuery.data?.repositoryUrl ? (
-                    <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                      Manual repo details appear after your private repo handoff is ready.
+                {isManualSetupOpen && repoAccessQuery.data?.repositoryUrl ? (
+                  <div className="w-full rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="mb-3 text-sm leading-6 text-white/65">
+                      In VCC, choose <strong>Add Repository</strong> and paste the entitled repo URL
+                      below.
                     </p>
-                  ) : null}
-
-                  {isManualSetupOpen && repoAccessQuery.data?.repositoryUrl ? (
-                    <div className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
-                      <p>
-                        In VCC, choose <strong>Add Repository</strong> and paste the entitled repo
-                        URL below.
-                      </p>
-                      <div className="rounded-2xl border border-black/10 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-950/60">
-                        <p className="break-all font-mono text-xs text-slate-700 dark:text-slate-200">
-                          {repoAccessQuery.data.repositoryUrl}
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <YucpButton
-                            yucp="ghost"
-                            onPress={() =>
-                              handleCopyValue(
-                                repoAccessQuery.data?.repositoryUrl ?? '',
-                                'Repo URL copied'
-                              )
-                            }
-                          >
-                            Copy repo URL
-                          </YucpButton>
-                        </div>
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        This repo stays private to your YUCP account and only contains packages you
-                        own.
-                      </p>
+                    <p className="break-all rounded-xl border border-white/10 bg-black/20 px-3 py-3 font-mono text-xs text-white/80">
+                      {repoAccessQuery.data.repositoryUrl}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="vp-action-btn"
+                        onClick={() =>
+                          handleCopyValue(
+                            repoAccessQuery.data?.repositoryUrl ?? '',
+                            'Repo URL copied'
+                          )
+                        }
+                      >
+                        Copy repo URL
+                      </button>
                     </div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="mt-5 text-sm text-slate-500 dark:text-slate-400">
-                  Manual repo setup stays hidden until this account has verified access.
-                </p>
-              )}
-            </div>
-
-            <div className="mt-8 space-y-4">
-              <div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  What you get on this page
-                </p>
-                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {productSummary}
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-black/10 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    1. Use one YUCP account
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    Sign in to the YUCP account where you want this purchase to live in VCC.
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-black/10 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    2. Verify the purchase
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    Confirm the store account or license you originally used on{' '}
-                    {product.providerLabel}.
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-black/10 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    3. Add the entitled repo
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    Open one private repo handoff in VCC, then install the packages this product
-                    unlocks.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <aside className="space-y-4">
-            <section className="rounded-[28px] border border-black/10 bg-white/80 p-5 shadow-xl backdrop-blur dark:border-white/10 dark:bg-slate-900/85">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                Owned product context
-              </p>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                This is the storefront purchase that maps to your VCC access for this buyer account.
-              </p>
-              <div className="mt-4 grid gap-3 rounded-2xl border border-black/10 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-                    Product
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">
-                    {product.displayName}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-                    Store
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
-                    {product.providerLabel}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-                    Unlocks
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
-                    {packageCountLabel}
-                  </p>
-                </div>
+                  </div>
+                ) : null}
               </div>
             </section>
+          </>
+        ) : (
+          <div className="vp-card-footer">
+            <p className="vp-footer-note">
+              Manual repo setup stays hidden until this account has verified access.
+            </p>
+          </div>
+        )}
 
-            <section className="rounded-[28px] border border-black/10 bg-white/80 p-5 shadow-xl backdrop-blur dark:border-white/10 dark:bg-slate-900/85">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                Included packages
-              </p>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                These install IDs show up in VCC after this buyer account gets access.
-              </p>
-              <div className="mt-4 space-y-3">
-                {product.packagePreview.map((packageLink) => (
-                  <ProductPreview
-                    key={packageLink.packageId}
-                    packageId={packageLink.packageId}
-                    displayName={packageLink.displayName}
-                    latestPublishedVersion={packageLink.latestPublishedVersion}
-                  />
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-[28px] border border-black/10 bg-white/80 p-5 shadow-xl backdrop-blur dark:border-white/10 dark:bg-slate-900/85">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                Need to reopen this later?
-              </p>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Use the same YUCP access button from the store page or open your Verified purchases
-                page in account settings.
-              </p>
-              {product.storefrontUrl ? (
-                <a
-                  href={product.storefrontUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-ghost mt-4 inline-flex items-center justify-center gap-2 rounded-full px-4 py-2"
-                >
-                  <ExternalLink className="size-4" />
-                  Open store listing
-                </a>
-              ) : null}
-            </section>
-          </aside>
+        <div className="vp-methods-divider">
+          <span className="vp-methods-divider-label">How this works</span>
         </div>
-      </main>
-    </div>
+
+        <section className="vp-section">
+          <JourneyStep
+            step="Step 1"
+            title="Use one YUCP account"
+            description="Sign in with the same buyer account you want to use in VCC and keep that account consistent through the flow."
+          />
+          <JourneyStep
+            step="Step 2"
+            title="Verify on the purchase page"
+            description={`Continue to the hosted purchase verification screen, where ${product.providerLabel} account checks and license entry happen.`}
+          />
+          <JourneyStep
+            step="Step 3"
+            title="Add your entitled repo"
+            description="After verification succeeds, come back here and open the buyer-scoped repo in VCC."
+          />
+        </section>
+
+        <div className="vp-methods-divider">
+          <span className="vp-methods-divider-label">
+            Included package{packageCount === 1 ? '' : 's'}
+          </span>
+        </div>
+
+        <section className="vp-section">
+          {product.packagePreview.map((packageLink) => (
+            <ProductPreview
+              key={packageLink.packageId}
+              packageId={packageLink.packageId}
+              displayName={packageLink.displayName}
+              latestPublishedVersion={packageLink.latestPublishedVersion}
+            />
+          ))}
+        </section>
+
+        <div className="vp-card-footer">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Link to="/account/licenses" className="vp-action-btn">
+              Open verified purchases
+            </Link>
+            {product.storefrontUrl ? (
+              <a
+                href={product.storefrontUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="vp-action-btn"
+              >
+                <ExternalLink className="size-4" />
+                Open store listing
+              </a>
+            ) : null}
+          </div>
+          <p className="vp-footer-note mt-4">
+            The normal path is Discord sign-in, purchase verification, then Add to VCC. Manual repo
+            setup is only there for troubleshooting.
+          </p>
+        </div>
+      </div>
+    </PageShell>
+  );
+}
+
+function BuyerProductAccessPending() {
+  return (
+    <PageShell>
+      <div className="vp-card fade-up" style={{ animationDelay: '0.1s' }}>
+        <div className="vp-loading-state">
+          <span className="vp-spinner vp-spinner--lg" aria-hidden="true" />
+          <p className="vp-loading-text">Loading buyer access...</p>
+        </div>
+      </div>
+    </PageShell>
+  );
+}
+
+function BuyerProductAccessError() {
+  return (
+    <PageShell>
+      <div className="vp-card vp-card--error fade-up" style={{ animationDelay: '0.1s' }}>
+        <h1 className="vp-package-name">We could not load this product access page</h1>
+        <p className="vp-card-subtitle">
+          Open the link again from your store receipt or your library, then try once more.
+        </p>
+        <div className="mt-6 flex justify-center">
+          <Link to="/account/licenses" className="vp-primary-btn">
+            Open verified purchases
+          </Link>
+        </div>
+      </div>
+    </PageShell>
   );
 }
