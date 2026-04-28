@@ -33,6 +33,24 @@
 </button>
 <script>
 (function(){
+  function sanitizeImageHref(value) {
+    if (!value) return null;
+    var trimmed = value.trim();
+    if (!trimmed || /^\/\//.test(trimmed)) return null;
+    if (/^(?:javascript|data|vbscript|file):/i.test(trimmed)) return null;
+
+    var hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
+    try {
+      var parsed = new URL(trimmed, window.location.href);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+      if (!hasScheme && parsed.origin !== window.location.origin) return null;
+      if (!/\.(?:png|jpe?g|gif|webp|svg)$/i.test(parsed.pathname)) return null;
+      return parsed.href;
+    } catch (e) {
+      return null;
+    }
+  }
+
   document.querySelectorAll('.oauth-sign-in-button').forEach(function(btn, i){
     var id = btn.getAttribute('data-id') || 'default';
     if (document.querySelectorAll('.oauth-sign-in-button[data-id="' + id + '"]').length > 1) id = 'btn-' + i;
@@ -44,7 +62,8 @@
     var src = btn.getAttribute('data-gradient-src');
     var label = btn.getAttribute('data-aria-label');
     var img = btn.querySelector('.oauth-avatar-image');
-    if(src && img) img.setAttribute('href', src);
+    var safeSrc = sanitizeImageHref(src);
+    if(safeSrc && img) img.setAttribute('href', safeSrc);
     if(label) btn.setAttribute('aria-label', label);
   });
 })();
