@@ -367,31 +367,17 @@ async function hasProviderUserCollision(
 
 async function listBuyerAttributionCandidates(ctx: Pick<QueryCtx, 'db'>, limit: number) {
   const candidates: BuyerAttributionCandidate[] = [];
-  let cursor: string | null = null;
-  const batchSize = Math.max(50, Math.min(200, limit * 2));
+  const bindings = ((await ctx.db.query('bindings').collect()) as Doc<'bindings'>[]).reverse();
 
-  while (candidates.length < limit) {
-    const pageResult = await ctx.db.query('bindings').order('desc').paginate({
-      numItems: batchSize,
-      cursor,
-    });
-    const page = pageResult.page as Doc<'bindings'>[];
-
-    for (const binding of page) {
-      const candidate = await buildBuyerAttributionCandidate(ctx, binding);
-      if (!candidate) {
-        continue;
-      }
-      candidates.push(candidate);
-      if (candidates.length >= limit) {
-        break;
-      }
+  for (const binding of bindings) {
+    const candidate = await buildBuyerAttributionCandidate(ctx, binding);
+    if (!candidate) {
+      continue;
     }
-
-    if (pageResult.isDone) {
+    candidates.push(candidate);
+    if (candidates.length >= limit) {
       break;
     }
-    cursor = pageResult.continueCursor;
   }
 
   return {
@@ -488,31 +474,17 @@ async function listSubjectOwnershipCandidates(
   limit: number
 ) {
   const candidates: SubjectOwnershipCandidate[] = [];
-  let cursor: string | null = null;
-  const batchSize = Math.max(50, Math.min(200, limit * 2));
+  const subjects = ((await ctx.db.query('subjects').collect()) as Doc<'subjects'>[]).reverse();
 
-  while (candidates.length < limit) {
-    const pageResult = await ctx.db.query('subjects').order('desc').paginate({
-      numItems: batchSize,
-      cursor,
-    });
-    const page = pageResult.page as Doc<'subjects'>[];
-
-    for (const subject of page) {
-      const candidate = await buildSubjectOwnershipCandidate(ctx, subject);
-      if (!candidate) {
-        continue;
-      }
-      candidates.push(candidate);
-      if (candidates.length >= limit) {
-        break;
-      }
+  for (const subject of subjects) {
+    const candidate = await buildSubjectOwnershipCandidate(ctx, subject);
+    if (!candidate) {
+      continue;
     }
-
-    if (pageResult.isDone) {
+    candidates.push(candidate);
+    if (candidates.length >= limit) {
       break;
     }
-    cursor = pageResult.continueCursor;
   }
 
   return {

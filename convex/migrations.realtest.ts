@@ -204,6 +204,93 @@ describe('buyer attribution remediation', () => {
     });
   });
 
+  it('detects a misattributed buyer binding beyond the first scan batch', async () => {
+    const t = makeTestConvex();
+    const now = Date.now();
+
+    const candidateBindingId = await t.run(async (ctx) => {
+      const buyerSubjectId = await ctx.db.insert('subjects', {
+        primaryDiscordUserId: 'discord-remediation-buyer-paged',
+        authUserId: 'buyer-auth-paged',
+        displayName: 'Remediation Buyer Paged',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const externalAccountId = await ctx.db.insert('external_accounts', {
+        provider: 'jinxxy',
+        providerUserId: 'buyer-provider-paged',
+        providerUsername: 'PagedBuyer',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const bindingId = await ctx.db.insert('bindings', {
+        authUserId: 'creator-auth-paged',
+        subjectId: buyerSubjectId,
+        externalAccountId,
+        bindingType: 'verification',
+        status: 'active',
+        createdBy: buyerSubjectId,
+        reason: 'Legacy misattributed verification',
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      for (let index = 0; index < 60; index += 1) {
+        const createdAt = now + index + 1;
+        const subjectId = await ctx.db.insert('subjects', {
+          primaryDiscordUserId: `discord-remediation-buyer-filler-${index}`,
+          authUserId: `buyer-auth-filler-${index}`,
+          displayName: `Remediation Buyer Filler ${index}`,
+          status: 'active',
+          createdAt,
+          updatedAt: createdAt,
+        });
+
+        const fillerExternalAccountId = await ctx.db.insert('external_accounts', {
+          provider: 'jinxxy',
+          providerUserId: `buyer-provider-filler-${index}`,
+          providerUsername: `FillerBuyer${index}`,
+          status: 'active',
+          createdAt,
+          updatedAt: createdAt,
+        });
+
+        await ctx.db.insert('bindings', {
+          authUserId: `buyer-auth-filler-${index}`,
+          subjectId,
+          externalAccountId: fillerExternalAccountId,
+          bindingType: 'verification',
+          status: 'active',
+          createdBy: subjectId,
+          reason: 'Healthy verification',
+          version: 1,
+          createdAt,
+          updatedAt: createdAt,
+        });
+      }
+
+      return bindingId;
+    });
+
+    const report = await t.query(internal.migrations.listBuyerAttributionRemediationCandidates, {
+      limit: 1,
+    });
+
+    expect(report.summary.candidateBindings).toBe(1);
+    expect(report.candidates).toEqual([
+      expect.objectContaining({
+        bindingId: candidateBindingId,
+        currentAuthUserId: 'creator-auth-paged',
+        expectedBuyerAuthUserId: 'buyer-auth-paged',
+      }),
+    ]);
+  });
+
   it('repairs a selected binding, recreates a missing buyer provider link, and moves high-confidence license links', async () => {
     const t = makeTestConvex();
     const now = Date.now();
@@ -820,6 +907,56 @@ describe('subject ownership remediation', () => {
         expectedAuthUserId: 'buyer-auth-subject-detect',
         resolution: 'better_auth',
         repairable: true,
+      }),
+    ]);
+  });
+
+  it('detects a wrongly owned subject beyond the first scan batch', async () => {
+    const t = makeTestConvex() as ComponentAwareTestConvex;
+    t.registerComponent('betterAuth', betterAuthSchema, import.meta.glob('./betterAuth/**/*.ts'));
+    const now = Date.now();
+
+    await seedBetterAuthDiscordAccount(t, {
+      authUserMarker: 'buyer-auth-subject-paged',
+      email: 'buyer-subject-paged@example.com',
+      name: 'Buyer Subject Paged',
+      discordUserId: 'discord-subject-paged',
+    });
+
+    const subjectId = await t.run(async (ctx) => {
+      const subjectId = await ctx.db.insert('subjects', {
+        primaryDiscordUserId: 'discord-subject-paged',
+        authUserId: 'creator-auth-subject-paged',
+        displayName: 'Wrongly Owned Buyer Paged',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      for (let index = 0; index < 60; index += 1) {
+        const createdAt = now + index + 1;
+        await ctx.db.insert('subjects', {
+          primaryDiscordUserId: `discord-subject-filler-${index}`,
+          displayName: `Subject Filler ${index}`,
+          status: 'active',
+          createdAt,
+          updatedAt: createdAt,
+        });
+      }
+
+      return subjectId;
+    });
+
+    const report = await t.query(internal.migrations.listSubjectOwnershipRemediationCandidates, {
+      limit: 1,
+    });
+
+    expect(report.summary.candidateSubjects).toBe(1);
+    expect(report.candidates).toEqual([
+      expect.objectContaining({
+        subjectId,
+        currentAuthUserId: 'creator-auth-subject-paged',
+        expectedAuthUserId: 'buyer-auth-subject-paged',
       }),
     ]);
   });
