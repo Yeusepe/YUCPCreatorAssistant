@@ -21,7 +21,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { internalMutation, internalQuery, mutation, query } from './_generated/server';
-import { ApiActorBindingV, requireDelegatedAuthUserActor } from './lib/apiActor';
+import { ApiActorBindingV, requireApiActor, requireDelegatedAuthUserActor } from './lib/apiActor';
 import { requireApiSecret } from './lib/apiAuth';
 
 const PACKAGE_ID_RE = /^[a-z0-9\-_./:]{1,128}$/;
@@ -2006,10 +2006,12 @@ export const getByIdForAuthUser = query({
 export const getBuyerAccessContextByCatalogProductId = query({
   args: {
     apiSecret: v.string(),
+    actor: ApiActorBindingV,
     catalogProductId: v.id('product_catalog'),
   },
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
+    await requireApiActor(args.actor);
 
     const product = await ctx.db.get(args.catalogProductId);
     if (!product) {

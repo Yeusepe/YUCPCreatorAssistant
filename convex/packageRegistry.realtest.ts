@@ -313,6 +313,68 @@ describe('packageRegistry', () => {
     });
   });
 
+  it('loads buyer access context for an active catalog product through the protected API client', async () => {
+    const t = makeTestConvex();
+    const catalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-buyer-access',
+      providerProductRef: 'gumroad-product-buyer-access',
+      displayName: 'Buyer Access Product',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.buyer.access',
+      packageName: 'Buyer Access Package',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    await t.mutation(internal.packageRegistry.upsertDeliveryPackageForProduct, {
+      authUserId: 'auth-user-1',
+      catalogProductId,
+      packageId: 'com.yucp.buyer.access',
+      packageName: 'Buyer Access Package',
+      displayName: 'Buyer Access Package',
+      repositoryVisibility: 'hidden',
+      defaultChannel: 'stable',
+    });
+
+    await t.mutation(internal.packageRegistry.recordDeliveryPackageRelease, {
+      authUserId: 'auth-user-1',
+      packageId: 'com.yucp.buyer.access',
+      version: '1.0.0',
+      channel: 'stable',
+      releaseStatus: 'published',
+      repositoryVisibility: 'hidden',
+      artifactKey: 'buyer-access-stable',
+    });
+
+    const result = await t.query(api.packageRegistry.getBuyerAccessContextByCatalogProductId, {
+      apiSecret: 'test-secret',
+      catalogProductId,
+    });
+
+    expect(result).toMatchObject({
+      catalogProductId,
+      creatorAuthUserId: 'auth-user-1',
+      productId: 'product-buyer-access',
+      provider: 'gumroad',
+      providerProductRef: 'gumroad-product-buyer-access',
+      displayName: 'Buyer Access Product',
+      status: 'active',
+      backstagePackages: [
+        {
+          packageId: 'com.yucp.buyer.access',
+          packageName: 'Buyer Access Package',
+          displayName: 'Buyer Access Package',
+          defaultChannel: 'stable',
+          latestPublishedVersion: '1.0.0',
+          repositoryVisibility: 'hidden',
+        },
+      ],
+    });
+  });
+
   it('resolves entitled Backstage packages for a subject through active catalog entitlements', async () => {
     const t = makeTestConvex();
     const catalogProductId = await seedCatalogProduct(t, {
