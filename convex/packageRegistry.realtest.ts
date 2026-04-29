@@ -483,6 +483,173 @@ describe('packageRegistry', () => {
     });
   });
 
+  it('builds an authorized alias install plan for an entitled subject and creator product ref', async () => {
+    const t = makeTestConvex();
+    const catalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-alias-plan',
+      providerProductRef: 'gumroad-product-alias-plan',
+      displayName: 'Alias Plan Product',
+    });
+    const subjectId = await seedSubject(t, {
+      authUserId: 'auth-user-1',
+      primaryDiscordUserId: 'discord-alias-plan-user',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.alias.plan',
+      packageName: 'Alias Plan Package',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    await t.mutation(internal.packageRegistry.upsertDeliveryPackageForProduct, {
+      authUserId: 'auth-user-1',
+      catalogProductId,
+      packageId: 'com.yucp.alias.plan',
+      packageName: 'Alias Plan Package',
+      displayName: 'Alias Plan Package',
+      repositoryVisibility: 'listed',
+      defaultChannel: 'stable',
+    });
+
+    await t.mutation(internal.packageRegistry.recordDeliveryPackageRelease, {
+      authUserId: 'auth-user-1',
+      packageId: 'com.yucp.alias.plan',
+      version: '1.2.3',
+      channel: 'stable',
+      releaseStatus: 'published',
+      repositoryVisibility: 'listed',
+      artifactKey: 'alias-plan-stable',
+      zipSha256: 'b'.repeat(64),
+      metadata: {
+        yucp: {
+          kind: 'alias-v1',
+          aliasId: 'song-thing',
+          installStrategy: 'server-authorized',
+          importerPackage: 'com.yucp.importer',
+          minImporterVersion: '1.4.0',
+          catalogProductIds: [String(catalogProductId)],
+          channel: 'stable',
+        },
+      },
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert('entitlements', {
+        authUserId: 'auth-user-1',
+        subjectId,
+        productId: 'product-alias-plan',
+        sourceProvider: 'gumroad',
+        sourceReference: 'order-alias-plan',
+        catalogProductId,
+        status: 'active',
+        grantedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const installPlan = await t.run(async (ctx) => {
+      return await ctx.runQuery(api.packageRegistry.getAuthorizedAliasInstallPlanByRef, {
+        apiSecret: 'test-secret',
+        authUserId: 'auth-user-1',
+        subjectId,
+        creatorRef: 'auth-user-1',
+        productRef: 'gumroad-product-alias-plan',
+      });
+    });
+
+    expect(installPlan).toEqual({
+      creatorAuthUserId: 'auth-user-1',
+      packages: [
+        {
+          packageId: 'com.yucp.alias.plan',
+          displayName: 'Alias Plan Package',
+          version: '1.2.3',
+          channel: 'stable',
+          zipSha256: 'b'.repeat(64),
+          aliasContract: {
+            kind: 'alias-v1',
+            aliasId: 'song-thing',
+            installStrategy: 'server-authorized',
+            importerPackage: 'com.yucp.importer',
+            minImporterVersion: '1.4.0',
+            catalogProductIds: [String(catalogProductId)],
+            channel: 'stable',
+          },
+        },
+      ],
+      creatorSlug: undefined,
+      providerProductRef: 'gumroad-product-alias-plan',
+      canonicalSlug: undefined,
+      displayName: 'Alias Plan Product',
+      thumbnailUrl: undefined,
+    });
+  });
+
+  it('does not issue an alias install plan when the subject is not entitled to the creator product', async () => {
+    const t = makeTestConvex();
+    const catalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-alias-plan',
+      providerProductRef: 'gumroad-product-alias-plan',
+      displayName: 'Alias Plan Product',
+    });
+    const subjectId = await seedSubject(t, {
+      authUserId: 'auth-user-1',
+      primaryDiscordUserId: 'discord-alias-plan-user',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.alias.plan',
+      packageName: 'Alias Plan Package',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    await t.mutation(internal.packageRegistry.upsertDeliveryPackageForProduct, {
+      authUserId: 'auth-user-1',
+      catalogProductId,
+      packageId: 'com.yucp.alias.plan',
+      packageName: 'Alias Plan Package',
+      displayName: 'Alias Plan Package',
+      repositoryVisibility: 'listed',
+      defaultChannel: 'stable',
+    });
+
+    await t.mutation(internal.packageRegistry.recordDeliveryPackageRelease, {
+      authUserId: 'auth-user-1',
+      packageId: 'com.yucp.alias.plan',
+      version: '1.2.3',
+      channel: 'stable',
+      releaseStatus: 'published',
+      repositoryVisibility: 'listed',
+      artifactKey: 'alias-plan-stable',
+      metadata: {
+        yucp: {
+          kind: 'alias-v1',
+          aliasId: 'song-thing',
+          installStrategy: 'server-authorized',
+          importerPackage: 'com.yucp.importer',
+          catalogProductIds: [String(catalogProductId)],
+          channel: 'stable',
+        },
+      },
+    });
+
+    const installPlan = await t.run(async (ctx) => {
+      return await ctx.runQuery(api.packageRegistry.getAuthorizedAliasInstallPlanByRef, {
+        apiSecret: 'test-secret',
+        authUserId: 'auth-user-1',
+        subjectId,
+        creatorRef: 'auth-user-1',
+        productRef: 'gumroad-product-alias-plan',
+      });
+    });
+
+    expect(installPlan).toBeNull();
+  });
+
   it('resolves entitled Backstage packages for a subject through active catalog entitlements', async () => {
     const t = makeTestConvex();
     const catalogProductId = await seedCatalogProduct(t, {
@@ -795,6 +962,15 @@ describe('packageRegistry', () => {
         dependencies: {
           'com.vrchat.base': '3.7.0',
         },
+        yucp: {
+          kind: 'alias-v1',
+          aliasId: 'song-thing',
+          installStrategy: 'server-authorized',
+          importerPackage: 'com.yucp.importer',
+          minImporterVersion: '1.4.0',
+          catalogProductIds: [String(catalogProductId)],
+          channel: 'stable',
+        },
       },
     });
 
@@ -845,6 +1021,15 @@ describe('packageRegistry', () => {
               yucpArtifactKey: 'vpm-package-stable',
               yucpDeliveryMode: 'repo-token-vpm-v1',
               yucpDeliverySourceKind: 'zip',
+              yucp: {
+                kind: 'alias-v1',
+                aliasId: 'song-thing',
+                installStrategy: 'server-authorized',
+                importerPackage: 'com.yucp.importer',
+                minImporterVersion: '1.4.0',
+                catalogProductIds: [String(catalogProductId)],
+                channel: 'stable',
+              },
             },
           },
         },
@@ -857,6 +1042,31 @@ describe('packageRegistry', () => {
     expect(repositoryPackages['com.yucp.backstage.vpm'].versions['3.1.0'].url).toBe(
       'https://api.yucp.test/v1/backstage/package?packageId=com.yucp.backstage.vpm&version=3.1.0&channel=stable&zipSHA256=abcdef1234567890'
     );
+
+    const publicAccess = await t.run(async (ctx) => {
+      return await ctx.runQuery(api.packageRegistry.getPublicBackstageProductAccessByRef, {
+        apiSecret: 'test-secret',
+        creatorRef: 'auth-user-1',
+        productRef: 'gumroad-product-vpm',
+      });
+    });
+    expect(publicAccess?.packageSummaries).toEqual([
+      {
+        packageId: 'com.yucp.backstage.vpm',
+        displayName: 'VPM Package',
+        latestPublishedVersion: '3.1.0',
+        latestReleaseChannel: 'stable',
+        aliasContract: {
+          kind: 'alias-v1',
+          aliasId: 'song-thing',
+          installStrategy: 'server-authorized',
+          importerPackage: 'com.yucp.importer',
+          minImporterVersion: '1.4.0',
+          catalogProductIds: [String(catalogProductId)],
+          channel: 'stable',
+        },
+      },
+    ]);
   });
 
   it('materializes raw uploads into server-owned deliverables for published package downloads', async () => {

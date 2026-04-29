@@ -460,6 +460,125 @@ describe('package Backstage publishing routes', () => {
     });
   });
 
+  it('surfaces alias package delivery semantics for importer-aware releases', async () => {
+    const baseQueryImpl = queryImpl;
+    queryImpl = async (ref: unknown, ...args: unknown[]) => {
+      if (ref === 'packageRegistry.listByAuthUser') {
+        return {
+          data: [
+            {
+              _id: 'product_1',
+              aliases: ['Backstage Bundle'],
+              productId: 'gumroad-product-1',
+              provider: 'gumroad',
+              providerProductRef: 'gumroad-product-1',
+              displayName: 'Backstage Bundle',
+              thumbnailUrl: 'https://public-files.gumroad.com/backstage-bundle.png',
+              canonicalSlug: 'backstage-bundle',
+              status: 'active',
+              supportsAutoDiscovery: true,
+              updatedAt: 1_710_000_000_000,
+              canArchive: true,
+              canDelete: false,
+              canRestore: false,
+              deleteBlockedReason: 'Product has package history.',
+              catalogTiers: [],
+              backstagePackages: [
+                {
+                  packageId: 'com.yucp.alias.song',
+                  packageName: 'Song Thing Alias',
+                  displayName: 'Song Thing Alias',
+                  status: 'active',
+                  repositoryVisibility: 'listed',
+                  defaultChannel: 'stable',
+                  latestPublishedVersion: '1.2.3',
+                  latestRelease: {
+                    deliveryPackageReleaseId: 'release_current',
+                    version: '1.2.3',
+                    channel: 'stable',
+                    releaseStatus: 'published',
+                    repositoryVisibility: 'listed',
+                    artifactKey: 'artifact:example',
+                    contentType: 'application/zip',
+                    createdAt: 1_709_999_900_000,
+                    deliveryName: 'example-package-1.2.3.zip',
+                    metadata: {
+                      yucp: {
+                        kind: 'alias-v1',
+                        aliasId: 'song-thing',
+                        installStrategy: 'server-authorized',
+                        importerPackage: 'com.yucp.importer',
+                        minImporterVersion: '1.4.0',
+                        catalogProductIds: ['product_1'],
+                        channel: 'stable',
+                      },
+                    },
+                    aliasContract: {
+                      kind: 'alias-v1',
+                      aliasId: 'song-thing',
+                      installStrategy: 'server-authorized',
+                      importerPackage: 'com.yucp.importer',
+                      minImporterVersion: '1.4.0',
+                      catalogProductIds: ['product_1'],
+                      channel: 'stable',
+                    },
+                    publishedAt: 1_710_000_000_000,
+                    unityVersion: '2022.3',
+                    updatedAt: 1_710_000_000_000,
+                    zipSha256: 'a'.repeat(64),
+                  },
+                  releases: [],
+                },
+              ],
+            },
+          ],
+          hasMore: false,
+          nextCursor: null,
+        };
+      }
+
+      return await baseQueryImpl(ref, ...args);
+    };
+
+    const response = await routes.listBackstageProducts(
+      new Request('https://api.test/api/packages/backstage/products', {
+        method: 'GET',
+        headers: {
+          authorization: 'Bearer oauth-token',
+        },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      products: [
+        {
+          backstagePackages: [
+            {
+              packageId: 'com.yucp.alias.song',
+              latestRelease: {
+                aliasContract: {
+                  kind: 'alias-v1',
+                  aliasId: 'song-thing',
+                  installStrategy: 'server-authorized',
+                  importerPackage: 'com.yucp.importer',
+                  minImporterVersion: '1.4.0',
+                  catalogProductIds: ['product_1'],
+                  channel: 'stable',
+                },
+                importerDelivery: {
+                  packageInstallStrategy: 'server-authorized',
+                  repoCatalogDeliveryMode: 'repo-token-vpm-v1',
+                  repoCatalogReadOnly: true,
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it('syncs provider tiers into the Backstage picker and strips Patreon HTML descriptions', async () => {
     let syncedTiers: Array<{
       _id: string;
@@ -963,6 +1082,46 @@ describe('package Backstage publishing routes', () => {
     expect(payload).not.toHaveProperty('deliverableArtifactId');
     expect(payload).not.toHaveProperty('deliveryArtifactMode');
     expect(payload).not.toHaveProperty('materializationStrategy');
+  });
+
+  it('preserves alias package metadata when publishing Backstage releases', async () => {
+    const metadata = {
+      yucp: {
+        kind: 'alias-v1',
+        aliasId: 'song-thing',
+        installStrategy: 'server-authorized',
+        importerPackage: 'com.yucp.importer',
+        minImporterVersion: '1.4.0',
+        catalogProductIds: ['product_1'],
+        channel: 'stable',
+      },
+    };
+
+    const response = await routes.publishBackstageRelease(
+      new Request('https://api.test/api/packages/com.yucp.alias.song/backstage/releases', {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer oauth-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          catalogProductIds: ['product_1'],
+          storageId: 'storage_1',
+          version: '1.2.3',
+          channel: 'stable',
+          zipSha256: 'c'.repeat(64),
+          metadata,
+        }),
+      }),
+      'com.yucp.alias.song'
+    );
+
+    expect(response.status).toBe(201);
+    expect(lastActionArgs).toMatchObject({
+      packageId: 'com.yucp.alias.song',
+      metadata,
+      zipSha256: 'c'.repeat(64),
+    });
   });
 
   it('publishes wrapped VPM ZIP metadata for unitypackage sources', async () => {

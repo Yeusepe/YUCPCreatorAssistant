@@ -1,0 +1,147 @@
+const YUCP_METADATA_ALIAS_PATH = 'metadata.yucp';
+
+export const YUCP_PACKAGE_METADATA_KEY = 'yucp';
+
+export const YUCP_ALIAS_PACKAGE_KIND = 'alias-v1';
+
+export const YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES = {
+  serverAuthorized: 'server-authorized',
+} as const;
+
+export const YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES = {
+  importer: 'com.yucp.importer',
+} as const;
+
+export type YucpAliasPackageInstallStrategy =
+  (typeof YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES)[keyof typeof YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES];
+
+export type YucpAliasImporterPackage =
+  (typeof YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES)[keyof typeof YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES];
+
+export type YucpAliasPackageContract = {
+  kind: typeof YUCP_ALIAS_PACKAGE_KIND;
+  aliasId: string;
+  installStrategy: YucpAliasPackageInstallStrategy;
+  importerPackage: YucpAliasImporterPackage;
+  minImporterVersion?: string;
+  catalogProductIds?: string[];
+  channel?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function trimRequiredString(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${fieldName} must be a non-empty string`);
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error(`${fieldName} must be a non-empty string`);
+  }
+
+  return normalized;
+}
+
+function trimOptionalString(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return trimRequiredString(value, fieldName);
+}
+
+function normalizeStringArray(value: unknown, fieldName: string): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(`${fieldName} must be an array of non-empty strings`);
+  }
+
+  const normalized = Array.from(
+    new Set(value.map((entry, index) => trimRequiredString(entry, `${fieldName}[${index}]`)))
+  );
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+export function normalizeYucpAliasPackageContract(
+  value: unknown
+): YucpAliasPackageContract | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    throw new Error(`${YUCP_METADATA_ALIAS_PATH} must be an object`);
+  }
+
+  const kind = trimRequiredString(value.kind, `${YUCP_METADATA_ALIAS_PATH}.kind`);
+  if (kind !== YUCP_ALIAS_PACKAGE_KIND) {
+    throw new Error(
+      `${YUCP_METADATA_ALIAS_PATH}.kind must be ${JSON.stringify(YUCP_ALIAS_PACKAGE_KIND)}`
+    );
+  }
+
+  const installStrategy = trimRequiredString(
+    value.installStrategy,
+    `${YUCP_METADATA_ALIAS_PATH}.installStrategy`
+  );
+  if (installStrategy !== YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES.serverAuthorized) {
+    throw new Error(
+      `${YUCP_METADATA_ALIAS_PATH}.installStrategy must be ${JSON.stringify(YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES.serverAuthorized)}`
+    );
+  }
+
+  const importerPackage = trimRequiredString(
+    value.importerPackage,
+    `${YUCP_METADATA_ALIAS_PATH}.importerPackage`
+  );
+  if (importerPackage !== YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES.importer) {
+    throw new Error(
+      `${YUCP_METADATA_ALIAS_PATH}.importerPackage must be ${JSON.stringify(YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES.importer)}`
+    );
+  }
+
+  const normalized: YucpAliasPackageContract = {
+    kind: YUCP_ALIAS_PACKAGE_KIND,
+    aliasId: trimRequiredString(value.aliasId, `${YUCP_METADATA_ALIAS_PATH}.aliasId`),
+    installStrategy: YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES.serverAuthorized,
+    importerPackage: YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES.importer,
+  };
+
+  const minImporterVersion = trimOptionalString(
+    value.minImporterVersion,
+    `${YUCP_METADATA_ALIAS_PATH}.minImporterVersion`
+  );
+  if (minImporterVersion) {
+    normalized.minImporterVersion = minImporterVersion;
+  }
+
+  const catalogProductIds = normalizeStringArray(
+    value.catalogProductIds,
+    `${YUCP_METADATA_ALIAS_PATH}.catalogProductIds`
+  );
+  if (catalogProductIds) {
+    normalized.catalogProductIds = catalogProductIds;
+  }
+
+  const channel = trimOptionalString(value.channel, `${YUCP_METADATA_ALIAS_PATH}.channel`);
+  if (channel) {
+    normalized.channel = channel;
+  }
+
+  return normalized;
+}
+
+export function getYucpAliasPackageContract(
+  metadata: unknown
+): YucpAliasPackageContract | undefined {
+  if (!isRecord(metadata)) {
+    return undefined;
+  }
+
+  return normalizeYucpAliasPackageContract(metadata[YUCP_PACKAGE_METADATA_KEY]);
+}

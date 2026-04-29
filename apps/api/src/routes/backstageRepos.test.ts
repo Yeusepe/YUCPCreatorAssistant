@@ -19,6 +19,7 @@ mock.module('../../../../convex/_generated/api', () => ({
     },
     packageRegistry: {
       getPublicBackstageProductAccessByRef: 'packageRegistry.getPublicBackstageProductAccessByRef',
+      getAuthorizedAliasInstallPlanByRef: 'packageRegistry.getAuthorizedAliasInstallPlanByRef',
     },
     verificationIntents: {
       createVerificationIntent: 'verificationIntents.createVerificationIntent',
@@ -127,6 +128,43 @@ describe('backstage repo routes', () => {
                 packageId: 'com.yucp.song',
                 displayName: 'Song Thing Package',
                 latestPublishedVersion: '1.2.3',
+                latestReleaseChannel: 'stable',
+                aliasContract: {
+                  kind: 'alias-v1',
+                  aliasId: 'song-thing',
+                  installStrategy: 'server-authorized',
+                  importerPackage: 'com.yucp.importer',
+                  minImporterVersion: '1.4.0',
+                  catalogProductIds: ['catalog_1'],
+                  channel: 'stable',
+                },
+              },
+            ],
+          };
+        case 'packageRegistry.getAuthorizedAliasInstallPlanByRef':
+          return {
+            creatorAuthUserId: 'auth-user-1',
+            creatorSlug: 'mapache',
+            providerProductRef: 'song-thing',
+            canonicalSlug: 'song-thing',
+            displayName: 'Song Thing',
+            thumbnailUrl: 'https://cdn.test/song.png',
+            packages: [
+              {
+                packageId: 'com.yucp.song',
+                displayName: 'Song Thing Package',
+                version: '1.2.3',
+                channel: 'stable',
+                zipSha256: 'a'.repeat(64),
+                aliasContract: {
+                  kind: 'alias-v1',
+                  aliasId: 'song-thing',
+                  installStrategy: 'server-authorized',
+                  importerPackage: 'com.yucp.importer',
+                  minImporterVersion: '1.4.0',
+                  catalogProductIds: ['catalog_1'],
+                  channel: 'stable',
+                },
               },
             ],
           };
@@ -318,6 +356,48 @@ describe('backstage repo routes', () => {
       title: 'Song Thing',
       ready: true,
       primaryPackageId: 'com.yucp.song',
+      primaryPackage: {
+        packageId: 'com.yucp.song',
+        displayName: 'Song Thing Package',
+        latestPublishedVersion: '1.2.3',
+        latestReleaseChannel: 'stable',
+        aliasContract: {
+          kind: 'alias-v1',
+          aliasId: 'song-thing',
+          installStrategy: 'server-authorized',
+          importerPackage: 'com.yucp.importer',
+          minImporterVersion: '1.4.0',
+          catalogProductIds: ['catalog_1'],
+          channel: 'stable',
+        },
+        importerDelivery: {
+          packageInstallStrategy: 'server-authorized',
+          repoCatalogDeliveryMode: 'repo-token-vpm-v1',
+          repoCatalogReadOnly: true,
+        },
+      },
+      packageSummaries: [
+        {
+          packageId: 'com.yucp.song',
+          displayName: 'Song Thing Package',
+          latestPublishedVersion: '1.2.3',
+          latestReleaseChannel: 'stable',
+          aliasContract: {
+            kind: 'alias-v1',
+            aliasId: 'song-thing',
+            installStrategy: 'server-authorized',
+            importerPackage: 'com.yucp.importer',
+            minImporterVersion: '1.4.0',
+            catalogProductIds: ['catalog_1'],
+            channel: 'stable',
+          },
+          importerDelivery: {
+            packageInstallStrategy: 'server-authorized',
+            repoCatalogDeliveryMode: 'repo-token-vpm-v1',
+            repoCatalogReadOnly: true,
+          },
+        },
+      ],
     });
   });
 
@@ -347,6 +427,83 @@ describe('backstage repo routes', () => {
     await expect(response?.json()).resolves.toMatchObject({
       intentId: 'intent_1',
       verificationUrl: 'https://app.test/verify/purchase?intent=intent_1',
+    });
+  });
+
+  it('issues a bearer-authenticated alias install plan without exposing repo credentials', async () => {
+    const response = await routes.handleRequest(
+      new Request('https://api.test/api/backstage/access/mapache/song-thing/install-plan', {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer oauth-token',
+        },
+      })
+    );
+
+    expect(response?.status).toBe(200);
+    const payload = await response?.json();
+    expect(payload).toMatchObject({
+      kind: 'alias-install-plan-v1',
+      creatorName: 'Mapache',
+      creatorRepoRef: 'mapache',
+      productRef: 'song-thing',
+      title: 'Song Thing',
+      thumbnailUrl: 'https://cdn.test/song.png',
+      repositoryUrl: 'https://api.test/v1/backstage/repos/mapache/index.json',
+      packages: [
+        {
+          packageId: 'com.yucp.song',
+          displayName: 'Song Thing Package',
+          version: '1.2.3',
+          channel: 'stable',
+          zipSha256: 'a'.repeat(64),
+          aliasContract: {
+            kind: 'alias-v1',
+            aliasId: 'song-thing',
+            installStrategy: 'server-authorized',
+            importerPackage: 'com.yucp.importer',
+            minImporterVersion: '1.4.0',
+            catalogProductIds: ['catalog_1'],
+            channel: 'stable',
+          },
+          importerDelivery: {
+            packageInstallStrategy: 'server-authorized',
+            repoCatalogDeliveryMode: 'repo-token-vpm-v1',
+            repoCatalogReadOnly: true,
+          },
+        },
+      ],
+    });
+    expect(typeof payload.expiresAt).toBe('number');
+    expect(payload).not.toHaveProperty('repoToken');
+    expect(payload).not.toHaveProperty('addRepoUrl');
+  });
+
+  it('issues an alias install plan from the session-backed auth flow', async () => {
+    sessionImpl = async () => ({
+      user: {
+        id: 'auth-user-1',
+      },
+    });
+
+    const response = await routes.handleRequest(
+      new Request('https://api.test/api/backstage/access/mapache/song-thing/install-plan', {
+        method: 'POST',
+        headers: {
+          origin: 'https://app.test',
+        },
+      })
+    );
+
+    expect(response?.status).toBe(200);
+    await expect(response?.json()).resolves.toMatchObject({
+      kind: 'alias-install-plan-v1',
+      creatorRepoRef: 'mapache',
+      packages: [
+        {
+          packageId: 'com.yucp.song',
+        },
+      ],
     });
   });
 });

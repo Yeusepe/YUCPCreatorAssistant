@@ -3,6 +3,7 @@ import {
   CATALOG_SYNC_PROVIDER_KEYS,
   getProviderDescriptor,
 } from '@yucp/providers/providerMetadata';
+import type { YucpAliasPackageContract } from '@yucp/shared';
 import type { ApiActorBinding } from '@yucp/shared/apiActor';
 import { legacyProductIdsToSelectors, normalizeProductSelectorList } from '@yucp/shared/product';
 import { api } from '../../../../convex/_generated/api';
@@ -10,6 +11,7 @@ import type { Id } from '../../../../convex/_generated/dataModel';
 import type { Auth } from '../auth';
 import { listProviderProductsViaApi, listProviderTiersViaApi } from '../internalRpc/router';
 import { createAuthUserActorBinding } from '../lib/apiActor';
+import { buildBackstageImporterDelivery } from '../lib/backstageImporterDelivery';
 import { buildBackstageRepositoryUrls, getCreatorRepoIdentity } from '../lib/backstageRepoIdentity';
 import { getConvexClientFromUrl } from '../lib/convex';
 import { rejectCrossSiteRequest } from '../lib/csrf';
@@ -81,6 +83,7 @@ type BackstageProductQueryResult = {
         createdAt: number;
         deliveryName?: string;
         metadata?: unknown;
+        aliasContract?: YucpAliasPackageContract;
         publishedAt?: number;
         unityVersion?: string;
         updatedAt: number;
@@ -97,6 +100,7 @@ type BackstageProductQueryResult = {
         createdAt: number;
         deliveryName?: string;
         metadata?: unknown;
+        aliasContract?: YucpAliasPackageContract;
         publishedAt?: number;
         unityVersion?: string;
         updatedAt: number;
@@ -116,6 +120,9 @@ type BackstageProductMetadataOverride = {
   thumbnailUrl?: string;
 };
 type BackstageCatalogTierRow = NonNullable<BackstageProductQueryRow['catalogTiers']>[number];
+type BackstagePackageReleaseRow = NonNullable<
+  BackstageProductQueryRow['backstagePackages']
+>[number]['releases'][number];
 
 const HTML_ENTITY_REPLACEMENTS: Readonly<Record<string, string>> = {
   amp: '&',
@@ -310,6 +317,25 @@ function mapBackstageProductForResponse(
   product: BackstageProductQueryRow,
   override?: BackstageProductMetadataOverride
 ) {
+  const mapBackstageReleaseForResponse = (release: BackstagePackageReleaseRow) => ({
+    deliveryPackageReleaseId: release.deliveryPackageReleaseId,
+    version: release.version,
+    channel: release.channel,
+    releaseStatus: release.releaseStatus,
+    repositoryVisibility: release.repositoryVisibility,
+    artifactKey: release.artifactKey,
+    contentType: release.contentType,
+    createdAt: release.createdAt,
+    deliveryName: release.deliveryName,
+    metadata: release.metadata,
+    aliasContract: release.aliasContract,
+    importerDelivery: buildBackstageImporterDelivery(release.aliasContract),
+    publishedAt: release.publishedAt,
+    unityVersion: release.unityVersion,
+    updatedAt: release.updatedAt,
+    zipSha256: release.zipSha256,
+  });
+
   return {
     aliases: product.aliases ?? [],
     catalogTiers: (product.catalogTiers ?? []).map((tier) => ({
@@ -334,40 +360,8 @@ function mapBackstageProductForResponse(
       repositoryVisibility: pkg.repositoryVisibility,
       defaultChannel: pkg.defaultChannel,
       latestPublishedVersion: pkg.latestPublishedVersion,
-      latestRelease: pkg.latestRelease
-        ? {
-            deliveryPackageReleaseId: pkg.latestRelease.deliveryPackageReleaseId,
-            version: pkg.latestRelease.version,
-            channel: pkg.latestRelease.channel,
-            releaseStatus: pkg.latestRelease.releaseStatus,
-            repositoryVisibility: pkg.latestRelease.repositoryVisibility,
-            artifactKey: pkg.latestRelease.artifactKey,
-            contentType: pkg.latestRelease.contentType,
-            createdAt: pkg.latestRelease.createdAt,
-            deliveryName: pkg.latestRelease.deliveryName,
-            metadata: pkg.latestRelease.metadata,
-            publishedAt: pkg.latestRelease.publishedAt,
-            unityVersion: pkg.latestRelease.unityVersion,
-            updatedAt: pkg.latestRelease.updatedAt,
-            zipSha256: pkg.latestRelease.zipSha256,
-          }
-        : null,
-      releases: (pkg.releases ?? []).map((release) => ({
-        deliveryPackageReleaseId: release.deliveryPackageReleaseId,
-        version: release.version,
-        channel: release.channel,
-        releaseStatus: release.releaseStatus,
-        repositoryVisibility: release.repositoryVisibility,
-        artifactKey: release.artifactKey,
-        contentType: release.contentType,
-        createdAt: release.createdAt,
-        deliveryName: release.deliveryName,
-        metadata: release.metadata,
-        publishedAt: release.publishedAt,
-        unityVersion: release.unityVersion,
-        updatedAt: release.updatedAt,
-        zipSha256: release.zipSha256,
-      })),
+      latestRelease: pkg.latestRelease ? mapBackstageReleaseForResponse(pkg.latestRelease) : null,
+      releases: (pkg.releases ?? []).map(mapBackstageReleaseForResponse),
     })),
     canonicalSlug: product.canonicalSlug,
     catalogProductId: String(product._id),

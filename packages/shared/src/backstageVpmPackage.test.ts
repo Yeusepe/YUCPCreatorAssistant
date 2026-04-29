@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+
 import { prepareBackstageArtifactForPublish } from './backstageVpmPackage';
 
 describe('prepareBackstageArtifactForPublish', () => {
@@ -48,5 +49,57 @@ describe('prepareBackstageArtifactForPublish', () => {
     expect(artifact.deliveryName).toBe('example.zip');
     expect(artifact.bytes).toEqual(new Uint8Array([80, 75, 3, 4]));
     expect(artifact.metadata).toEqual({});
+  });
+
+  it('preserves a validated shared alias package contract under metadata.yucp', async () => {
+    const artifact = await prepareBackstageArtifactForPublish({
+      packageId: 'com.yucp.example',
+      version: '1.2.3',
+      metadata: {
+        yucp: {
+          kind: ' alias-v1 ',
+          aliasId: ' creator-alias ',
+          installStrategy: ' server-authorized ',
+          importerPackage: ' com.yucp.importer ',
+          minImporterVersion: ' 1.4.0 ',
+          catalogProductIds: [' product-a ', 'product-b', 'product-a'],
+          channel: ' stable ',
+        },
+        yucpDeliveryMode: 'repo-token-vpm-v1',
+      },
+      sourceBytes: new Uint8Array([80, 75, 3, 4]),
+      sourceFileName: 'example.zip',
+    });
+
+    expect(artifact.metadata).toEqual({
+      yucp: {
+        kind: 'alias-v1',
+        aliasId: 'creator-alias',
+        installStrategy: 'server-authorized',
+        importerPackage: 'com.yucp.importer',
+        minImporterVersion: '1.4.0',
+        catalogProductIds: ['product-a', 'product-b'],
+        channel: 'stable',
+      },
+    });
+  });
+
+  it('rejects invalid shared alias package metadata', async () => {
+    await expect(
+      prepareBackstageArtifactForPublish({
+        packageId: 'com.yucp.example',
+        version: '1.2.3',
+        metadata: {
+          yucp: {
+            kind: 'alias-v1',
+            aliasId: 'creator-alias',
+            installStrategy: 'download-direct',
+            importerPackage: 'com.yucp.importer',
+          },
+        },
+        sourceBytes: new Uint8Array([80, 75, 3, 4]),
+        sourceFileName: 'example.zip',
+      })
+    ).rejects.toThrow('metadata.yucp.installStrategy must be "server-authorized"');
   });
 });

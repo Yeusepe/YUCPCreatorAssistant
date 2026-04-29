@@ -67,4 +67,5 @@ export * from './product';
 export * from './productParsers';
 export * from './publicAuthority';
 export * from './verificationSupport';
+export * from './yucpAliasPackageContract';
 export * from './yucpTrust';

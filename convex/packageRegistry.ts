@@ -17,9 +17,14 @@
 
 import {
   buildRepoTokenVpmDeliveryMetadata,
+  getYucpAliasPackageContract,
   inferBackstageVpmDeliverySourceKind,
   stripBackstageVpmReservedMetadata,
-} from '@yucp/shared/backstageVpmDelivery';
+  YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES,
+  YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES,
+  YUCP_ALIAS_PACKAGE_KIND,
+  type YucpAliasPackageContract,
+} from '@yucp/shared';
 import { sha256Hex } from '@yucp/shared/crypto';
 import { ConvexError, v } from 'convex/values';
 import { api, internal } from './_generated/api';
@@ -90,6 +95,7 @@ type BackstageReleaseSummary = {
   unityVersion?: string;
   deliveryName?: string;
   contentType?: string;
+  aliasContract?: YucpAliasPackageContract;
 };
 
 type DeliveryArtifactSummary = Pick<
@@ -119,6 +125,25 @@ type BackstagePackageDownloadRecord = {
   channel: string;
 };
 
+type AuthorizedAliasInstallPlanPackageRecord = {
+  packageId: string;
+  displayName?: string;
+  version: string;
+  channel: string;
+  zipSha256?: string;
+  aliasContract: YucpAliasPackageContract;
+};
+
+type AuthorizedAliasInstallPlanRecord = {
+  creatorAuthUserId: string;
+  creatorSlug?: string;
+  providerProductRef: string;
+  canonicalSlug?: string;
+  displayName?: string;
+  thumbnailUrl?: string;
+  packages: AuthorizedAliasInstallPlanPackageRecord[];
+};
+
 const DownloadablePackageReleaseRecordV = v.object({
   deliveryPackageReleaseId: v.id('delivery_package_releases'),
   artifactKey: v.optional(v.string()),
@@ -139,6 +164,35 @@ const BackstagePackageDownloadRecordV = v.object({
   zipSha256: v.optional(v.string()),
   version: v.string(),
   channel: v.string(),
+});
+
+const YucpAliasPackageContractV = v.object({
+  kind: v.literal(YUCP_ALIAS_PACKAGE_KIND),
+  aliasId: v.string(),
+  installStrategy: v.literal(YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES.serverAuthorized),
+  importerPackage: v.literal(YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES.importer),
+  minImporterVersion: v.optional(v.string()),
+  catalogProductIds: v.optional(v.array(v.string())),
+  channel: v.optional(v.string()),
+});
+
+const AuthorizedAliasInstallPlanPackageRecordV = v.object({
+  packageId: v.string(),
+  displayName: v.optional(v.string()),
+  version: v.string(),
+  channel: v.string(),
+  zipSha256: v.optional(v.string()),
+  aliasContract: YucpAliasPackageContractV,
+});
+
+const AuthorizedAliasInstallPlanRecordV = v.object({
+  creatorAuthUserId: v.string(),
+  creatorSlug: v.optional(v.string()),
+  providerProductRef: v.string(),
+  canonicalSlug: v.optional(v.string()),
+  displayName: v.optional(v.string()),
+  thumbnailUrl: v.optional(v.string()),
+  packages: v.array(AuthorizedAliasInstallPlanPackageRecordV),
 });
 
 const DeliveryAccessSelectorV = v.union(
@@ -303,6 +357,7 @@ function toBackstageReleaseSummary(
     unityVersion: release.unityVersion,
     deliveryName: deliveryArtifact?.deliveryName ?? signedArtifact?.deliveryName,
     contentType: deliveryArtifact?.contentType ?? signedArtifact?.contentType,
+    aliasContract: getYucpAliasPackageContract(release.metadata),
   };
 }
 
@@ -1057,6 +1112,57 @@ async function listEntitledBackstagePackages(
   }
 
   return Array.from(mergedByPackageId.values()).sort(compareBackstagePackages);
+}
+
+async function resolveBackstageProductByRef(
+  ctx: RegistryReaderCtx,
+  creatorRef: string,
+  productRef: string
+): Promise<{
+  creatorAuthUserId: string;
+  creatorProfile: Doc<'creator_profiles'> | null;
+  product: Doc<'product_catalog'>;
+} | null> {
+  const normalizedCreatorRef = creatorRef.trim().toLowerCase();
+  const normalizedProductRef = productRef.trim().toLowerCase();
+  if (!normalizedCreatorRef || !normalizedProductRef) {
+    return null;
+  }
+
+  const creatorProfileBySlug = await ctx.db
+    .query('creator_profiles')
+    .withIndex('by_slug', (q) => q.eq('slug', normalizedCreatorRef))
+    .first();
+  const creatorAuthUserId = creatorProfileBySlug?.authUserId ?? creatorRef.trim();
+  const creatorProfile =
+    creatorProfileBySlug ??
+    (await ctx.db
+      .query('creator_profiles')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', creatorAuthUserId))
+      .first());
+
+  const catalogProducts = await ctx.db
+    .query('product_catalog')
+    .withIndex('by_auth_user', (q) => q.eq('authUserId', creatorAuthUserId))
+    .filter((q) => q.eq(q.field('status'), 'active'))
+    .collect();
+
+  const product =
+    catalogProducts.find(
+      (entry) => entry.canonicalSlug?.trim().toLowerCase() === normalizedProductRef
+    ) ??
+    catalogProducts.find(
+      (entry) => entry.providerProductRef.trim().toLowerCase() === normalizedProductRef
+    );
+  if (!product) {
+    return null;
+  }
+
+  return {
+    creatorAuthUserId,
+    creatorProfile,
+    product,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1834,74 +1940,114 @@ export const getPublicBackstageProductAccessByRef = query({
           packageId: v.string(),
           displayName: v.optional(v.string()),
           latestPublishedVersion: v.optional(v.string()),
+          latestReleaseChannel: v.optional(v.string()),
+          aliasContract: v.optional(YucpAliasPackageContractV),
         })
       ),
     })
   ),
   handler: async (ctx, args) => {
     requireApiSecret(args.apiSecret);
-    const normalizedCreatorRef = args.creatorRef.trim().toLowerCase();
-    const normalizedProductRef = args.productRef.trim().toLowerCase();
-    if (!normalizedCreatorRef || !normalizedProductRef) {
-      return null;
-    }
-
-    const creatorProfileBySlug = await ctx.db
-      .query('creator_profiles')
-      .withIndex('by_slug', (q) => q.eq('slug', normalizedCreatorRef))
-      .first();
-    const creatorAuthUserId = creatorProfileBySlug?.authUserId ?? args.creatorRef.trim();
-    const creatorProfile =
-      creatorProfileBySlug ??
-      (await ctx.db
-        .query('creator_profiles')
-        .withIndex('by_auth_user', (q) => q.eq('authUserId', creatorAuthUserId))
-        .first());
-
-    const catalogProducts = await ctx.db
-      .query('product_catalog')
-      .withIndex('by_auth_user', (q) => q.eq('authUserId', creatorAuthUserId))
-      .filter((q) => q.eq(q.field('status'), 'active'))
-      .collect();
-
-    const product =
-      catalogProducts.find(
-        (entry) => entry.canonicalSlug?.trim().toLowerCase() === normalizedProductRef
-      ) ??
-      catalogProducts.find(
-        (entry) => entry.providerProductRef.trim().toLowerCase() === normalizedProductRef
-      );
-    if (!product) {
+    const resolved = await resolveBackstageProductByRef(ctx, args.creatorRef, args.productRef);
+    if (!resolved) {
       return null;
     }
 
     const backstagePackagesByCatalogProduct = await buildBackstagePackageMap(
       ctx,
-      creatorAuthUserId,
-      [product._id]
+      resolved.creatorAuthUserId,
+      [resolved.product._id]
     );
-    const packageSummaries = (backstagePackagesByCatalogProduct.get(String(product._id)) ?? [])
+    const packageSummaries = (
+      backstagePackagesByCatalogProduct.get(String(resolved.product._id)) ?? []
+    )
       .filter((pkg) => pkg.status === 'active')
       .map((pkg) => ({
         packageId: pkg.packageId,
         displayName: pkg.displayName ?? pkg.packageName,
         latestPublishedVersion: pkg.latestPublishedVersion,
+        latestReleaseChannel: pkg.latestRelease?.channel,
+        aliasContract: pkg.latestRelease?.aliasContract,
       }));
     const primaryPackage = packageSummaries[0];
 
     return {
-      creatorAuthUserId,
-      creatorSlug: creatorProfile?.slug,
-      catalogProductId: product._id,
-      productId: product.productId,
-      provider: product.provider,
-      providerProductRef: product.providerProductRef,
-      canonicalSlug: product.canonicalSlug,
-      displayName: product.displayName,
-      thumbnailUrl: product.thumbnailUrl,
+      creatorAuthUserId: resolved.creatorAuthUserId,
+      creatorSlug: resolved.creatorProfile?.slug,
+      catalogProductId: resolved.product._id,
+      productId: resolved.product.productId,
+      provider: resolved.product.provider,
+      providerProductRef: resolved.product.providerProductRef,
+      canonicalSlug: resolved.product.canonicalSlug,
+      displayName: resolved.product.displayName,
+      thumbnailUrl: resolved.product.thumbnailUrl,
       primaryPackageId: primaryPackage?.packageId,
       primaryPackageName: primaryPackage?.displayName,
       packageSummaries,
+    };
+  },
+});
+
+export const getAuthorizedAliasInstallPlanByRef = query({
+  args: {
+    apiSecret: v.string(),
+    authUserId: v.string(),
+    subjectId: v.id('subjects'),
+    creatorRef: v.string(),
+    productRef: v.string(),
+  },
+  returns: v.union(v.null(), AuthorizedAliasInstallPlanRecordV),
+  handler: async (ctx, args): Promise<AuthorizedAliasInstallPlanRecord | null> => {
+    requireApiSecret(args.apiSecret);
+    const resolved = await resolveBackstageProductByRef(ctx, args.creatorRef, args.productRef);
+    if (!resolved) {
+      return null;
+    }
+
+    const targetCatalogProductId = String(resolved.product._id);
+    const entitledPackages = await listEntitledBackstagePackages(
+      ctx,
+      args.authUserId,
+      args.subjectId
+    );
+    const packages = entitledPackages.reduce<AuthorizedAliasInstallPlanPackageRecord[]>(
+      (acc, pkg) => {
+        const latestRelease = pkg.latestRelease;
+        if (
+          !pkg.catalogProductIds.some(
+            (catalogProductId) => String(catalogProductId) === targetCatalogProductId
+          ) ||
+          latestRelease?.releaseStatus !== 'published' ||
+          !latestRelease.aliasContract ||
+          !(latestRelease.aliasContract.catalogProductIds?.includes(targetCatalogProductId) ?? true)
+        ) {
+          return acc;
+        }
+
+        acc.push({
+          packageId: pkg.packageId,
+          displayName: pkg.displayName ?? pkg.packageName,
+          version: latestRelease.version,
+          channel: latestRelease.channel,
+          zipSha256: latestRelease.zipSha256,
+          aliasContract: latestRelease.aliasContract,
+        });
+        return acc;
+      },
+      []
+    );
+    if (packages.length === 0) {
+      return null;
+    }
+
+    return {
+      creatorAuthUserId: resolved.creatorAuthUserId,
+      creatorSlug: resolved.creatorProfile?.slug,
+      providerProductRef: resolved.product.providerProductRef,
+      canonicalSlug: resolved.product.canonicalSlug,
+      displayName: resolved.product.displayName,
+      thumbnailUrl: resolved.product.thumbnailUrl,
+      packages,
     };
   },
 });

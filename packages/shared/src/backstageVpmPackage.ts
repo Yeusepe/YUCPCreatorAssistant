@@ -1,5 +1,9 @@
 import { BACKSTAGE_VPM_RESERVED_METADATA_KEYS } from './backstageVpmDelivery';
 import { sha256Hex } from './crypto';
+import {
+  normalizeYucpAliasPackageContract,
+  YUCP_PACKAGE_METADATA_KEY,
+} from './yucpAliasPackageContract';
 
 const UNITYPACKAGE_EXTENSION = '.unitypackage';
 const ZIP_EXTENSION = '.zip';
@@ -60,10 +64,20 @@ function normalizeManifestMetadata(input: {
     delete metadata.dependencies;
   }
 
+  const normalizedYucpMetadata = normalizeYucpAliasPackageContract(
+    metadata[YUCP_PACKAGE_METADATA_KEY]
+  );
+  if (normalizedYucpMetadata) {
+    metadata[YUCP_PACKAGE_METADATA_KEY] = normalizedYucpMetadata;
+  } else {
+    delete metadata[YUCP_PACKAGE_METADATA_KEY];
+  }
+
   const description = trimOptional(input.description);
   if (description) {
     metadata.description = description;
   }
+
   const unityVersion = trimOptional(input.unityVersion);
   if (unityVersion) {
     metadata.unity = unityVersion;
@@ -80,6 +94,7 @@ function inferSourceKind(sourceFileName: string): PreparedBackstageArtifact['sou
   if (lowerFileName.endsWith(ZIP_EXTENSION)) {
     return 'zip';
   }
+
   throw new Error('Backstage artifacts must be .unitypackage files or .zip files.');
 }
 
@@ -92,6 +107,7 @@ function resolveDeliveryName(input: {
   if (explicitDeliveryName) {
     return explicitDeliveryName;
   }
+
   return input.sourceKind === 'unitypackage' ? input.sourceFileName : input.sourceFileName;
 }
 
