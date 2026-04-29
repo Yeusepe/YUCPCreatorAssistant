@@ -16,9 +16,15 @@
  */
 
 import {
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY,
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY,
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_MARKERS,
+  BACKSTAGE_VPM_SOURCE_KINDS,
+  applyYucpAliasPackageManifestDefaults,
   buildRepoTokenVpmDeliveryMetadata,
   getYucpAliasPackageContract,
   inferBackstageVpmDeliverySourceKind,
+  mergeYucpAliasPackageMetadata,
   stripBackstageVpmReservedMetadata,
   YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES,
   YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES,
@@ -32,6 +38,11 @@ import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { ApiActorBindingV, requireApiActor, requireDelegatedAuthUserActor } from './lib/apiActor';
+import {
+  buildSyntheticAliasMetadataSeed,
+  type CatalogProductAliasSource,
+  type SyntheticAliasMetadataSeed,
+} from './lib/backstageAliasMetadata';
 import { requireApiSecret } from './lib/apiAuth';
 
 const PACKAGE_ID_RE = /^[a-z0-9\-_./:]{1,128}$/;
@@ -329,7 +340,8 @@ async function loadActiveDeliveryArtifactsByReleaseId(
 function toBackstageReleaseSummary(
   release: Doc<'delivery_package_releases'>,
   signedArtifactsById: Map<string, Doc<'signed_release_artifacts'>>,
-  activeDeliveryArtifactsByReleaseId: Map<string, ActiveDeliveryArtifactsForRelease>
+  activeDeliveryArtifactsByReleaseId: Map<string, ActiveDeliveryArtifactsForRelease>,
+  aliasMetadataSeed?: SyntheticAliasMetadataSeed
 ): BackstageReleaseSummary {
   const signedArtifact = release.signedArtifactId
     ? signedArtifactsById.get(String(release.signedArtifactId))
@@ -337,6 +349,7 @@ function toBackstageReleaseSummary(
   const releaseArtifacts = activeDeliveryArtifactsByReleaseId.get(String(release._id));
   const rawArtifact = releaseArtifacts?.rawArtifact;
   const deliveryArtifact = releaseArtifacts?.deliverableArtifact;
+  const resolvedMetadata = resolveBackstageReleaseMetadata(release.metadata, aliasMetadataSeed);
 
   return {
     deliveryPackageReleaseId: String(release._id),
@@ -350,14 +363,14 @@ function toBackstageReleaseSummary(
     artifactKey: release.artifactKey,
     signedArtifactId: release.signedArtifactId,
     zipSha256: release.zipSha256,
-    metadata: release.metadata,
+    metadata: resolvedMetadata,
     publishedAt: release.publishedAt,
     createdAt: release.createdAt,
     updatedAt: release.updatedAt,
     unityVersion: release.unityVersion,
     deliveryName: deliveryArtifact?.deliveryName ?? signedArtifact?.deliveryName,
     contentType: deliveryArtifact?.contentType ?? signedArtifact?.contentType,
-    aliasContract: getYucpAliasPackageContract(release.metadata),
+    aliasContract: getYucpAliasPackageContract(resolvedMetadata),
   };
 }
 
@@ -447,18 +460,46 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function resolveBackstageReleaseMetadata(
+  metadata: unknown,
+  aliasMetadataSeed?: SyntheticAliasMetadataSeed
+): Record<string, unknown> {
+  const baseMetadata = isRecord(metadata) ? metadata : {};
+  if (!aliasMetadataSeed || getYucpAliasPackageContract(baseMetadata)) {
+    return baseMetadata;
+  }
+
+  return mergeYucpAliasPackageMetadata({
+    metadata: baseMetadata,
+    aliasId: aliasMetadataSeed.aliasId,
+    catalogProductIds: aliasMetadataSeed.catalogProductIds,
+    channel: aliasMetadataSeed.channel,
+  });
+}
+
 function toBackstageReleaseManifestMetadata(
   release: Pick<BackstageReleaseSummary, 'metadata' | 'deliveryName' | 'contentType'>
 ): Record<string, unknown> {
-  const normalizedMetadata = stripBackstageVpmReservedMetadata(
-    isRecord(release.metadata) ? release.metadata : {}
-  );
-  const sourceKind = inferBackstageVpmDeliverySourceKind({
-    deliveryName: release.deliveryName,
-    contentType: release.contentType,
-  });
+  const releaseMetadata = isRecord(release.metadata) ? release.metadata : {};
+  const normalizedMetadata = stripBackstageVpmReservedMetadata(releaseMetadata);
+  const manifestMetadata = applyYucpAliasPackageManifestDefaults(normalizedMetadata);
+  const trustedPersistedSourceKind =
+    releaseMetadata[BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY] ===
+    BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_MARKERS.serverDerived;
+  const reservedSourceKind =
+    trustedPersistedSourceKind &&
+    (releaseMetadata[BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY] === BACKSTAGE_VPM_SOURCE_KINDS.unitypackage ||
+      releaseMetadata[BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY] === BACKSTAGE_VPM_SOURCE_KINDS.zip)
+      ? releaseMetadata[BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]
+      : undefined;
+  const sourceKind =
+    reservedSourceKind ??
+    inferBackstageVpmDeliverySourceKind({
+      deliveryName: release.deliveryName,
+      contentType: release.contentType,
+    });
   return {
-    ...normalizedMetadata,
+    ...manifestMetadata,
     ...buildRepoTokenVpmDeliveryMetadata(sourceKind),
   };
 }
@@ -873,6 +914,39 @@ async function summarizeBackstagePackagesFromLinks(
   const deliveryPackagesById = new Map(
     deliveryPackages.map((deliveryPackage) => [String(deliveryPackage._id), deliveryPackage])
   );
+  const relevantDeliveryPackageIdSet = new Set(
+    deliveryPackages.map((deliveryPackage) => String(deliveryPackage._id))
+  );
+  const activeLinksForRelevantPackages = ((await ctx.db
+    .query('delivery_package_products')
+    .withIndex('by_auth_user', (q) => q.eq('authUserId', authUserId))
+    .collect()) as Doc<'delivery_package_products'>[]).filter(
+    (link) =>
+      link.status === 'active' && relevantDeliveryPackageIdSet.has(String(link.deliveryPackageId))
+  );
+  const uniqueCatalogProductIds = Array.from(
+    new Set(activeLinksForRelevantPackages.map((link) => String(link.catalogProductId)))
+  );
+  const catalogProducts = (
+    await Promise.all(
+      uniqueCatalogProductIds.map(async (catalogProductId) => {
+        return await ctx.db.get(catalogProductId as Id<'product_catalog'>);
+      })
+    )
+  ).filter((product): product is Doc<'product_catalog'> => product !== null);
+  const catalogProductsById = new Map(
+    catalogProducts.map((product) => [String(product._id), product])
+  );
+  const catalogProductsByDeliveryPackageId = new Map<string, CatalogProductAliasSource[]>();
+  for (const link of activeLinksForRelevantPackages) {
+    const linkedCatalogProduct = catalogProductsById.get(String(link.catalogProductId));
+    if (!linkedCatalogProduct) {
+      continue;
+    }
+    const existingProducts = catalogProductsByDeliveryPackageId.get(String(link.deliveryPackageId)) ?? [];
+    existingProducts.push(linkedCatalogProduct);
+    catalogProductsByDeliveryPackageId.set(String(link.deliveryPackageId), existingProducts);
+  }
 
   const releases = await ctx.db
     .query('delivery_package_releases')
@@ -931,11 +1005,18 @@ async function summarizeBackstagePackagesFromLinks(
       continue;
     }
 
+    const linkedCatalogProducts =
+      catalogProductsByDeliveryPackageId.get(String(link.deliveryPackageId)) ?? [];
     const packageReleaseHistory = (releasesByPackageId.get(String(link.deliveryPackageId)) ?? [])
       .slice()
       .sort(compareReleaseRecency)
       .map((release) =>
-        toBackstageReleaseSummary(release, signedArtifactsById, activeDeliveryArtifactsByReleaseId)
+        toBackstageReleaseSummary(
+          release,
+          signedArtifactsById,
+          activeDeliveryArtifactsByReleaseId,
+          buildSyntheticAliasMetadataSeed(linkedCatalogProducts, release.channel)
+        )
       );
     const latestRelease = latestReleaseByPackageId.get(String(link.deliveryPackageId)) ?? null;
     const summary: BackstagePackageSummary = {
@@ -953,7 +1034,8 @@ async function summarizeBackstagePackagesFromLinks(
         ? toBackstageReleaseSummary(
             latestRelease,
             signedArtifactsById,
-            activeDeliveryArtifactsByReleaseId
+            activeDeliveryArtifactsByReleaseId,
+            buildSyntheticAliasMetadataSeed(linkedCatalogProducts, latestRelease.channel)
           )
         : null,
       releases: packageReleaseHistory,
@@ -1503,6 +1585,12 @@ export const updateMaterializedReleaseDigest = internalMutation({
   args: {
     deliveryPackageReleaseId: v.id('delivery_package_releases'),
     zipSha256: v.string(),
+    sourceKind: v.optional(
+      v.union(
+        v.literal(BACKSTAGE_VPM_SOURCE_KINDS.unitypackage),
+        v.literal(BACKSTAGE_VPM_SOURCE_KINDS.zip)
+      )
+    ),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -1513,8 +1601,18 @@ export const updateMaterializedReleaseDigest = internalMutation({
     if (!release) {
       throw new ConvexError('Delivery package release not found.');
     }
+    const releaseMetadata =
+      release.metadata && typeof release.metadata === 'object' && !Array.isArray(release.metadata)
+        ? { ...(release.metadata as Record<string, unknown>) }
+        : {};
+    if (args.sourceKind) {
+      releaseMetadata[BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY] = args.sourceKind;
+      releaseMetadata[BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY] =
+        BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_MARKERS.serverDerived;
+    }
     await ctx.db.patch(args.deliveryPackageReleaseId, {
       zipSha256: args.zipSha256,
+      ...(args.sourceKind ? { metadata: releaseMetadata } : {}),
       updatedAt: Date.now(),
     });
     return null;
@@ -1535,6 +1633,7 @@ export const getDeliveryPackageReleaseById = internalQuery({
       zipSha256: v.optional(v.string()),
       signedArtifactId: v.optional(v.id('signed_release_artifacts')),
       artifactKey: v.optional(v.string()),
+      metadata: v.optional(v.any()),
     })
   ),
   handler: async (ctx, args) => {
@@ -1550,6 +1649,7 @@ export const getDeliveryPackageReleaseById = internalQuery({
       zipSha256: release.zipSha256,
       signedArtifactId: release.signedArtifactId,
       artifactKey: release.artifactKey,
+      metadata: release.metadata,
     };
   },
 });

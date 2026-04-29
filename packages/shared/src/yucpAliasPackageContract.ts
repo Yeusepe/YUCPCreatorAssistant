@@ -12,6 +12,14 @@ export const YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES = {
   importer: 'com.yucp.importer',
 } as const;
 
+export const YUCP_MOTION_TOOLKIT_PACKAGE_ID = 'com.yucp.motion';
+export const YUCP_FORWARDED_TOOLCHAIN_PACKAGE_IDS = [
+  YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES.importer,
+  YUCP_MOTION_TOOLKIT_PACKAGE_ID,
+] as const;
+export const YUCP_ALIAS_PACKAGE_DEFAULT_IMPORTER_MIN_VERSION = '0.1.0';
+export const YUCP_ALIAS_PACKAGE_DEFAULT_IMPORTER_VERSION = `>=${YUCP_ALIAS_PACKAGE_DEFAULT_IMPORTER_MIN_VERSION}`;
+
 export type YucpAliasPackageInstallStrategy =
   (typeof YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES)[keyof typeof YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES];
 
@@ -26,6 +34,11 @@ export type YucpAliasPackageContract = {
   minImporterVersion?: string;
   catalogProductIds?: string[];
   channel?: string;
+};
+
+export type YucpAliasCatalogProductRef = {
+  canonicalSlug?: string | null;
+  providerProductRef?: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -144,4 +157,74 @@ export function getYucpAliasPackageContract(
   }
 
   return normalizeYucpAliasPackageContract(metadata[YUCP_PACKAGE_METADATA_KEY]);
+}
+
+export function resolveYucpAliasIdFromCatalogProduct(
+  input: YucpAliasCatalogProductRef
+): string | undefined {
+  const canonicalSlug = input.canonicalSlug?.trim();
+  if (canonicalSlug) {
+    return canonicalSlug;
+  }
+
+  const providerProductRef = input.providerProductRef?.trim();
+  return providerProductRef || undefined;
+}
+
+export function mergeYucpAliasPackageMetadata(input: {
+  metadata?: unknown;
+  aliasId: string;
+  catalogProductIds: string[];
+  channel: string;
+}): Record<string, unknown> {
+  if (input.metadata != null && !isRecord(input.metadata)) {
+    throw new Error('metadata must be an object when provided');
+  }
+
+  const baseMetadata: Record<string, unknown> = input.metadata ? { ...input.metadata } : {};
+  const existingAliasContract = normalizeYucpAliasPackageContract(baseMetadata.yucp);
+
+  return {
+    ...baseMetadata,
+    yucp: {
+      kind: YUCP_ALIAS_PACKAGE_KIND,
+      aliasId: input.aliasId,
+      installStrategy: YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES.serverAuthorized,
+      importerPackage: YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES.importer,
+      minImporterVersion:
+        existingAliasContract?.minImporterVersion ??
+        YUCP_ALIAS_PACKAGE_DEFAULT_IMPORTER_MIN_VERSION,
+      catalogProductIds: Array.from(new Set(input.catalogProductIds.map((value) => value.trim()))),
+      channel: input.channel.trim(),
+    },
+  };
+}
+
+function resolveImporterDependencyRequirement(aliasContract: YucpAliasPackageContract): string {
+  const minimumVersion = aliasContract.minImporterVersion?.trim();
+  if (!minimumVersion) {
+    return YUCP_ALIAS_PACKAGE_DEFAULT_IMPORTER_VERSION;
+  }
+  return /^[<>=^~]/.test(minimumVersion) ? minimumVersion : `>=${minimumVersion}`;
+}
+
+export function applyYucpAliasPackageManifestDefaults(
+  metadata: Record<string, unknown>
+): Record<string, unknown> {
+  const aliasContract = getYucpAliasPackageContract(metadata);
+  if (!aliasContract) {
+    return metadata;
+  }
+
+  const dependencies = isRecord(metadata.dependencies) ? { ...metadata.dependencies } : {};
+  const existingImporterDependency = dependencies[aliasContract.importerPackage];
+  if (typeof existingImporterDependency !== 'string' || !existingImporterDependency.trim()) {
+    dependencies[aliasContract.importerPackage] =
+      resolveImporterDependencyRequirement(aliasContract);
+  }
+
+  return {
+    ...metadata,
+    dependencies,
+  };
 }

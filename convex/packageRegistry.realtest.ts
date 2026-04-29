@@ -1013,6 +1013,7 @@ describe('packageRegistry', () => {
               description: 'Private VPM package',
               dependencies: {
                 'com.vrchat.base': '3.7.0',
+                'com.yucp.importer': '>=1.4.0',
               },
               headers: {
                 'X-YUCP-Repo-Token': 'ybt_example',
@@ -1113,9 +1114,7 @@ describe('packageRegistry', () => {
       packageId: 'com.yucp.backstage.raw',
       storageId,
       version: '1.0.0',
-      zipSha256: uploadSha256,
       deliveryName: 'example.zip',
-      contentType: 'application/zip',
     });
 
     expect(published).toEqual({
@@ -1130,6 +1129,20 @@ describe('packageRegistry', () => {
       );
     });
     expect(release?.zipSha256).toBe(published.zipSha256);
+    expect(release?.metadata).toMatchObject({
+      dependencies: {
+        'com.yucp.importer': '>=0.1.0',
+      },
+      yucp: {
+        kind: 'alias-v1',
+        aliasId: 'gumroad-product-raw-upload',
+        installStrategy: 'server-authorized',
+        importerPackage: 'com.yucp.importer',
+        minImporterVersion: '0.1.0',
+        catalogProductIds: [String(catalogProductId)],
+        channel: 'stable',
+      },
+    });
 
     const subjectId = await seedSubject(t, {
       authUserId: 'buyer-1',
@@ -1162,8 +1175,20 @@ describe('packageRegistry', () => {
         'com.yucp.backstage.raw': {
           versions: {
             '1.0.0': {
+              dependencies: {
+                'com.yucp.importer': '>=0.1.0',
+              },
               yucpDeliveryMode: 'repo-token-vpm-v1',
               yucpDeliverySourceKind: 'zip',
+              yucp: {
+                kind: 'alias-v1',
+                aliasId: 'gumroad-product-raw-upload',
+                installStrategy: 'server-authorized',
+                importerPackage: 'com.yucp.importer',
+                minImporterVersion: '0.1.0',
+                catalogProductIds: [String(catalogProductId)],
+                channel: 'stable',
+              },
             },
           },
         },
@@ -1217,6 +1242,427 @@ describe('packageRegistry', () => {
       `https://api.yucp.test/v1/backstage/package?packageId=com.yucp.backstage.raw&version=1.0.0&channel=stable&zipSHA256=${activeDeliverable?.sha256}`
     );
     expect(entitledResolved?.downloadUrl).toContain('/storage/');
+
+    const installPlan = await t.run(async (ctx) => {
+      return await ctx.runQuery(api.packageRegistry.getAuthorizedAliasInstallPlanByRef, {
+        apiSecret: 'test-secret',
+        authUserId: 'auth-user-1',
+        subjectId,
+        creatorRef: 'auth-user-1',
+        productRef: 'gumroad-product-raw-upload',
+      });
+    });
+    expect(installPlan).toMatchObject({
+      packages: [
+        {
+          packageId: 'com.yucp.backstage.raw',
+          version: '1.0.0',
+          channel: 'stable',
+          aliasContract: {
+            kind: 'alias-v1',
+            aliasId: 'gumroad-product-raw-upload',
+            installStrategy: 'server-authorized',
+            importerPackage: 'com.yucp.importer',
+            minImporterVersion: '0.1.0',
+            catalogProductIds: [String(catalogProductId)],
+            channel: 'stable',
+          },
+        },
+      ],
+    });
+  });
+
+  it('preserves unitypackage uploads when deliveryName is omitted', async () => {
+    const t = makeTestConvex();
+    const catalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-unity-no-name',
+      providerProductRef: 'gumroad-product-unity-no-name',
+      displayName: 'Unity No Name Product',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.backstage.noname',
+      packageName: 'Unity No Name Package',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    const uploadBytes = buildUnitypackage([
+      { path: 'asset-guid/asset', content: strToU8('asset-bytes') },
+      { path: 'asset-guid/pathname', content: strToU8('Assets/NoName/readme.txt') },
+    ]);
+    const storageId = await t.run(async (ctx) => {
+      return await ctx.storage.store(
+        new Blob([toArrayBuffer(uploadBytes)], { type: 'application/octet-stream' })
+      );
+    });
+
+    const published = await t.action(api.backstageRepos.publishUploadedReleaseForAuthUser, {
+      apiSecret: 'test-secret',
+      actor: await createAuthUserActorBinding('auth-user-1'),
+      authUserId: 'auth-user-1',
+      accessSelectors: [{ kind: 'catalogProduct', catalogProductId }],
+      packageId: 'com.yucp.backstage.noname',
+      storageId,
+      version: '1.0.0',
+      sourceContentType: 'application/octet-stream',
+    });
+
+    const subjectId = await seedSubject(t, {
+      authUserId: 'buyer-unity-no-name',
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert('entitlements', {
+        authUserId: 'auth-user-1',
+        subjectId,
+        productId: 'product-unity-no-name',
+        sourceProvider: 'gumroad',
+        sourceReference: 'order-unity-no-name',
+        catalogProductId,
+        status: 'active',
+        grantedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const activeDeliverable = await t.run(async (ctx) => {
+      return await ctx.db
+        .query('delivery_release_artifacts')
+        .withIndex('by_release_role_status', (q) =>
+          q
+            .eq(
+              'deliveryPackageReleaseId',
+              published.deliveryPackageReleaseId as Id<'delivery_package_releases'>
+            )
+            .eq('artifactRole', 'server_deliverable')
+            .eq('status', 'active')
+        )
+        .first();
+    });
+    expect(activeDeliverable).toMatchObject({
+      contentType: 'application/zip',
+      deliveryName: 'vrc-get-com.yucp.backstage.noname-1.0.0.zip',
+    });
+
+    const repository = await t.query(internal.packageRegistry.buildBackstageRepositoryForSubject, {
+      authUserId: 'auth-user-1',
+      subjectId,
+      repositoryUrl: 'https://api.yucp.test/v1/backstage/repos/index.json',
+      packageBaseUrl: 'https://api.yucp.test/v1/backstage/package',
+      packageHeaders: {
+        'X-YUCP-Repo-Token': 'ybt_example',
+      },
+    });
+    expect(repository).toMatchObject({
+      packages: {
+        'com.yucp.backstage.noname': {
+          versions: {
+            '1.0.0': {
+              yucpDeliverySourceKind: 'unitypackage',
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('rejects metadata-less uploads that span multiple products with different alias ids', async () => {
+    const t = makeTestConvex();
+    const firstCatalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-multi-a',
+      providerProductRef: 'gumroad-product-multi-a',
+      displayName: 'Multi Product A',
+    });
+    const secondCatalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-multi-b',
+      providerProductRef: 'gumroad-product-multi-b',
+      displayName: 'Multi Product B',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.backstage.multi-product',
+      packageName: 'Multi Product Package',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    const uploadBytes = zipSync(
+      {
+        'Packages/com.yucp.backstage.multi-product/package.json': [
+          new TextEncoder().encode('{"name":"com.yucp.backstage.multi-product"}'),
+          { mtime: new Date() },
+        ],
+      },
+      { level: 9 }
+    );
+    const storageId = await t.run(async (ctx) => {
+      return await ctx.storage.store(
+        new Blob([toArrayBuffer(uploadBytes)], { type: 'application/zip' })
+      );
+    });
+
+    await expect(
+      t.action(api.backstageRepos.publishUploadedReleaseForAuthUser, {
+        apiSecret: 'test-secret',
+        actor: await createAuthUserActorBinding('auth-user-1'),
+        authUserId: 'auth-user-1',
+        accessSelectors: [
+          { kind: 'catalogProduct', catalogProductId: firstCatalogProductId },
+          { kind: 'catalogProduct', catalogProductId: secondCatalogProductId },
+        ],
+        packageId: 'com.yucp.backstage.multi-product',
+        storageId,
+        version: '1.0.0',
+        deliveryName: 'multi-product.zip',
+      })
+    ).rejects.toThrow(
+      'Cannot synthesize alias metadata across multiple catalog products with different alias ids.'
+    );
+  });
+
+  it('repairs legacy persisted releases without alias metadata at repo read time', async () => {
+    const t = makeTestConvex();
+    const catalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-legacy-upload',
+      providerProductRef: 'gumroad-product-legacy-upload',
+      displayName: 'Legacy Upload Product',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.backstage.legacy-upload',
+      packageName: 'Legacy Upload Package',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    const uploadBytes = zipSync(
+      {
+        'Packages/com.yucp.backstage.legacy-upload/package.json': [
+          new TextEncoder().encode('{"name":"com.yucp.backstage.legacy-upload"}'),
+          { mtime: new Date() },
+        ],
+      },
+      { level: 9 }
+    );
+    const storageId = await t.run(async (ctx) => {
+      return await ctx.storage.store(
+        new Blob([toArrayBuffer(uploadBytes)], { type: 'application/zip' })
+      );
+    });
+
+    const published = await t.action(api.backstageRepos.publishUploadedReleaseForAuthUser, {
+      apiSecret: 'test-secret',
+      actor: await createAuthUserActorBinding('auth-user-1'),
+      authUserId: 'auth-user-1',
+      accessSelectors: [{ kind: 'catalogProduct', catalogProductId }],
+      packageId: 'com.yucp.backstage.legacy-upload',
+      storageId,
+      version: '2.0.0',
+      deliveryName: 'legacy-example.zip',
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(published.deliveryPackageReleaseId as Id<'delivery_package_releases'>, {
+        metadata: {
+          description: 'Persisted before alias metadata synthesis.',
+        },
+      });
+    });
+
+    const subjectId = await seedSubject(t, {
+      authUserId: 'buyer-legacy',
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert('entitlements', {
+        authUserId: 'auth-user-1',
+        subjectId,
+        productId: 'product-legacy-upload',
+        sourceProvider: 'gumroad',
+        sourceReference: 'order-legacy-upload',
+        catalogProductId,
+        status: 'active',
+        grantedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const repository = await t.query(internal.packageRegistry.buildBackstageRepositoryForSubject, {
+      authUserId: 'auth-user-1',
+      subjectId,
+      repositoryUrl: 'https://api.yucp.test/v1/backstage/repos/index.json',
+      packageBaseUrl: 'https://api.yucp.test/v1/backstage/package',
+      packageHeaders: {
+        'X-YUCP-Repo-Token': 'ybt_example',
+      },
+    });
+
+    expect(repository).toMatchObject({
+      packages: {
+        'com.yucp.backstage.legacy-upload': {
+          versions: {
+            '2.0.0': {
+              description: 'Persisted before alias metadata synthesis.',
+              dependencies: {
+                'com.yucp.importer': '>=0.1.0',
+              },
+              yucp: {
+                kind: 'alias-v1',
+                aliasId: 'gumroad-product-legacy-upload',
+                installStrategy: 'server-authorized',
+                importerPackage: 'com.yucp.importer',
+                minImporterVersion: '0.1.0',
+                catalogProductIds: [String(catalogProductId)],
+                channel: 'stable',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const publicAccess = await t.run(async (ctx) => {
+      return await ctx.runQuery(api.packageRegistry.getPublicBackstageProductAccessByRef, {
+        apiSecret: 'test-secret',
+        creatorRef: 'auth-user-1',
+        productRef: 'gumroad-product-legacy-upload',
+      });
+    });
+    expect(publicAccess?.packageSummaries).toEqual([
+      expect.objectContaining({
+        packageId: 'com.yucp.backstage.legacy-upload',
+        latestPublishedVersion: '2.0.0',
+        latestReleaseChannel: 'stable',
+        aliasContract: {
+          kind: 'alias-v1',
+          aliasId: 'gumroad-product-legacy-upload',
+          installStrategy: 'server-authorized',
+          importerPackage: 'com.yucp.importer',
+          minImporterVersion: '0.1.0',
+          catalogProductIds: [String(catalogProductId)],
+          channel: 'stable',
+        },
+      }),
+    ]);
+
+    const installPlan = await t.run(async (ctx) => {
+      return await ctx.runQuery(api.packageRegistry.getAuthorizedAliasInstallPlanByRef, {
+        apiSecret: 'test-secret',
+        authUserId: 'auth-user-1',
+        subjectId,
+        creatorRef: 'auth-user-1',
+        productRef: 'gumroad-product-legacy-upload',
+      });
+    });
+    expect(installPlan).toMatchObject({
+      packages: [
+        {
+          packageId: 'com.yucp.backstage.legacy-upload',
+          version: '2.0.0',
+          channel: 'stable',
+          aliasContract: {
+            kind: 'alias-v1',
+            aliasId: 'gumroad-product-legacy-upload',
+            installStrategy: 'server-authorized',
+            importerPackage: 'com.yucp.importer',
+            minImporterVersion: '0.1.0',
+            catalogProductIds: [String(catalogProductId)],
+            channel: 'stable',
+          },
+        },
+      ],
+    });
+  });
+
+  it('refuses ambiguous legacy alias synthesis when linked products resolve to different alias ids', async () => {
+    const t = makeTestConvex();
+    const firstCatalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-legacy-multi-a',
+      providerProductRef: 'gumroad-product-legacy-multi-a',
+      displayName: 'Legacy Multi Product A',
+    });
+    const secondCatalogProductId = await seedCatalogProduct(t, {
+      authUserId: 'auth-user-1',
+      productId: 'product-legacy-multi-b',
+      providerProductRef: 'gumroad-product-legacy-multi-b',
+      displayName: 'Legacy Multi Product B',
+    });
+
+    await t.mutation(internal.packageRegistry.registerPackage, {
+      packageId: 'com.yucp.backstage.legacy-multi',
+      packageName: 'Legacy Multi Package',
+      publisherId: 'publisher-1',
+      yucpUserId: 'auth-user-1',
+    });
+
+    await t.mutation(internal.packageRegistry.upsertDeliveryPackageForProducts, {
+      authUserId: 'auth-user-1',
+      catalogProductIds: [firstCatalogProductId, secondCatalogProductId],
+      packageId: 'com.yucp.backstage.legacy-multi',
+      packageName: 'Legacy Multi Package',
+      displayName: 'Legacy Multi Package',
+      repositoryVisibility: 'listed',
+      defaultChannel: 'stable',
+    });
+    await t.mutation(internal.packageRegistry.recordDeliveryPackageRelease, {
+      authUserId: 'auth-user-1',
+      packageId: 'com.yucp.backstage.legacy-multi',
+      version: '3.0.0',
+      channel: 'stable',
+      releaseStatus: 'published',
+      repositoryVisibility: 'listed',
+      metadata: {
+        description: 'Persisted before alias metadata synthesis.',
+      },
+    });
+
+    const subjectId = await seedSubject(t, {
+      authUserId: 'buyer-legacy-multi',
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert('entitlements', {
+        authUserId: 'auth-user-1',
+        subjectId,
+        productId: 'product-legacy-multi-b',
+        sourceProvider: 'gumroad',
+        sourceReference: 'order-legacy-multi-b',
+        catalogProductId: secondCatalogProductId,
+        status: 'active',
+        grantedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const repository = await t.query(internal.packageRegistry.buildBackstageRepositoryForSubject, {
+      authUserId: 'auth-user-1',
+      subjectId,
+      repositoryUrl: 'https://api.yucp.test/v1/backstage/repos/index.json',
+      packageBaseUrl: 'https://api.yucp.test/v1/backstage/package',
+      packageHeaders: {
+        'X-YUCP-Repo-Token': 'ybt_example',
+      },
+    });
+    const publishedVersion = repository?.packages?.['com.yucp.backstage.legacy-multi']?.versions?.[
+      '3.0.0'
+    ] as Record<string, unknown> | undefined;
+    expect(publishedVersion?.description).toBe('Persisted before alias metadata synthesis.');
+    expect(publishedVersion).not.toHaveProperty('yucp');
+    expect(publishedVersion?.dependencies).toBeUndefined();
+
+    const installPlan = await t.run(async (ctx) => {
+      return await ctx.runQuery(api.packageRegistry.getAuthorizedAliasInstallPlanByRef, {
+        apiSecret: 'test-secret',
+        authUserId: 'auth-user-1',
+        subjectId,
+        creatorRef: 'auth-user-1',
+        productRef: 'gumroad-product-legacy-multi-b',
+      });
+    });
+    expect(installPlan).toBeNull();
   });
 
   it('resolves legacy signed releases through the centralized release artifact resolver', async () => {

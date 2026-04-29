@@ -1,4 +1,3 @@
-import { prepareBackstageArtifactForPublish } from '@yucp/shared/backstageVpmPackage';
 import { apiClient } from '@/api/client';
 
 export interface CreatorPackageSummary {
@@ -115,11 +114,12 @@ export interface BackstageStorageUploadResponse {
 }
 
 export interface BackstageReleaseUploadResult {
-  contentType: string;
-  deliveryName: string;
-  metadata: Record<string, unknown>;
   storageId: string;
-  zipSha256: string;
+}
+
+export interface BackstagePackageDependencyVersion {
+  packageId: string;
+  version: string;
 }
 
 export interface PublishBackstageReleaseInput {
@@ -128,7 +128,6 @@ export interface PublishBackstageReleaseInput {
   accessSelectors?: BackstageAccessSelector[];
   storageId: string;
   version: string;
-  zipSha256: string;
   channel?: string;
   packageName?: string;
   displayName?: string;
@@ -136,9 +135,10 @@ export interface PublishBackstageReleaseInput {
   repositoryVisibility?: 'hidden' | 'listed';
   defaultChannel?: string;
   unityVersion?: string;
+  dependencyVersions?: BackstagePackageDependencyVersion[];
   metadata?: unknown;
   deliveryName?: string;
-  contentType?: string;
+  sourceContentType?: string;
   releaseStatus?: 'draft' | 'published' | 'revoked' | 'superseded';
 }
 
@@ -237,41 +237,15 @@ export async function createBackstageReleaseUploadUrl(input: { packageId: string
 }
 
 export async function uploadBackstageReleaseFile(input: {
-  deliveryName?: string;
-  description?: string;
   uploadUrl: string;
   file: File;
-  metadata?: unknown;
-  packageId: string;
-  displayName?: string;
-  version: string;
-  unityVersion?: string;
 }): Promise<BackstageReleaseUploadResult> {
-  const sourceBuffer = await input.file.arrayBuffer();
-  const preparedArtifact = await prepareBackstageArtifactForPublish({
-    packageId: input.packageId,
-    version: input.version,
-    displayName: input.displayName,
-    description: input.description,
-    unityVersion: input.unityVersion,
-    metadata: input.metadata,
-    deliveryName: input.deliveryName,
-    sourceBytes: new Uint8Array(sourceBuffer),
-    sourceFileName: input.file.name,
-  });
-  const artifactBuffer =
-    preparedArtifact.bytes.buffer instanceof ArrayBuffer
-      ? preparedArtifact.bytes.buffer.slice(
-          preparedArtifact.bytes.byteOffset,
-          preparedArtifact.bytes.byteOffset + preparedArtifact.bytes.byteLength
-        )
-      : Uint8Array.from(preparedArtifact.bytes).buffer;
   const response = await fetch(input.uploadUrl, {
     method: 'POST',
     headers: {
-      'Content-Type': preparedArtifact.contentType,
+      'Content-Type': input.file.type || 'application/octet-stream',
     },
-    body: new Blob([artifactBuffer], { type: preparedArtifact.contentType }),
+    body: input.file,
   });
 
   const payload = (await response
@@ -288,11 +262,7 @@ export async function uploadBackstageReleaseFile(input: {
   }
 
   return {
-    contentType: preparedArtifact.contentType,
-    deliveryName: preparedArtifact.deliveryName,
-    metadata: preparedArtifact.metadata,
     storageId: payload.storageId,
-    zipSha256: preparedArtifact.zipSha256,
   };
 }
 

@@ -1,3 +1,4 @@
+import { BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY } from '@yucp/shared/backstageVpmDelivery';
 import { gzipSync, strToU8, unzipSync, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { internal } from './_generated/api';
@@ -494,6 +495,9 @@ describe('releaseArtifacts.getActiveArtifact', () => {
       return await ctx.db.get(deliveryPackageReleaseId);
     });
     expect(release?.zipSha256).toBe(repaired.nextSha256);
+    expect(release?.metadata).toMatchObject({
+      [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: 'unitypackage',
+    });
   });
 
   it('recovers stale wrapped payloads from legacy signed artifacts when no raw upload exists', async () => {
@@ -574,5 +578,8 @@ describe('releaseArtifacts.getActiveArtifact', () => {
       return await ctx.db.get(deliveryPackageReleaseId);
     });
     expect(release?.zipSha256).toBe(repaired.nextSha256);
+    expect(release?.metadata).toMatchObject({
+      [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: 'unitypackage',
+    });
   });
 });

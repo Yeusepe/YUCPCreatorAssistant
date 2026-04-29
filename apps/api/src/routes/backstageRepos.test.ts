@@ -1,8 +1,39 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 let sessionImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
 let queryImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
 let mutationImpl: (...args: unknown[]) => Promise<unknown> = async () => null;
+const fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response> =
+  async () =>
+    new Response(
+      JSON.stringify({
+        packages: {
+          'com.yucp.importer': {
+            versions: {
+              '0.1.8': {
+                name: 'com.yucp.importer',
+                version: '0.1.8',
+              },
+            },
+          },
+          'com.yucp.motion': {
+            versions: {
+              '0.1.1': {
+                name: 'com.yucp.motion',
+                version: '0.1.1',
+              },
+            },
+          },
+        },
+      }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+const originalFetch = globalThis.fetch;
 
 mock.module('../../../../convex/_generated/api', () => ({
   api: {
@@ -63,6 +94,7 @@ describe('backstage repo routes', () => {
   });
 
   beforeEach(() => {
+    globalThis.fetch = ((...args) => fetchImpl(...args)) as typeof fetch;
     sessionImpl = async () => null;
     queryImpl = async (ref: unknown) => {
       switch (ref) {
@@ -194,6 +226,10 @@ describe('backstage repo routes', () => {
     };
   });
 
+  afterAll(() => {
+    globalThis.fetch = originalFetch;
+  });
+
   it('issues a VCC add-repo link for authenticated users', async () => {
     const response = await routes.handleRequest(
       new Request('https://api.test/v1/backstage/repos/access', {
@@ -320,6 +356,22 @@ describe('backstage repo routes', () => {
               name: 'com.yucp.example',
               yucpDeliveryMode: 'repo-token-vpm-v1',
               yucpDeliverySourceKind: 'zip',
+            },
+          },
+        },
+        'com.yucp.importer': {
+          versions: {
+            '0.1.8': {
+              name: 'com.yucp.importer',
+              version: '0.1.8',
+            },
+          },
+        },
+        'com.yucp.motion': {
+          versions: {
+            '0.1.1': {
+              name: 'com.yucp.motion',
+              version: '0.1.1',
             },
           },
         },

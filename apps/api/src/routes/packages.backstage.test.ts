@@ -1058,7 +1058,6 @@ describe('package Backstage publishing routes', () => {
           storageId: 'storage_1',
           version: '1.2.3',
           channel: 'stable',
-          zipSha256: 'd'.repeat(64),
         }),
       }),
       'com.yucp.example'
@@ -1070,7 +1069,6 @@ describe('package Backstage publishing routes', () => {
         { kind: 'catalogProduct', catalogProductId: 'product_1' },
         { kind: 'catalogProduct', catalogProductId: 'product_2' },
       ],
-      zipSha256: 'd'.repeat(64),
     });
     const payload = await response.json();
     expect(payload).toMatchObject({
@@ -1109,7 +1107,6 @@ describe('package Backstage publishing routes', () => {
           storageId: 'storage_1',
           version: '1.2.3',
           channel: 'stable',
-          zipSha256: 'c'.repeat(64),
           metadata,
         }),
       }),
@@ -1120,11 +1117,10 @@ describe('package Backstage publishing routes', () => {
     expect(lastActionArgs).toMatchObject({
       packageId: 'com.yucp.alias.song',
       metadata,
-      zipSha256: 'c'.repeat(64),
     });
   });
 
-  it('publishes wrapped VPM ZIP metadata for unitypackage sources', async () => {
+  it('publishes server-generated metadata inputs for unitypackage sources', async () => {
     const response = await routes.publishBackstageRelease(
       new Request('https://api.test/api/packages/com.yucp.example/backstage/releases', {
         method: 'POST',
@@ -1136,9 +1132,12 @@ describe('package Backstage publishing routes', () => {
           catalogProductIds: ['product_1'],
           storageId: 'storage_1',
           version: '4.0.0',
-          zipSha256: 'e'.repeat(64),
-          deliveryName: 'com.yucp.example-4.0.0.zip',
-          contentType: 'application/zip',
+          deliveryName: 'avatar-installer.unitypackage',
+          sourceContentType: 'application/octet-stream',
+          displayName: 'Avatar Installer',
+          description: 'Server-generated wrapper metadata',
+          unityVersion: '2022.3',
+          dependencyVersions: [{ packageId: 'com.yucp.importer', version: '1.4.0' }],
         }),
       }),
       'com.yucp.example'
@@ -1146,9 +1145,12 @@ describe('package Backstage publishing routes', () => {
 
     expect(response.status).toBe(201);
     expect(lastActionArgs).toMatchObject({
-      deliveryName: 'com.yucp.example-4.0.0.zip',
-      contentType: 'application/zip',
-      zipSha256: 'e'.repeat(64),
+      deliveryName: 'avatar-installer.unitypackage',
+      sourceContentType: 'application/octet-stream',
+      displayName: 'Avatar Installer',
+      description: 'Server-generated wrapper metadata',
+      unityVersion: '2022.3',
+      dependencyVersions: [{ packageId: 'com.yucp.importer', version: '1.4.0' }],
     });
   });
 
@@ -1167,7 +1169,6 @@ describe('package Backstage publishing routes', () => {
           ],
           storageId: 'storage_1',
           version: '5.0.0',
-          zipSha256: 'f'.repeat(64),
         }),
       }),
       'com.yucp.example'
@@ -1179,7 +1180,6 @@ describe('package Backstage publishing routes', () => {
         { kind: 'catalogProduct', catalogProductId: 'product_1' },
         { kind: 'catalogTier', catalogTierId: 'tier_1' },
       ],
-      zipSha256: 'f'.repeat(64),
     });
   });
 });

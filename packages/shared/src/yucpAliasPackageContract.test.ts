@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 
 import {
+  applyYucpAliasPackageManifestDefaults,
   getYucpAliasPackageContract,
+  mergeYucpAliasPackageMetadata,
   normalizeYucpAliasPackageContract,
+  resolveYucpAliasIdFromCatalogProduct,
+  YUCP_ALIAS_PACKAGE_DEFAULT_IMPORTER_VERSION,
   YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES,
   YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES,
   YUCP_ALIAS_PACKAGE_KIND,
@@ -64,6 +68,101 @@ describe('getYucpAliasPackageContract', () => {
       aliasId: 'creator-alias',
       installStrategy: YUCP_ALIAS_PACKAGE_INSTALL_STRATEGIES.serverAuthorized,
       importerPackage: YUCP_ALIAS_PACKAGE_IMPORTER_PACKAGES.importer,
+    });
+  });
+});
+
+describe('resolveYucpAliasIdFromCatalogProduct', () => {
+  it('prefers canonical slugs over provider product refs', () => {
+    expect(
+      resolveYucpAliasIdFromCatalogProduct({
+        canonicalSlug: ' song-thing ',
+        providerProductRef: 'gumroad-song-thing',
+      })
+    ).toBe('song-thing');
+  });
+
+  it('falls back to the provider product ref when needed', () => {
+    expect(
+      resolveYucpAliasIdFromCatalogProduct({
+        providerProductRef: ' gumroad-song-thing ',
+      })
+    ).toBe('gumroad-song-thing');
+  });
+});
+
+describe('mergeYucpAliasPackageMetadata', () => {
+  it('adds the shared alias contract without dropping existing metadata', () => {
+    expect(
+      mergeYucpAliasPackageMetadata({
+        metadata: {
+          description: 'Legacy package',
+        },
+        aliasId: 'song-thing',
+        catalogProductIds: ['product-a', 'product-a', 'product-b'],
+        channel: 'stable',
+      })
+    ).toEqual({
+      description: 'Legacy package',
+      yucp: {
+        kind: 'alias-v1',
+        aliasId: 'song-thing',
+        installStrategy: 'server-authorized',
+        importerPackage: 'com.yucp.importer',
+        minImporterVersion: '0.1.0',
+        catalogProductIds: ['product-a', 'product-b'],
+        channel: 'stable',
+      },
+    });
+  });
+});
+
+describe('applyYucpAliasPackageManifestDefaults', () => {
+  it('injects the importer dependency from the alias contract minimum version', () => {
+    expect(
+      applyYucpAliasPackageManifestDefaults({
+        yucp: {
+          kind: 'alias-v1',
+          aliasId: 'creator-alias',
+          installStrategy: 'server-authorized',
+          importerPackage: 'com.yucp.importer',
+          minImporterVersion: '1.4.0',
+        },
+      })
+    ).toEqual({
+      yucp: {
+        kind: 'alias-v1',
+        aliasId: 'creator-alias',
+        installStrategy: 'server-authorized',
+        importerPackage: 'com.yucp.importer',
+        minImporterVersion: '1.4.0',
+      },
+      dependencies: {
+        'com.yucp.importer': '>=1.4.0',
+      },
+    });
+  });
+
+  it('falls back to the shared importer floor when the alias contract omits a minimum version', () => {
+    expect(
+      applyYucpAliasPackageManifestDefaults({
+        yucp: {
+          kind: 'alias-v1',
+          aliasId: 'creator-alias',
+          installStrategy: 'server-authorized',
+          importerPackage: 'com.yucp.importer',
+        },
+      })
+    ).toEqual({
+      yucp: {
+        kind: 'alias-v1',
+        aliasId: 'creator-alias',
+        installStrategy: 'server-authorized',
+        importerPackage: 'com.yucp.importer',
+      },
+      dependencies: {
+        'com.yucp.importer': YUCP_ALIAS_PACKAGE_DEFAULT_IMPORTER_VERSION,
+      },
     });
   });
 });

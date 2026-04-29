@@ -1,12 +1,15 @@
+import {
+  mergeYucpAliasPackageMetadata,
+  resolveYucpAliasIdFromCatalogProduct,
+} from '@yucp/shared';
+import { prepareBackstageArtifactForPublish } from '@yucp/shared/backstageVpmPackage';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { action, mutation, query } from './_generated/server';
+import { action, internalQuery, mutation, query } from './_generated/server';
 import { ApiActorBindingV, requireDelegatedAuthUserActor } from './lib/apiActor';
 import { requireApiSecret } from './lib/apiAuth';
 
-const BACKSTAGE_PACKAGE_CONTENT_TYPE = 'application/zip';
-const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 const BackstageAccessSelectorV = v.union(
   v.object({
     kind: v.literal('catalogProduct'),
@@ -46,21 +49,102 @@ type BackstagePublishedReleaseRecord = {
   channel: string;
 };
 
-function defaultBackstageDeliveryName(packageId: string, version: string): string {
-  const packageToken = packageId.split('.').at(-1)?.trim() || 'package';
-  return `${packageToken}-${version}.zip`;
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function inferBackstageContentType(deliveryName: string, uploadedContentType?: string): string {
-  const explicitType = uploadedContentType?.trim();
-  if (explicitType) {
-    return explicitType;
+function normalizeBackstageMetadataInput(input: {
+  metadata?: unknown;
+  dependencyVersions?: Array<{ packageId: string; version: string }>;
+}): Record<string, unknown> | undefined {
+  if (input.metadata != null && !isPlainRecord(input.metadata)) {
+    throw new Error('metadata must be an object when provided.');
   }
-  if (deliveryName.toLowerCase().endsWith('.unitypackage')) {
-    return 'application/octet-stream';
+  const baseMetadata: Record<string, unknown> = input.metadata ? { ...input.metadata } : {};
+  if (!input.dependencyVersions?.length) {
+    return Object.keys(baseMetadata).length > 0 ? baseMetadata : undefined;
   }
-  return BACKSTAGE_PACKAGE_CONTENT_TYPE;
+
+  const mergedDependencies = {
+    ...(isPlainRecord(baseMetadata.dependencies) ? baseMetadata.dependencies : {}),
+    ...Object.fromEntries(
+      input.dependencyVersions.map((dependency) => [dependency.packageId, dependency.version])
+    ),
+  };
+
+  return {
+    ...baseMetadata,
+    dependencies: mergedDependencies,
+  };
 }
+
+export const resolveAliasContractMetadataForAccessSelectors = internalQuery({
+  args: {
+    authUserId: v.string(),
+    accessSelectors: v.array(BackstageAccessSelectorV),
+  },
+  returns: v.object({
+    aliasId: v.string(),
+    catalogProductIds: v.array(v.string()),
+  }),
+  handler: async (ctx, args): Promise<{ aliasId: string; catalogProductIds: string[] }> => {
+    const products = new Map<string, { _id: Id<'product_catalog'>; aliasId: string }>();
+    for (const selector of args.accessSelectors) {
+      if (selector.kind === 'catalogProduct') {
+        const product = await ctx.db.get(selector.catalogProductId);
+        if (!product || product.authUserId !== args.authUserId) {
+          throw new Error(`Catalog product not found: ${String(selector.catalogProductId)}`);
+        }
+        const aliasId = resolveYucpAliasIdFromCatalogProduct(product);
+        if (!aliasId) {
+          throw new Error(
+            `Catalog product '${String(product._id)}' is missing a canonical slug or provider product reference.`
+          );
+        }
+        products.set(String(product._id), {
+          _id: product._id,
+          aliasId,
+        });
+        continue;
+      }
+
+      const tier = await ctx.db.get(selector.catalogTierId);
+      if (!tier || tier.authUserId !== args.authUserId || !tier.catalogProductId) {
+        throw new Error(`Catalog tier not found: ${String(selector.catalogTierId)}`);
+      }
+      const product = await ctx.db.get(tier.catalogProductId);
+      if (!product || product.authUserId !== args.authUserId) {
+        throw new Error(`Catalog product not found for tier: ${String(selector.catalogTierId)}`);
+      }
+      const aliasId = resolveYucpAliasIdFromCatalogProduct(product);
+      if (!aliasId) {
+        throw new Error(
+          `Catalog product '${String(product._id)}' is missing a canonical slug or provider product reference.`
+        );
+      }
+      products.set(String(product._id), {
+        _id: product._id,
+        aliasId,
+      });
+    }
+
+    const uniqueProducts = Array.from(products.values());
+    const aliasIds = Array.from(new Set(uniqueProducts.map((product) => product.aliasId)));
+    if (aliasIds.length === 0) {
+      throw new Error('At least one catalog product is required to build alias metadata.');
+    }
+    if (aliasIds.length > 1) {
+      throw new Error(
+        'Cannot synthesize alias metadata across multiple catalog products with different alias ids.'
+      );
+    }
+
+    return {
+      aliasId: aliasIds[0],
+      catalogProductIds: uniqueProducts.map((product) => String(product._id)),
+    };
+  },
+});
 
 export const getSubjectByAuthUserForApi = query({
   args: {
@@ -231,7 +315,6 @@ export const publishUploadedReleaseForAuthUser = action({
     packageId: v.string(),
     storageId: v.id('_storage'),
     version: v.string(),
-    zipSha256: v.string(),
     channel: v.optional(v.string()),
     packageName: v.optional(v.string()),
     displayName: v.optional(v.string()),
@@ -239,9 +322,17 @@ export const publishUploadedReleaseForAuthUser = action({
     repositoryVisibility: v.optional(v.union(v.literal('hidden'), v.literal('listed'))),
     defaultChannel: v.optional(v.string()),
     unityVersion: v.optional(v.string()),
+    dependencyVersions: v.optional(
+      v.array(
+        v.object({
+          packageId: v.string(),
+          version: v.string(),
+        })
+      )
+    ),
     metadata: v.optional(v.any()),
     deliveryName: v.optional(v.string()),
-    contentType: v.optional(v.string()),
+    sourceContentType: v.optional(v.string()),
     releaseStatus: v.optional(
       v.union(
         v.literal('draft'),
@@ -266,10 +357,6 @@ export const publishUploadedReleaseForAuthUser = action({
       throw new Error(`Uploaded Backstage package not found: ${args.storageId}`);
     }
 
-    const zipSha256 = args.zipSha256.trim().toLowerCase();
-    if (!SHA256_HEX_RE.test(zipSha256)) {
-      throw new Error('zipSha256 must be a lowercase 64-character SHA-256 hex digest.');
-    }
     const channel = (args.channel || '').trim() || 'stable';
     const accessSelectors = Array.from(
       new Map(
@@ -295,13 +382,33 @@ export const publishUploadedReleaseForAuthUser = action({
         'At least one package access selector is required to publish a Backstage release.'
       );
     }
-    const deliveryName =
-      (args.deliveryName || '').trim() ||
-      defaultBackstageDeliveryName(args.packageId, args.version);
-    const contentType = inferBackstageContentType(
-      deliveryName,
-      (args.contentType || '').trim() || uploaded.type
+    const aliasMetadata = await ctx.runQuery(
+      internal.backstageRepos.resolveAliasContractMetadataForAccessSelectors,
+      {
+        authUserId: args.authUserId,
+        accessSelectors,
+      }
     );
+    const sourceBytes = new Uint8Array(await uploaded.arrayBuffer());
+    const preparedArtifact = await prepareBackstageArtifactForPublish({
+      packageId: args.packageId,
+      version: args.version,
+      displayName: args.displayName,
+      description: args.description,
+      unityVersion: args.unityVersion,
+      metadata: normalizeBackstageMetadataInput({
+        metadata: mergeYucpAliasPackageMetadata({
+          metadata: args.metadata,
+          aliasId: aliasMetadata.aliasId,
+          catalogProductIds: aliasMetadata.catalogProductIds,
+          channel,
+        }),
+        dependencyVersions: args.dependencyVersions,
+      }),
+      sourceBytes,
+      sourceContentType: args.sourceContentType?.trim() || uploaded.type,
+      sourceFileName: args.deliveryName,
+    });
 
     await ctx.runMutation(internal.packageRegistry.upsertDeliveryPackageForAccessSelectors, {
       authUserId: args.authUserId,
@@ -322,17 +429,21 @@ export const publishUploadedReleaseForAuthUser = action({
       releaseStatus: args.releaseStatus,
       repositoryVisibility: args.repositoryVisibility,
       unityVersion: args.unityVersion,
-      zipSha256,
-      metadata: args.metadata,
+      zipSha256: preparedArtifact.zipSha256,
+      metadata: preparedArtifact.metadata,
     })) as { deliveryPackageReleaseId: Id<'delivery_package_releases'> };
 
-    const materialized = await ctx.runAction(internal.releaseArtifacts.materializeUploadedReleaseDeliverable, {
-      deliveryPackageReleaseId: release.deliveryPackageReleaseId,
-      storageId: args.storageId,
-      contentType,
-      deliveryName,
-      sha256: zipSha256,
-    });
+    const materialized = await ctx.runAction(
+      internal.releaseArtifacts.materializeUploadedReleaseDeliverable,
+      {
+        deliveryPackageReleaseId: release.deliveryPackageReleaseId,
+        storageId: args.storageId,
+        contentType: preparedArtifact.contentType,
+        deliveryName: preparedArtifact.deliveryName,
+        sha256: preparedArtifact.zipSha256,
+        metadata: preparedArtifact.metadata,
+      }
+    );
 
     return {
       deliveryPackageReleaseId: release.deliveryPackageReleaseId,

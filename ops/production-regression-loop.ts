@@ -33,7 +33,7 @@ export const PRODUCTION_REGRESSION_SURFACES: ProductionRegressionSurface[] = [
     id: 'provider',
     label: 'Provider runtime contracts',
     invariant:
-      'Provider adapters and internal RPC boundaries must reject or normalize upstream drift without looping pagination, mis-scaling provider currency units, dropping credential expiry, silently rewriting response shape, hanging dashboard catalog surfaces when live reconciliation stalls, or violating transport contracts such as int64 serialization.',
+      'Provider adapters and internal RPC boundaries must reject or normalize upstream drift without looping pagination, mis-scaling provider currency units, dropping credential expiry, silently rewriting response shape, hanging dashboard catalog surfaces when live reconciliation stalls, violating transport contracts such as int64 serialization, or publishing Backstage repo manifests that drop synthesized alias metadata and importer requirements for metadata-less or previously persisted releases.',
     primaryRegressionHomes: [
       'packages/providers/test/gumroad/module.test.ts',
       'packages/providers/test/jinxxy/module.test.ts',
@@ -47,7 +47,7 @@ export const PRODUCTION_REGRESSION_SURFACES: ProductionRegressionSurface[] = [
       'apps/bot/test/lib/setupCatalog.test.ts',
       'apps/bot/test/commands/autosetup.test.ts',
     ],
-    remediationHomes: ['apps/api/test/providers'],
+    remediationHomes: ['apps/api/test/providers', 'convex/packageRegistry.realtest.ts'],
   },
   {
     id: 'identity',

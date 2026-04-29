@@ -1,5 +1,11 @@
 import { gunzipSync, gzipSync, unzipSync, type Zippable, zipSync } from 'fflate';
-import { inferBackstageVpmDeliverySourceKind } from './backstageVpmDelivery';
+import {
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY,
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY,
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_MARKERS,
+  BACKSTAGE_VPM_SOURCE_KINDS,
+  detectBackstageVpmDeliverySourceKind,
+} from './backstageVpmDelivery';
 import { sha256Hex } from './crypto';
 
 const FIXED_ZIP_MTIME = new Date(315619200000);
@@ -14,6 +20,7 @@ export type MaterializedBackstageReleaseArtifact = {
   contentType: 'application/octet-stream' | 'application/zip';
   deliveryName: string;
   materializationStrategy: 'normalized_repack';
+  originalSourceKind: ArchiveSourceKind;
   sha256: string;
   sourceKind: ArchiveSourceKind;
 };
@@ -22,6 +29,42 @@ type TarFileEntry = {
   path: string;
   data: Uint8Array;
 };
+
+function resolvePersistedSourceKind(
+  metadata: Record<string, unknown> | undefined
+): ArchiveSourceKind | undefined {
+  if (
+    metadata?.[BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY] !==
+    BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_MARKERS.serverDerived
+  ) {
+    return undefined;
+  }
+  const persistedSourceKind = metadata?.[BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY];
+  if (persistedSourceKind === BACKSTAGE_VPM_SOURCE_KINDS.unitypackage) {
+    return BACKSTAGE_VPM_SOURCE_KINDS.unitypackage;
+  }
+  if (persistedSourceKind === BACKSTAGE_VPM_SOURCE_KINDS.zip) {
+    return BACKSTAGE_VPM_SOURCE_KINDS.zip;
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function resolveZipPackageJsonPath(input: {
+  archivePaths: string[];
+  packageId?: string;
+}): string | undefined {
+  const expectedPath = input.packageId?.trim()
+    ? `Packages/${input.packageId.trim()}/package.json`
+    : undefined;
+  if (expectedPath && input.archivePaths.includes(expectedPath)) {
+    return expectedPath;
+  }
+  return input.archivePaths.find((entryPath) => entryPath.endsWith('/package.json'));
+}
 
 function normalizeRelativeArchivePath(input: string): string {
   return input.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+/g, '/').trim();
@@ -190,9 +233,47 @@ function buildCanonicalTar(entries: TarFileEntry[]): Uint8Array {
   return output;
 }
 
-function materializeZip(sourceBytes: Uint8Array): Uint8Array {
-  const archive = unzipSync(sourceBytes);
-  const canonicalEntries = Object.entries(archive)
+function materializeZip(input: {
+  sourceBytes: Uint8Array;
+  packageId?: string;
+  version?: string;
+  displayName?: string;
+  metadata?: Record<string, unknown>;
+}): Uint8Array {
+  const archive = unzipSync(input.sourceBytes);
+  const normalizedEntries = Object.fromEntries(
+    Object.entries(archive).map(
+      ([rawPath, bytes]) => [assertSafeArchivePath(rawPath), bytes] as const
+    )
+  );
+  const packageJsonPath = resolveZipPackageJsonPath({
+    archivePaths: Object.keys(normalizedEntries),
+    packageId: input.packageId,
+  });
+  if (
+    packageJsonPath &&
+    (input.metadata || input.packageId || input.version || input.displayName)
+  ) {
+    const existingManifestBytes = normalizedEntries[packageJsonPath];
+    const parsedManifest = JSON.parse(new TextDecoder().decode(existingManifestBytes));
+    if (!isRecord(parsedManifest)) {
+      throw new Error(`Backstage ZIP package manifest must be an object: ${packageJsonPath}`);
+    }
+    normalizedEntries[packageJsonPath] = new TextEncoder().encode(
+      JSON.stringify(
+        {
+          ...parsedManifest,
+          ...(input.metadata ?? {}),
+          ...(input.packageId?.trim() ? { name: input.packageId.trim() } : {}),
+          ...(input.version?.trim() ? { version: input.version.trim() } : {}),
+          ...(input.displayName?.trim() ? { displayName: input.displayName.trim() } : {}),
+        },
+        null,
+        2
+      )
+    );
+  }
+  const canonicalEntries = Object.entries(normalizedEntries)
     .map(([rawPath, bytes]) => [assertSafeArchivePath(rawPath), bytes] as const)
     .sort(([left], [right]) => left.localeCompare(right));
 
@@ -316,6 +397,7 @@ async function buildEmbeddedUnitypackageZip(input: {
   packageId: string;
   version: string;
   displayName?: string;
+  metadata?: Record<string, unknown>;
   payloadFileName: string;
   payloadBytes: Uint8Array;
 }): Promise<MaterializedBackstageReleaseArtifact> {
@@ -324,15 +406,13 @@ async function buildEmbeddedUnitypackageZip(input: {
   const className = `${sanitizeCSharpIdentifier(input.packageId)}_${suffix}`;
   const installerClassName = `YucpBackstageEmbeddedUnitypackageInstaller_${className}`;
   const asmdefName = `Yucp.Backstage.PackageInstaller.${sanitizeAssemblyNameSegment(input.packageId)}_${suffix}`;
-  const packageJson = JSON.stringify(
-    {
-      name: input.packageId,
-      version: input.version,
-      displayName: input.displayName?.trim() || input.packageId,
-    },
-    null,
-    2
-  );
+  const packageJsonMetadata = {
+    ...(input.metadata ?? {}),
+    name: input.packageId,
+    version: input.version,
+    displayName: input.displayName?.trim() || input.packageId,
+  };
+  const packageJson = JSON.stringify(packageJsonMetadata, null, 2);
   const payloadManifest = JSON.stringify(
     {
       packageId: input.packageId,
@@ -386,6 +466,7 @@ async function buildEmbeddedUnitypackageZip(input: {
     contentType: 'application/zip',
     deliveryName: `vrc-get-${input.packageId}-${input.version}.zip`,
     materializationStrategy: 'normalized_repack',
+    originalSourceKind: 'unitypackage',
     sha256: await sha256Hex(bytes),
     sourceKind: 'zip',
   };
@@ -398,11 +479,15 @@ export async function materializeBackstageReleaseArtifact(input: {
   packageId?: string;
   version?: string;
   displayName?: string;
+  metadata?: Record<string, unknown>;
 }): Promise<MaterializedBackstageReleaseArtifact> {
-  const sourceKind = inferBackstageVpmDeliverySourceKind({
-    deliveryName: input.deliveryName,
-    contentType: input.contentType,
-  });
+  const sourceKind =
+    resolvePersistedSourceKind(input.metadata) ??
+    detectBackstageVpmDeliverySourceKind({
+      deliveryName: input.deliveryName,
+      contentType: input.contentType,
+      bytes: input.sourceBytes,
+    });
   if (sourceKind === 'unitypackage') {
     if (!input.packageId?.trim() || !input.version?.trim()) {
       throw new Error(
@@ -414,12 +499,19 @@ export async function materializeBackstageReleaseArtifact(input: {
       packageId: input.packageId.trim(),
       version: input.version.trim(),
       displayName: input.displayName?.trim(),
+      metadata: input.metadata,
       payloadFileName: input.deliveryName,
       payloadBytes,
     });
   }
 
-  const bytes = materializeZip(input.sourceBytes);
+  const bytes = materializeZip({
+    sourceBytes: input.sourceBytes,
+    packageId: input.packageId,
+    version: input.version,
+    displayName: input.displayName,
+    metadata: input.metadata,
+  });
 
   return {
     bytes,
@@ -427,6 +519,7 @@ export async function materializeBackstageReleaseArtifact(input: {
     contentType: 'application/zip',
     deliveryName: input.deliveryName,
     materializationStrategy: 'normalized_repack',
+    originalSourceKind: 'zip',
     sha256: await sha256Hex(bytes),
     sourceKind: 'zip',
   };

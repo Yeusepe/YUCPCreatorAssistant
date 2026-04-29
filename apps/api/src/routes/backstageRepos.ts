@@ -1,5 +1,5 @@
 import { getProviderDescriptor } from '@yucp/providers/providerMetadata';
-import type { YucpAliasPackageContract } from '@yucp/shared';
+import { YUCP_FORWARDED_TOOLCHAIN_PACKAGE_IDS, type YucpAliasPackageContract } from '@yucp/shared';
 import { sha256Hex } from '@yucp/shared/crypto';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
@@ -18,6 +18,12 @@ import { getVerificationConfig } from '../verification/verificationConfig';
 const BACKSTAGE_REPO_TOKEN_HEADER = 'X-YUCP-Repo-Token';
 const BACKSTAGE_REPO_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const BACKSTAGE_ALIAS_INSTALL_PLAN_TTL_MS = 5 * 60 * 1000;
+// Forward the shared toolchain packages from the public YUCP VPM source:
+// https://vpm.yucp.club/index.json
+const BACKSTAGE_FORWARDED_UPSTREAM_REPOSITORY_URL = 'https://vpm.yucp.club/index.json';
+
+type BackstageRepositoryPackageEntry = Record<string, unknown>;
+type BackstageRepositoryPackages = Record<string, BackstageRepositoryPackageEntry>;
 
 type PublicBackstageAccessRecord = {
   creatorAuthUserId: string;
@@ -79,6 +85,55 @@ function jsonResponse(body: object, status = 200): Response {
 
 function errorResponse(message: string, status: number): Response {
   return jsonResponse({ error: message }, status);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function extractForwardedToolchainPackages(repository: unknown): BackstageRepositoryPackages {
+  if (!isRecord(repository) || !isRecord(repository.packages)) {
+    throw new Error('Forwarded toolchain repository is missing a packages object.');
+  }
+
+  const forwardedPackages: BackstageRepositoryPackages = {};
+  for (const packageId of YUCP_FORWARDED_TOOLCHAIN_PACKAGE_IDS) {
+    const packageEntry = repository.packages[packageId];
+    if (!isRecord(packageEntry) || !isRecord(packageEntry.versions)) {
+      throw new Error(`Forwarded toolchain package '${packageId}' is missing versions.`);
+    }
+    forwardedPackages[packageId] = packageEntry;
+  }
+
+  return forwardedPackages;
+}
+
+async function fetchForwardedToolchainPackages(): Promise<BackstageRepositoryPackages> {
+  const response = await fetch(BACKSTAGE_FORWARDED_UPSTREAM_REPOSITORY_URL, {
+    headers: {
+      accept: 'application/json',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Forwarded toolchain repository request failed with ${response.status} ${response.statusText}.`
+    );
+  }
+  return extractForwardedToolchainPackages(await response.json());
+}
+
+function mergeRepositoryPackages(
+  repository: Record<string, unknown>,
+  forwardedPackages: BackstageRepositoryPackages
+): Record<string, unknown> {
+  const packages = isRecord(repository.packages) ? { ...repository.packages } : {};
+  for (const [packageId, packageEntry] of Object.entries(forwardedPackages)) {
+    packages[packageId] = packageEntry;
+  }
+  return {
+    ...repository,
+    packages,
+  };
 }
 
 function buildBackstageAddRepoUrl(repositoryUrl: string, repoToken: string): string {
@@ -564,20 +619,36 @@ async function serveRepositoryIndex(
     config.apiBaseUrl,
     access.creatorRepoIdentity.creatorRepoRef
   );
-  const repository = await convex.query(api.backstageRepos.buildRepositoryForApi, {
-    apiSecret: config.convexApiSecret,
-    authUserId: access.authUserId,
-    subjectId: access.subjectId,
-    repositoryId: access.creatorRepoIdentity.repositoryId,
-    repositoryName: access.creatorRepoIdentity.repositoryName,
-    repositoryUrl: repositoryUrls.repositoryUrl,
-    packageBaseUrl: repositoryUrls.packageBaseUrl,
-    packageHeaders: {
-      [BACKSTAGE_REPO_TOKEN_HEADER]: access.rawToken,
-    },
-  });
+  try {
+    const [repository, forwardedPackages] = await Promise.all([
+      convex.query(api.backstageRepos.buildRepositoryForApi, {
+        apiSecret: config.convexApiSecret,
+        authUserId: access.authUserId,
+        subjectId: access.subjectId,
+        repositoryId: access.creatorRepoIdentity.repositoryId,
+        repositoryName: access.creatorRepoIdentity.repositoryName,
+        repositoryUrl: repositoryUrls.repositoryUrl,
+        packageBaseUrl: repositoryUrls.packageBaseUrl,
+        packageHeaders: {
+          [BACKSTAGE_REPO_TOKEN_HEADER]: access.rawToken,
+        },
+      }),
+      fetchForwardedToolchainPackages(),
+    ]);
 
-  return jsonResponse(repository);
+    if (!isRecord(repository)) {
+      throw new Error('Backstage repository response was not an object.');
+    }
+
+    return jsonResponse(mergeRepositoryPackages(repository, forwardedPackages));
+  } catch (error) {
+    logger.error('Failed to build creator repository index', {
+      authUserId: access.authUserId,
+      creatorRepoRef: access.creatorRepoIdentity.creatorRepoRef,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return errorResponse('Failed to build repository', 500);
+  }
 }
 
 async function servePackageDownload(

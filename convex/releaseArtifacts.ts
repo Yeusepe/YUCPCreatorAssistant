@@ -431,12 +431,12 @@ export const getDeliveryArtifactDownloadById = internalQuery({
 export const publishDeliveryArtifact = internalMutation({
   args: {
     deliveryPackageReleaseId: v.id('delivery_package_releases'),
-      artifactRole: v.union(v.literal('raw_upload'), v.literal('server_deliverable')),
-      ownership: v.union(v.literal('creator_upload'), v.literal('server_materialized')),
-      materializationStrategy: v.optional(deliveryMaterializationStrategyValidator),
-      sourceArtifactId: v.optional(v.id('delivery_release_artifacts')),
-      storageId: v.id('_storage'),
-      contentType: v.string(),
+    artifactRole: v.union(v.literal('raw_upload'), v.literal('server_deliverable')),
+    ownership: v.union(v.literal('creator_upload'), v.literal('server_materialized')),
+    materializationStrategy: v.optional(deliveryMaterializationStrategyValidator),
+    sourceArtifactId: v.optional(v.id('delivery_release_artifacts')),
+    storageId: v.id('_storage'),
+    contentType: v.string(),
     deliveryName: v.string(),
     sha256: v.string(),
     byteSize: v.number(),
@@ -486,14 +486,15 @@ export const materializeUploadedReleaseDeliverable = internalAction({
     contentType: v.string(),
     deliveryName: v.string(),
     sha256: v.string(),
+    metadata: v.optional(v.any()),
   },
-    returns: v.object({
-      deliveryArtifactMode: deliveryArtifactModeValidator,
-      rawArtifactId: v.id('delivery_release_artifacts'),
-      deliverableArtifactId: v.id('delivery_release_artifacts'),
-      deliverableSha256: v.string(),
-      materializationStrategy: v.union(v.literal('normalized_repack')),
-    }),
+  returns: v.object({
+    deliveryArtifactMode: deliveryArtifactModeValidator,
+    rawArtifactId: v.id('delivery_release_artifacts'),
+    deliverableArtifactId: v.id('delivery_release_artifacts'),
+    deliverableSha256: v.string(),
+    materializationStrategy: v.union(v.literal('normalized_repack')),
+  }),
   handler: async (ctx, args): Promise<MaterializedReleaseDeliverableResult> => {
     const uploaded = await ctx.storage.get(args.storageId);
     if (!uploaded) {
@@ -534,6 +535,7 @@ export const materializeUploadedReleaseDeliverable = internalAction({
       packageId: release.packageId,
       version: release.version,
       displayName: deliveryPackage.displayName ?? deliveryPackage.packageName,
+      metadata: args.metadata as Record<string, unknown> | undefined,
     });
     const deliverableBytes = materialized.bytes.buffer.slice(
       materialized.bytes.byteOffset,
@@ -696,7 +698,9 @@ export const repairMaterializedReleaseDeliverable = internalAction({
         }
       );
       if (!rawArtifact || String(rawArtifact._id) !== String(recoveredRawArtifactId)) {
-        throw new Error(`Recovered raw upload could not be activated: ${args.deliveryPackageReleaseId}`);
+        throw new Error(
+          `Recovered raw upload could not be activated: ${args.deliveryPackageReleaseId}`
+        );
       }
     }
 
@@ -712,6 +716,10 @@ export const repairMaterializedReleaseDeliverable = internalAction({
       packageId: release.packageId,
       version: release.version,
       displayName: deliveryPackage.displayName ?? deliveryPackage.packageName,
+      metadata:
+        release.metadata && typeof release.metadata === 'object' && !Array.isArray(release.metadata)
+          ? (release.metadata as Record<string, unknown>)
+          : undefined,
     });
     const previousSha256 = currentDeliverable?.sha256 ?? release.zipSha256;
     const needsRepair =
@@ -756,6 +764,7 @@ export const repairMaterializedReleaseDeliverable = internalAction({
     await ctx.runMutation(internal.packageRegistry.updateMaterializedReleaseDigest, {
       deliveryPackageReleaseId: args.deliveryPackageReleaseId,
       zipSha256: materialized.sha256,
+      sourceKind: materialized.originalSourceKind,
     });
 
     return {

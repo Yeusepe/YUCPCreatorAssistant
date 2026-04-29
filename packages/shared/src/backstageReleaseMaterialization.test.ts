@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { gunzipSync, gzipSync, strToU8, unzipSync, zipSync } from 'fflate';
 import { materializeBackstageReleaseArtifact } from './backstageReleaseMaterialization';
+import {
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY,
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY,
+} from './backstageVpmDelivery';
 
 const ZIP_DATE_A = new Date(315705600000);
 const ZIP_DATE_B = new Date(315964800000);
@@ -141,6 +145,59 @@ describe('materializeBackstageReleaseArtifact', () => {
     ]);
   });
 
+  it('rewrites ZIP package manifests to match normalized repo metadata', async () => {
+    const input = zipSync(
+      {
+        'Packages/com.yucp.example/package.json': [
+          strToU8('{"name":"com.yucp.backstage.raw","version":"0.0.1"}'),
+          { mtime: ZIP_DATE_A },
+        ],
+        'Packages/com.yucp.example/README.md': [strToU8('hello'), { mtime: ZIP_DATE_A }],
+      },
+      { level: 9 }
+    );
+
+    const materialized = await materializeBackstageReleaseArtifact({
+      sourceBytes: input,
+      deliveryName: 'example.zip',
+      contentType: 'application/zip',
+      packageId: 'com.yucp.example',
+      version: '1.2.3',
+      displayName: 'Example Package',
+      metadata: {
+        description: 'Generated on the server',
+        dependencies: {
+          'com.yucp.importer': '1.4.0',
+        },
+        yucp: {
+          kind: 'alias-v1',
+          aliasId: 'creator-alias',
+          installStrategy: 'server-authorized',
+          importerPackage: 'com.yucp.importer',
+        },
+      },
+    });
+
+    const archive = unzipSync(materialized.bytes);
+    expect(
+      JSON.parse(new TextDecoder().decode(archive['Packages/com.yucp.example/package.json']))
+    ).toEqual({
+      name: 'com.yucp.example',
+      version: '1.2.3',
+      displayName: 'Example Package',
+      description: 'Generated on the server',
+      dependencies: {
+        'com.yucp.importer': '1.4.0',
+      },
+      yucp: {
+        kind: 'alias-v1',
+        aliasId: 'creator-alias',
+        installStrategy: 'server-authorized',
+        importerPackage: 'com.yucp.importer',
+      },
+    });
+  });
+
   it('wraps unitypackage uploads in deterministic compile-safe package zips', async () => {
     const firstInput = buildUnitypackage(
       [
@@ -168,6 +225,13 @@ describe('materializeBackstageReleaseArtifact', () => {
       packageId: 'com.yucp.example',
       version: '1.2.3',
       displayName: 'Example Package',
+      metadata: {
+        description: 'Generated on the server',
+        unity: '2022.3',
+        dependencies: {
+          'com.yucp.importer': '1.4.0',
+        },
+      },
     });
     const second = await materializeBackstageReleaseArtifact({
       sourceBytes: secondInput,
@@ -176,6 +240,13 @@ describe('materializeBackstageReleaseArtifact', () => {
       packageId: 'com.yucp.example',
       version: '1.2.3',
       displayName: 'Example Package',
+      metadata: {
+        description: 'Generated on the server',
+        unity: '2022.3',
+        dependencies: {
+          'com.yucp.importer': '1.4.0',
+        },
+      },
     });
 
     expect(first.materializationStrategy).toBe('normalized_repack');
@@ -207,6 +278,11 @@ describe('materializeBackstageReleaseArtifact', () => {
       name: 'com.yucp.example',
       version: '1.2.3',
       displayName: 'Example Package',
+      description: 'Generated on the server',
+      unity: '2022.3',
+      dependencies: {
+        'com.yucp.importer': '1.4.0',
+      },
     });
 
     const payloadManifest = JSON.parse(
@@ -242,5 +318,33 @@ describe('materializeBackstageReleaseArtifact', () => {
         contentType: 'application/zip',
       })
     ).rejects.toThrow('unsafe archive path');
+  });
+
+  it('prefers persisted source kind metadata over wrapper-looking delivery names', async () => {
+    const input = buildUnitypackage(
+      [
+        { path: 'asset-guid/asset', content: strToU8('asset-bytes') },
+        { path: 'asset-guid/pathname', content: strToU8('Assets/Avatar/readme.txt') },
+      ],
+      TAR_MTIME_A
+    );
+
+    const materialized = await materializeBackstageReleaseArtifact({
+      sourceBytes: input,
+      deliveryName: 'vrc-get-com.yucp.example-1.2.3.zip',
+      contentType: 'application/zip',
+      packageId: 'com.yucp.example',
+      version: '1.2.3',
+      displayName: 'Example Package',
+      metadata: {
+        [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: 'unitypackage',
+        [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY]: 'server-derived-v1',
+      },
+    });
+
+    expect(materialized.deliveryName).toBe('vrc-get-com.yucp.example-1.2.3.zip');
+    expect(Object.keys(unzipSync(materialized.bytes))).toContain(
+      'BackstagePayload~/payload.unitypackage'
+    );
   });
 });

@@ -1,6 +1,13 @@
-import { BACKSTAGE_VPM_RESERVED_METADATA_KEYS } from './backstageVpmDelivery';
+import {
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY,
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY,
+  BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_MARKERS,
+  BACKSTAGE_VPM_RESERVED_METADATA_KEYS,
+  detectBackstageVpmDeliverySourceKind,
+} from './backstageVpmDelivery';
 import { sha256Hex } from './crypto';
 import {
+  applyYucpAliasPackageManifestDefaults,
   normalizeYucpAliasPackageContract,
   YUCP_PACKAGE_METADATA_KEY,
 } from './yucpAliasPackageContract';
@@ -17,7 +24,8 @@ export type PrepareBackstageArtifactInput = {
   metadata?: unknown;
   deliveryName?: string;
   sourceBytes: Uint8Array;
-  sourceFileName: string;
+  sourceContentType?: string;
+  sourceFileName?: string;
 };
 
 export type PreparedBackstageArtifact = {
@@ -83,24 +91,25 @@ function normalizeManifestMetadata(input: {
     metadata.unity = unityVersion;
   }
 
-  return Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined));
+  return applyYucpAliasPackageManifestDefaults(
+    Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined))
+  );
 }
 
-function inferSourceKind(sourceFileName: string): PreparedBackstageArtifact['sourceKind'] {
-  const lowerFileName = sourceFileName.toLowerCase();
-  if (lowerFileName.endsWith(UNITYPACKAGE_EXTENSION)) {
-    return 'unitypackage';
-  }
-  if (lowerFileName.endsWith(ZIP_EXTENSION)) {
-    return 'zip';
-  }
-
-  throw new Error('Backstage artifacts must be .unitypackage files or .zip files.');
+function buildDefaultSourceFileName(input: {
+  packageId: string;
+  version: string;
+  sourceKind: PreparedBackstageArtifact['sourceKind'];
+}): string {
+  const packageToken = input.packageId.split('.').at(-1)?.trim() || 'package';
+  return `${packageToken}-${input.version}${input.sourceKind === 'unitypackage' ? UNITYPACKAGE_EXTENSION : ZIP_EXTENSION}`;
 }
 
 function resolveDeliveryName(input: {
   deliveryName?: string;
-  sourceFileName: string;
+  packageId: string;
+  version: string;
+  sourceFileName?: string;
   sourceKind: PreparedBackstageArtifact['sourceKind'];
 }): string {
   const explicitDeliveryName = trimOptional(input.deliveryName);
@@ -108,7 +117,7 @@ function resolveDeliveryName(input: {
     return explicitDeliveryName;
   }
 
-  return input.sourceKind === 'unitypackage' ? input.sourceFileName : input.sourceFileName;
+  return trimOptional(input.sourceFileName) ?? buildDefaultSourceFileName(input);
 }
 
 function inferContentType(
@@ -121,11 +130,11 @@ export async function prepareBackstageArtifactForPublish(
   input: PrepareBackstageArtifactInput
 ): Promise<PreparedBackstageArtifact> {
   const sourceFileName = trimOptional(input.sourceFileName);
-  if (!sourceFileName) {
-    throw new Error('sourceFileName is required');
-  }
-
-  const sourceKind = inferSourceKind(sourceFileName);
+  const sourceKind = detectBackstageVpmDeliverySourceKind({
+    deliveryName: sourceFileName ?? input.deliveryName,
+    contentType: input.sourceContentType,
+    bytes: input.sourceBytes,
+  });
   const metadata = normalizeManifestMetadata({
     description: input.description,
     metadata: input.metadata,
@@ -137,10 +146,17 @@ export async function prepareBackstageArtifactForPublish(
     contentType: inferContentType(sourceKind),
     deliveryName: resolveDeliveryName({
       deliveryName: input.deliveryName,
+      packageId: input.packageId,
+      version: input.version,
       sourceFileName,
       sourceKind,
     }),
-    metadata,
+    metadata: {
+      ...metadata,
+      [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: sourceKind,
+      [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY]:
+        BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_MARKERS.serverDerived,
+    },
     sourceKind,
     zipSha256: await sha256Hex(input.sourceBytes),
   };

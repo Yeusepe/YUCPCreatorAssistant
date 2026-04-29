@@ -39,6 +39,7 @@ import type * as lib_accountSecurityEmail from "../lib/accountSecurityEmail.js";
 import type * as lib_apiActor from "../lib/apiActor.js";
 import type * as lib_apiAuth from "../lib/apiAuth.js";
 import type * as lib_authUser from "../lib/authUser.js";
+import type * as lib_backstageAliasMetadata from "../lib/backstageAliasMetadata.js";
 import type * as lib_betterAuthAdapter from "../lib/betterAuthAdapter.js";
 import type * as lib_billingCapabilities from "../lib/billingCapabilities.js";
 import type * as lib_canonicalDescriptor from "../lib/canonicalDescriptor.js";
@@ -161,6 +162,7 @@ declare const fullApi: ApiFromModules<{
   "lib/apiActor": typeof lib_apiActor;
   "lib/apiAuth": typeof lib_apiAuth;
   "lib/authUser": typeof lib_authUser;
+  "lib/backstageAliasMetadata": typeof lib_backstageAliasMetadata;
   "lib/betterAuthAdapter": typeof lib_betterAuthAdapter;
   "lib/billingCapabilities": typeof lib_billingCapabilities;
   "lib/canonicalDescriptor": typeof lib_canonicalDescriptor;

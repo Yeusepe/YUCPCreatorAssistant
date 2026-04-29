@@ -336,7 +336,13 @@ const archiveCreatorBackstageReleaseMock = packagesApi.archiveCreatorBackstageRe
 const archiveCreatorBackstageProductMock = packagesApi.archiveCreatorBackstageProduct as ReturnType<
   typeof vi.fn
 >;
+const createBackstageReleaseUploadUrlMock =
+  packagesApi.createBackstageReleaseUploadUrl as ReturnType<typeof vi.fn>;
+const publishBackstageReleaseMock = packagesApi.publishBackstageRelease as ReturnType<typeof vi.fn>;
 const requestBackstageRepoAccessMock = packagesApi.requestBackstageRepoAccess as ReturnType<
+  typeof vi.fn
+>;
+const uploadBackstageReleaseFileMock = packagesApi.uploadBackstageReleaseFile as ReturnType<
   typeof vi.fn
 >;
 
@@ -569,6 +575,19 @@ describe('dashboard packages route', () => {
         'vcc://vpm/addRepo?url=https%3A%2F%2Fapi.test%2Fv1%2Fbackstage%2Frepos%2Fmapache%2Findex.json',
       expiresAt: 1_710_000_100_000,
     });
+    createBackstageReleaseUploadUrlMock.mockResolvedValue({
+      packageId: 'pkg.creator.bundle',
+      uploadUrl: 'https://uploads.test/backstage',
+    });
+    uploadBackstageReleaseFileMock.mockResolvedValue({
+      storageId: 'storage_uploaded_1',
+    });
+    publishBackstageReleaseMock.mockResolvedValue({
+      deliveryPackageReleaseId: 'release_new',
+      zipSha256: 'f'.repeat(64),
+      version: '1.2.3',
+      channel: 'stable',
+    });
     renameCreatorPackageMock.mockResolvedValue({
       updated: true,
       packageId: 'pkg.creator.bundle',
@@ -757,6 +776,46 @@ describe('dashboard packages route', () => {
 
     expect(screen.queryByText('Whole subscription product')).not.toBeInTheDocument();
     expect(screen.queryByText('Specific subscription tiers')).not.toBeInTheDocument();
+  });
+
+  it('shows package metadata fields and dependency validation in the publish sheet', async () => {
+    const Component = PackagesRoute.options.component;
+    if (!Component) {
+      throw new Error('Packages route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper() });
+
+    await waitFor(() =>
+      expect(screen.getByText(/Install ID:\s*pkg\.creator\.bundle/i)).toBeInTheDocument()
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /upload a package/i }));
+
+    await waitFor(() => expect(document.getElementById('package-release-version')).not.toBeNull());
+
+    const dependenciesInput = document.querySelector(
+      'textarea[aria-label="Dependencies"]'
+    ) as HTMLTextAreaElement | null;
+    const fileInput = document.querySelector(
+      'input[aria-label="Choose update file"]'
+    ) as HTMLInputElement | null;
+
+    if (!dependenciesInput || !fileInput) {
+      throw new Error('Expected publish metadata inputs to render.');
+    }
+    expect(screen.getByText('Package metadata')).toBeInTheDocument();
+    expect(screen.getByLabelText('Package description')).toBeInTheDocument();
+    expect(screen.getByLabelText('Unity version')).toBeInTheDocument();
+
+    fireEvent.change(dependenciesInput, {
+      target: { value: 'not-a-valid-dependency-line' },
+    });
+
+    expect(
+      screen.getByText('Dependency line 1 must use com.package.id@1.0.0 or com.package.id=1.0.0.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /upload package/i })).toBeDisabled();
   });
 
   it('keeps first-upload products behind the upload button instead of a separate setup section', async () => {

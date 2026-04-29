@@ -33,6 +33,8 @@ describe('prepareBackstageArtifactForPublish', () => {
       dependencies: {
         'com.vrchat.base': '3.7.0',
       },
+      yucpDeliverySourceKind: 'unitypackage',
+      yucpDeliverySourceKindTrust: 'server-derived-v1',
     });
   });
 
@@ -48,7 +50,10 @@ describe('prepareBackstageArtifactForPublish', () => {
     expect(artifact.contentType).toBe('application/zip');
     expect(artifact.deliveryName).toBe('example.zip');
     expect(artifact.bytes).toEqual(new Uint8Array([80, 75, 3, 4]));
-    expect(artifact.metadata).toEqual({});
+    expect(artifact.metadata).toEqual({
+      yucpDeliverySourceKind: 'zip',
+      yucpDeliverySourceKindTrust: 'server-derived-v1',
+    });
   });
 
   it('preserves a validated shared alias package contract under metadata.yucp', async () => {
@@ -72,6 +77,11 @@ describe('prepareBackstageArtifactForPublish', () => {
     });
 
     expect(artifact.metadata).toEqual({
+      dependencies: {
+        'com.yucp.importer': '>=1.4.0',
+      },
+      yucpDeliverySourceKind: 'zip',
+      yucpDeliverySourceKindTrust: 'server-derived-v1',
       yucp: {
         kind: 'alias-v1',
         aliasId: 'creator-alias',
@@ -101,5 +111,22 @@ describe('prepareBackstageArtifactForPublish', () => {
         sourceFileName: 'example.zip',
       })
     ).rejects.toThrow('metadata.yucp.installStrategy must be "server-authorized"');
+  });
+
+  it('detects ZIP uploads from bytes when the filename is omitted', async () => {
+    const artifact = await prepareBackstageArtifactForPublish({
+      packageId: 'com.yucp.example',
+      version: '1.2.3',
+      sourceBytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]),
+      sourceContentType: 'application/octet-stream',
+    });
+
+    expect(artifact.sourceKind).toBe('zip');
+    expect(artifact.contentType).toBe('application/zip');
+    expect(artifact.deliveryName).toBe('example-1.2.3.zip');
+    expect(artifact.metadata).toEqual({
+      yucpDeliverySourceKind: 'zip',
+      yucpDeliverySourceKindTrust: 'server-derived-v1',
+    });
   });
 });

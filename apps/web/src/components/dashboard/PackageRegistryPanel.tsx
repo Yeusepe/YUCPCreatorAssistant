@@ -42,6 +42,7 @@ import {
   archiveCreatorBackstageProduct,
   archiveCreatorBackstageRelease,
   archiveCreatorPackage,
+  type BackstagePackageDependencyVersion,
   type CreatorBackstageCatalogTierSummary,
   type CreatorBackstagePackageReleaseSummary,
   type CreatorBackstageProductPackageSummary,
@@ -79,6 +80,7 @@ type PublishDraft = {
   description: string;
   repositoryVisibility: 'hidden' | 'listed';
   unityVersion: string;
+  dependenciesText: string;
 };
 
 type SelectedUpload = {
@@ -134,6 +136,48 @@ function getBackstageArtifactContentType(
     return normalizedType;
   }
   return artifactKind === 'unitypackage' ? 'application/octet-stream' : 'application/zip';
+}
+
+function parseBackstageDependencyVersions(input: string): {
+  dependencies: BackstagePackageDependencyVersion[];
+  errorMessage?: string;
+} {
+  const lines = input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return { dependencies: [] };
+  }
+
+  const dependencyVersions = new Map<string, string>();
+  for (const [index, line] of lines.entries()) {
+    const separatorIndex = line.includes('=') ? line.indexOf('=') : line.lastIndexOf('@');
+    if (separatorIndex <= 0 || separatorIndex >= line.length - 1) {
+      return {
+        dependencies: [],
+        errorMessage: `Dependency line ${index + 1} must use com.package.id@1.0.0 or com.package.id=1.0.0.`,
+      };
+    }
+
+    const packageId = line.slice(0, separatorIndex).trim();
+    const version = line.slice(separatorIndex + 1).trim();
+    if (!packageId || !version) {
+      return {
+        dependencies: [],
+        errorMessage: `Dependency line ${index + 1} must include both a package ID and version.`,
+      };
+    }
+
+    dependencyVersions.set(packageId, version);
+  }
+
+  return {
+    dependencies: Array.from(dependencyVersions.entries()).map(([packageId, version]) => ({
+      packageId,
+      version,
+    })),
+  };
 }
 
 function updatePackageListCache(
@@ -446,6 +490,7 @@ function buildDraftFromLane(lane?: ProductLane | null): PublishDraft {
     description: '',
     repositoryVisibility: linkedPackage?.repositoryVisibility ?? 'listed',
     unityVersion: '',
+    dependenciesText: '',
   };
 }
 
@@ -1441,14 +1486,13 @@ export function PackageRegistryPanel({
       const linkedPackage = selectedLane?.primaryPackage ?? null;
       const uploadResult = await createBackstageReleaseUploadUrl({ packageId });
       const resolvedDisplayName = draft.displayName.trim() || selectedLane?.title || packageId;
+      const dependencyVersions = parseBackstageDependencyVersions(draft.dependenciesText);
+      if (dependencyVersions.errorMessage) {
+        throw new Error(dependencyVersions.errorMessage);
+      }
       const upload = await uploadBackstageReleaseFile({
         uploadUrl: uploadResult.uploadUrl,
         file: selectedUpload.file,
-        packageId,
-        version: draft.version.trim(),
-        displayName: resolvedDisplayName,
-        description: draft.description.trim() || undefined,
-        unityVersion: draft.unityVersion.trim() || undefined,
       });
       const accessSelectors =
         draft.accessMode === 'tiers' && draft.catalogTierIds.length > 0
@@ -1467,7 +1511,6 @@ export function PackageRegistryPanel({
           accessSelectors,
           storageId: upload.storageId,
           version: draft.version.trim(),
-          zipSha256: upload.zipSha256,
           channel: draft.channel.trim() || 'stable',
           packageName: packageId,
           displayName: resolvedDisplayName,
@@ -1475,9 +1518,12 @@ export function PackageRegistryPanel({
           repositoryVisibility: draft.repositoryVisibility,
           defaultChannel: draft.channel.trim() || linkedPackage?.defaultChannel || 'stable',
           unityVersion: draft.unityVersion.trim() || undefined,
-          metadata: upload.metadata,
-          contentType: upload.contentType,
-          deliveryName: upload.deliveryName,
+          dependencyVersions:
+            dependencyVersions.dependencies.length > 0
+              ? dependencyVersions.dependencies
+              : undefined,
+          deliveryName: selectedUpload.file.name,
+          sourceContentType: selectedUpload.file.type || 'application/octet-stream',
         },
       });
 
@@ -1534,6 +1580,11 @@ export function PackageRegistryPanel({
       ),
     [packagesQuery.data?.packages]
   );
+  const parsedDependencyVersions = useMemo(
+    () => parseBackstageDependencyVersions(publishDraft.dependenciesText),
+    [publishDraft.dependenciesText]
+  );
+  const selectedUploadNeedsServerMetadata = selectedUpload?.artifactKind === 'unitypackage';
   const products = useMemo(
     () =>
       [...(productsQuery.data?.products ?? [])].sort((a, b) =>
@@ -1651,6 +1702,7 @@ export function PackageRegistryPanel({
       return {
         ...baseDraft,
         description: current.description,
+        dependenciesText: current.dependenciesText,
         laneKey,
         packageId: baseDraft.packageId || current.packageId,
         version: current.version,
@@ -2409,26 +2461,92 @@ export function PackageRegistryPanel({
                         </DropZone>
                       </div>
 
+                      <div className="pm-muted-panel space-y-4 rounded-2xl p-4">
+                        <div className="space-y-1">
+                          <p className="text-foreground text-sm font-semibold">Package metadata</p>
+                          <p className="pm-subtle-copy text-sm">
+                            {selectedUploadNeedsServerMetadata
+                              ? 'YUCP will generate the VPM manifest on the server from these fields before buyers install this .unitypackage.'
+                              : 'Optional metadata for the generated VPM release record.'}
+                          </p>
+                        </div>
+                        <div className="pm-form-grid">
+                          <div className="pm-field-stack">
+                            <p className="pm-field-label">Display name</p>
+                            <YucpInput
+                              aria-label="Display name"
+                              placeholder="Buyer-facing package name"
+                              value={publishDraft.displayName}
+                              onValueChange={(value) =>
+                                setPublishDraft((current) => ({
+                                  ...current,
+                                  displayName: value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="pm-field-stack">
+                            <p className="pm-field-label">Unity version</p>
+                            <YucpInput
+                              aria-label="Unity version"
+                              placeholder="Optional"
+                              value={publishDraft.unityVersion}
+                              onValueChange={(value) =>
+                                setPublishDraft((current) => ({
+                                  ...current,
+                                  unityVersion: value,
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="pm-field-stack">
+                          <p className="pm-field-label">Package description</p>
+                          <TextArea
+                            aria-label="Package description"
+                            placeholder="What should buyers see in the generated package metadata?"
+                            variant="secondary"
+                            value={publishDraft.description}
+                            onChange={(event) =>
+                              setPublishDraft((current) => ({
+                                ...current,
+                                description: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="pm-field-stack">
+                          <p className="pm-field-label">Dependencies</p>
+                          <TextArea
+                            aria-label="Dependencies"
+                            placeholder={'com.vrchat.base@3.7.0\ncom.yucp.importer=1.4.0'}
+                            variant="secondary"
+                            value={publishDraft.dependenciesText}
+                            onChange={(event) =>
+                              setPublishDraft((current) => ({
+                                ...current,
+                                dependenciesText: event.target.value,
+                              }))
+                            }
+                          />
+                          <p className="pm-subtle-copy text-xs">
+                            One dependency per line with <code>packageId@version</code> or{' '}
+                            <code>packageId=version</code>.
+                          </p>
+                          {parsedDependencyVersions.errorMessage ? (
+                            <p className="text-danger text-xs">
+                              {parsedDependencyVersions.errorMessage}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+
                       <details className="pm-muted-panel rounded-2xl p-4">
                         <summary className="text-foreground cursor-pointer list-none text-sm font-medium">
                           More options
                         </summary>
                         <div className="mt-4 space-y-4">
                           <div className="pm-form-grid">
-                            <div className="pm-field-stack">
-                              <p className="pm-field-label">Unity version</p>
-                              <YucpInput
-                                aria-label="Unity version"
-                                placeholder="Optional"
-                                value={publishDraft.unityVersion}
-                                onValueChange={(value) =>
-                                  setPublishDraft((current) => ({
-                                    ...current,
-                                    unityVersion: value,
-                                  }))
-                                }
-                              />
-                            </div>
                             <div className="pm-field-stack">
                               <p className="pm-field-label">Visibility</p>
                               <Select
@@ -2465,20 +2583,6 @@ export function PackageRegistryPanel({
                           </div>
                           <div className="pm-form-grid">
                             <div className="pm-field-stack">
-                              <p className="pm-field-label">Display name</p>
-                              <YucpInput
-                                aria-label="Display name"
-                                placeholder="Buyer-facing package name"
-                                value={publishDraft.displayName}
-                                onValueChange={(value) =>
-                                  setPublishDraft((current) => ({
-                                    ...current,
-                                    displayName: value,
-                                  }))
-                                }
-                              />
-                            </div>
-                            <div className="pm-field-stack">
                               <p className="pm-field-label">Channel</p>
                               <YucpInput
                                 aria-label="Channel"
@@ -2492,21 +2596,6 @@ export function PackageRegistryPanel({
                                 }
                               />
                             </div>
-                          </div>
-                          <div className="pm-field-stack">
-                            <p className="pm-field-label">Release notes</p>
-                            <TextArea
-                              aria-label="Release notes"
-                              placeholder="What changed in this update?"
-                              variant="secondary"
-                              value={publishDraft.description}
-                              onChange={(event) =>
-                                setPublishDraft((current) => ({
-                                  ...current,
-                                  description: event.target.value,
-                                }))
-                              }
-                            />
                           </div>
                         </div>
                       </details>
@@ -2534,7 +2623,8 @@ export function PackageRegistryPanel({
                       publishDraft.catalogTierIds.length === 0) ||
                     !publishDraft.packageId.trim() ||
                     !publishDraft.version.trim() ||
-                    !selectedUpload?.file
+                    !selectedUpload?.file ||
+                    Boolean(parsedDependencyVersions.errorMessage)
                   }
                   onPress={() => publishMutation.mutate(publishDraft)}
                 >

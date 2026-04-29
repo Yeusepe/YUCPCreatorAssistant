@@ -19,7 +19,6 @@ import { logger } from '../lib/logger';
 import { verifyBetterAuthAccessToken } from '../lib/oauthAccessToken';
 
 const PACKAGE_ID_RE = /^[a-z0-9\-_./:]{1,128}$/;
-const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 const BACKSTAGE_REPO_TOKEN_HEADER = 'X-YUCP-Repo-Token';
 const BACKSTAGE_REPO_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_BACKSTAGE_LIVE_SYNC_TIMEOUT_MS = 1_500;
@@ -1175,7 +1174,6 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
       accessSelectors?: unknown[];
       storageId?: string;
       version?: string;
-      zipSha256?: string;
       channel?: string;
       packageName?: string;
       displayName?: string;
@@ -1183,9 +1181,10 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
       repositoryVisibility?: 'hidden' | 'listed';
       defaultChannel?: string;
       unityVersion?: string;
+      dependencyVersions?: Array<{ packageId?: string; version?: string }>;
       metadata?: unknown;
       deliveryName?: string;
-      contentType?: string;
+      sourceContentType?: string;
       releaseStatus?: 'draft' | 'published' | 'revoked' | 'superseded';
     };
     try {
@@ -1219,18 +1218,36 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
         ])
       ).values()
     );
-    const zipSha256 = body.zipSha256?.trim().toLowerCase();
-    if (accessSelectors.length === 0 || !body.storageId || !body.version || !zipSha256) {
+    let dependencyVersions:
+      | Array<{
+          packageId: string;
+          version: string;
+        }>
+      | undefined;
+    try {
+      dependencyVersions = Array.isArray(body.dependencyVersions)
+        ? body.dependencyVersions.map((dependency) => {
+            const packageId = dependency?.packageId?.trim();
+            const version = dependency?.version?.trim();
+            if (!packageId || !version) {
+              throw new Error('Each dependency version must include packageId and version.');
+            }
+            return { packageId, version };
+          })
+        : undefined;
+    } catch (error) {
       return jsonResponse(
-        { error: 'accessSelectors, storageId, version, and zipSha256 are required' },
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Each dependency version must include packageId and version.',
+        },
         400
       );
     }
-    if (!SHA256_HEX_RE.test(zipSha256)) {
-      return jsonResponse(
-        { error: 'zipSha256 must be a lowercase 64-character SHA-256 hex digest' },
-        400
-      );
+    if (accessSelectors.length === 0 || !body.storageId || !body.version) {
+      return jsonResponse({ error: 'accessSelectors, storageId, and version are required' }, 400);
     }
 
     try {
@@ -1252,7 +1269,6 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
         packageId,
         storageId: body.storageId as Id<'_storage'>,
         version: body.version,
-        zipSha256,
         channel: body.channel,
         packageName: body.packageName,
         displayName: body.displayName,
@@ -1260,9 +1276,10 @@ export function createPackageRoutes(auth: Auth, config: PackagesConfig) {
         repositoryVisibility: body.repositoryVisibility,
         defaultChannel: body.defaultChannel,
         unityVersion: body.unityVersion,
+        dependencyVersions,
         metadata: body.metadata,
         deliveryName: body.deliveryName,
-        contentType: body.contentType,
+        sourceContentType: body.sourceContentType,
         releaseStatus: body.releaseStatus,
       });
       return jsonResponse(result, 201);

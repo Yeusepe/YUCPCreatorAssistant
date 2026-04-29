@@ -20,6 +20,7 @@ type ReleaseDetails = {
   zipSha256?: string;
   signedArtifactId?: string;
   artifactKey?: string;
+  metadata?: Record<string, unknown>;
 };
 
 type PackageDetails = {
@@ -301,6 +302,7 @@ async function main(argv: readonly string[] = process.argv.slice(2)) {
       packageId: release.packageId,
       version: release.version,
       displayName: deliveryPackage.displayName ?? deliveryPackage.packageName,
+      metadata: release.metadata,
     });
     const changed = release.zipSha256 !== materialized.sha256;
 
@@ -335,6 +337,7 @@ async function main(argv: readonly string[] = process.argv.slice(2)) {
       await runConvexFunction<null>('packageRegistry:updateMaterializedReleaseDigest', {
         deliveryPackageReleaseId: releaseRecord.deliveryPackageReleaseId,
         zipSha256: materialized.sha256,
+        sourceKind: materialized.originalSourceKind,
       });
     }
 
