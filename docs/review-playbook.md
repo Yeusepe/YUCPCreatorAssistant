@@ -101,7 +101,7 @@ For anything cross-cutting, plan the work in explicit scopes:
 
 If using subagents, split by scope, not by file count. Each agent should own one coherent problem.
 
-## 6. Use subagents deliberately
+## 6. When using AI swarms or subagents, use them deliberately
 
 Subagents are best when the work naturally splits into independent tracks.
 
@@ -197,7 +197,7 @@ This pass is where long-term correctness is usually won or lost.
 
 Once the fix and regressions look solid, run a final signoff review with a fresh lens.
 
-The signoff reviewer should not be asked "is this okay?"
+If using a subagent for this, the "signoff reviewer" should not be asked "is this okay?"
 
 Ask instead:
 
@@ -402,7 +402,7 @@ A provider, identity, verification, account, or backfill incident is not done un
 4. remediation coverage exists when persisted bad state is part of the incident
 5. `bun run test:external-integrations` passes locally
 
-### Taxonomy matrix
+### Taxonomy matrix for error examples
 
 | Error class | Typical failure signature | Primary regression home | Secondary regression home | Incident anchors |
 | --- | --- | --- | --- | --- |
@@ -416,7 +416,7 @@ A provider, identity, verification, account, or backfill incident is not done un
 
 Use `bun run test:external-integrations` as the deterministic PR gate for this matrix. Its steps are driven by `ops/production-regression-loop.ts`, so the fast gate stays aligned with provider runtime contracts, API and RPC boundary translation, verification flows, account consumers, and backfill coverage. Do not replace it with live smoke. `bun run smoke:providers` remains manual or separately scheduled drift coverage outside the pull request gate.
 
-### How to place regressions for the recent incident set
+### Examples on how to place regressions for the recent incident set
 
 1. **Subject-auth helper regression**
    - primary home: `apps\api\src\lib\subjectIdentity.test.ts`
@@ -487,7 +487,7 @@ Best practices:
 The work is ready when:
 
 1. the original bug is reproduced by tests and then fixed
-2. adjacent bug-class regressions are covered
+2. adjacent bug-class regressions are coveredF
 3. remediation or migration is safe
 4. at least one fresh review pass finds no material issues
 5. repo-level validation is green, or remaining failures are clearly unrelated and documented
