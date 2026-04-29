@@ -5,6 +5,7 @@ import {
   BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_MARKERS,
   BACKSTAGE_VPM_SOURCE_KINDS,
   detectBackstageVpmDeliverySourceKind,
+  stripBackstageVpmReservedMetadata,
 } from './backstageVpmDelivery';
 import { sha256Hex } from './crypto';
 
@@ -53,6 +54,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function sanitizePackageManifestMetadata(
+  metadata: Record<string, unknown> | undefined
+): Record<string, unknown> {
+  return metadata ? stripBackstageVpmReservedMetadata(metadata) : {};
+}
+
 function resolveZipPackageJsonPath(input: {
   archivePaths: string[];
   packageId?: string;
@@ -62,6 +69,9 @@ function resolveZipPackageJsonPath(input: {
     : undefined;
   if (expectedPath && input.archivePaths.includes(expectedPath)) {
     return expectedPath;
+  }
+  if (input.archivePaths.includes('package.json')) {
+    return 'package.json';
   }
   return input.archivePaths.find((entryPath) => entryPath.endsWith('/package.json'));
 }
@@ -241,6 +251,7 @@ function materializeZip(input: {
   metadata?: Record<string, unknown>;
 }): Uint8Array {
   const archive = unzipSync(input.sourceBytes);
+  const sanitizedMetadata = sanitizePackageManifestMetadata(input.metadata);
   const normalizedEntries = Object.fromEntries(
     Object.entries(archive).map(
       ([rawPath, bytes]) => [assertSafeArchivePath(rawPath), bytes] as const
@@ -259,11 +270,12 @@ function materializeZip(input: {
     if (!isRecord(parsedManifest)) {
       throw new Error(`Backstage ZIP package manifest must be an object: ${packageJsonPath}`);
     }
+    const sanitizedManifest = stripBackstageVpmReservedMetadata(parsedManifest);
     normalizedEntries[packageJsonPath] = new TextEncoder().encode(
       JSON.stringify(
         {
-          ...parsedManifest,
-          ...(input.metadata ?? {}),
+          ...sanitizedManifest,
+          ...sanitizedMetadata,
           ...(input.packageId?.trim() ? { name: input.packageId.trim() } : {}),
           ...(input.version?.trim() ? { version: input.version.trim() } : {}),
           ...(input.displayName?.trim() ? { displayName: input.displayName.trim() } : {}),
@@ -406,8 +418,9 @@ async function buildEmbeddedUnitypackageZip(input: {
   const className = `${sanitizeCSharpIdentifier(input.packageId)}_${suffix}`;
   const installerClassName = `YucpBackstageEmbeddedUnitypackageInstaller_${className}`;
   const asmdefName = `Yucp.Backstage.PackageInstaller.${sanitizeAssemblyNameSegment(input.packageId)}_${suffix}`;
+  const sanitizedMetadata = sanitizePackageManifestMetadata(input.metadata);
   const packageJsonMetadata = {
-    ...(input.metadata ?? {}),
+    ...sanitizedMetadata,
     name: input.packageId,
     version: input.version,
     displayName: input.displayName?.trim() || input.packageId,

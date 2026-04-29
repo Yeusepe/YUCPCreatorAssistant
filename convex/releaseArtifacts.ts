@@ -1,7 +1,7 @@
+import { normalizeBackstageRawPayload } from '@yucp/shared/backstageRawPayload';
 import { materializeBackstageReleaseArtifact } from '@yucp/shared/backstageReleaseMaterialization';
 import { sha256Hex } from '@yucp/shared/crypto';
 import { v } from 'convex/values';
-import { unzipSync } from 'fflate';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
@@ -628,7 +628,11 @@ export const repairMaterializedReleaseDeliverable = internalAction({
       throw new Error(`Delivery package not found: ${release.deliveryPackageId}`);
     }
 
-    let uploaded: Blob | null = null;
+    let rawSourceBytes: Uint8Array | null = null;
+    let rawSourceContentType: string | null = null;
+    let rawSourceDeliveryName: string | null = null;
+    let rawSourceSha256: string | null = null;
+    let rawArtifactNeedsReplace = false;
     if (!rawArtifact) {
       const signedArtifact = release.signedArtifactId
         ? await ctx.runQuery(internal.releaseArtifacts.getArtifactById, {
@@ -650,30 +654,90 @@ export const repairMaterializedReleaseDeliverable = internalAction({
       if (!legacyWrapperBlob) {
         throw new Error(`Deliverable release storage not found: ${legacyWrapperStorageId}`);
       }
-      const legacyArchive = unzipSync(new Uint8Array(await legacyWrapperBlob.arrayBuffer()));
-      const legacyPayloadBytes = legacyArchive['BackstagePayload~/payload.unitypackage'];
-      if (!legacyPayloadBytes) {
-        return {
-          status: 'missing_raw_upload',
-          deliveryPackageReleaseId: args.deliveryPackageReleaseId,
-        };
+      const recoveredRawPayload = normalizeBackstageRawPayload({
+        sourceBytes: new Uint8Array(await legacyWrapperBlob.arrayBuffer()),
+        contentType: currentDeliverable?.contentType ?? signedArtifact?.contentType,
+        deliveryName:
+          currentDeliverable?.deliveryName ??
+          signedArtifact?.deliveryName ??
+          `${release.packageId}-${release.version}.zip`,
+        packageId: release.packageId,
+        version: release.version,
+      });
+      rawSourceBytes = recoveredRawPayload.bytes;
+      rawSourceContentType = recoveredRawPayload.contentType;
+      rawSourceDeliveryName = recoveredRawPayload.deliveryName;
+      rawSourceSha256 = await sha256Hex(recoveredRawPayload.bytes);
+      rawArtifactNeedsReplace = true;
+    } else {
+      const uploaded = await ctx.storage.get(rawArtifact.storageId);
+      if (!uploaded) {
+        throw new Error(`Uploaded release storage not found: ${rawArtifact.storageId}`);
       }
-      const manifestBytes = legacyArchive['BackstagePayload~/backstage-payload.json'];
-      const manifest = manifestBytes
-        ? (JSON.parse(new TextDecoder().decode(manifestBytes)) as { payloadFileName?: string })
-        : null;
-      const recoveredDeliveryName =
-        manifest?.payloadFileName?.trim() || `${release.packageId}-${release.version}.unitypackage`;
+      const normalizedRawPayload = normalizeBackstageRawPayload({
+        sourceBytes: new Uint8Array(await uploaded.arrayBuffer()),
+        contentType: rawArtifact.contentType,
+        deliveryName: rawArtifact.deliveryName,
+        packageId: release.packageId,
+        version: release.version,
+      });
+      rawSourceBytes = normalizedRawPayload.bytes;
+      rawSourceContentType = normalizedRawPayload.contentType;
+      rawSourceDeliveryName = normalizedRawPayload.deliveryName;
+      rawSourceSha256 = await sha256Hex(normalizedRawPayload.bytes);
+      rawArtifactNeedsReplace =
+        rawArtifact.sha256 !== rawSourceSha256 ||
+        rawArtifact.contentType !== rawSourceContentType ||
+        rawArtifact.deliveryName !== rawSourceDeliveryName;
+    }
+
+    if (!rawSourceBytes || !rawSourceContentType || !rawSourceDeliveryName || !rawSourceSha256) {
+      throw new Error(`Failed to resolve raw source payload for ${args.deliveryPackageReleaseId}`);
+    }
+
+    const materialized = await materializeBackstageReleaseArtifact({
+      sourceBytes: rawSourceBytes,
+      deliveryName: rawSourceDeliveryName,
+      contentType: rawSourceContentType,
+      packageId: release.packageId,
+      version: release.version,
+      displayName: deliveryPackage.displayName ?? deliveryPackage.packageName,
+      metadata:
+        release.metadata && typeof release.metadata === 'object' && !Array.isArray(release.metadata)
+          ? (release.metadata as Record<string, unknown>)
+          : undefined,
+    });
+    const previousSha256 = currentDeliverable?.sha256 ?? release.zipSha256;
+    const deliverableChanged =
+      currentDeliverable?.sha256 !== materialized.sha256 ||
+      currentDeliverable?.contentType !== materialized.contentType ||
+      currentDeliverable?.deliveryName !== materialized.deliveryName ||
+      release.zipSha256 !== materialized.sha256;
+    const deliverableNeedsRepublish =
+      deliverableChanged ||
+      rawArtifactNeedsReplace ||
+      (rawArtifact != null && currentDeliverable?.sourceArtifactId !== rawArtifact._id);
+
+    if (!deliverableNeedsRepublish || !args.apply) {
+      return {
+        status: 'current',
+        deliveryPackageReleaseId: args.deliveryPackageReleaseId,
+        previousSha256,
+        nextSha256: materialized.sha256,
+      };
+    }
+
+    if (rawArtifactNeedsReplace) {
       const recoveredStorageId: Id<'_storage'> = await ctx.storage.store(
         new Blob(
           [
-            legacyPayloadBytes.buffer.slice(
-              legacyPayloadBytes.byteOffset,
-              legacyPayloadBytes.byteOffset + legacyPayloadBytes.byteLength
+            rawSourceBytes.buffer.slice(
+              rawSourceBytes.byteOffset,
+              rawSourceBytes.byteOffset + rawSourceBytes.byteLength
             ) as ArrayBuffer,
           ],
           {
-            type: 'application/octet-stream',
+            type: rawSourceContentType,
           }
         )
       );
@@ -684,10 +748,10 @@ export const repairMaterializedReleaseDeliverable = internalAction({
           artifactRole: 'raw_upload',
           ownership: 'creator_upload',
           storageId: recoveredStorageId,
-          contentType: 'application/octet-stream',
-          deliveryName: recoveredDeliveryName,
-          sha256: await sha256Hex(legacyPayloadBytes),
-          byteSize: legacyPayloadBytes.byteLength,
+          contentType: rawSourceContentType,
+          deliveryName: rawSourceDeliveryName,
+          sha256: rawSourceSha256,
+          byteSize: rawSourceBytes.byteLength,
         }
       );
       rawArtifact = await ctx.runQuery(
@@ -702,39 +766,6 @@ export const repairMaterializedReleaseDeliverable = internalAction({
           `Recovered raw upload could not be activated: ${args.deliveryPackageReleaseId}`
         );
       }
-    }
-
-    uploaded = await ctx.storage.get(rawArtifact.storageId);
-    if (!uploaded) {
-      throw new Error(`Uploaded release storage not found: ${rawArtifact.storageId}`);
-    }
-
-    const materialized = await materializeBackstageReleaseArtifact({
-      sourceBytes: new Uint8Array(await uploaded.arrayBuffer()),
-      deliveryName: rawArtifact.deliveryName,
-      contentType: rawArtifact.contentType,
-      packageId: release.packageId,
-      version: release.version,
-      displayName: deliveryPackage.displayName ?? deliveryPackage.packageName,
-      metadata:
-        release.metadata && typeof release.metadata === 'object' && !Array.isArray(release.metadata)
-          ? (release.metadata as Record<string, unknown>)
-          : undefined,
-    });
-    const previousSha256 = currentDeliverable?.sha256 ?? release.zipSha256;
-    const needsRepair =
-      currentDeliverable?.sha256 !== materialized.sha256 ||
-      currentDeliverable?.contentType !== materialized.contentType ||
-      currentDeliverable?.deliveryName !== materialized.deliveryName ||
-      release.zipSha256 !== materialized.sha256;
-
-    if (!needsRepair || !args.apply) {
-      return {
-        status: 'current',
-        deliveryPackageReleaseId: args.deliveryPackageReleaseId,
-        previousSha256,
-        nextSha256: materialized.sha256,
-      };
     }
 
     const deliverableBytes = materialized.bytes.buffer.slice(
@@ -753,7 +784,7 @@ export const repairMaterializedReleaseDeliverable = internalAction({
         artifactRole: 'server_deliverable',
         ownership: 'server_materialized',
         materializationStrategy: materialized.materializationStrategy,
-        sourceArtifactId: rawArtifact._id,
+        sourceArtifactId: rawArtifact?._id,
         storageId: deliverableStorageId,
         contentType: materialized.contentType,
         deliveryName: materialized.deliveryName,

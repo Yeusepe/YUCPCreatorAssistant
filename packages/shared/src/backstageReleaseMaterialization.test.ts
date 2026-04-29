@@ -149,7 +149,14 @@ describe('materializeBackstageReleaseArtifact', () => {
     const input = zipSync(
       {
         'Packages/com.yucp.example/package.json': [
-          strToU8('{"name":"com.yucp.backstage.raw","version":"0.0.1"}'),
+          strToU8(
+            JSON.stringify({
+              name: 'com.yucp.backstage.raw',
+              version: '0.0.1',
+              [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: 'zip',
+              [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY]: 'server-derived-v1',
+            })
+          ),
           { mtime: ZIP_DATE_A },
         ],
         'Packages/com.yucp.example/README.md': [strToU8('hello'), { mtime: ZIP_DATE_A }],
@@ -169,6 +176,8 @@ describe('materializeBackstageReleaseArtifact', () => {
         dependencies: {
           'com.yucp.importer': '1.4.0',
         },
+        [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: 'zip',
+        [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY]: 'server-derived-v1',
         yucp: {
           kind: 'alias-v1',
           aliasId: 'creator-alias',
@@ -195,6 +204,62 @@ describe('materializeBackstageReleaseArtifact', () => {
         installStrategy: 'server-authorized',
         importerPackage: 'com.yucp.importer',
       },
+    });
+    expect(
+      JSON.parse(new TextDecoder().decode(archive['Packages/com.yucp.example/package.json']))
+    ).not.toHaveProperty(BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY);
+    expect(
+      JSON.parse(new TextDecoder().decode(archive['Packages/com.yucp.example/package.json']))
+    ).not.toHaveProperty(BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY);
+  });
+
+  it('rewrites root ZIP package manifests and strips reserved delivery keys', async () => {
+    const input = zipSync(
+      {
+        'nested/package.json': [
+          strToU8('{"name":"nested","version":"9.9.9"}'),
+          { mtime: ZIP_DATE_A },
+        ],
+        'package.json': [
+          strToU8(
+            JSON.stringify({
+              name: 'com.yucp.backstage.raw',
+              version: '0.0.1',
+              [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: 'zip',
+              [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY]: 'server-derived-v1',
+            })
+          ),
+          { mtime: ZIP_DATE_A },
+        ],
+        'README.md': [strToU8('hello'), { mtime: ZIP_DATE_A }],
+      },
+      { level: 9 }
+    );
+
+    const materialized = await materializeBackstageReleaseArtifact({
+      sourceBytes: input,
+      deliveryName: 'example.zip',
+      contentType: 'application/zip',
+      packageId: 'com.yucp.example',
+      version: '1.2.3',
+      displayName: 'Example Package',
+      metadata: {
+        description: 'Generated on the server',
+        [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: 'zip',
+        [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY]: 'server-derived-v1',
+      },
+    });
+
+    const archive = unzipSync(materialized.bytes);
+    expect(JSON.parse(new TextDecoder().decode(archive['package.json']))).toEqual({
+      name: 'com.yucp.example',
+      version: '1.2.3',
+      displayName: 'Example Package',
+      description: 'Generated on the server',
+    });
+    expect(JSON.parse(new TextDecoder().decode(archive['nested/package.json']))).toEqual({
+      name: 'nested',
+      version: '9.9.9',
     });
   });
 
@@ -231,6 +296,8 @@ describe('materializeBackstageReleaseArtifact', () => {
         dependencies: {
           'com.yucp.importer': '1.4.0',
         },
+        [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: 'unitypackage',
+        [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY]: 'server-derived-v1',
       },
     });
     const second = await materializeBackstageReleaseArtifact({
@@ -284,6 +351,8 @@ describe('materializeBackstageReleaseArtifact', () => {
         'com.yucp.importer': '1.4.0',
       },
     });
+    expect(packageJson).not.toHaveProperty(BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY);
+    expect(packageJson).not.toHaveProperty(BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_TRUST_KEY);
 
     const payloadManifest = JSON.parse(
       new TextDecoder().decode(archive['BackstagePayload~/backstage-payload.json'])

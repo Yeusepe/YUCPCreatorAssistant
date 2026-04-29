@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import { unzipSync } from 'fflate';
+import { normalizeBackstageRawPayload } from '../packages/shared/src/backstageRawPayload';
 import { materializeBackstageReleaseArtifact } from '../packages/shared/src/backstageReleaseMaterialization';
 import { sha256Hex } from '../packages/shared/src/crypto';
 import { buildBunToolCommand } from './cli-utils';
@@ -35,6 +35,7 @@ type DeliveryArtifactRecord = {
   contentType: string;
   deliveryName: string;
   sha256: string;
+  sourceArtifactId?: string;
 };
 
 type SignedArtifactDownload = {
@@ -51,6 +52,13 @@ type DeliveryArtifactDownload = {
   contentType: string;
   deliveryName: string;
   sha256: string;
+};
+
+type ArtifactRemediationPlan = {
+  deliverableChanged: boolean;
+  rawArtifactNeedsReplace: boolean;
+  deliverableNeedsRepublish: boolean;
+  requiresRepair: boolean;
 };
 
 function printUsage() {
@@ -81,7 +89,13 @@ async function readProcessOutput(stream: ReadableStream<Uint8Array> | null): Pro
 
 async function runConvexFunction<T>(functionName: string, args: unknown): Promise<T> {
   const proc = Bun.spawn({
-    cmd: buildBunToolCommand('convex', ['run', '--typecheck', 'enable', functionName, JSON.stringify(args)]),
+    cmd: buildBunToolCommand('convex', [
+      'run',
+      '--typecheck',
+      'enable',
+      functionName,
+      JSON.stringify(args),
+    ]),
     env: process.env,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -108,16 +122,17 @@ async function runConvexFunction<T>(functionName: string, args: unknown): Promis
 }
 
 async function uploadBytes(bytes: Uint8Array, contentType: string): Promise<string> {
-  const uploadUrl = await runConvexFunction<string>('releaseArtifacts:generateDeliveryArtifactUploadUrl', {});
+  const uploadUrl = await runConvexFunction<string>(
+    'releaseArtifacts:generateDeliveryArtifactUploadUrl',
+    {}
+  );
   const response = await fetch(uploadUrl, {
     method: 'POST',
     headers: {
       'Content-Type': contentType,
     },
     body: new Blob(
-      [
-        bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-      ],
+      [bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer],
       { type: contentType }
     ),
   });
@@ -131,38 +146,36 @@ async function uploadBytes(bytes: Uint8Array, contentType: string): Promise<stri
   return payload.storageId;
 }
 
-function normalizeRawPayload(input: {
-  sourceBytes: Uint8Array;
-  contentType: string;
-  deliveryName: string;
-  packageId: string;
-  version: string;
-}): { bytes: Uint8Array; contentType: string; deliveryName: string } {
-  if (
-    input.contentType === 'application/octet-stream' ||
-    input.deliveryName.toLowerCase().endsWith('.unitypackage')
-  ) {
-    return {
-      bytes: input.sourceBytes,
-      contentType: 'application/octet-stream',
-      deliveryName: input.deliveryName,
-    };
-  }
-
-  const archive = unzipSync(input.sourceBytes);
-  const payloadBytes = archive['BackstagePayload~/payload.unitypackage'];
-  if (!payloadBytes) {
-    throw new Error(`Legacy wrapper missing BackstagePayload~/payload.unitypackage for ${input.packageId}`);
-  }
-  const manifestBytes = archive['BackstagePayload~/backstage-payload.json'];
-  const manifest = manifestBytes
-    ? (JSON.parse(new TextDecoder().decode(manifestBytes)) as { payloadFileName?: string })
-    : null;
+export function computeArtifactRemediationPlan(input: {
+  currentDeliverableSha256?: string;
+  nextDeliverableSha256: string;
+  currentDeliverableSourceArtifactId?: string;
+  activeRawArtifactId?: string;
+  rawArtifact: {
+    sha256: string;
+    contentType: string;
+    deliveryName: string;
+  } | null;
+  rawPayloadSha256: string;
+  rawPayloadContentType: string;
+  rawPayloadDeliveryName: string;
+}): ArtifactRemediationPlan {
+  const deliverableChanged = input.currentDeliverableSha256 !== input.nextDeliverableSha256;
+  const rawArtifactNeedsReplace =
+    !input.rawArtifact ||
+    input.rawArtifact.sha256 !== input.rawPayloadSha256 ||
+    input.rawArtifact.contentType !== input.rawPayloadContentType ||
+    input.rawArtifact.deliveryName !== input.rawPayloadDeliveryName;
+  const deliverableNeedsRepublish =
+    deliverableChanged ||
+    rawArtifactNeedsReplace ||
+    (input.activeRawArtifactId != null &&
+      input.currentDeliverableSourceArtifactId !== input.activeRawArtifactId);
   return {
-    bytes: payloadBytes,
-    contentType: 'application/octet-stream',
-    deliveryName:
-      manifest?.payloadFileName?.trim() || `${input.packageId}-${input.version}.unitypackage`,
+    deliverableChanged,
+    rawArtifactNeedsReplace,
+    deliverableNeedsRepublish,
+    requiresRepair: deliverableNeedsRepublish,
   };
 }
 
@@ -285,10 +298,12 @@ async function main(argv: readonly string[] = process.argv.slice(2)) {
 
     const sourceResponse = await fetch(sourceDownload.downloadUrl);
     if (!sourceResponse.ok) {
-      throw new Error(`Failed to download source artifact: ${sourceResponse.status} ${await sourceResponse.text()}`);
+      throw new Error(
+        `Failed to download source artifact: ${sourceResponse.status} ${await sourceResponse.text()}`
+      );
     }
     const sourceBytes = new Uint8Array(await sourceResponse.arrayBuffer());
-    const rawPayload = normalizeRawPayload({
+    const rawPayload = normalizeBackstageRawPayload({
       sourceBytes,
       contentType: sourceDownload.contentType,
       deliveryName: sourceDownload.deliveryName,
@@ -304,48 +319,81 @@ async function main(argv: readonly string[] = process.argv.slice(2)) {
       displayName: deliveryPackage.displayName ?? deliveryPackage.packageName,
       metadata: release.metadata,
     });
-    const changed = release.zipSha256 !== materialized.sha256;
+    const rawPayloadSha256 = await sha256Hex(rawPayload.bytes);
+    const remediationPlan = computeArtifactRemediationPlan({
+      currentDeliverableSha256: release.zipSha256,
+      nextDeliverableSha256: materialized.sha256,
+      currentDeliverableSourceArtifactId: deliverableArtifact?.sourceArtifactId,
+      activeRawArtifactId: rawArtifact?._id,
+      rawArtifact: rawArtifact
+        ? {
+            sha256: rawArtifact.sha256,
+            contentType: rawArtifact.contentType,
+            deliveryName: rawArtifact.deliveryName,
+          }
+        : null,
+      rawPayloadSha256,
+      rawPayloadContentType: rawPayload.contentType,
+      rawPayloadDeliveryName: rawPayload.deliveryName,
+    });
 
-    if (values.apply && changed) {
-      if (!rawArtifactId) {
+    if (values.apply && remediationPlan.requiresRepair) {
+      if (remediationPlan.rawArtifactNeedsReplace) {
         const rawStorageId = await uploadBytes(rawPayload.bytes, rawPayload.contentType);
-        rawArtifactId = await runConvexFunction<string>('releaseArtifacts:publishDeliveryArtifact', {
-          deliveryPackageReleaseId: releaseRecord.deliveryPackageReleaseId,
-          artifactRole: 'raw_upload',
-          ownership: 'creator_upload',
-          storageId: rawStorageId,
-          contentType: rawPayload.contentType,
-          deliveryName: rawPayload.deliveryName,
-          sha256: await sha256Hex(rawPayload.bytes),
-          byteSize: rawPayload.bytes.byteLength,
-        });
+        rawArtifactId = await runConvexFunction<string>(
+          'releaseArtifacts:publishDeliveryArtifact',
+          {
+            deliveryPackageReleaseId: releaseRecord.deliveryPackageReleaseId,
+            artifactRole: 'raw_upload',
+            ownership: 'creator_upload',
+            storageId: rawStorageId,
+            contentType: rawPayload.contentType,
+            deliveryName: rawPayload.deliveryName,
+            sha256: rawPayloadSha256,
+            byteSize: rawPayload.bytes.byteLength,
+          }
+        );
       }
 
-      const deliverableStorageId = await uploadBytes(materialized.bytes, materialized.contentType);
-      await runConvexFunction<string>('releaseArtifacts:publishDeliveryArtifact', {
-        deliveryPackageReleaseId: releaseRecord.deliveryPackageReleaseId,
-        artifactRole: 'server_deliverable',
-        ownership: 'server_materialized',
-        materializationStrategy: materialized.materializationStrategy,
-        sourceArtifactId: rawArtifactId,
-        storageId: deliverableStorageId,
-        contentType: materialized.contentType,
-        deliveryName: materialized.deliveryName,
-        sha256: materialized.sha256,
-        byteSize: materialized.byteSize,
-      });
-      await runConvexFunction<null>('packageRegistry:updateMaterializedReleaseDigest', {
-        deliveryPackageReleaseId: releaseRecord.deliveryPackageReleaseId,
-        zipSha256: materialized.sha256,
-        sourceKind: materialized.originalSourceKind,
-      });
+      const deliverableNeedsRepublish =
+        remediationPlan.deliverableChanged ||
+        remediationPlan.rawArtifactNeedsReplace ||
+        deliverableArtifact?.sourceArtifactId !== rawArtifactId;
+      if (deliverableNeedsRepublish) {
+        const deliverableStorageId = await uploadBytes(
+          materialized.bytes,
+          materialized.contentType
+        );
+        await runConvexFunction<string>('releaseArtifacts:publishDeliveryArtifact', {
+          deliveryPackageReleaseId: releaseRecord.deliveryPackageReleaseId,
+          artifactRole: 'server_deliverable',
+          ownership: 'server_materialized',
+          materializationStrategy: materialized.materializationStrategy,
+          sourceArtifactId: rawArtifactId,
+          storageId: deliverableStorageId,
+          contentType: materialized.contentType,
+          deliveryName: materialized.deliveryName,
+          sha256: materialized.sha256,
+          byteSize: materialized.byteSize,
+        });
+        await runConvexFunction<null>('packageRegistry:updateMaterializedReleaseDigest', {
+          deliveryPackageReleaseId: releaseRecord.deliveryPackageReleaseId,
+          zipSha256: materialized.sha256,
+          sourceKind: materialized.originalSourceKind,
+        });
+      }
     }
 
     results.push({
       deliveryPackageReleaseId: releaseRecord.deliveryPackageReleaseId,
       version: releaseRecord.version,
       channel: releaseRecord.channel,
-      status: values.apply && changed ? 'repaired' : changed ? 'stale' : 'current',
+      status:
+        values.apply && remediationPlan.requiresRepair
+          ? 'repaired'
+          : remediationPlan.requiresRepair
+            ? 'stale'
+            : 'current',
       previousZipSha256: release.zipSha256,
       nextZipSha256: materialized.sha256,
       rawDeliveryName: rawPayload.deliveryName,

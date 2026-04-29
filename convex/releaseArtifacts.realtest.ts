@@ -1,3 +1,4 @@
+import { materializeBackstageReleaseArtifact } from '@yucp/shared/backstageReleaseMaterialization';
 import { BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY } from '@yucp/shared/backstageVpmDelivery';
 import { gzipSync, strToU8, unzipSync, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
@@ -368,12 +369,16 @@ describe('releaseArtifacts.getActiveArtifact', () => {
     });
 
     const deliverableBytes = await t.run(async (ctx) => {
-      const blob = deliverableArtifact ? await ctx.storage.get(deliverableArtifact.storageId) : null;
+      const blob = deliverableArtifact
+        ? await ctx.storage.get(deliverableArtifact.storageId)
+        : null;
       return blob ? Array.from(new Uint8Array(await blob.arrayBuffer())) : null;
     });
     expect(deliverableBytes).not.toBeNull();
-
-    const archive = unzipSync(new Uint8Array(deliverableBytes!));
+    if (!deliverableBytes) {
+      throw new Error('Expected a materialized deliverable archive.');
+    }
+    const archive = unzipSync(new Uint8Array(deliverableBytes));
     expect(Object.keys(archive).sort()).toEqual([
       'BackstagePayload~/backstage-payload.json',
       'BackstagePayload~/payload.unitypackage',
@@ -396,7 +401,6 @@ describe('releaseArtifacts.getActiveArtifact', () => {
       { path: 'asset-guid/asset', content: strToU8('asset-bytes') },
       { path: 'asset-guid/pathname', content: strToU8('Assets/JAMMR/readme.txt') },
     ]);
-    const uploadSha256 = await sha256Hex(uploadBytes);
     const staleZipBytes = buildLegacyUnitypackageWrapperZip({
       packageId: 'com.yucp.jammr',
       version: '2.1.5',
@@ -448,10 +452,13 @@ describe('releaseArtifacts.getActiveArtifact', () => {
       byteSize: staleZipBytes.byteLength,
     });
 
-    const repaired = await t.action(internal.releaseArtifacts.repairMaterializedReleaseDeliverable, {
-      deliveryPackageReleaseId,
-      apply: true,
-    });
+    const repaired = await t.action(
+      internal.releaseArtifacts.repairMaterializedReleaseDeliverable,
+      {
+        deliveryPackageReleaseId,
+        apply: true,
+      }
+    );
 
     expect(repaired.status).toBe('repaired');
     if (repaired.status !== 'repaired') {
@@ -483,7 +490,10 @@ describe('releaseArtifacts.getActiveArtifact', () => {
       return blob ? Array.from(new Uint8Array(await blob.arrayBuffer())) : null;
     });
     expect(deliverableBytes).not.toBeNull();
-    const archive = unzipSync(new Uint8Array(deliverableBytes!));
+    if (!deliverableBytes) {
+      throw new Error('Expected a repaired deliverable archive.');
+    }
+    const archive = unzipSync(new Uint8Array(deliverableBytes));
     const installerSource = new TextDecoder().decode(
       archive['Editor/YucpBackstageEmbeddedUnitypackageInstaller.cs']
     );
@@ -514,7 +524,9 @@ describe('releaseArtifacts.getActiveArtifact', () => {
     });
     const staleZipSha256 = await sha256Hex(staleZipBytes);
     const staleStorageId = await t.run(async (ctx) => {
-      return await ctx.storage.store(new Blob([toArrayBuffer(staleZipBytes)], { type: 'application/zip' }));
+      return await ctx.storage.store(
+        new Blob([toArrayBuffer(staleZipBytes)], { type: 'application/zip' })
+      );
     });
     const signedArtifactId = await t.mutation(internal.releaseArtifacts.publishArtifact, {
       artifactKey: 'backstage-package:com.yucp.jammr',
@@ -562,10 +574,13 @@ describe('releaseArtifacts.getActiveArtifact', () => {
       } as never);
     });
 
-    const repaired = await t.action(internal.releaseArtifacts.repairMaterializedReleaseDeliverable, {
-      deliveryPackageReleaseId,
-      apply: true,
-    });
+    const repaired = await t.action(
+      internal.releaseArtifacts.repairMaterializedReleaseDeliverable,
+      {
+        deliveryPackageReleaseId,
+        apply: true,
+      }
+    );
 
     expect(repaired.status).toBe('repaired');
     if (repaired.status !== 'repaired') {
@@ -581,5 +596,338 @@ describe('releaseArtifacts.getActiveArtifact', () => {
     expect(release?.metadata).toMatchObject({
       [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: 'unitypackage',
     });
+  });
+
+  it('treats legacy plain ZIP artifacts as raw ZIP sources when no raw upload exists', async () => {
+    const t = makeTestConvex();
+    const zipBytes = zipSync(
+      {
+        'Packages/com.yucp.ziponly/package.json': strToU8(
+          '{"name":"com.yucp.ziponly","version":"1.0.0"}'
+        ),
+        'Packages/com.yucp.ziponly/README.md': strToU8('zip-readme'),
+      },
+      { level: 9 }
+    );
+    const zipSha256 = await sha256Hex(zipBytes);
+    const zipStorageId = await t.run(async (ctx) => {
+      return await ctx.storage.store(
+        new Blob([toArrayBuffer(zipBytes)], { type: 'application/zip' })
+      );
+    });
+    const signedArtifactId = await t.mutation(internal.releaseArtifacts.publishArtifact, {
+      artifactKey: 'backstage-package:com.yucp.ziponly',
+      channel: 'stable',
+      platform: 'unity',
+      version: '1.0.0',
+      metadataVersion: 1,
+      storageId: zipStorageId,
+      contentType: 'application/zip',
+      deliveryName: 'ziponly-1.0.0.zip',
+      envelopeCipher: 'aes-256-gcm',
+      envelopeIvBase64: 'ZmFrZS1pdi1iYXNlNjQ=',
+      ciphertextSha256: 'b'.repeat(64),
+      ciphertextSize: zipBytes.byteLength,
+      plaintextSha256: zipSha256,
+      plaintextSize: zipBytes.byteLength,
+    });
+    const deliveryPackageReleaseId = await t.run(async (ctx) => {
+      const now = Date.now();
+      const deliveryPackageId = await ctx.db.insert('delivery_packages', {
+        authUserId: 'auth-user-ziponly',
+        packageId: 'com.yucp.ziponly',
+        packageName: 'Zip Only',
+        displayName: 'Zip Only',
+        status: 'active',
+        repositoryVisibility: 'listed',
+        defaultChannel: 'stable',
+        createdAt: now,
+        updatedAt: now,
+      });
+      return await ctx.db.insert('delivery_package_releases', {
+        authUserId: 'auth-user-ziponly',
+        deliveryPackageId,
+        packageId: 'com.yucp.ziponly',
+        version: '1.0.0',
+        channel: 'stable',
+        releaseStatus: 'published',
+        repositoryVisibility: 'listed',
+        artifactKey: 'backstage-package:com.yucp.ziponly',
+        signedArtifactId,
+        zipSha256: 'c'.repeat(64),
+        publishedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      } as never);
+    });
+
+    const repaired = await t.action(
+      internal.releaseArtifacts.repairMaterializedReleaseDeliverable,
+      {
+        deliveryPackageReleaseId,
+        apply: true,
+      }
+    );
+
+    expect(repaired.status).toBe('repaired');
+    if (repaired.status !== 'repaired') {
+      throw new Error(`Expected repaired ZIP deliverable, got ${repaired.status}`);
+    }
+
+    const rawArtifact = await t.run(async (ctx) => {
+      return await ctx.db
+        .query('delivery_release_artifacts')
+        .withIndex('by_release_role_status', (q) =>
+          q
+            .eq('deliveryPackageReleaseId', deliveryPackageReleaseId)
+            .eq('artifactRole', 'raw_upload')
+            .eq('status', 'active')
+        )
+        .first();
+    });
+    expect(rawArtifact).toMatchObject({
+      contentType: 'application/zip',
+      deliveryName: 'ziponly-1.0.0.zip',
+      sha256: zipSha256,
+    });
+
+    const release = await t.run(async (ctx) => {
+      return await ctx.db.get(deliveryPackageReleaseId);
+    });
+    expect(release?.metadata).toMatchObject({
+      [BACKSTAGE_VPM_DELIVERY_SOURCE_KIND_KEY]: 'zip',
+    });
+  });
+
+  it('relinks current deliverables to recovered raw uploads when only the raw artifact is stale', async () => {
+    const t = makeTestConvex();
+    const uploadBytes = buildUnitypackage([
+      { path: 'asset-guid/asset', content: strToU8('asset-bytes') },
+      { path: 'asset-guid/pathname', content: strToU8('Assets/JAMMR/readme.txt') },
+    ]);
+    const materialized = await materializeBackstageReleaseArtifact({
+      sourceBytes: uploadBytes,
+      deliveryName: 'JAMMR_2.1.5.unitypackage',
+      contentType: 'application/octet-stream',
+      packageId: 'com.yucp.jammr',
+      version: '2.1.5',
+      displayName: 'JAMMR',
+    });
+    const deliverableStorageId = await t.run(async (ctx) => {
+      return await ctx.storage.store(
+        new Blob([toArrayBuffer(materialized.bytes)], { type: materialized.contentType })
+      );
+    });
+    const deliveryPackageReleaseId = await t.run(async (ctx) => {
+      const now = Date.now();
+      const deliveryPackageId = await ctx.db.insert('delivery_packages', {
+        authUserId: 'auth-user-1',
+        packageId: 'com.yucp.jammr',
+        packageName: 'JAMMR',
+        displayName: 'JAMMR',
+        status: 'active',
+        repositoryVisibility: 'listed',
+        defaultChannel: 'stable',
+        createdAt: now,
+        updatedAt: now,
+      });
+      return await ctx.db.insert('delivery_package_releases', {
+        authUserId: 'auth-user-1',
+        deliveryPackageId,
+        packageId: 'com.yucp.jammr',
+        version: '2.1.5',
+        channel: 'stable',
+        releaseStatus: 'published',
+        repositoryVisibility: 'listed',
+        zipSha256: materialized.sha256,
+        publishedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      } as never);
+    });
+
+    await t.mutation(internal.releaseArtifacts.publishDeliveryArtifact, {
+      deliveryPackageReleaseId,
+      artifactRole: 'server_deliverable',
+      ownership: 'server_materialized',
+      materializationStrategy: materialized.materializationStrategy,
+      storageId: deliverableStorageId,
+      contentType: materialized.contentType,
+      deliveryName: materialized.deliveryName,
+      sha256: materialized.sha256,
+      byteSize: materialized.byteSize,
+    });
+
+    const repaired = await t.action(
+      internal.releaseArtifacts.repairMaterializedReleaseDeliverable,
+      {
+        deliveryPackageReleaseId,
+        apply: true,
+      }
+    );
+
+    expect(repaired.status).toBe('repaired');
+    if (repaired.status !== 'repaired') {
+      throw new Error(`Expected raw-link repair, got ${repaired.status}`);
+    }
+    expect(repaired.nextSha256).toBe(materialized.sha256);
+
+    const activeRawArtifact = await t.run(async (ctx) => {
+      return await ctx.db
+        .query('delivery_release_artifacts')
+        .withIndex('by_release_role_status', (q) =>
+          q
+            .eq('deliveryPackageReleaseId', deliveryPackageReleaseId)
+            .eq('artifactRole', 'raw_upload')
+            .eq('status', 'active')
+        )
+        .first();
+    });
+    const activeDeliverable = await t.run(async (ctx) => {
+      return await ctx.db
+        .query('delivery_release_artifacts')
+        .withIndex('by_release_role_status', (q) =>
+          q
+            .eq('deliveryPackageReleaseId', deliveryPackageReleaseId)
+            .eq('artifactRole', 'server_deliverable')
+            .eq('status', 'active')
+        )
+        .first();
+    });
+
+    expect(activeRawArtifact).toMatchObject({
+      contentType: 'application/octet-stream',
+      deliveryName: 'JAMMR_2.1.5.unitypackage',
+    });
+    expect(activeDeliverable?.sha256).toBe(materialized.sha256);
+    expect(String(activeDeliverable?.sourceArtifactId)).toBe(String(activeRawArtifact?._id));
+  });
+
+  it('normalizes stale wrapped raw artifacts before repairing the active deliverable link', async () => {
+    const t = makeTestConvex();
+    const uploadBytes = buildUnitypackage([
+      { path: 'asset-guid/asset', content: strToU8('asset-bytes') },
+      { path: 'asset-guid/pathname', content: strToU8('Assets/JAMMR/readme.txt') },
+    ]);
+    const staleRawBytes = buildLegacyUnitypackageWrapperZip({
+      packageId: 'com.yucp.jammr',
+      version: '2.1.5',
+      displayName: 'JAMMR',
+      payloadBytes: uploadBytes,
+    });
+    const staleRawSha256 = await sha256Hex(staleRawBytes);
+    const materialized = await materializeBackstageReleaseArtifact({
+      sourceBytes: uploadBytes,
+      deliveryName: 'JAMMR_2.1.5.unitypackage',
+      contentType: 'application/octet-stream',
+      packageId: 'com.yucp.jammr',
+      version: '2.1.5',
+      displayName: 'JAMMR',
+    });
+    const staleRawStorageId = await t.run(async (ctx) => {
+      return await ctx.storage.store(
+        new Blob([toArrayBuffer(staleRawBytes)], { type: 'application/zip' })
+      );
+    });
+    const deliverableStorageId = await t.run(async (ctx) => {
+      return await ctx.storage.store(
+        new Blob([toArrayBuffer(materialized.bytes)], { type: materialized.contentType })
+      );
+    });
+    const deliveryPackageReleaseId = await t.run(async (ctx) => {
+      const now = Date.now();
+      const deliveryPackageId = await ctx.db.insert('delivery_packages', {
+        authUserId: 'auth-user-1',
+        packageId: 'com.yucp.jammr',
+        packageName: 'JAMMR',
+        displayName: 'JAMMR',
+        status: 'active',
+        repositoryVisibility: 'listed',
+        defaultChannel: 'stable',
+        createdAt: now,
+        updatedAt: now,
+      });
+      return await ctx.db.insert('delivery_package_releases', {
+        authUserId: 'auth-user-1',
+        deliveryPackageId,
+        packageId: 'com.yucp.jammr',
+        version: '2.1.5',
+        channel: 'stable',
+        releaseStatus: 'published',
+        repositoryVisibility: 'listed',
+        zipSha256: materialized.sha256,
+        publishedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      } as never);
+    });
+
+    const rawArtifactId = await t.mutation(internal.releaseArtifacts.publishDeliveryArtifact, {
+      deliveryPackageReleaseId,
+      artifactRole: 'raw_upload',
+      ownership: 'creator_upload',
+      storageId: staleRawStorageId,
+      contentType: 'application/zip',
+      deliveryName: 'vrc-get-com.yucp.jammr-2.1.5.zip',
+      sha256: staleRawSha256,
+      byteSize: staleRawBytes.byteLength,
+    });
+    await t.mutation(internal.releaseArtifacts.publishDeliveryArtifact, {
+      deliveryPackageReleaseId,
+      artifactRole: 'server_deliverable',
+      ownership: 'server_materialized',
+      materializationStrategy: materialized.materializationStrategy,
+      sourceArtifactId: rawArtifactId,
+      storageId: deliverableStorageId,
+      contentType: materialized.contentType,
+      deliveryName: materialized.deliveryName,
+      sha256: materialized.sha256,
+      byteSize: materialized.byteSize,
+    });
+
+    const repaired = await t.action(
+      internal.releaseArtifacts.repairMaterializedReleaseDeliverable,
+      {
+        deliveryPackageReleaseId,
+        apply: true,
+      }
+    );
+
+    expect(repaired.status).toBe('repaired');
+    if (repaired.status !== 'repaired') {
+      throw new Error(`Expected raw wrapper normalization repair, got ${repaired.status}`);
+    }
+    expect(repaired.nextSha256).not.toBe(staleRawSha256);
+
+    const activeRawArtifact = await t.run(async (ctx) => {
+      return await ctx.db
+        .query('delivery_release_artifacts')
+        .withIndex('by_release_role_status', (q) =>
+          q
+            .eq('deliveryPackageReleaseId', deliveryPackageReleaseId)
+            .eq('artifactRole', 'raw_upload')
+            .eq('status', 'active')
+        )
+        .first();
+    });
+    const activeDeliverable = await t.run(async (ctx) => {
+      return await ctx.db
+        .query('delivery_release_artifacts')
+        .withIndex('by_release_role_status', (q) =>
+          q
+            .eq('deliveryPackageReleaseId', deliveryPackageReleaseId)
+            .eq('artifactRole', 'server_deliverable')
+            .eq('status', 'active')
+        )
+        .first();
+    });
+
+    expect(activeRawArtifact).toMatchObject({
+      contentType: 'application/octet-stream',
+      deliveryName: 'payload.unitypackage',
+    });
+    expect(activeRawArtifact?.sha256).not.toBe(staleRawSha256);
+    expect(activeDeliverable?.sha256).toBe(repaired.nextSha256);
+    expect(String(activeDeliverable?.sourceArtifactId)).toBe(String(activeRawArtifact?._id));
   });
 });
