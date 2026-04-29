@@ -55,6 +55,8 @@ type GumroadFetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promis
 
 export interface GumroadVerificationPorts {
   fetchImpl?: GumroadFetchLike;
+  getEncryptedCredential?(ctx: ProviderContext): Promise<string | null>;
+  decryptCredential?(encryptedCredential: string, ctx: ProviderContext): Promise<string>;
 }
 
 export interface GumroadRuntimePorts<
@@ -403,7 +405,8 @@ function normalizeGumroadProductsPageUrl(rawUrl: string, logger: GumroadRuntimeL
 export async function verifyGumroadLicense(
   licenseKey: string,
   productId: string,
-  ports: GumroadVerificationPorts
+  ports: GumroadVerificationPorts,
+  accessToken?: string
 ): Promise<{
   valid: boolean;
   externalOrderId?: string;
@@ -412,52 +415,74 @@ export async function verifyGumroadLicense(
 }> {
   const fetchImpl = getFetch(ports);
 
-  // Gumroad licenses API reference: https://gumroad.com/api#licenses
-  const response = await fetchImpl(`${GUMROAD_API_BASE}/licenses/verify`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
-    body: new URLSearchParams({
-      product_id: productId,
+  async function attemptVerification(identifierKey: 'product_id' | 'product_permalink') {
+    // Gumroad licenses API reference: https://gumroad.com/api#licenses
+    const requestBody = new URLSearchParams({
+      [identifierKey]: productId,
       license_key: licenseKey,
-    }).toString(),
-  });
+      increment_uses_count: 'false',
+    });
+    if (accessToken) {
+      requestBody.set('access_token', accessToken);
+    }
+    const response = await fetchImpl(`${GUMROAD_API_BASE}/licenses/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: requestBody.toString(),
+    });
 
-  const data = (await response.json()) as {
-    success: boolean;
-    message?: string;
-    purchase?: {
-      email?: string;
-      sale_id?: string;
+    const data = (await response.json()) as {
+      success: boolean;
+      message?: string;
+      purchase?: {
+        email?: string;
+        sale_id?: string;
+      };
     };
-  };
 
-  if (!response.ok || !data.success) {
+    if (!response.ok || !data.success) {
+      return {
+        valid: false as const,
+        error: data.message ?? `HTTP ${response.status}`,
+      };
+    }
+
     return {
-      valid: false,
-      error: data.message ?? `HTTP ${response.status}`,
+      valid: true as const,
+      externalOrderId: data.purchase?.sale_id ?? undefined,
+      providerUserId: data.purchase?.email ? await sha256Hex(data.purchase.email) : undefined,
     };
   }
 
-  return {
-    valid: true,
-    externalOrderId: data.purchase?.sale_id ?? undefined,
-    providerUserId: data.purchase?.email ? await sha256Hex(data.purchase.email) : undefined,
-  };
+  const productIdResult = await attemptVerification('product_id');
+  if (productIdResult.valid) {
+    return productIdResult;
+  }
+
+  return await attemptVerification('product_permalink');
 }
 
 export function createGumroadLicenseVerification<
   TClient extends ProviderRuntimeClient = ProviderRuntimeClient,
 >(ports: GumroadVerificationPorts): LicenseVerificationPlugin<TClient> {
   return {
-    async verifyLicense(licenseKey, productId) {
+    async verifyLicense(licenseKey, productId, _authUserId, ctx) {
       if (!productId) {
         return { valid: false, error: 'Product ID is required for Gumroad verification' };
       }
 
-      return await verifyGumroadLicense(licenseKey, productId, ports);
+      let accessToken: string | undefined;
+      if (ports.getEncryptedCredential && ports.decryptCredential) {
+        const encryptedCredential = await ports.getEncryptedCredential(ctx);
+        if (encryptedCredential) {
+          accessToken = await ports.decryptCredential(encryptedCredential, ctx);
+        }
+      }
+
+      return await verifyGumroadLicense(licenseKey, productId, ports, accessToken);
     },
   };
 }

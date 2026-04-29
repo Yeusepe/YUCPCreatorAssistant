@@ -574,7 +574,7 @@ describe('verify purchase route', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('shows Add to VCC after verification and keeps Unity return as the follow-up action', async () => {
+  it('keeps Unity callback verification separate from buyer VCC handoff', async () => {
     mockUseSearch.mockReturnValue({
       intent: 'intent_verified_vcc',
       connected: undefined,
@@ -615,18 +615,16 @@ describe('verify purchase route', () => {
 
     render(<Component />, { wrapper: createWrapper() });
 
-    expect(await screen.findByRole('link', { name: /add to vcc/i })).toHaveAttribute(
-      'href',
-      'vcc://vpm/addRepo?url=https%3A%2F%2Fapi.test%2Fv1%2Fbackstage%2Frepos%2Fmapache%2Findex.json'
-    );
-    expect(
-      await screen.findByRole('link', { name: /return to unity after adding the repo/i })
-    ).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: /return to unity/i })).toHaveAttribute(
       'href',
       'http://127.0.0.1:5173/callback?intent_id=intent_verified_vcc&grant=grant-token'
     );
-    expect(await screen.findByText(/Mapache repo is now ready/i)).toBeInTheDocument();
-    expect(await screen.findByText(/manual setup and troubleshooting/i)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /add to vcc/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mapache repo is now ready/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/manual setup and troubleshooting/i)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(backstageAccessApi.requestUserBackstageRepoAccess).not.toHaveBeenCalled()
+    );
   });
 
   it('treats buyer access returns as the follow-up path after verification succeeds', async () => {
@@ -680,7 +678,7 @@ describe('verify purchase route', () => {
     expect(screen.queryByRole('link', { name: /return to unity/i })).not.toBeInTheDocument();
   });
 
-  it('falls back to Unity when the VCC handoff cannot be prepared', async () => {
+  it('falls back to buyer access when the VCC handoff cannot be prepared', async () => {
     mockUseSearch.mockReturnValue({
       intent: 'intent_verified_return_only',
       connected: undefined,
@@ -693,7 +691,7 @@ describe('verify purchase route', () => {
       packageName: 'Fallback Package',
       status: 'verified',
       verificationUrl: '/verify/purchase?intent=intent_verified_return_only',
-      returnUrl: 'http://127.0.0.1:5173/callback',
+      returnUrl: 'https://app.test/access/catalog_456',
       requirements: [],
       verifiedMethodKey: 'gumroad-oauth',
       errorCode: null,
@@ -715,9 +713,9 @@ describe('verify purchase route', () => {
 
     render(<Component />, { wrapper: createWrapper() });
 
-    expect(await screen.findByRole('link', { name: /^return to unity$/i })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: /^continue$/i })).toHaveAttribute(
       'href',
-      'http://127.0.0.1:5173/callback?intent_id=intent_verified_return_only&grant=grant-token-2'
+      'https://app.test/access/catalog_456?intent_id=intent_verified_return_only&grant=grant-token-2'
     );
     expect(screen.queryByRole('link', { name: /add to vcc/i })).not.toBeInTheDocument();
     expect(await screen.findByText(/could not prepare the VCC handoff/i)).toBeInTheDocument();

@@ -20,9 +20,7 @@ const CREATOR_USER_COMMAND = new SlashCommandBuilder()
       .setDescription('View your verification status and connect accounts (default)')
   )
   .addSubcommand((s) =>
-    s
-      .setName('identity')
-      .setDescription('Open your Creator Identity and manage your connections')
+    s.setName('identity').setDescription('Open your Creator Identity and manage your connections')
   )
   .addSubcommand((s) =>
     s

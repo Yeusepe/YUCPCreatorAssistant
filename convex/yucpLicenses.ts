@@ -1,17 +1,17 @@
 /**
  * YUCP License Gate, Unity editor license verification endpoint.
  *
- * Verifies a purchase license (Gumroad or Jinxxy) for a specific YUCP package,
+ * Verifies a purchase license for a specific YUCP package,
  * then returns a short-lived signed JWT that the Unity client caches locally.
  * The JWT is machine-fingerprint-bound so it cannot be shared between machines.
  *
  * Credential resolution order:
  *   1. Look up product in product_catalog by providerProductRef -> get owner authUserId
- *   2. Decrypt owner's credentials from provider_connections via Better Auth symmetricDecrypt
- *   3. For Jinxxy: fall through to collaborator_connections if primary credential missing/invalid
+ *   2. Resolve the provider runtime for that store
+ *   3. Let the provider-owned verification module validate the license
  *
  * Flow:
- *   Unity client  ->  POST /v1/licenses/verify  ->  Gumroad/Jinxxy API
+ *   Unity client  ->  POST /v1/licenses/verify  ->  provider-owned verification runtime
  *                                              <-  { token: "<EdDSA JWT>" }
  *   Unity client stores JWT in AES-256-CBC+HMAC encrypted on-disk cache
  *   DerivedFbxBuilder reads SessionState set by LicenseTokenCache before decrypting FBX
@@ -29,9 +29,7 @@
  *   RFC 8725 JWT BCP     https://www.rfc-editor.org/rfc/rfc8725
  */
 
-import { JinxxyApiClient } from '@yucp/providers';
 import { sha256Hex } from '@yucp/shared/crypto';
-import { symmetricDecrypt } from 'better-auth/crypto';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import {
@@ -45,6 +43,7 @@ import { requireApiSecret } from './lib/apiAuth';
 import { PII_PURPOSES } from './lib/credentialKeys';
 import { upsertLicenseSubjectLink } from './lib/licenseSubjectLink';
 import { encryptPii } from './lib/piiCrypto';
+import { verifyLicenseWithProviderRuntime } from './lib/providerLicenseVerification';
 import {
   decryptProtectedBlobContentKey,
   encryptProtectedBlobContentKey,
@@ -200,7 +199,14 @@ export const getProviderConnection = internalQuery({
 /** Get active collaborator API keys for a creator owner. */
 export const getCollaboratorConnections = internalQuery({
   args: { ownerAuthUserId: v.string() },
-  returns: v.array(v.object({ credentialEncrypted: v.optional(v.string()) })),
+  returns: v.array(
+    v.object({
+      id: v.string(),
+      provider: v.string(),
+      credentialEncrypted: v.optional(v.string()),
+      collaboratorDisplayName: v.optional(v.string()),
+    })
+  ),
   handler: async (ctx, args) => {
     const rows = await ctx.db
       .query('collaborator_connections')
@@ -210,7 +216,12 @@ export const getCollaboratorConnections = internalQuery({
       .collect();
     return rows
       .filter((r) => r.credentialEncrypted)
-      .map((r) => ({ credentialEncrypted: r.credentialEncrypted }));
+      .map((r) => ({
+        id: r._id,
+        provider: r.provider,
+        credentialEncrypted: r.credentialEncrypted,
+        collaboratorDisplayName: r.collaboratorDisplayName,
+      }));
   },
 });
 
@@ -537,40 +548,12 @@ export const verifyLicenseProof = internalAction({
         };
       }
 
-      const conn = await ctx.runQuery(internal.yucpLicenses.getProviderConnection, {
-        authUserId: product.authUserId,
+      verifyResult = await verifyLicenseWithProviderRuntime(ctx, {
         provider: args.provider,
+        licenseKey: args.licenseKey,
+        providerProductRef: args.productPermalink,
+        authUserId: product.authUserId,
       });
-
-      if (args.provider === 'gumroad' && conn?.credentials.oauth_access_token) {
-        const token = await decryptCredential(conn.credentials.oauth_access_token);
-        if (token) {
-          verifyResult = await verifyGumroadLicense(args.licenseKey, args.productPermalink, token);
-        }
-      } else if (args.provider === 'jinxxy') {
-        if (conn?.credentials.api_key) {
-          const key = await decryptCredential(conn.credentials.api_key);
-          if (key) {
-            verifyResult = await verifyJinxxyLicense(args.licenseKey, args.productPermalink, key);
-          }
-        }
-
-        if (!verifyResult?.valid) {
-          const collabConns = await ctx.runQuery(internal.yucpLicenses.getCollaboratorConnections, {
-            ownerAuthUserId: product.authUserId,
-          });
-          for (const collab of collabConns) {
-            if (!collab.credentialEncrypted) continue;
-            const key = await decryptCredential(collab.credentialEncrypted);
-            if (!key) continue;
-            const result = await verifyJinxxyLicense(args.licenseKey, args.productPermalink, key);
-            if (result.valid) {
-              verifyResult = result;
-              break;
-            }
-          }
-        }
-      }
     }
 
     if (!verifyResult?.valid) {
@@ -580,102 +563,6 @@ export const verifyLicenseProof = internalAction({
     return { success: true };
   },
 });
-
-async function decryptCredential(encrypted: string): Promise<string | null> {
-  const secret = process.env.BETTER_AUTH_SECRET;
-  if (!secret || !encrypted) return null;
-  try {
-    return await symmetricDecrypt({ key: secret, data: encrypted });
-  } catch {
-    return null;
-  }
-}
-
-// =============================================================================
-// Provider verification (accept credentials as params -- no global env reads)
-// =============================================================================
-
-interface GumroadVerifyResult {
-  success: boolean;
-  purchase?: {
-    product_permalink: string;
-    email: string;
-    sale_id?: string;
-    refunded: boolean;
-    chargebacked: boolean;
-  };
-  message?: string;
-}
-
-async function verifyGumroadLicense(
-  licenseKey: string,
-  productPermalink: string,
-  accessToken: string
-): Promise<{
-  valid: boolean;
-  purchaserEmail?: string;
-  providerUserId?: string;
-  externalOrderId?: string;
-  reason?: string;
-}> {
-  const params = new URLSearchParams({
-    access_token: accessToken,
-    product_permalink: productPermalink,
-    license_key: licenseKey,
-    increment_uses_count: 'false',
-  });
-
-  const resp = await fetch('https://api.gumroad.com/v2/licenses/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  });
-
-  const json = (await resp.json()) as GumroadVerifyResult;
-
-  if (!json.success) return { valid: false, reason: json.message ?? 'Invalid license' };
-  if (json.purchase?.refunded) return { valid: false, reason: 'License has been refunded' };
-  if (json.purchase?.chargebacked) return { valid: false, reason: 'License has a chargeback' };
-
-  const purchaserEmail = json.purchase?.email?.trim().toLowerCase();
-  return {
-    valid: true,
-    purchaserEmail,
-    providerUserId: purchaserEmail ? await sha256Hex(purchaserEmail) : undefined,
-    externalOrderId: json.purchase?.sale_id,
-  };
-}
-
-async function verifyJinxxyLicense(
-  licenseKey: string,
-  productId: string,
-  apiKey: string
-): Promise<{
-  valid: boolean;
-  purchaserEmail?: string;
-  providerUserId?: string;
-  externalOrderId?: string;
-  providerProductId?: string;
-  reason?: string;
-}> {
-  const client = new JinxxyApiClient({ apiKey });
-  const result = await client.verifyLicenseWithBuyerByKey(licenseKey);
-
-  if (!result.valid) {
-    return { valid: false, reason: result.error ?? 'License verification failed' };
-  }
-  if (productId && result.license?.product_id && result.license.product_id !== productId) {
-    return { valid: false, reason: 'License does not match the expected product' };
-  }
-
-  return {
-    valid: true,
-    purchaserEmail: result.purchaserEmail,
-    providerUserId: result.providerUserId,
-    externalOrderId: result.externalOrderId,
-    providerProductId: result.providerProductId,
-  };
-}
 
 // =============================================================================
 // Nonce replay prevention
@@ -1044,42 +931,12 @@ export const verifyLicense = internalAction({
 
       productAuthUserId = product.authUserId;
 
-      const conn = await ctx.runQuery(internal.yucpLicenses.getProviderConnection, {
-        authUserId: product.authUserId,
+      verifyResult = await verifyLicenseWithProviderRuntime(ctx, {
         provider: args.provider,
+        licenseKey: args.licenseKey,
+        providerProductRef: args.productPermalink,
+        authUserId: product.authUserId,
       });
-
-      if (args.provider === 'gumroad' && conn?.credentials.oauth_access_token) {
-        const token = await decryptCredential(conn.credentials.oauth_access_token);
-        if (token) {
-          verifyResult = await verifyGumroadLicense(args.licenseKey, args.productPermalink, token);
-        }
-      } else if (args.provider === 'jinxxy') {
-        // Try primary connection first
-        if (conn?.credentials.api_key) {
-          const key = await decryptCredential(conn.credentials.api_key);
-          if (key) {
-            verifyResult = await verifyJinxxyLicense(args.licenseKey, args.productPermalink, key);
-          }
-        }
-
-        // If primary failed or missing, try collaborator connections
-        if (!verifyResult?.valid) {
-          const collabConns = await ctx.runQuery(internal.yucpLicenses.getCollaboratorConnections, {
-            ownerAuthUserId: product.authUserId,
-          });
-          for (const collab of collabConns) {
-            if (!collab.credentialEncrypted) continue;
-            const key = await decryptCredential(collab.credentialEncrypted);
-            if (!key) continue;
-            const result = await verifyJinxxyLicense(args.licenseKey, args.productPermalink, key);
-            if (result.valid) {
-              verifyResult = result;
-              break;
-            }
-          }
-        }
-      }
     }
 
     // c63: No global credential fallback, only the product owner's credentials are accepted.

@@ -31,7 +31,10 @@ export async function handleAccountCommand(
     .setColor(0x5865f2);
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setLabel('Open Creator Identity').setStyle(ButtonStyle.Link).setURL(accountUrl),
+    new ButtonBuilder()
+      .setLabel('Open Creator Identity')
+      .setStyle(ButtonStyle.Link)
+      .setURL(accountUrl),
     new ButtonBuilder()
       .setLabel('Manage Connections')
       .setStyle(ButtonStyle.Link)

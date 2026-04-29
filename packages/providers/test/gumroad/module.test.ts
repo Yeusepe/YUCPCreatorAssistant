@@ -564,6 +564,61 @@ describe('createGumroadProviderModule', () => {
 });
 
 describe('createGumroadLicenseVerification', () => {
+  it('retries with product_permalink after product_id is rejected', async () => {
+    const seenBodies: string[] = [];
+    const module = createGumroadProviderModule({
+      logger,
+      async getEncryptedCredential() {
+        return 'encrypted-token';
+      },
+      async decryptCredential() {
+        return 'access-token';
+      },
+      async fetchImpl(_input, init) {
+        seenBodies.push(String(init?.body ?? ''));
+        if (seenBodies.length === 1) {
+          return new Response(JSON.stringify({ success: false, message: 'Not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            success: true,
+            purchase: {
+              email: 'buyer@example.com',
+              sale_id: 'sale-2',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      },
+    });
+
+    await expect(
+      module.verification?.verifyLicense('KEY', 'product-ref-1', 'user-1', makeCtx())
+    ).resolves.toEqual({
+      valid: true,
+      externalOrderId: 'sale-2',
+      providerUserId: '6a6c26195c3682faa816966af789717c3bfa834eee6c599d667d2b3429c27cfd',
+    });
+    expect(seenBodies).toHaveLength(2);
+    const firstAttempt = new URLSearchParams(seenBodies[0]);
+    const secondAttempt = new URLSearchParams(seenBodies[1]);
+    expect(Object.fromEntries(firstAttempt.entries())).toEqual({
+      access_token: 'access-token',
+      product_id: 'product-ref-1',
+      license_key: 'KEY',
+      increment_uses_count: 'false',
+    });
+    expect(Object.fromEntries(secondAttempt.entries())).toEqual({
+      access_token: 'access-token',
+      product_permalink: 'product-ref-1',
+      license_key: 'KEY',
+      increment_uses_count: 'false',
+    });
+  });
+
   it('maps Gumroad verification output into provider verification output', async () => {
     const verification = createGumroadLicenseVerification({
       async fetchImpl() {

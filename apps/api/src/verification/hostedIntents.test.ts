@@ -1,8 +1,22 @@
-import { describe, expect, it } from 'bun:test';
-import {
-  type HostedVerificationIntentRecord,
+import { describe, expect, it, mock } from 'bun:test';
+import type { HostedVerificationIntentRecord } from './hostedIntents';
+
+mock.module('../../../../convex/_generated/api', () => ({
+  api: {
+    verificationIntents: {
+      verifyIntentWithBuyerProviderLink: 'verificationIntents.verifyIntentWithBuyerProviderLink',
+      verifyIntentWithManualLicense: 'verificationIntents.verifyIntentWithManualLicense',
+    },
+  },
+  internal: {},
+  components: {},
+}));
+
+const {
   shouldResolveLinkedEntitlementRequirements,
-} from './hostedIntents';
+  verifyHostedBuyerProviderLinkIntent,
+  verifyHostedManualLicenseIntent,
+} = await import('./hostedIntents');
 
 function createIntent(
   requirements: HostedVerificationIntentRecord['requirements']
@@ -61,5 +75,67 @@ describe('shouldResolveLinkedEntitlementRequirements', () => {
     ]);
 
     expect(shouldResolveLinkedEntitlementRequirements(intent)).toBe(true);
+  });
+});
+
+describe('verifyHostedManualLicenseIntent', () => {
+  it('delegates to the public Convex manual-license action instead of mutating internal verification state directly', async () => {
+    const actionMock = mock(async () => ({ success: true }));
+
+    const result = await verifyHostedManualLicenseIntent({
+      convex: {
+        query: mock(async () => null),
+        mutation: mock(async () => null),
+        action: actionMock,
+      },
+      apiSecret: 'convex-secret',
+      encryptionSecret: 'encryption-secret',
+      authUserId: 'buyer-auth-user',
+      intentId: 'intent_123' as never,
+      methodKey: 'gumroad-license',
+      licenseKey: 'license_123',
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(actionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        apiSecret: 'convex-secret',
+        authUserId: 'buyer-auth-user',
+        intentId: 'intent_123',
+        methodKey: 'gumroad-license',
+        licenseKey: 'license_123',
+      })
+    );
+  });
+});
+
+describe('verifyHostedBuyerProviderLinkIntent', () => {
+  it('delegates to the public Convex buyer-provider-link action instead of provider hooks or API-side internal mutations', async () => {
+    const actionMock = mock(async () => ({ success: true }));
+
+    const result = await verifyHostedBuyerProviderLinkIntent({
+      convex: {
+        query: mock(async () => null),
+        mutation: mock(async () => null),
+        action: actionMock,
+      },
+      apiSecret: 'convex-secret',
+      encryptionSecret: 'encryption-secret',
+      authUserId: 'buyer-auth-user',
+      intentId: 'intent_123' as never,
+      methodKey: 'gumroad-link',
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(actionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        apiSecret: 'convex-secret',
+        authUserId: 'buyer-auth-user',
+        intentId: 'intent_123',
+        methodKey: 'gumroad-link',
+      })
+    );
   });
 });

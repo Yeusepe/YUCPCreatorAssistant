@@ -801,10 +801,11 @@ function VerifyPurchasePage() {
 
   const returnToUrl = useMemo(() => (intent ? buildReturnUrl(intent) : null), [intent]);
   const returnsToBuyerAccess = useMemo(() => isBuyerAccessReturnUrl(returnToUrl), [returnToUrl]);
+  const shouldPrepareBuyerRepoAccess = intent?.status === 'verified' && returnsToBuyerAccess;
   const repoAccessQuery = useQuery({
     queryKey: ['vp-backstage-repo-access'],
     queryFn: requestUserBackstageRepoAccess,
-    enabled: intent?.status === 'verified',
+    enabled: shouldPrepareBuyerRepoAccess,
     retry: false,
     staleTime: 60_000,
   });
@@ -999,7 +1000,7 @@ function VerifyPurchasePage() {
         <p className="vp-success-subtitle fade-up" style={{ animationDelay: '0.45s' }}>
           {returnsToBuyerAccess
             ? `${intent.packageName || intent.packageId} is ready. Add your entitled repo in VCC, then continue back to your buyer access page.`
-            : `${intent.packageName || intent.packageId} is ready. Add your entitled repo in VCC, then return to Unity to install the package.`}
+            : `${intent.packageName || intent.packageId} is ready. Return to Unity to continue installing the package.`}
         </p>
 
         {repoAccessQuery.isLoading ? (
@@ -1009,7 +1010,7 @@ function VerifyPurchasePage() {
           </div>
         ) : null}
 
-        {repoAccessQuery.data ? (
+        {returnsToBuyerAccess && repoAccessQuery.data ? (
           <div
             className="fade-up"
             style={{
@@ -1092,7 +1093,7 @@ function VerifyPurchasePage() {
         ) : returnToUrl ? (
           <div className="fade-up" style={{ animationDelay: '0.6s' }}>
             <a href={returnToUrl} className="vp-primary-btn">
-              Return to Unity
+              {returnsToBuyerAccess ? 'Continue' : 'Return to Unity'}
             </a>
           </div>
         ) : null}
@@ -1314,8 +1315,9 @@ function VerifyPurchasePage() {
       {/* Footer */}
       <div className="vp-card-footer">
         <p className="vp-footer-note">
-          Verification is handled securely in your browser. After the server confirms your purchase,
-          YUCP prepares entitled repo access for VCC and package install.
+          {returnsToBuyerAccess
+            ? 'Verification is handled securely in your browser. After the server confirms your purchase, YUCP prepares entitled repo access for VCC and package install.'
+            : 'Verification is handled securely in your browser. After the server confirms your purchase, YUCP returns the verification grant to Unity so installation can continue.'}
         </p>
       </div>
     </div>
