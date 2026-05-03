@@ -6,8 +6,10 @@ import type {
   ProviderPurposes,
   ProviderRuntimeClient,
   ProviderRuntimeModule,
+  ProviderTierRecord,
 } from '../contracts';
 import { JinxxyApiClient } from './client';
+import { JinxxyApiError } from './types';
 
 export const JINXXY_PURPOSES = {
   credential: 'jinxxy-api-key',
@@ -229,6 +231,70 @@ async function listProductsForKey(
   return products;
 }
 
+function isProductAccessError(error: unknown): boolean {
+  return error instanceof JinxxyApiError && (error.statusCode === 403 || error.statusCode === 404);
+}
+
+async function getProductForTiers(
+  credential: string,
+  productId: string,
+  ctx: ProviderContext,
+  ports: JinxxyRuntimePorts
+): ReturnType<JinxxyClientLike['getProduct']> {
+  let firstAccessError: unknown;
+
+  try {
+    const product = await getClient(ports, credential).getProduct(productId);
+    if (product) {
+      return product;
+    }
+  } catch (err) {
+    if (!isProductAccessError(err)) {
+      throw err;
+    }
+    firstAccessError = err;
+  }
+
+  let collabConnections: JinxxyCollaboratorConnection[];
+  try {
+    collabConnections = await ports.listCollaboratorConnections(ctx);
+  } catch (err) {
+    ports.logger.warn('Failed to fetch collaborator connections for tier lookup', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    if (firstAccessError) {
+      throw firstAccessError;
+    }
+    return null;
+  }
+
+  for (const collab of collabConnections) {
+    if (collab.provider !== 'jinxxy' || !collab.credentialEncrypted) {
+      continue;
+    }
+
+    try {
+      const collabKey = await ports.decryptCredential(collab.credentialEncrypted, ctx);
+      const product = await getClient(ports, collabKey).getProduct(productId);
+      if (product) {
+        return product;
+      }
+    } catch (err) {
+      if (!isProductAccessError(err)) {
+        ports.logger.warn('Failed to fetch tiers for Jinxxy collaborator product', {
+          collabId: collab.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  if (firstAccessError) {
+    throw firstAccessError;
+  }
+  return null;
+}
+
 export function createJinxxyLicenseVerification<
   TClient extends ProviderRuntimeClient = ProviderRuntimeClient,
 >(ports: JinxxyRuntimePorts<TClient>): LicenseVerificationPlugin<TClient> {
@@ -368,12 +434,11 @@ export function createJinxxyProviderModule<
       });
     },
     tiers: {
-      async listProductTiers(credential, productId) {
+      async listProductTiers(credential, productId, ctx): Promise<ProviderTierRecord[]> {
         if (!credential) {
           return [];
         }
 
-        const client = getClient(ports, credential);
         /**
          * Jinxxy product docs:
          * - https://api.creators.jinxxy.com/v1/docs#tag/products/GET/products/{id}
@@ -384,7 +449,7 @@ export function createJinxxyProviderModule<
          * as `amountCents` instead of applying a second major-unit conversion. Each
          * version is treated as a provider tier.
          */
-        const product = await client.getProduct(productId);
+        const product = await getProductForTiers(credential, productId, ctx, ports);
         if (!product?.versions?.length) {
           return [];
         }

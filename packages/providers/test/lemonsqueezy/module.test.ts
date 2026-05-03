@@ -135,6 +135,78 @@ describe('createLemonSqueezyProviderModule', () => {
       },
     ]);
   });
+
+  it('loads tiers with a collaborator credential when the owner credential cannot access the product', async () => {
+    const calls: Array<{ apiToken: string; productId: string }> = [];
+    const module = createLemonSqueezyProviderModule({
+      logger,
+      async getEncryptedCredential() {
+        return 'owner-encrypted';
+      },
+      async decryptCredential(encryptedCredential) {
+        return encryptedCredential === 'owner-encrypted' ? 'owner-token' : 'collab-token';
+      },
+      async listCollaboratorConnections() {
+        return [
+          {
+            id: 'collab-1',
+            provider: 'lemonsqueezy',
+            credentialEncrypted: 'collab-encrypted',
+            collaboratorDisplayName: 'Collaborator A',
+          },
+        ];
+      },
+      createClient(apiToken) {
+        return {
+          async getProducts() {
+            return { products: [], pagination: { nextPage: null } };
+          },
+          async getStores() {
+            return { stores: [{ id: 'store-1' }] };
+          },
+          async getVariants(productId) {
+            calls.push({ apiToken, productId });
+            if (apiToken === 'owner-token') {
+              throw new Error('Forbidden');
+            }
+            return [
+              {
+                id: 'variant-collab',
+                name: 'Collab Variant',
+                price: 2500,
+                status: 'published',
+              },
+            ];
+          },
+          async validateLicenseKey() {
+            return { valid: false };
+          },
+        };
+      },
+    });
+
+    await expect(
+      module.tiers?.listProductTiers('owner-token', 'collab-product', makeCtx())
+    ).resolves.toEqual([
+      {
+        id: 'variant-collab',
+        productId: 'collab-product',
+        name: 'Collab Variant',
+        description: undefined,
+        amountCents: 2500,
+        currency: undefined,
+        active: true,
+        metadata: {
+          provider: 'lemonsqueezy',
+          status: 'published',
+        },
+      },
+    ]);
+    expect(calls).toEqual([
+      { apiToken: 'owner-token', productId: 'collab-product' },
+      { apiToken: 'collab-token', productId: 'collab-product' },
+    ]);
+  });
 });
 
 describe('createLemonSqueezyLicenseVerification', () => {
@@ -178,5 +250,68 @@ describe('createLemonSqueezyLicenseVerification', () => {
       providerProductId: '33',
       error: undefined,
     });
+  });
+
+  it('verifies collaborator-owned licenses with collaborator credentials when the owner token rejects the license', async () => {
+    const calls: Array<{ apiToken: string; licenseKey: string }> = [];
+    const verification = createLemonSqueezyLicenseVerification({
+      logger,
+      async getEncryptedCredential() {
+        return 'owner-encrypted';
+      },
+      async decryptCredential(encryptedCredential) {
+        return encryptedCredential === 'owner-encrypted' ? 'owner-token' : 'collab-token';
+      },
+      async listCollaboratorConnections() {
+        return [
+          {
+            id: 'collab-1',
+            provider: 'lemonsqueezy',
+            credentialEncrypted: 'collab-encrypted',
+            collaboratorDisplayName: 'Collaborator A',
+          },
+        ];
+      },
+      createClient(apiToken) {
+        return {
+          async getProducts() {
+            return { products: [], pagination: { nextPage: null } };
+          },
+          async getStores() {
+            return { stores: [{ id: 'store-1' }] };
+          },
+          async getVariants() {
+            return [];
+          },
+          async validateLicenseKey(licenseKey) {
+            calls.push({ apiToken, licenseKey });
+            if (apiToken === 'owner-token') {
+              return {
+                valid: false,
+                error: 'License key not found',
+              };
+            }
+            return {
+              valid: true,
+              license_key: { id: 'license-collab' },
+              meta: { product_id: 'collab-product' },
+            };
+          },
+        };
+      },
+    });
+
+    await expect(
+      verification.verifyLicense('KEY', 'collab-product', 'user-1', makeCtx())
+    ).resolves.toEqual({
+      valid: true,
+      externalOrderId: 'license-collab',
+      providerProductId: 'collab-product',
+      error: undefined,
+    });
+    expect(calls).toEqual([
+      { apiToken: 'owner-token', licenseKey: 'KEY' },
+      { apiToken: 'collab-token', licenseKey: 'KEY' },
+    ]);
   });
 });

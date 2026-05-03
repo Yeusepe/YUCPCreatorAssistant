@@ -141,6 +141,57 @@ async function listProductsForToken(
   return products;
 }
 
+async function verifyLicenseWithToken(
+  apiToken: string,
+  licenseKey: string,
+  ports: LemonSqueezyRuntimePorts
+): Promise<{
+  valid: boolean;
+  externalOrderId?: string;
+  providerProductId?: string;
+  error?: string;
+}> {
+  const validation = await getClient(ports, apiToken).validateLicenseKey(licenseKey);
+
+  const licenseId =
+    validation.license_key?.id != null
+      ? String(validation.license_key.id)
+      : validation.meta?.order_item_id != null
+        ? String(validation.meta.order_item_id)
+        : undefined;
+
+  const providerProductId =
+    validation.meta?.product_id != null ? String(validation.meta.product_id) : undefined;
+
+  return {
+    valid: validation.valid,
+    externalOrderId: licenseId,
+    providerProductId,
+    error: validation.error ?? undefined,
+  };
+}
+
+async function listTiersWithToken(
+  apiToken: string,
+  productId: string,
+  ports: LemonSqueezyRuntimePorts
+): Promise<ProviderTierRecord[]> {
+  const variants = await getClient(ports, apiToken).getVariants(productId);
+  return variants.map((variant) => ({
+    id: variant.id,
+    productId,
+    name: variant.name,
+    description: variant.description ?? undefined,
+    amountCents: variant.price ?? undefined,
+    currency: undefined,
+    active: variant.status !== 'archived',
+    metadata: {
+      provider: 'lemonsqueezy',
+      status: variant.status ?? undefined,
+    },
+  }));
+}
+
 export function createLemonSqueezyLicenseVerification<
   TClient extends ProviderRuntimeClient = ProviderRuntimeClient,
 >(ports: LemonSqueezyRuntimePorts<TClient>): LicenseVerificationPlugin<TClient> {
@@ -169,24 +220,37 @@ export function createLemonSqueezyLicenseVerification<
         };
       }
 
-      const validation = await getClient(ports, apiToken).validateLicenseKey(licenseKey);
+      const ownerResult = await verifyLicenseWithToken(apiToken, licenseKey, ports);
+      if (ownerResult.valid) {
+        return ownerResult;
+      }
 
-      const licenseId =
-        validation.license_key?.id != null
-          ? String(validation.license_key.id)
-          : validation.meta?.order_item_id != null
-            ? String(validation.meta.order_item_id)
-            : undefined;
+      try {
+        const collabConnections = await ports.listCollaboratorConnections(ctx);
+        for (const collab of collabConnections) {
+          if (collab.provider !== 'lemonsqueezy' || !collab.credentialEncrypted) {
+            continue;
+          }
+          try {
+            const collabToken = await ports.decryptCredential(collab.credentialEncrypted, ctx);
+            const collabResult = await verifyLicenseWithToken(collabToken, licenseKey, ports);
+            if (collabResult.valid) {
+              return collabResult;
+            }
+          } catch (err) {
+            ports.logger.warn('Failed to verify Lemon Squeezy license with collaborator token', {
+              collabId: collab.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      } catch (err) {
+        ports.logger.warn('Failed to load collaborator tokens for Lemon Squeezy verification', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
 
-      const providerProductId =
-        validation.meta?.product_id != null ? String(validation.meta.product_id) : undefined;
-
-      return {
-        valid: validation.valid,
-        externalOrderId: licenseId,
-        providerProductId,
-        error: validation.error ?? undefined,
-      };
+      return ownerResult;
     },
   };
 }
@@ -256,7 +320,8 @@ export function createLemonSqueezyProviderModule<
     tiers: {
       async listProductTiers(
         credential: string | null,
-        productId: string
+        productId: string,
+        ctx
       ): Promise<ProviderTierRecord[]> {
         if (!credential) {
           return [];
@@ -265,20 +330,33 @@ export function createLemonSqueezyProviderModule<
         // https://docs.lemonsqueezy.com/api/variants/list-all-variants
         // The variant attributes documented there map directly to YUCP tier fields:
         // `name`, `description`, `price` (already in cents), and `status`.
-        const variants = await getClient(ports, credential).getVariants(productId);
-        return variants.map((variant) => ({
-          id: variant.id,
-          productId,
-          name: variant.name,
-          description: variant.description ?? undefined,
-          amountCents: variant.price ?? undefined,
-          currency: undefined,
-          active: variant.status !== 'archived',
-          metadata: {
-            provider: 'lemonsqueezy',
-            status: variant.status ?? undefined,
-          },
-        }));
+        try {
+          return await listTiersWithToken(credential, productId, ports);
+        } catch (ownerError) {
+          try {
+            const collabConnections = await ports.listCollaboratorConnections(ctx);
+            for (const collab of collabConnections) {
+              if (collab.provider !== 'lemonsqueezy' || !collab.credentialEncrypted) {
+                continue;
+              }
+              try {
+                const collabToken = await ports.decryptCredential(collab.credentialEncrypted, ctx);
+                return await listTiersWithToken(collabToken, productId, ports);
+              } catch (err) {
+                ports.logger.warn('Failed to fetch tiers for LS collaborator', {
+                  collabId: collab.id,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              }
+            }
+          } catch (err) {
+            ports.logger.warn('Failed to load collaborator tokens for LS tier lookup', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+
+          throw ownerError;
+        }
       },
     },
     verification: createLemonSqueezyLicenseVerification(ports),

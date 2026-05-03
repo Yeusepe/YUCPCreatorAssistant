@@ -4,6 +4,7 @@ import {
   createJinxxyLicenseVerification,
   createJinxxyProviderModule,
 } from '../../src/jinxxy/module';
+import { JinxxyApiError } from '../../src/jinxxy/types';
 
 function makeCtx(): ProviderContext<ProviderRuntimeClient> {
   return {
@@ -186,6 +187,69 @@ describe('createJinxxyProviderModule', () => {
         active: true,
         metadata: { provider: 'jinxxy' },
       },
+    ]);
+  });
+
+  it('loads tiers with a collaborator credential when the owner credential cannot access the product', async () => {
+    const calls: Array<{ apiKey: string; productId: string }> = [];
+    const module = createJinxxyProviderModule({
+      logger,
+      async getEncryptedCredential() {
+        return 'encrypted-owner';
+      },
+      async decryptCredential(encryptedCredential) {
+        return encryptedCredential === 'encrypted-owner' ? 'owner-key' : 'collab-key';
+      },
+      async listCollaboratorConnections() {
+        return [
+          {
+            id: 'collab-1',
+            provider: 'jinxxy',
+            credentialEncrypted: 'encrypted-collab',
+            collaboratorDisplayName: 'Collab',
+          },
+        ];
+      },
+      createClient(apiKey) {
+        return {
+          async getProducts() {
+            return { products: [], pagination: { has_next: false } };
+          },
+          async getProduct(productId) {
+            calls.push({ apiKey, productId });
+            if (apiKey === 'owner-key') {
+              throw new JinxxyApiError('Forbidden', 403, 'Forbidden');
+            }
+            return {
+              id: productId,
+              visibility: 'PUBLIC',
+              currency_code: 'USD',
+              versions: [{ id: 'collab-version', name: 'Collab License', price: 1200 }],
+            };
+          },
+          async verifyLicenseByKey() {
+            return { valid: false };
+          },
+        };
+      },
+    });
+
+    await expect(
+      module.tiers?.listProductTiers('owner-key', 'collab-product', makeCtx())
+    ).resolves.toEqual([
+      {
+        id: 'collab-version',
+        productId: 'collab-product',
+        name: 'Collab License',
+        amountCents: 1200,
+        currency: 'USD',
+        active: true,
+        metadata: { provider: 'jinxxy' },
+      },
+    ]);
+    expect(calls).toEqual([
+      { apiKey: 'owner-key', productId: 'collab-product' },
+      { apiKey: 'collab-key', productId: 'collab-product' },
     ]);
   });
 });
