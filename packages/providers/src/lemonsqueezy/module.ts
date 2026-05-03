@@ -136,6 +136,57 @@ async function listProductsForToken(
   return products;
 }
 
+async function getVariantsForAccessibleCredential(
+  credential: string,
+  productId: string,
+  ctx: ProviderContext,
+  ports: LemonSqueezyRuntimePorts
+): Promise<Awaited<ReturnType<LemonSqueezyClientLike['getVariants']>>> {
+  let firstError: unknown;
+  let firstEmptyVariants: Awaited<ReturnType<LemonSqueezyClientLike['getVariants']>> | null = null;
+
+  try {
+    return await getClient(ports, credential).getVariants(productId);
+  } catch (err) {
+    firstError = err;
+  }
+
+  let collabConnections: LemonSqueezyCollaboratorConnection[];
+  try {
+    collabConnections = await ports.listCollaboratorConnections(ctx);
+  } catch (err) {
+    ports.logger.warn('Failed to fetch collaborator connections for LS tier lookup', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw firstError;
+  }
+
+  for (const collab of collabConnections) {
+    if (collab.provider !== 'lemonsqueezy' || !collab.credentialEncrypted) {
+      continue;
+    }
+
+    try {
+      const collabToken = await ports.decryptCredential(collab.credentialEncrypted, ctx);
+      const variants = await getClient(ports, collabToken).getVariants(productId);
+      if (variants.length > 0) {
+        return variants;
+      }
+      firstEmptyVariants ??= variants;
+    } catch (err) {
+      ports.logger.warn('Failed to fetch tiers for LS collaborator product', {
+        collabId: collab.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  if (firstEmptyVariants) {
+    return firstEmptyVariants;
+  }
+  throw firstError ?? new Error('Failed to fetch Lemon Squeezy product tiers');
+}
+
 export function createLemonSqueezyLicenseVerification<
   TClient extends ProviderRuntimeClient = ProviderRuntimeClient,
 >(ports: LemonSqueezyRuntimePorts<TClient>): LicenseVerificationPlugin<TClient> {
@@ -251,7 +302,8 @@ export function createLemonSqueezyProviderModule<
     tiers: {
       async listProductTiers(
         credential: string | null,
-        productId: string
+        productId: string,
+        ctx
       ): Promise<ProviderTierRecord[]> {
         if (!credential) {
           return [];
@@ -260,7 +312,7 @@ export function createLemonSqueezyProviderModule<
         // https://docs.lemonsqueezy.com/api/variants/list-all-variants
         // The variant attributes documented there map directly to YUCP tier fields:
         // `name`, `description`, `price` (already in cents), and `status`.
-        const variants = await getClient(ports, credential).getVariants(productId);
+        const variants = await getVariantsForAccessibleCredential(credential, productId, ctx, ports);
         return variants.map((variant) => ({
           id: variant.id,
           productId,

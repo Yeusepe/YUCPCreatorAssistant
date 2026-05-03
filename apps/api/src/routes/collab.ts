@@ -26,6 +26,7 @@
  * POST   /api/collab/session/submit                  – Submit Jinxxy credentials
  * GET    /api/collab/connections                     – List owner's connections (setup session auth)
  * DELETE /api/collab/connections/:id                 – Remove connection (setup session auth)
+ * DELETE /api/collab/connections/as-collaborator/:id – Leave a shared store as collaborator
  */
 
 import { getProviderDescriptor, PROVIDER_REGISTRY } from '@yucp/providers/providerMetadata';
@@ -1147,6 +1148,48 @@ export function createCollabRoutes(config: CollabConfig) {
     return respond(() => Response.json({ success: true }));
   }
 
+  /**
+   * DELETE /api/collab/connections/as-collaborator/:id - leave a shared store
+   */
+  async function removeConnectionAsCollaborator(
+    request: Request,
+    connectionId: string
+  ): Promise<Response> {
+    const timing = new RouteTimingCollector();
+    const respond = (
+      buildResponse: () => Response,
+      description = 'serialize collaborator response'
+    ) => buildTimedResponse(timing, buildResponse, description);
+    if (request.method !== 'DELETE')
+      return respond(() => Response.json({ error: 'Method not allowed' }, { status: 405 }));
+
+    const url = new URL(request.url);
+    const collaboratorAuth = await requireOwnerAuth(
+      request,
+      url.searchParams.get('authUserId') ?? undefined,
+      timing
+    );
+    if (!collaboratorAuth.ok) return collaboratorAuth.response;
+
+    try {
+      await timing.measure(
+        'convex_collab_connection_remove_self',
+        () =>
+          convex.mutation(api.collaboratorInvites.removeCollaboratorConnectionAsCollaborator, {
+            apiSecret,
+            connectionId,
+            authUserId: collaboratorAuth.authUserId,
+          }),
+        'remove collaborator connection as collaborator'
+      );
+    } catch (e) {
+      return respond(() =>
+        Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 })
+      );
+    }
+    return respond(() => Response.json({ success: true }));
+  }
+
   // ── Dispatcher ─────────────────────────────────────────────────────────────
 
   /**
@@ -1272,6 +1315,12 @@ export function createCollabRoutes(config: CollabConfig) {
       return listConnectionsAsCollaborator(request);
     if (pathname === '/api/collab/connections/manual' && request.method === 'POST')
       return addConnectionManual(request);
+
+    const collabConnSelfDeleteMatch = pathname.match(
+      /^\/api\/collab\/connections\/as-collaborator\/([^/]+)$/
+    );
+    if (collabConnSelfDeleteMatch && request.method === 'DELETE')
+      return removeConnectionAsCollaborator(request, collabConnSelfDeleteMatch[1]);
 
     const connDeleteMatch = pathname.match(/^\/api\/collab\/connections\/([^/]+)$/);
     if (connDeleteMatch && request.method === 'DELETE')

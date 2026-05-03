@@ -480,6 +480,50 @@ export const removeCollaboratorConnection = mutation({
 });
 
 /**
+ * Remove a collaborator connection as the collaborator themselves (soft delete).
+ */
+export const removeCollaboratorConnectionAsCollaborator = mutation({
+  args: {
+    apiSecret: v.string(),
+    connectionId: v.id('collaborator_connections'),
+    authUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    requireApiSecret(args.apiSecret);
+
+    const profile = await ctx.db
+      .query('creator_profiles')
+      .withIndex('by_auth_user', (q) => q.eq('authUserId', args.authUserId))
+      .first();
+
+    if (!profile?.ownerDiscordUserId) {
+      throw new Error('Connection not found or access denied');
+    }
+
+    const conn = await ctx.db.get(args.connectionId);
+    if (!conn || conn.collaboratorDiscordUserId !== profile.ownerDiscordUserId) {
+      throw new Error('Connection not found or access denied');
+    }
+
+    await ctx.db.patch(args.connectionId, {
+      status: 'disconnected',
+      updatedAt: Date.now(),
+    });
+    await ctx.db.insert('audit_events', {
+      authUserId: conn.ownerAuthUserId,
+      eventType: 'collaborator.connection.removed',
+      actorType: 'system',
+      metadata: {
+        connectionId: args.connectionId,
+        removedByAuthUserId: args.authUserId,
+        removedByRole: 'collaborator',
+      },
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/**
  * Get active collaborator connections for license verification.
  * Returns only active connections with an encrypted API key.
  */

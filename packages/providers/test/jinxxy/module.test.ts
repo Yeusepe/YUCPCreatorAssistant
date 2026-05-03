@@ -4,6 +4,7 @@ import {
   createJinxxyLicenseVerification,
   createJinxxyProviderModule,
 } from '../../src/jinxxy/module';
+import { JinxxyApiError } from '../../src/jinxxy/types';
 
 function makeCtx(): ProviderContext<ProviderRuntimeClient> {
   return {
@@ -140,6 +141,69 @@ describe('createJinxxyProviderModule', () => {
       },
     ]);
   });
+
+  it('loads tiers with a collaborator credential when the owner credential cannot access the product', async () => {
+    const calls: Array<{ apiKey: string; productId: string }> = [];
+    const module = createJinxxyProviderModule({
+      logger,
+      async getEncryptedCredential() {
+        return 'encrypted-owner';
+      },
+      async decryptCredential(encryptedCredential) {
+        return encryptedCredential === 'encrypted-owner' ? 'owner-key' : 'collab-key';
+      },
+      async listCollaboratorConnections() {
+        return [
+          {
+            id: 'collab-1',
+            provider: 'jinxxy',
+            credentialEncrypted: 'encrypted-collab',
+            collaboratorDisplayName: 'Collab',
+          },
+        ];
+      },
+      createClient(apiKey) {
+        return {
+          async getProducts() {
+            return { products: [], pagination: { has_next: false } };
+          },
+          async getProduct(productId) {
+            calls.push({ apiKey, productId });
+            if (apiKey === 'owner-key') {
+              throw new JinxxyApiError('Forbidden', 403, 'Forbidden');
+            }
+            return {
+              id: productId,
+              visibility: 'PUBLIC',
+              currency_code: 'USD',
+              versions: [{ id: 'collab-version', name: 'Collab License', price: 1200 }],
+            };
+          },
+          async verifyLicenseByKey() {
+            return { valid: false };
+          },
+        };
+      },
+    });
+
+    await expect(
+      module.tiers?.listProductTiers('owner-key', 'collab-product', makeCtx())
+    ).resolves.toEqual([
+      {
+        id: 'collab-version',
+        productId: 'collab-product',
+        name: 'Collab License',
+        amountCents: 1200,
+        currency: 'USD',
+        active: true,
+        metadata: { provider: 'jinxxy' },
+      },
+    ]);
+    expect(calls).toEqual([
+      { apiKey: 'owner-key', productId: 'collab-product' },
+      { apiKey: 'collab-key', productId: 'collab-product' },
+    ]);
+  });
 });
 
 describe('createJinxxyLicenseVerification', () => {
@@ -196,5 +260,91 @@ describe('createJinxxyLicenseVerification', () => {
       providerProductId: 'product-1',
       error: undefined,
     });
+  });
+
+  it('verifies collaborator-owned licenses with collaborator credentials when the owner key cannot find the license', async () => {
+    const calls: Array<{ apiKey: string; licenseKey: string }> = [];
+    const verification = createJinxxyLicenseVerification({
+      logger,
+      async getEncryptedCredential() {
+        return 'encrypted-owner';
+      },
+      async decryptCredential(encryptedCredential) {
+        return encryptedCredential === 'encrypted-owner' ? 'owner-key' : 'collab-key';
+      },
+      async listCollaboratorConnections() {
+        return [
+          {
+            id: 'collab-1',
+            provider: 'jinxxy',
+            credentialEncrypted: 'encrypted-collab',
+            collaboratorDisplayName: 'Collab',
+          },
+        ];
+      },
+      createClient(apiKey) {
+        return {
+          async getProducts() {
+            return { products: [], pagination: { has_next: false } };
+          },
+          async getProduct() {
+            return null;
+          },
+          async verifyLicenseByKey(licenseKey) {
+            calls.push({ apiKey, licenseKey });
+            if (apiKey === 'owner-key') {
+              return {
+                valid: false,
+                license: null,
+                error: 'License not found',
+              };
+            }
+            return {
+              valid: true,
+              license: {
+                id: 'license-collab',
+                customer_id: 'customer-collab',
+                order_id: 'order-collab',
+                product_id: 'collab-product',
+              },
+            };
+          },
+          async verifyLicenseWithBuyerByKey(licenseKey) {
+            calls.push({ apiKey, licenseKey });
+            if (apiKey === 'owner-key') {
+              return {
+                valid: false,
+                license: null,
+                error: 'License not found',
+              };
+            }
+            return {
+              valid: true,
+              license: {
+                id: 'license-collab',
+                customer_id: 'customer-collab',
+                order_id: 'order-collab',
+                product_id: 'collab-product',
+              },
+              providerUserId: 'customer-collab',
+              externalOrderId: 'order-collab',
+              providerProductId: 'collab-product',
+            };
+          },
+        };
+      },
+    });
+
+    await expect(verification.verifyLicense('KEY', 'collab-product', 'user-1', makeCtx())).resolves.toEqual({
+      valid: true,
+      externalOrderId: 'order-collab',
+      providerUserId: 'customer-collab',
+      providerProductId: 'collab-product',
+      error: undefined,
+    });
+    expect(calls).toEqual([
+      { apiKey: 'owner-key', licenseKey: 'KEY' },
+      { apiKey: 'collab-key', licenseKey: 'KEY' },
+    ]);
   });
 });
