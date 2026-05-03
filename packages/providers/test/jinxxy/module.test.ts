@@ -335,7 +335,9 @@ describe('createJinxxyLicenseVerification', () => {
       },
     });
 
-    await expect(verification.verifyLicense('KEY', 'collab-product', 'user-1', makeCtx())).resolves.toEqual({
+    await expect(
+      verification.verifyLicense('KEY', 'collab-product', 'user-1', makeCtx())
+    ).resolves.toEqual({
       valid: true,
       externalOrderId: 'order-collab',
       providerUserId: 'customer-collab',

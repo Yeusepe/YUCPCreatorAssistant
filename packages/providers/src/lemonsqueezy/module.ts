@@ -364,7 +364,12 @@ export function createLemonSqueezyProviderModule<
         // https://docs.lemonsqueezy.com/api/variants/list-all-variants
         // The variant attributes documented there map directly to YUCP tier fields:
         // `name`, `description`, `price` (already in cents), and `status`.
-        const variants = await getVariantsForAccessibleCredential(credential, productId, ctx, ports);
+        const variants = await getVariantsForAccessibleCredential(
+          credential,
+          productId,
+          ctx,
+          ports
+        );
         return variants.map((variant) => ({
           id: variant.id,
           productId,
