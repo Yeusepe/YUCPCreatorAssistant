@@ -57,6 +57,7 @@ export const PRODUCTION_REGRESSION_SURFACES: ProductionRegressionSurface[] = [
     primaryRegressionHomes: [
       'apps/api/src/lib/subjectIdentity.test.ts',
       'apps/api/src/routes/providerPlatform.test.ts',
+      'convex/identitySync.realtest.ts',
     ],
     secondaryRegressionHomes: [
       'apps/api/src/verification/completeLicense.test.ts',
@@ -78,6 +79,7 @@ export const PRODUCTION_REGRESSION_SURFACES: ProductionRegressionSurface[] = [
       'apps/api/src/routes/connect.user-verify.provider-link.test.ts',
       'apps/api/src/verification/hostedIntents.test.ts',
       'apps/api/src/verification/completeLicense.test.ts',
+      'apps/api/src/verification/sessionManager.accountLink.test.ts',
       'apps/api/src/routes/connect.user-verify.behavior.test.ts',
     ],
     secondaryRegressionHomes: [
@@ -117,6 +119,13 @@ export const PRODUCTION_REGRESSION_SURFACES: ProductionRegressionSurface[] = [
 
 export const EXTERNAL_INTEGRATION_GATE_STEPS: ExternalIntegrationGateStep[] = [
   {
+    id: 'convex-identity-ownership-realtests',
+    description: 'Convex identity ownership regressions for provider-linked account incidents',
+    cwdRelativeToRepoRoot: '.',
+    args: ['x', 'vitest', 'run', '--config', 'convex/vitest.config.ts', './convex/identitySync.realtest.ts'],
+    covers: ['identity'],
+  },
+  {
     id: 'provider-runtime-and-consumers',
     description:
       'provider runtime contracts plus bot consumer regressions for provider and verification incidents',
@@ -149,6 +158,7 @@ export const EXTERNAL_INTEGRATION_GATE_STEPS: ExternalIntegrationGateStep[] = [
       './src/routes/connect.user-verify.behavior.test.ts',
       './src/routes/backfill.test.ts',
       './src/verification/completeLicense.test.ts',
+      './src/verification/sessionManager.accountLink.test.ts',
     ],
     covers: ['identity', 'verification', 'account', 'backfill'],
   },

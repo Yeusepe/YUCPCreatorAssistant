@@ -3,6 +3,9 @@ name: Bot E2E
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   bot-e2e:
     name: Discord Bot E2E

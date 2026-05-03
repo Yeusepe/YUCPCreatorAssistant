@@ -1,7 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
-import { PUBLIC_API_SCOPE_DEFINITIONS } from '@yucp/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { CloudBackground } from '@/components/three/CloudBackground';
+import { BackgroundCanvasRoot } from '@/components/page/BackgroundCanvasRoot';
 import { authClient } from '@/lib/auth-client';
 import '@/styles/oauth-consent.css';
 
@@ -16,8 +15,11 @@ interface ScopeInfo {
   icon: React.ReactNode;
 }
 
-const SCOPE_ICONS: Record<string, { icon: React.ReactNode }> = {
+const SCOPE_INFO: Record<string, ScopeInfo> = {
   'verification:read': {
+    label: 'Read verification status',
+    desc: 'Check if a user is verified on your server',
+    badge: 'Read',
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -26,6 +28,9 @@ const SCOPE_ICONS: Record<string, { icon: React.ReactNode }> = {
     ),
   },
   'subjects:read': {
+    label: 'Read subject data',
+    desc: 'Access verified users and their purchase records',
+    badge: 'Read',
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="8" r="4" />
@@ -34,6 +39,9 @@ const SCOPE_ICONS: Record<string, { icon: React.ReactNode }> = {
     ),
   },
   'cert:issue': {
+    label: 'Issue signing certificate',
+    desc: 'Request a YUCP code-signing certificate for your developer key',
+    badge: 'Sign',
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -42,18 +50,13 @@ const SCOPE_ICONS: Record<string, { icon: React.ReactNode }> = {
     ),
   },
   'profile:read': {
+    label: 'Read basic profile',
+    desc: 'View your YUCP display name and avatar so Package Exporter can show your account properly',
+    badge: 'Profile',
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="8" r="4" />
         <path d="M4 20a8 8 0 0 1 16 0" />
-      </svg>
-    ),
-  },
-  'products:read': {
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 7h16v13H4z" />
-        <path d="M8 7V5a4 4 0 0 1 8 0v2" />
       </svg>
     ),
   },
@@ -66,28 +69,7 @@ const DEFAULT_SCOPE_ICON = (
   </svg>
 );
 
-const SCOPE_INFO: Record<string, ScopeInfo> = Object.fromEntries(
-  PUBLIC_API_SCOPE_DEFINITIONS.map((definition) => [
-    definition.scope,
-    {
-      label: definition.label,
-      desc: definition.description,
-      badge: definition.badge,
-      icon: SCOPE_ICONS[definition.scope]?.icon ?? DEFAULT_SCOPE_ICON,
-    },
-  ])
-);
-
 function OAuthConsentPage() {
-  return (
-    <>
-      <CloudBackground variant="default" />
-      <OAuthConsentPageContent />
-    </>
-  );
-}
-
-function OAuthConsentPageContent() {
   const [clientId, setClientId] = useState('');
   const [rawScopes, setRawScopes] = useState<string[]>([]);
 
@@ -135,7 +117,8 @@ function OAuthConsentPageContent() {
 
   return (
     <div className="oauth-consent-page">
-      <main>
+      <BackgroundCanvasRoot position="fixed" />
+      <main className="relative z-10">
         <div className="consent-card">
           {/* App connector */}
           <div className="app-connector">

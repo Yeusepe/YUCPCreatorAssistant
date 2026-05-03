@@ -1,6 +1,8 @@
-﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@heroui/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createLazyFileRoute } from '@tanstack/react-router';
-import { useEffect, useMemo, useState } from 'react';
+import { Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DashboardAuthRequiredState } from '@/components/dashboard/AuthRequiredState';
 import { DashboardBodyPortal } from '@/components/dashboard/DashboardBodyPortal';
 import {
@@ -24,6 +26,7 @@ import {
   listCollabInvites,
   listCollabProviders,
   removeCollabConnection,
+  removeCollabConnectionAsCollaborator,
   revokeCollabInvite,
 } from '@/lib/dashboard';
 import {
@@ -45,6 +48,134 @@ function DashboardCollaborationPending() {
         <DashboardListSkeleton rows={1} showAction={false} />
       </div>
     </div>
+  );
+}
+
+const HOLD_TO_REMOVE_MS = 900;
+
+function HoldToRemoveButton({
+  label,
+  isPending,
+  onComplete,
+}: {
+  label: string;
+  isPending: boolean;
+  onComplete: () => void;
+}) {
+  const [holding, setHolding] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const holdStartRef = useRef<number | null>(null);
+  const holdIntervalRef = useRef<number | null>(null);
+  const holdTimeoutRef = useRef<number | null>(null);
+
+  const clearHold = useCallback((resetProgress = true) => {
+    if (holdIntervalRef.current !== null) {
+      window.clearInterval(holdIntervalRef.current);
+      holdIntervalRef.current = null;
+    }
+    if (holdTimeoutRef.current !== null) {
+      window.clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+    holdStartRef.current = null;
+    setHolding(false);
+    if (resetProgress) {
+      setProgress(0);
+    }
+  }, []);
+
+  useEffect(() => () => clearHold(), [clearHold]);
+
+  useEffect(() => {
+    if (isPending) {
+      clearHold(false);
+      setProgress(100);
+      return;
+    }
+
+    if (!holding && progress === 100) {
+      const resetId = window.setTimeout(() => setProgress(0), 180);
+      return () => window.clearTimeout(resetId);
+    }
+  }, [clearHold, holding, isPending, progress]);
+
+  const beginHold = useCallback(() => {
+    if (isPending || holdTimeoutRef.current !== null) {
+      return;
+    }
+
+    const startedAt = Date.now();
+    holdStartRef.current = startedAt;
+    setHolding(true);
+    setProgress(0);
+    holdIntervalRef.current = window.setInterval(() => {
+      if (holdStartRef.current === null) {
+        return;
+      }
+      const nextProgress = Math.min(
+        ((Date.now() - holdStartRef.current) / HOLD_TO_REMOVE_MS) * 100,
+        100
+      );
+      setProgress(nextProgress);
+    }, 16);
+    holdTimeoutRef.current = window.setTimeout(() => {
+      clearHold(false);
+      setProgress(100);
+      onComplete();
+    }, HOLD_TO_REMOVE_MS);
+  }, [clearHold, isPending, onComplete]);
+
+  const cancelHold = useCallback(() => {
+    if (holdStartRef.current === null) {
+      return;
+    }
+    clearHold();
+  }, [clearHold]);
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="danger-soft"
+      isDisabled={isPending}
+      aria-label={`Hold to remove ${label}`}
+      className={`relative min-w-32 justify-center overflow-hidden rounded-xl border border-danger/20 px-3 text-xs font-semibold shadow-none transition-all duration-200 motion-reduce:transition-none${holding ? ' scale-[1.02] border-danger/40' : ''}`}
+      onPointerDown={beginHold}
+      onPointerUp={cancelHold}
+      onPointerLeave={cancelHold}
+      onPointerCancel={cancelHold}
+      onKeyDown={(event) => {
+        if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+          event.preventDefault();
+          beginHold();
+        }
+      }}
+      onKeyUp={(event) => {
+        if (event.key === ' ' || event.key === 'Enter') {
+          event.preventDefault();
+          cancelHold();
+        }
+      }}
+    >
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 origin-left rounded-[inherit] bg-danger transition-all duration-75 ease-linear motion-reduce:transition-none"
+        style={{
+          opacity: progress > 0 || isPending ? 0.88 : 0,
+          transform: `scaleX(${Math.max(progress, isPending ? 100 : 0) / 100})`,
+        }}
+      />
+      <span
+        className={`relative z-10 inline-flex items-center gap-1.5${holding || isPending ? ' text-danger-foreground' : ''}`}
+      >
+        {isPending ? (
+          <span className="btn-loading-spinner" aria-hidden="true" />
+        ) : (
+          <Trash2 size={14} aria-hidden="true" />
+        )}
+        <span>{isPending ? 'Leaving...' : holding ? 'Keep holding...' : 'Hold to leave'}</span>
+      </span>
+    </Button>
   );
 }
 
@@ -616,7 +747,9 @@ function StoresICollaborateWithSection({
   authUserId: string | undefined;
   viewerLoading: boolean;
 }) {
+  const queryClient = useQueryClient();
   const { canRunPanelQueries, markSessionExpired } = useDashboardSession();
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const storesQuery = useQuery(
     dashboardPollingQueryOptions<CollabAsCollaboratorSummary[]>({
       queryKey: ['dashboard-collab-as-collaborator', authUserId],
@@ -631,6 +764,24 @@ function StoresICollaborateWithSection({
       markSessionExpired();
     }
   }, [markSessionExpired, storesQuery.error]);
+
+  const removeStoreMutation = useMutation({
+    mutationFn: (connectionId: string) =>
+      removeCollabConnectionAsCollaborator(requireAuthUserId(authUserId), connectionId),
+    onMutate: () => {
+      setRemoveError(null);
+    },
+    onSuccess: async () => {
+      await queryClient.refetchQueries({
+        queryKey: ['dashboard-collab-as-collaborator', authUserId],
+      });
+    },
+    onError: (error) => {
+      setRemoveError(
+        error instanceof Error ? error.message : 'Could not leave this store right now.'
+      );
+    },
+  });
 
   if (isDashboardAuthError(storesQuery.error)) {
     return (
@@ -674,7 +825,8 @@ function StoresICollaborateWithSection({
         </div>
       </div>
       <p className="intg-desc" style={isLoading ? { paddingLeft: 0 } : undefined}>
-        Stores where you&apos;ve been granted creator access to verify licenses.
+        Stores where you&apos;ve been granted creator access to verify licenses. Hold the leave
+        button to disconnect access.
       </p>
 
       <DashboardListSkeleton rows={1} showAction={false} />
@@ -694,9 +846,27 @@ function StoresICollaborateWithSection({
                     {formatRelativeDate(store.createdAt)}
                   </div>
                 </div>
+                <div className="ml-3 flex shrink-0 items-center">
+                  <HoldToRemoveButton
+                    label={store.ownerDisplayName ?? 'Creator Store'}
+                    isPending={
+                      removeStoreMutation.isPending && removeStoreMutation.variables === store.id
+                    }
+                    onComplete={() => removeStoreMutation.mutate(store.id)}
+                  />
+                </div>
               </div>
             ))}
           </div>
+
+          {removeError ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-2xl border border-danger/20 bg-danger/8 px-3 py-2 text-xs font-medium text-danger"
+            >
+              {removeError}
+            </div>
+          ) : null}
 
           {stores.length === 0 ? (
             <div id="collab-as-collaborator-empty" className="empty-state">

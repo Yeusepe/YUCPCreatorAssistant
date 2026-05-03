@@ -300,4 +300,35 @@ describe('VerificationSessionManager account-link callback', () => {
     expect(stateStoreGetMock).not.toHaveBeenCalled();
     expect(stateStoreDeleteMock).not.toHaveBeenCalled();
   });
+
+  it('surfaces a conflict when the linked provider account already belongs to a different YUCP user', async () => {
+    buyerLinkPlugin.oauth.responseType = 'token';
+    convexMutationMock.mockImplementation(async (reference: unknown) => {
+      if (reference === apiMock.identitySync.syncUserFromProvider) {
+        throw new Error('This provider account is already linked to a different YUCP account.');
+      }
+
+      throw new Error(`Unexpected mutation reference: ${String(reference)}`);
+    });
+
+    const manager = createVerificationSessionManager(testConfig);
+    const result = await manager.handleImplicitCallback(
+      'itchio',
+      'fragment-access-token-123',
+      'verify:itchio:buyer_auth_user_B:state-suffix'
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: 'This provider account is already linked to a different YUCP account.',
+    });
+    expect(
+      convexMutationMock.mock.calls.filter(
+        ([reference]) =>
+          reference === apiMock.bindings.activateBinding ||
+          reference === apiMock.subjects.upsertBuyerProviderLink ||
+          reference === apiMock.verificationSessions.completeVerificationSession
+      )
+    ).toHaveLength(0);
+  });
 });

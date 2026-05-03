@@ -15,6 +15,8 @@ const apiMock = {
   collaboratorInvites: {
     listCollaboratorConnections: 'collaboratorInvites.listCollaboratorConnections',
     removeCollaboratorConnection: 'collaboratorInvites.removeCollaboratorConnection',
+    removeCollaboratorConnectionAsCollaborator:
+      'collaboratorInvites.removeCollaboratorConnectionAsCollaborator',
   },
 } as const;
 
@@ -179,6 +181,51 @@ describe('DELETE /api/collab/connections/:id (auth guard)', () => {
     });
     const res = await routes.handleCollabRequest(req);
     expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ success: true });
+  });
+});
+
+describe('DELETE /api/collab/connections/as-collaborator/:id (auth guard)', () => {
+  it('returns 401 when no auth is present', async () => {
+    const req = new Request(
+      'http://localhost:3001/api/collab/connections/as-collaborator/some-id?authUserId=user-1',
+      { method: 'DELETE' }
+    );
+    const res = await routes.handleCollabRequest(req);
+    expect(res.status).toBe(401);
+  });
+
+  it('accepts a setup session token for collaborator self-removal', async () => {
+    const mutationCalls: unknown[][] = [];
+    mutationImpl = async (...args: unknown[]) => {
+      mutationCalls.push(args);
+      return null;
+    };
+
+    const token = await createSetupSession(
+      'user-test-004',
+      'guild-test-004',
+      'discord-user-004',
+      ENCRYPTION_SECRET
+    );
+    const req = new Request(
+      'http://localhost:3001/api/collab/connections/as-collaborator/some-id?authUserId=user-test-004',
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    const res = await routes.handleCollabRequest(req);
+    expect(res.status).toBe(200);
+    expect(mutationCalls).toHaveLength(1);
+    expect(mutationCalls[0][0]).toBe(
+      apiMock.collaboratorInvites.removeCollaboratorConnectionAsCollaborator
+    );
+    expect(mutationCalls[0][1]).toMatchObject({
+      apiSecret: 'test-convex-secret',
+      authUserId: 'user-test-004',
+      connectionId: 'some-id',
+    });
     await expect(res.json()).resolves.toMatchObject({ success: true });
   });
 });

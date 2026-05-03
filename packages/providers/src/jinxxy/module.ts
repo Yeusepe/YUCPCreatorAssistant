@@ -1,6 +1,7 @@
 import type { StructuredLogger } from '@yucp/shared';
 import type {
   LicenseVerificationPlugin,
+  LicenseVerificationResult,
   ProductRecord,
   ProviderContext,
   ProviderPurposes,
@@ -127,6 +128,20 @@ function mapVisibilityToActive(visibility: string | undefined): boolean {
   return visibility !== 'ARCHIVED' && visibility !== 'archived';
 }
 
+type JinxxyVerificationClientResult = {
+  valid: boolean;
+  error?: string;
+  providerUserId?: string;
+  externalOrderId?: string;
+  providerProductId?: string;
+  license?: {
+    id?: string;
+    customer_id?: string;
+    order_id?: string;
+    product_id?: string;
+  } | null;
+};
+
 function normalizeJinxxyCanonicalSlugFromUrl(
   value: string | undefined,
   productId: string
@@ -229,6 +244,71 @@ async function listProductsForKey(
     page++;
   }
   return products;
+}
+
+async function verifyLicenseWithClient(
+  client: JinxxyClientLike,
+  licenseKey: string
+): Promise<JinxxyVerificationClientResult> {
+  return client.verifyLicenseWithBuyerByKey
+    ? await client.verifyLicenseWithBuyerByKey(licenseKey)
+    : await client.verifyLicenseByKey(licenseKey);
+}
+
+function mapJinxxyVerificationResult(
+  result: JinxxyVerificationClientResult
+): LicenseVerificationResult {
+  return {
+    valid: result.valid,
+    externalOrderId:
+      result.externalOrderId ?? result.license?.order_id ?? result.license?.id ?? undefined,
+    providerUserId: result.providerUserId ?? result.license?.customer_id ?? undefined,
+    providerProductId: result.providerProductId ?? result.license?.product_id ?? undefined,
+    error: result.error ?? undefined,
+  };
+}
+
+async function verifyLicenseWithAccessibleCredential(
+  credential: string,
+  licenseKey: string,
+  ctx: ProviderContext,
+  ports: JinxxyRuntimePorts
+): Promise<LicenseVerificationResult> {
+  const ownerResult = await verifyLicenseWithClient(getClient(ports, credential), licenseKey);
+  if (ownerResult.valid) {
+    return mapJinxxyVerificationResult(ownerResult);
+  }
+
+  let collabConnections: JinxxyCollaboratorConnection[];
+  try {
+    collabConnections = await ports.listCollaboratorConnections(ctx);
+  } catch (err) {
+    ports.logger.warn('Failed to fetch collaborator connections for Jinxxy license lookup', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return mapJinxxyVerificationResult(ownerResult);
+  }
+
+  for (const collab of collabConnections) {
+    if (collab.provider !== 'jinxxy' || !collab.credentialEncrypted) {
+      continue;
+    }
+
+    try {
+      const collabKey = await ports.decryptCredential(collab.credentialEncrypted, ctx);
+      const collabResult = await verifyLicenseWithClient(getClient(ports, collabKey), licenseKey);
+      if (collabResult.valid) {
+        return mapJinxxyVerificationResult(collabResult);
+      }
+    } catch (err) {
+      ports.logger.warn('Failed to verify Jinxxy license with collaborator credential', {
+        collabId: collab.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return mapJinxxyVerificationResult(ownerResult);
 }
 
 function isProductAccessError(error: unknown): boolean {
@@ -334,37 +414,7 @@ export function createJinxxyLicenseVerification<
       }
 
       const apiKey = await ports.decryptCredential(encryptedApiKey, ctx);
-      const ownerResult = await verifyWithApiKey(apiKey, licenseKey);
-      if (ownerResult.valid) {
-        return ownerResult;
-      }
-
-      try {
-        const collabConnections = await ports.listCollaboratorConnections(ctx);
-        for (const collab of collabConnections) {
-          if (collab.provider !== 'jinxxy' || !collab.credentialEncrypted) {
-            continue;
-          }
-          try {
-            const collabKey = await ports.decryptCredential(collab.credentialEncrypted, ctx);
-            const collabResult = await verifyWithApiKey(collabKey, licenseKey);
-            if (collabResult.valid) {
-              return collabResult;
-            }
-          } catch (err) {
-            ports.logger.warn('Failed to verify Jinxxy license with collaborator key', {
-              collabId: collab.id,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }
-      } catch (err) {
-        ports.logger.warn('Failed to load collaborator keys for Jinxxy verification', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-
-      return ownerResult;
+      return await verifyLicenseWithAccessibleCredential(apiKey, licenseKey, ctx, ports);
     },
   };
 }

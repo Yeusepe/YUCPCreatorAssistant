@@ -135,7 +135,6 @@ describe('createLemonSqueezyProviderModule', () => {
       },
     ]);
   });
-
   it('loads tiers with a collaborator credential when the owner credential cannot access the product', async () => {
     const calls: Array<{ apiToken: string; productId: string }> = [];
     const module = createLemonSqueezyProviderModule({
