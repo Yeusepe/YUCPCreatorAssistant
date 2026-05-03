@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ComponentPropsWithoutRef, PropsWithChildren, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { RuntimeConfigProvider } from '@/lib/runtimeConfig';
 import { BILLING_CAPABILITY_KEYS } from '../../../../convex/lib/billingCapabilities';
 
 type MockLinkProps = ComponentPropsWithoutRef<'a'> & {
@@ -114,7 +115,7 @@ import * as packagesApi from '@/lib/packages';
 import DashboardBilling from '@/routes/_authenticated/dashboard/billing.lazy';
 import DashboardCertificates from '@/routes/_authenticated/dashboard/certificates.lazy';
 
-function createWrapper() {
+function createWrapper({ privateVpmEnabled = true }: { privateVpmEnabled?: boolean } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -124,7 +125,18 @@ function createWrapper() {
   });
 
   return function Wrapper({ children }: PropsWithChildren) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    return (
+      <RuntimeConfigProvider
+        value={{
+          automaticSetupEnabled: false,
+          browserAuthBaseUrl: 'https://app.example.com',
+          buildId: 'test-build',
+          privateVpmEnabled,
+        }}
+      >
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </RuntimeConfigProvider>
+    );
   };
 }
 
@@ -336,11 +348,13 @@ describe('dashboard billing and certificates routes', () => {
   it('keeps the billing route branded for the creator suite instead of only code signing', async () => {
     render(<DashboardBilling />, { wrapper: createWrapper() });
 
-    await waitFor(() => expect(screen.getByText('Plans & Billing')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Your work, protected from studio to shelf.')).toBeInTheDocument()
+    );
 
     expect(screen.queryByText('Code Signing Billing')).not.toBeInTheDocument();
-    expect(screen.getByText('Protected exports')).toBeInTheDocument();
-    expect(screen.getByText('Moderation lookup')).toBeInTheDocument();
+    expect(screen.getAllByText('Protected exports').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Moderation lookup').length).toBeGreaterThan(0);
   });
 
   it('keeps billing purchase actions off the certificates route', async () => {
@@ -354,7 +368,7 @@ describe('dashboard billing and certificates routes', () => {
   });
 
   it('renders the package registry inside the certificates route', async () => {
-    render(<DashboardCertificates />, { wrapper: createWrapper() });
+    render(<DashboardCertificates />, { wrapper: createWrapper({ privateVpmEnabled: true }) });
 
     await waitFor(() => expect(screen.getByText('Package Registry')).toBeInTheDocument());
     expect(
@@ -362,6 +376,14 @@ describe('dashboard billing and certificates routes', () => {
         'Package identity lives beside certificates. Keep stable package IDs, rename them for humans, and reuse them across Unity projects.'
       )
     ).toBeInTheDocument();
+  });
+
+  it('hides the package registry when the private VPM feature flag is disabled', async () => {
+    render(<DashboardCertificates />, { wrapper: createWrapper({ privateVpmEnabled: false }) });
+
+    await waitFor(() => expect(screen.getByText('Code Signing Certificates')).toBeInTheDocument());
+    expect(screen.queryByText('Package Registry')).not.toBeInTheDocument();
+    expect(screen.queryByText('Custom VPM repo required')).not.toBeInTheDocument();
   });
 
   it('hides the package registry behind the Polar feature flag when the VPM repo benefit is absent', async () => {
@@ -390,7 +412,7 @@ describe('dashboard billing and certificates routes', () => {
       meters: [],
     });
 
-    render(<DashboardCertificates />, { wrapper: createWrapper() });
+    render(<DashboardCertificates />, { wrapper: createWrapper({ privateVpmEnabled: true }) });
 
     await waitFor(() => expect(screen.getByText('Custom VPM repo required')).toBeInTheDocument());
     expect(screen.queryByText('Package Registry')).not.toBeInTheDocument();

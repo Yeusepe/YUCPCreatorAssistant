@@ -9,6 +9,7 @@ import { PackageRegistryPanel } from '@/components/dashboard/PackageRegistryPane
 import { useActiveDashboardContext } from '@/hooks/useActiveDashboardContext';
 import { isDashboardAuthError, useDashboardSession } from '@/hooks/useDashboardSession';
 import { hasActiveCreatorBillingCapability, listCreatorCertificates } from '@/lib/certificates';
+import { useRuntimeConfig } from '@/lib/runtimeConfig';
 import { BILLING_CAPABILITY_KEYS } from '../../../../../../convex/lib/billingCapabilities';
 
 function DashboardPackagesLoadingShell() {
@@ -25,6 +26,28 @@ function DashboardPackagesPending() {
   return <DashboardPackagesLoadingShell />;
 }
 
+function PackageRegistryFeatureDisabledState() {
+  return (
+    <div id="tab-panel-packages" className="dashboard-tab-panel is-active" role="tabpanel">
+      <div className="bento-grid">
+        <section className="intg-card animate-in bento-col-12">
+          <div className="intg-header">
+            <div className="intg-icon">
+              <img src="/Icons/Library.png" alt="" aria-hidden="true" />
+            </div>
+            <div className="intg-copy">
+              <h1 className="intg-title">Package registry unavailable</h1>
+              <p className="intg-desc">
+                Private VPM packages are behind a feature flag and disabled in this environment.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 export const Route = createLazyFileRoute('/_authenticated/dashboard/packages')({
   pendingComponent: DashboardPackagesPending,
   component: DashboardPackages,
@@ -38,10 +61,11 @@ function noRetryOn4xx(failureCount: number, error: unknown): boolean {
 export default function DashboardPackages() {
   const { isPersonalDashboard } = useActiveDashboardContext();
   const { canRunPanelQueries, isAuthResolved, markSessionExpired, status } = useDashboardSession();
+  const { privateVpmEnabled = false } = useRuntimeConfig();
   const certificatesQuery = useQuery({
     queryKey: ['creator-certificates'],
     queryFn: listCreatorCertificates,
-    enabled: canRunPanelQueries && isPersonalDashboard,
+    enabled: privateVpmEnabled && canRunPanelQueries && isPersonalDashboard,
     retry: noRetryOn4xx,
   });
 
@@ -59,6 +83,10 @@ export default function DashboardPackages() {
     !isAuthResolved || (canRunPanelQueries && isPersonalDashboard && certificatesQuery.isLoading);
   const hasCapabilityQueryError =
     certificatesQuery.isError && !isDashboardAuthError(certificatesQuery.error);
+
+  if (!privateVpmEnabled) {
+    return <PackageRegistryFeatureDisabledState />;
+  }
 
   if (status === 'signed_out' || status === 'expired') {
     return (

@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RuntimeConfigProvider } from '@/lib/runtimeConfig';
 import { BILLING_CAPABILITY_KEYS } from '../../../../convex/lib/billingCapabilities';
 
 type MockLinkProps = ComponentPropsWithoutRef<'a'> & {
@@ -606,7 +607,7 @@ const requestBackstageRepoAccessMock = packagesApi.requestBackstageRepoAccess as
 const uploadBackstageReleaseFileDirectMock =
   packagesApi.uploadBackstageReleaseFileDirect as ReturnType<typeof vi.fn>;
 
-function createWrapper() {
+function createWrapper({ privateVpmEnabled = true }: { privateVpmEnabled?: boolean } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -616,7 +617,18 @@ function createWrapper() {
   });
 
   return function Wrapper({ children }: PropsWithChildren) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    return (
+      <RuntimeConfigProvider
+        value={{
+          automaticSetupEnabled: false,
+          browserAuthBaseUrl: 'https://app.example.com',
+          buildId: 'test-build',
+          privateVpmEnabled,
+        }}
+      >
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </RuntimeConfigProvider>
+    );
   };
 }
 
@@ -1571,10 +1583,28 @@ describe('dashboard packages route', () => {
       throw new Error('Packages route component is not defined');
     }
 
-    render(<Component />, { wrapper: createWrapper() });
+    render(<Component />, { wrapper: createWrapper({ privateVpmEnabled: true }) });
 
     await waitFor(() => expect(screen.getByText('Custom VPM repo required')).toBeInTheDocument());
     expect(screen.getByText('Upgrade billing')).toBeInTheDocument();
+    expect(listCreatorPackagesMock).not.toHaveBeenCalled();
+  });
+
+  it('hides the private VPM package route behind the feature flag by default', async () => {
+    const Component = PackagesRoute.options.component;
+    if (!Component) {
+      throw new Error('Packages route component is not defined');
+    }
+
+    render(<Component />, { wrapper: createWrapper({ privateVpmEnabled: false }) });
+
+    expect(screen.getByText('Package registry unavailable')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Private VPM packages are behind a feature flag and disabled in this environment.'
+      )
+    ).toBeInTheDocument();
+    expect(listCreatorCertificatesMock).not.toHaveBeenCalled();
     expect(listCreatorPackagesMock).not.toHaveBeenCalled();
   });
 

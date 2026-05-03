@@ -21,6 +21,7 @@ import {
   hasActiveCreatorBillingCapability,
   revokeCreatorCertificate,
 } from '@/lib/certificates';
+import { useRuntimeConfig } from '@/lib/runtimeConfig';
 import { BILLING_CAPABILITY_KEYS } from '../../../../../../convex/lib/billingCapabilities';
 
 function DashboardCertificatesPending() {
@@ -43,6 +44,7 @@ export default function DashboardCertificates() {
   const toast = useToast();
   const [pendingCertNonce, setPendingCertNonce] = useState<string | null>(null);
   const { isPersonalDashboard } = useActiveDashboardContext();
+  const { privateVpmEnabled = false } = useRuntimeConfig();
   const {
     billing,
     currentPlan,
@@ -321,26 +323,28 @@ export default function DashboardCertificates() {
           </div>
         </section>
 
-        {hasPackageRegistryCapabilityError ? (
-          <PackageRegistryAccessGate
-            className="intg-card animate-in animate-in-delay-3 bento-col-12"
-            mode="error"
-            isRetrying={query.isFetching}
-            onRetry={() => {
-              void query.refetch();
-            }}
-          />
-        ) : hasPackageRegistryAccess ? (
-          <PackageRegistryPanel
-            className="intg-card animate-in animate-in-delay-3 bento-col-12"
-            description="Package identity lives beside certificates. Keep stable package IDs, rename them for humans, and reuse them across Unity projects."
-          />
-        ) : (
-          <PackageRegistryAccessGate
-            className="intg-card animate-in animate-in-delay-3 bento-col-12"
-            mode="missing"
-          />
-        )}
+        {privateVpmEnabled ? (
+          hasPackageRegistryCapabilityError ? (
+            <PackageRegistryAccessGate
+              className="intg-card animate-in animate-in-delay-3 bento-col-12"
+              mode="error"
+              isRetrying={query.isFetching}
+              onRetry={() => {
+                void query.refetch();
+              }}
+            />
+          ) : hasPackageRegistryAccess ? (
+            <PackageRegistryPanel
+              className="intg-card animate-in animate-in-delay-3 bento-col-12"
+              description="Package identity lives beside certificates. Keep stable package IDs, rename them for humans, and reuse them across Unity projects."
+            />
+          ) : (
+            <PackageRegistryAccessGate
+              className="intg-card animate-in animate-in-delay-3 bento-col-12"
+              mode="missing"
+            />
+          )
+        ) : null}
       </div>
     </div>
   );

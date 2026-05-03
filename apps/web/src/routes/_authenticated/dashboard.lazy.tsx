@@ -17,6 +17,7 @@ import {
   getHyperdxSlowestNavigationPhase,
   recordHyperdxNavigationTrace,
 } from '@/lib/hyperdx';
+import { useRuntimeConfig } from '@/lib/runtimeConfig';
 import { type Guild } from '@/lib/server/dashboard';
 import { getServerIconUrl } from '@/lib/utils';
 import { BILLING_CAPABILITY_KEYS } from '../../../../../convex/lib/billingCapabilities';
@@ -471,11 +472,12 @@ function Sidebar({
   const { guild_id } = Route.useSearch();
   const _isPersonalDashboard = !guild_id;
   const { canRunPanelQueries } = useDashboardSession();
+  const { privateVpmEnabled = false } = useRuntimeConfig();
 
   const certificatesQuery = useQuery({
     queryKey: ['creator-certificates'],
     queryFn: listCreatorCertificates,
-    enabled: canRunPanelQueries && _isPersonalDashboard,
+    enabled: privateVpmEnabled && canRunPanelQueries && _isPersonalDashboard,
   });
 
   const hasForensicsCapability = hasActiveCreatorBillingCapability(
@@ -583,7 +585,7 @@ function Sidebar({
                 </svg>
                 Certificates
               </Link>
-              {hasVpmRepoCapability ? (
+              {privateVpmEnabled && hasVpmRepoCapability ? (
                 <Link
                   id="tab-btn-packages"
                   to="/dashboard/packages"
