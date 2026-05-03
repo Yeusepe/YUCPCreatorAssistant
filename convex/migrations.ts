@@ -13,6 +13,15 @@
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from './_generated/server';
+import { internal } from './_generated/api';
+import {
+  getYucpAliasPackageContract,
+  mergeYucpAliasPackageMetadata,
+} from '@yucp/shared';
+import {
+  buildSyntheticAliasMetadataSeed,
+  type CatalogProductAliasSource,
+} from './lib/backstageAliasMetadata';
 import { PII_PURPOSES } from './lib/credentialKeys';
 import { upsertLicenseSubjectLink } from './lib/licenseSubjectLink';
 import { encryptPii } from './lib/piiCrypto';
@@ -88,9 +97,23 @@ type SubjectOwnershipCandidate = {
   relatedVerificationBindings: SubjectOwnershipRelatedBinding[];
   repairable: boolean;
 };
+type BackstageAliasMetadataRemediationCandidate = {
+  deliveryPackageReleaseId: Id<'delivery_package_releases'>;
+  deliveryPackageId: Id<'delivery_packages'>;
+  authUserId: string;
+  packageId: string;
+  version: string;
+  channel: string;
+  aliasId?: string;
+  catalogProductIds: Array<Id<'product_catalog'>>;
+  productRefs: string[];
+  repairable: boolean;
+  reason: string;
+};
 
 const DEFAULT_BUYER_ATTRIBUTION_REPORT_LIMIT = 50;
 const DEFAULT_SUBJECT_OWNERSHIP_REPORT_LIMIT = 50;
+const DEFAULT_BACKSTAGE_ALIAS_METADATA_REPORT_LIMIT = 50;
 const REPORTABLE_BINDING_STATUSES = new Set<Doc<'bindings'>['status']>(['active', 'pending']);
 
 const LEGACY_TABLES = [
@@ -506,6 +529,122 @@ async function listSubjectOwnershipCandidates(
   };
 }
 
+async function buildBackstageAliasMetadataCandidate(
+  ctx: Pick<QueryCtx, 'db'>,
+  release: Doc<'delivery_package_releases'>,
+  deliveryPackage: Doc<'delivery_packages'> | null,
+  linkedCatalogProducts: ReadonlyArray<CatalogProductAliasSource>
+): Promise<BackstageAliasMetadataRemediationCandidate | null> {
+  if (
+    release.releaseStatus !== 'published' ||
+    !deliveryPackage ||
+    getYucpAliasPackageContract(release.metadata)
+  ) {
+    return null;
+  }
+
+  const aliasMetadataSeed = buildSyntheticAliasMetadataSeed(linkedCatalogProducts, release.channel);
+  const productRefs = linkedCatalogProducts
+    .map((product) => product.canonicalSlug ?? product.providerProductRef ?? undefined)
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+  return {
+    deliveryPackageReleaseId: release._id,
+    deliveryPackageId: release.deliveryPackageId,
+    authUserId: release.authUserId,
+    packageId: deliveryPackage.packageId,
+    version: release.version,
+    channel: release.channel,
+    aliasId: aliasMetadataSeed?.aliasId,
+    catalogProductIds: linkedCatalogProducts.map((product) => product._id as Id<'product_catalog'>),
+    productRefs,
+    repairable: aliasMetadataSeed !== undefined,
+    reason:
+      aliasMetadataSeed !== undefined
+        ? 'Missing alias metadata on a published release with recoverable catalog product links'
+        : productRefs.length > 0
+          ? 'Missing alias metadata but linked catalog products resolve to different alias ids'
+          : 'Missing alias metadata but no linked catalog product exposes a canonical slug or provider product reference',
+  };
+}
+
+async function listBackstageAliasMetadataCandidates(
+  ctx: Pick<QueryCtx, 'db'>,
+  limit: number
+) {
+  const releases = (await ctx.db.query('delivery_package_releases').collect()) as Doc<
+    'delivery_package_releases'
+  >[];
+  const deliveryPackageIds = Array.from(
+    new Set(releases.map((release) => String(release.deliveryPackageId)))
+  );
+  const deliveryPackages = (
+    await Promise.all(
+      deliveryPackageIds.map(async (deliveryPackageId) => {
+        return await ctx.db.get(deliveryPackageId as Id<'delivery_packages'>);
+      })
+    )
+  ).filter((deliveryPackage): deliveryPackage is Doc<'delivery_packages'> => deliveryPackage !== null);
+  const deliveryPackagesById = new Map(
+    deliveryPackages.map((deliveryPackage) => [String(deliveryPackage._id), deliveryPackage])
+  );
+
+  const activeLinks = ((await ctx.db.query('delivery_package_products').collect()) as Doc<
+    'delivery_package_products'
+  >[]).filter((link) => link.status === 'active');
+  const catalogProductIds = Array.from(new Set(activeLinks.map((link) => String(link.catalogProductId))));
+  const catalogProducts = (
+    await Promise.all(
+      catalogProductIds.map(async (catalogProductId) => {
+        return await ctx.db.get(catalogProductId as Id<'product_catalog'>);
+      })
+    )
+  ).filter((product): product is Doc<'product_catalog'> => product !== null);
+  const catalogProductsById = new Map(
+    catalogProducts.map((product) => [String(product._id), product])
+  );
+  const catalogProductsByDeliveryPackageId = new Map<string, CatalogProductAliasSource[]>();
+  for (const link of activeLinks) {
+    const linkedCatalogProduct = catalogProductsById.get(String(link.catalogProductId));
+    if (!linkedCatalogProduct) {
+      continue;
+    }
+    const existingProducts = catalogProductsByDeliveryPackageId.get(String(link.deliveryPackageId)) ?? [];
+    existingProducts.push(linkedCatalogProduct);
+    catalogProductsByDeliveryPackageId.set(String(link.deliveryPackageId), existingProducts);
+  }
+
+  const candidates = (
+    await Promise.all(
+      releases.map(async (release) =>
+        await buildBackstageAliasMetadataCandidate(
+          ctx,
+          release,
+          deliveryPackagesById.get(String(release.deliveryPackageId)) ?? null,
+          catalogProductsByDeliveryPackageId.get(String(release.deliveryPackageId)) ?? []
+        )
+      )
+    )
+  )
+    .filter((candidate): candidate is BackstageAliasMetadataRemediationCandidate => candidate !== null)
+    .sort(
+      (left, right) =>
+        left.packageId.localeCompare(right.packageId) ||
+        left.version.localeCompare(right.version) ||
+        String(left.deliveryPackageReleaseId).localeCompare(String(right.deliveryPackageReleaseId))
+    );
+
+  return {
+    scannedAt: Date.now(),
+    summary: {
+      candidateReleases: candidates.length,
+      repairableReleases: candidates.filter((candidate) => candidate.repairable).length,
+      skippedDueToLimit: Math.max(0, candidates.length - limit),
+    },
+    candidates: candidates.slice(0, limit),
+  };
+}
+
 async function repairBuyerAttributionBindingIds(
   ctx: Pick<MutationCtx, 'db'>,
   bindingIds: readonly Id<'bindings'>[]
@@ -798,6 +937,23 @@ export const migrateLegacyLicenseSubjectLinks = internalMutation({
 });
 
 /**
+ * Detection-first remediation report for published Backstage releases that were
+ * stored before alias metadata synthesis existed.
+ */
+export const listBackstageAliasMetadataRemediationCandidates = internalQuery({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const requestedLimit = args.limit ?? DEFAULT_BACKSTAGE_ALIAS_METADATA_REPORT_LIMIT;
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(500, Math.trunc(requestedLimit)))
+      : DEFAULT_BACKSTAGE_ALIAS_METADATA_REPORT_LIMIT;
+    return await listBackstageAliasMetadataCandidates(ctx, limit);
+  },
+});
+
+/**
  * Detection-first remediation report for buyer verification records that were
  * historically attributed to the creator auth user instead of the buyer.
  */
@@ -841,6 +997,93 @@ export const repairBuyerAttributionCandidates = internalMutation({
     bindingIds: v.array(v.id('bindings')),
   },
   handler: async (ctx, args) => await repairBuyerAttributionBindingIds(ctx, args.bindingIds),
+});
+
+/**
+ * Explicit, opt-in repair for selected published Backstage releases that are
+ * missing the synthesized alias metadata contract.
+ */
+export const repairBackstageAliasMetadataCandidates = internalMutation({
+  args: {
+    releaseIds: v.array(v.id('delivery_package_releases')),
+  },
+  handler: async (ctx, args) => {
+    const uniqueReleaseIds = Array.from(new Set(args.releaseIds));
+    const skippedReleases: Array<{
+      deliveryPackageReleaseId: Id<'delivery_package_releases'>;
+      reason: string;
+    }> = [];
+    let repairedReleases = 0;
+
+    for (const releaseId of uniqueReleaseIds) {
+      const release = (await ctx.db.get(releaseId)) as Doc<'delivery_package_releases'> | null;
+      if (!release) {
+        skippedReleases.push({
+          deliveryPackageReleaseId: releaseId,
+          reason: 'Release no longer exists',
+        });
+        continue;
+      }
+      if (release.releaseStatus !== 'published') {
+        skippedReleases.push({
+          deliveryPackageReleaseId: releaseId,
+          reason: `Release status ${release.releaseStatus} is not repairable`,
+        });
+        continue;
+      }
+      if (getYucpAliasPackageContract(release.metadata)) {
+        skippedReleases.push({
+          deliveryPackageReleaseId: releaseId,
+          reason: 'Release already has alias metadata',
+        });
+        continue;
+      }
+
+      const activeLinks = ((await ctx.db
+        .query('delivery_package_products')
+        .withIndex('by_auth_user', (q) => q.eq('authUserId', release.authUserId))
+        .collect()) as Doc<'delivery_package_products'>[]).filter(
+        (link) =>
+          link.status === 'active' && String(link.deliveryPackageId) === String(release.deliveryPackageId)
+      );
+      const linkedCatalogProducts = (
+        await Promise.all(activeLinks.map(async (link) => await ctx.db.get(link.catalogProductId)))
+      ).filter((product): product is Doc<'product_catalog'> => product !== null);
+      const aliasMetadataSeed = buildSyntheticAliasMetadataSeed(linkedCatalogProducts, release.channel);
+      if (!aliasMetadataSeed) {
+        skippedReleases.push({
+          deliveryPackageReleaseId: releaseId,
+          reason:
+            linkedCatalogProducts.some(
+              (product) => (product.canonicalSlug ?? product.providerProductRef)?.trim()
+            )
+              ? 'Linked catalog products resolve to different alias ids'
+              : 'No linked catalog product exposes a canonical slug or provider product reference',
+        });
+        continue;
+      }
+
+      await ctx.db.patch(releaseId, {
+        metadata: mergeYucpAliasPackageMetadata({
+          metadata: release.metadata,
+          aliasId: aliasMetadataSeed.aliasId,
+          catalogProductIds: aliasMetadataSeed.catalogProductIds,
+          channel: aliasMetadataSeed.channel,
+        }),
+        updatedAt: Date.now(),
+      });
+      await ctx.scheduler.runAfter(0, internal.releaseArtifacts.repairMaterializedReleaseDeliverable, {
+        deliveryPackageReleaseId: releaseId,
+        apply: true,
+      });
+      repairedReleases += 1;
+    }
+
+    return {
+      repairedReleases,
+      skippedReleases,
+    };
+  },
 });
 
 /**

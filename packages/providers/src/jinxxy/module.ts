@@ -7,6 +7,7 @@ import type {
   ProviderPurposes,
   ProviderRuntimeClient,
   ProviderRuntimeModule,
+  ProviderTierRecord,
 } from '../contracts';
 import { JinxxyApiClient } from './client';
 import { JinxxyApiError } from './types';
@@ -52,11 +53,21 @@ type JinxxyRuntimeLogger = Pick<StructuredLogger, 'warn'>;
 
 interface JinxxyClientLike {
   getProducts(params: { page: number; per_page: number }): Promise<{
-    products: Array<{ id: string; name: string }>;
+    products: Array<{
+      id: string;
+      name: string;
+      external_url?: string;
+      thumbnail_url?: string;
+      url?: string;
+    }>;
     pagination?: { has_next?: boolean };
   }>;
   getProduct(productId: string): Promise<{
     id: string;
+    external_url?: string;
+    name?: string;
+    thumbnail_url?: string;
+    url?: string;
     versions?: Array<{
       id: string;
       name: string;
@@ -131,21 +142,100 @@ type JinxxyVerificationClientResult = {
   } | null;
 };
 
+function normalizeJinxxyCanonicalSlugFromUrl(
+  value: string | undefined,
+  productId: string
+): string | undefined {
+  const normalizedProductId = productId.trim().toLowerCase();
+  const normalizedValue = value?.trim();
+  if (!normalizedValue) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(normalizedValue);
+    const slug = parsed.pathname
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+      .at(-1)
+      ?.toLowerCase();
+    if (!slug || slug === normalizedProductId) {
+      return undefined;
+    }
+    return slug;
+  } catch {
+    return undefined;
+  }
+}
+
+async function enrichJinxxyProductIdentity(input: {
+  client: JinxxyClientLike;
+  detailCache: Map<string, Promise<Awaited<ReturnType<JinxxyClientLike['getProduct']>>>>;
+  product: Awaited<ReturnType<JinxxyClientLike['getProducts']>>['products'][number];
+}): Promise<ProductRecord> {
+  const { client, detailCache, product } = input;
+  const listedProductUrl = product.url?.trim();
+  const listedThumbnailUrl = product.thumbnail_url?.trim();
+  const listedCanonicalSlug =
+    normalizeJinxxyCanonicalSlugFromUrl(product.external_url, product.id) ??
+    normalizeJinxxyCanonicalSlugFromUrl(listedProductUrl, product.id);
+  let detail = null;
+  if (!listedProductUrl || !listedCanonicalSlug || !listedThumbnailUrl) {
+    const cachedDetail =
+      detailCache.get(product.id) ?? client.getProduct(product.id).then((result) => result ?? null);
+    detailCache.set(product.id, cachedDetail);
+    detail = await cachedDetail;
+  }
+
+  const productUrl = detail?.url?.trim() ?? listedProductUrl;
+  const thumbnailUrl = detail?.thumbnail_url?.trim() ?? listedThumbnailUrl;
+  const canonicalSlug =
+    normalizeJinxxyCanonicalSlugFromUrl(detail?.external_url, product.id) ??
+    normalizeJinxxyCanonicalSlugFromUrl(detail?.url, product.id) ??
+    listedCanonicalSlug ??
+    normalizeJinxxyCanonicalSlugFromUrl(productUrl, product.id);
+
+  return {
+    id: product.id,
+    name: product.name,
+    ...(canonicalSlug ? { canonicalSlug } : {}),
+    ...(productUrl ? { productUrl } : {}),
+    ...(thumbnailUrl ? { thumbnailUrl } : {}),
+  };
+}
+
 async function listProductsForKey(
   apiKey: string,
-  ports: JinxxyRuntimePorts
-): Promise<Array<{ id: string; name: string }>> {
+  ports: JinxxyRuntimePorts,
+  detailCache: Map<string, Promise<Awaited<ReturnType<JinxxyClientLike['getProduct']>>>>
+): Promise<ProductRecord[]> {
   const client = getClient(ports, apiKey);
-  const products: Array<{ id: string; name: string }> = [];
+  const products: ProductRecord[] = [];
   let page = 1;
   while (page <= HARD_PAGE_LIMIT) {
     const { products: pageProducts, pagination } = await client.getProducts({
       page,
       per_page: 50,
     });
+    /**
+     * Jinxxy docs:
+     * - List products: https://api.creators.jinxxy.com/v1/docs#tag/products/GET/products
+     * - Get product: https://api.creators.jinxxy.com/v1/docs#tag/products/GET/products/{id}
+     *
+     * The list endpoint is documented to return sparse product rows, while the detail endpoint
+     * returns the canonical product URL. We enrich sparse rows here so catalog sync can persist
+     * a real alias id instead of falling back to the provider-local product ref.
+     */
     for (const product of pageProducts) {
       if (product.id && product.name) {
-        products.push({ id: product.id, name: product.name });
+        products.push(
+          await enrichJinxxyProductIdentity({
+            client,
+            detailCache,
+            product,
+          })
+        );
       }
     }
     if (!pagination?.has_next || pageProducts.length < 50) {
@@ -288,6 +378,31 @@ async function getProductForTiers(
 export function createJinxxyLicenseVerification<
   TClient extends ProviderRuntimeClient = ProviderRuntimeClient,
 >(ports: JinxxyRuntimePorts<TClient>): LicenseVerificationPlugin<TClient> {
+  async function verifyWithApiKey(
+    apiKey: string,
+    licenseKey: string
+  ): Promise<{
+    valid: boolean;
+    externalOrderId?: string;
+    providerUserId?: string;
+    providerProductId?: string;
+    error?: string;
+  }> {
+    const client = getClient(ports, apiKey);
+    const result = client.verifyLicenseWithBuyerByKey
+      ? await client.verifyLicenseWithBuyerByKey(licenseKey)
+      : await client.verifyLicenseByKey(licenseKey);
+
+    return {
+      valid: result.valid,
+      externalOrderId:
+        result.externalOrderId ?? result.license?.order_id ?? result.license?.id ?? undefined,
+      providerUserId: result.providerUserId ?? result.license?.customer_id ?? undefined,
+      providerProductId: result.providerProductId ?? result.license?.product_id ?? undefined,
+      error: result.error ?? undefined,
+    };
+  }
+
   return {
     async verifyLicense(licenseKey, _productId, authUserId, ctx) {
       const encryptedApiKey = await ports.getEncryptedCredential(authUserId, ctx);
@@ -325,7 +440,11 @@ export function createJinxxyProviderModule<
         return [];
       }
 
-      const products: ProductRecord[] = await listProductsForKey(credential, ports);
+      const detailCache = new Map<
+        string,
+        Promise<Awaited<ReturnType<JinxxyClientLike['getProduct']>>>
+      >();
+      const products: ProductRecord[] = await listProductsForKey(credential, ports, detailCache);
 
       try {
         const collabConnections = await ports.listCollaboratorConnections(ctx);
@@ -335,7 +454,7 @@ export function createJinxxyProviderModule<
           }
           try {
             const collabKey = await ports.decryptCredential(collab.credentialEncrypted, ctx);
-            const collabProducts = await listProductsForKey(collabKey, ports);
+            const collabProducts = await listProductsForKey(collabKey, ports, detailCache);
             for (const product of collabProducts) {
               products.push({
                 ...product,
@@ -365,7 +484,7 @@ export function createJinxxyProviderModule<
       });
     },
     tiers: {
-      async listProductTiers(credential, productId, ctx) {
+      async listProductTiers(credential, productId, ctx): Promise<ProviderTierRecord[]> {
         if (!credential) {
           return [];
         }

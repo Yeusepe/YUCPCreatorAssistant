@@ -204,6 +204,9 @@ function normalizeProductsResponse(
       name: product?.name,
       collaboratorName: product?.collaboratorName,
       productUrl: product?.productUrl,
+      thumbnailUrl: product?.thumbnailUrl,
+      canonicalSlug: product?.canonicalSlug,
+      aliases: product?.aliases,
     })),
     error: payload?.error,
   };
@@ -231,7 +234,7 @@ function normalizeTiersResponse(payload: Partial<TiersResponse> | null | undefin
       description: tier?.description,
       amountCents: normalizeOptionalInt64(tier?.amountCents),
       currency: tier?.currency,
-      active: tier?.active ?? false,
+      active: typeof tier?.active === 'boolean' ? tier.active : undefined,
     })),
     error: payload?.error,
   };

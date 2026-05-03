@@ -1,0 +1,26 @@
+import { apiClient } from '@/api/client';
+import type { BuyerProductAccessResponse } from '@/lib/productAccessTypes';
+
+export interface BuyerProductAccessVerificationIntent {
+  verificationUrl: string;
+}
+
+export function buildBuyerProductAccessPath(catalogProductId: string): string {
+  return `/access/${encodeURIComponent(catalogProductId)}`;
+}
+
+export async function getBuyerProductAccess(catalogProductId: string) {
+  return apiClient.get<BuyerProductAccessResponse>(
+    `/api/connect/user/product-access/${encodeURIComponent(catalogProductId)}`
+  );
+}
+
+export async function createBuyerProductAccessVerificationIntent(
+  catalogProductId: string,
+  input?: { returnTo?: string }
+) {
+  return apiClient.post<BuyerProductAccessVerificationIntent>(
+    `/api/connect/user/product-access/${encodeURIComponent(catalogProductId)}`,
+    input ?? {}
+  );
+}

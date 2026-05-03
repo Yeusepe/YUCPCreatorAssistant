@@ -33,7 +33,7 @@
     "contracts:check": "bun run --filter @yucp/private-rpc check:generated",
     "typecheck": "bun run contracts:check && tsc -b tsconfig.solution.json --pretty false && bun run --filter '@yucp/api' typecheck && bun run --filter '@yucp/bot' typecheck && bun run --filter '@yucp/web' typecheck",
     "test": "bun run test:fast",
-    "test:ops": "bun test ./ops/dev-supervisor.test.ts ./ops/convex-infisical-env.test.ts ./ops/convex-better-auth-compat.test.ts ./ops/web-vite-config.contract.test.ts ./ops/buyer-attribution-remediation.test.ts ./ops/subject-ownership-remediation.test.ts ./ops/provider-live-smoke.test.ts ./ops/production-regression-loop.test.ts",
+    "test:ops": "bun test ./ops/dev-supervisor.test.ts ./ops/convex-infisical-env.test.ts ./ops/convex-better-auth-compat.test.ts ./ops/web-vite-config.contract.test.ts ./ops/publish-backstage-package.test.ts ./ops/test-backstage-repo.test.ts ./ops/buyer-attribution-remediation.test.ts ./ops/subject-ownership-remediation.test.ts ./ops/provider-live-smoke.test.ts ./ops/production-regression-loop.test.ts",
     "test:external-integrations": "bun run ops/test-external-integrations.ts",
     "test:fast": "bun run test:ops && bun run --filter '@yucp/api' test && bun run --filter '@yucp/application' test && bun run --filter '@yucp/policy' test && bun run --filter '@yucp/providers' test && bun run --filter '@yucp/shared' test",
     "test:convex": "bun x vitest run --config convex/vitest.config.ts",
@@ -50,6 +50,7 @@
     "test:bot:e2e:ci": "bun run --filter '@yucp/bot' test:e2e:ci",
     "capture:discord-storage": "tsx ops/capture-discord-storage-state.ts",
     "ops:buyer-attribution-remediation": "bun run ops/buyer-attribution-remediation.ts",
+    "ops:backstage-deliverable-remediation": "bun run ops/backstage-deliverable-remediation.ts",
     "ops:subject-ownership-remediation": "bun run ops/subject-ownership-remediation.ts",
     "build:docs:index": "bun run --filter @yucp/api build:docs:index",
     "build": "bun run --filter '*' build",
@@ -61,6 +62,7 @@
     "sync:convex:env:prod": "bun run --env-file=.env.infisical ops/sync-convex-env.ts --prod",
     "smoke:providers": "bun run ops/provider-live-smoke.ts",
     "smoke:providers:refresh-fixtures": "bun run ops/provider-live-smoke.ts --refresh-fixtures",
+    "smoke:backstage-repo": "bun run ops/test-backstage-repo.ts",
     "infisical:convex": "bun run --env-file=.env.infisical ops/infisical-convex-run.ts",
     "infisical:convex:prod": "bun run --env-file=.env.infisical ops/infisical-convex-run.ts --prod",
     "dev:api": "cross-env FRONTEND_URL=http://localhost:3000 bun run --watch apps/api/src/index.ts",
@@ -74,7 +76,8 @@
     "start:api:infisical": "cross-env INFISICAL_ENV=prod bun run --filter @yucp/api start",
     "start:bot:infisical": "cross-env INFISICAL_ENV=prod bun run --filter @yucp/bot start",
     "start:web": "bun run --filter @yucp/web preview",
-    "start:all": "concurrently -k \"bun run start:api:infisical\" \"bun run start:bot:infisical\" \"bun run start:web\""
+    "start:all": "concurrently -k \"bun run start:api:infisical\" \"bun run start:bot:infisical\" \"bun run start:web\"",
+    "publish:backstage-package": "tsx ops/publish-backstage-package.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
@@ -105,6 +108,7 @@
     "@better-auth/passkey": "1.6.5",
     "@convex-dev/better-auth": "^0.11.0",
     "@noble/ed25519": "^2.2.3",
+    "@noble/hashes": "^2.0.1",
     "@polar-sh/better-auth": "^1.8.3",
     "@polar-sh/sdk": "^0.46.6",
     "@tempojs/client": "^0.0.12",
@@ -123,5 +127,27 @@
   "patchedDependencies": {
     "@convex-dev/better-auth@0.11.4": "patches/@convex-dev%2Fbetter-auth@0.11.4.patch",
     "@tanstack/start-server-core@1.167.1": "patches/@tanstack%2Fstart-server-core@1.167.1.patch"
-  }
+  },
+  "trustedDependencies": [
+    "heroui-pro",
+    "@heroui-pro/react",
+    "heroui-native-pro"
+  ],
+  "description": "![YUCP Creator Assistant](https://github.com/user-attachments/assets/592a7c28-0bec-4673-9a43-0656d2a9ca6c)",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yeusepe/YUCP-Creator-Assistant.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Yeusepe/YUCP-Creator-Assistant/issues"
+  },
+  "homepage": "https://github.com/Yeusepe/YUCP-Creator-Assistant#readme"
 }

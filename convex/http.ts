@@ -85,7 +85,6 @@ import {
   signLicenseJwt,
   signPackageCertificateData,
   signYucpTrustBundleJwt,
-  verifyCertEnvelope,
   verifyCertEnvelopeAgainstPinnedRoots,
 } from './lib/yucpCrypto';
 import { handleOAuthAuthorizationServerMetadata } from './oauthDiscovery';
@@ -136,6 +135,7 @@ const PROXY_REQUEST_HEADER_ALLOWLIST = new Set([
   'traceparent',
   'tracestate',
   'x-request-id',
+  'x-yucp-repo-token',
 ]);
 const PROXY_RESPONSE_HEADER_ALLOWLIST = new Set([
   'cache-control',
@@ -789,7 +789,7 @@ http.route({
     const tenantDuration = performance.now() - tenantStart;
     if (!tenant) {
       console.log(`[products] No creator profile found for user ${tokenResult.yucpUserId}`);
-      return errorResponse('Creator account not found', 404);
+      return errorResponse('Creator Identity not found', 404);
     }
 
     const productSources = new Map<string, string | null>();
@@ -945,6 +945,30 @@ http.route({
     } catch {
       return errorResponse('Service not configured', 503);
     }
+  }),
+});
+
+http.route({
+  method: 'GET',
+  path: '/v1/backstage/repos/access',
+  handler: httpAction(async (_ctx, request) => {
+    return await proxyToPublicApi(request, '/v1/backstage/repos/access');
+  }),
+});
+
+http.route({
+  method: 'GET',
+  path: '/v1/backstage/repos/index.json',
+  handler: httpAction(async (_ctx, request) => {
+    return await proxyToPublicApi(request, '/v1/backstage/repos/index.json');
+  }),
+});
+
+http.route({
+  method: 'GET',
+  path: '/v1/backstage/package',
+  handler: httpAction(async (_ctx, request) => {
+    return await proxyToPublicApi(request, '/v1/backstage/package');
   }),
 });
 
@@ -1716,7 +1740,7 @@ http.route({
     const creatorProfile = await ctx.runQuery(internal.yucpLicenses.getTenantByAuthUser, {
       ownerAuthUserId: creatorAuthUserId,
     });
-    if (!creatorProfile) return errorResponse('Creator account not found', 404);
+    if (!creatorProfile) return errorResponse('Creator Identity not found', 404);
 
     // Check for an active entitlement
     const hasEntitlement = await ctx.runQuery(internal.yucpLicenses.checkSubjectEntitlement, {
@@ -1832,109 +1856,6 @@ http.route({
   }),
 });
 
-http.route({
-  method: 'POST',
-  path: '/v1/licenses/protected-materialization-grant',
-  handler: httpAction(async (_ctx, request) => {
-    const rateLimitResponse = await applyHttpRateLimit(_ctx, request, 'materialization-grant', {
-      limit: 60,
-      message: 'Too many protected materialization grant requests. Please wait before retrying.',
-    });
-    if (rateLimitResponse) return rateLimitResponse;
-    return await proxyToPublicApi(request, '/v1/licenses/protected-materialization-grant');
-  }),
-});
-
-http.route({
-  method: 'POST',
-  path: '/v1/licenses/protected-materialization-redeem',
-  handler: httpAction(async (ctx, request) => {
-    let body: { grant: string };
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return errorResponse('Invalid JSON body', 400);
-    }
-
-    if (!body?.grant) {
-      return errorResponse('grant is required', 400);
-    }
-    const rateLimitResponse = await applyHttpRateLimit(ctx, request, 'materialization-redeem', {
-      limit: 60,
-      message:
-        'Too many protected materialization redemption requests. Please wait before retrying.',
-      identity: body.grant,
-    });
-    if (rateLimitResponse) return rateLimitResponse;
-
-    const publicIssuerBaseUrl = resolveConfiguredPublicApiBaseUrl();
-    if (!publicIssuerBaseUrl) return errorResponse('Service not configured', 503);
-
-    const result = await ctx.runAction(internal.yucpLicenses.redeemProtectedMaterializationGrant, {
-      grant: body.grant,
-      issuerBaseUrl: publicIssuerBaseUrl,
-    });
-
-    if (!result.success) {
-      return jsonResponse({ error: result.error }, 422);
-    }
-
-    return jsonResponse({
-      success: true,
-      grantId: result.grantId,
-      packageId: result.packageId,
-      protectedAssetId: result.protectedAssetId,
-      machineFingerprint: result.machineFingerprint,
-      projectId: result.projectId,
-      licenseSubject: result.licenseSubject,
-      contentKeyBase64: result.contentKeyBase64,
-      contentHash: result.contentHash,
-      couplingJobs: result.couplingJobs ?? [],
-      skipReason: result.skipReason,
-      expiresAt: result.expiresAt,
-    });
-  }),
-});
-
-http.route({
-  method: 'POST',
-  path: '/v1/licenses/protected-materialization-receipt',
-  handler: httpAction(async (ctx, request) => {
-    let body: { grant: string };
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return errorResponse('Invalid JSON body', 400);
-    }
-
-    if (!body?.grant) {
-      return errorResponse('grant is required', 400);
-    }
-    const rateLimitResponse = await applyHttpRateLimit(ctx, request, 'materialization-receipt', {
-      limit: 60,
-      message: 'Too many protected materialization receipt requests. Please wait before retrying.',
-      identity: body.grant,
-    });
-    if (rateLimitResponse) return rateLimitResponse;
-
-    const result = await ctx.runMutation(
-      internal.yucpLicenses.receiptProtectedMaterializationGrant,
-      {
-        grant: body.grant,
-      }
-    );
-
-    if (!result.success) {
-      return jsonResponse({ error: result.error }, 422);
-    }
-
-    return jsonResponse({
-      success: true,
-      updatedCount: result.updatedCount,
-    });
-  }),
-});
-
 // POST /v1/licenses/revoke-grant, revoke a protected materialization grant (admin/CONVEX_API_SECRET)
 // NOTE: revocation is forward-looking only. It cannot claw back already-materialized plaintext.
 http.route({
@@ -1968,71 +1889,6 @@ http.route({
     }
 
     return jsonResponse({ success: true });
-  }),
-});
-
-http.route({
-  method: 'GET',
-  path: '/v1/runtime-artifacts/manifest',
-  handler: httpAction(async (_ctx, request) => {
-    const rateLimitResponse = await applyHttpRateLimit(_ctx, request, 'runtime-manifest', {
-      limit: 60,
-      message: 'Too many runtime manifest requests. Please wait before retrying.',
-    });
-    if (rateLimitResponse) return rateLimitResponse;
-    return await proxyToPublicApi(request, '/v1/runtime-artifacts/manifest');
-  }),
-});
-
-http.route({
-  method: 'POST',
-  path: '/v1/licenses/runtime-package-token',
-  handler: httpAction(async (_ctx, request) => {
-    const rateLimitResponse = await applyHttpRateLimit(_ctx, request, 'runtime-package-token', {
-      limit: 60,
-      message: 'Too many runtime package token requests. Please wait before retrying.',
-    });
-    if (rateLimitResponse) return rateLimitResponse;
-    return await proxyToPublicApi(request, '/v1/licenses/runtime-package-token');
-  }),
-});
-
-http.route({
-  method: 'POST',
-  path: '/v1/licenses/coupling-job',
-  handler: httpAction(async (_ctx, request) => {
-    const rateLimitResponse = await applyHttpRateLimit(_ctx, request, 'coupling-job', {
-      limit: 60,
-      message: 'Too many coupling job requests. Please wait before retrying.',
-    });
-    if (rateLimitResponse) return rateLimitResponse;
-    return await proxyToPublicApi(request, '/v1/licenses/coupling-job');
-  }),
-});
-
-http.route({
-  method: 'GET',
-  path: '/v1/licenses/runtime-package',
-  handler: httpAction(async (_ctx, request) => {
-    const rateLimitResponse = await applyHttpRateLimit(_ctx, request, 'runtime-package', {
-      limit: 120,
-      message: 'Too many runtime package download requests. Please wait before retrying.',
-    });
-    if (rateLimitResponse) return rateLimitResponse;
-    return await proxyToPublicApi(request, '/v1/licenses/runtime-package');
-  }),
-});
-
-http.route({
-  method: 'GET',
-  path: '/v1/licenses/coupling-runtime',
-  handler: httpAction(async (_ctx, request) => {
-    const rateLimitResponse = await applyHttpRateLimit(_ctx, request, 'coupling-runtime', {
-      limit: 120,
-      message: 'Too many coupling runtime download requests. Please wait before retrying.',
-    });
-    if (rateLimitResponse) return rateLimitResponse;
-    return await proxyToPublicApi(request, '/v1/licenses/coupling-runtime');
   }),
 });
 
