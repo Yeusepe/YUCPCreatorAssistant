@@ -218,7 +218,9 @@ describe('DELETE /api/collab/connections/as-collaborator/:id (auth guard)', () =
     const res = await routes.handleCollabRequest(req);
     expect(res.status).toBe(200);
     expect(mutationCalls).toHaveLength(1);
-    expect(mutationCalls[0][0]).toBe(apiMock.collaboratorInvites.removeCollaboratorConnectionAsCollaborator);
+    expect(mutationCalls[0][0]).toBe(
+      apiMock.collaboratorInvites.removeCollaboratorConnectionAsCollaborator
+    );
     expect(mutationCalls[0][1]).toMatchObject({
       apiSecret: 'test-convex-secret',
       authUserId: 'user-test-004',

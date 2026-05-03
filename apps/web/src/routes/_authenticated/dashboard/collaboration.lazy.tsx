@@ -1,6 +1,6 @@
+import { Button } from '@heroui/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createLazyFileRoute } from '@tanstack/react-router';
-import { Button } from '@heroui/react';
 import { Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DashboardAuthRequiredState } from '@/components/dashboard/AuthRequiredState';
@@ -112,7 +112,10 @@ function HoldToRemoveButton({
       if (holdStartRef.current === null) {
         return;
       }
-      const nextProgress = Math.min(((Date.now() - holdStartRef.current) / HOLD_TO_REMOVE_MS) * 100, 100);
+      const nextProgress = Math.min(
+        ((Date.now() - holdStartRef.current) / HOLD_TO_REMOVE_MS) * 100,
+        100
+      );
       setProgress(nextProgress);
     }, 16);
     holdTimeoutRef.current = window.setTimeout(() => {
@@ -165,7 +168,11 @@ function HoldToRemoveButton({
       <span
         className={`relative z-10 inline-flex items-center gap-1.5${holding || isPending ? ' text-danger-foreground' : ''}`}
       >
-        {isPending ? <span className="btn-loading-spinner" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+        {isPending ? (
+          <span className="btn-loading-spinner" aria-hidden="true" />
+        ) : (
+          <Trash2 size={14} aria-hidden="true" />
+        )}
         <span>{isPending ? 'Leaving...' : holding ? 'Keep holding...' : 'Hold to leave'}</span>
       </span>
     </Button>
@@ -770,7 +777,9 @@ function StoresICollaborateWithSection({
       });
     },
     onError: (error) => {
-      setRemoveError(error instanceof Error ? error.message : 'Could not leave this store right now.');
+      setRemoveError(
+        error instanceof Error ? error.message : 'Could not leave this store right now.'
+      );
     },
   });
 

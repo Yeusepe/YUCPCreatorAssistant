@@ -471,7 +471,10 @@ export async function removeCollabConnection(authUserId: string, connectionId: s
   );
 }
 
-export async function removeCollabConnectionAsCollaborator(authUserId: string, connectionId: string) {
+export async function removeCollabConnectionAsCollaborator(
+  authUserId: string,
+  connectionId: string
+) {
   return apiClient.delete<{ success: boolean }>(
     `/api/collab/connections/as-collaborator/${encodeURIComponent(connectionId)}`,
     {

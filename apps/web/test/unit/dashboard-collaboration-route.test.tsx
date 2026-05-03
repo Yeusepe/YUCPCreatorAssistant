@@ -76,7 +76,9 @@ describe('dashboard collaboration route', () => {
         createdAt: Date.now() - 60_000,
       },
     ]);
-    vi.mocked(dashboardApi.removeCollabConnectionAsCollaborator).mockResolvedValue({ success: true });
+    vi.mocked(dashboardApi.removeCollabConnectionAsCollaborator).mockResolvedValue({
+      success: true,
+    });
   });
 
   afterEach(() => {
@@ -118,12 +120,11 @@ describe('dashboard collaboration route', () => {
     const button = screen.getByRole('button', { name: /hold to remove creator store/i });
     fireEvent.pointerDown(button);
     await vi.advanceTimersByTimeAsync(950);
+    await Promise.resolve();
 
-    await waitFor(() =>
-      expect(dashboardApi.removeCollabConnectionAsCollaborator).toHaveBeenCalledWith(
-        'user-123',
-        'conn-1'
-      )
+    expect(dashboardApi.removeCollabConnectionAsCollaborator).toHaveBeenCalledWith(
+      'user-123',
+      'conn-1'
     );
   });
 });

@@ -1,6 +1,7 @@
 import type { StructuredLogger } from '@yucp/shared';
 import type {
   LicenseVerificationPlugin,
+  LicenseVerificationResult,
   ProductRecord,
   ProviderContext,
   ProviderPurposes,
@@ -136,6 +137,74 @@ async function listProductsForToken(
   return products;
 }
 
+type LemonSqueezyValidationResult = Awaited<
+  ReturnType<LemonSqueezyClientLike['validateLicenseKey']>
+>;
+
+function mapLemonSqueezyVerificationResult(
+  validation: LemonSqueezyValidationResult
+): LicenseVerificationResult {
+  const licenseId =
+    validation.license_key?.id != null
+      ? String(validation.license_key.id)
+      : validation.meta?.order_item_id != null
+        ? String(validation.meta.order_item_id)
+        : undefined;
+
+  const providerProductId =
+    validation.meta?.product_id != null ? String(validation.meta.product_id) : undefined;
+
+  return {
+    valid: validation.valid,
+    externalOrderId: licenseId,
+    providerProductId,
+    error: validation.error ?? undefined,
+  };
+}
+
+async function validateLicenseWithAccessibleCredential(
+  credential: string,
+  licenseKey: string,
+  ctx: ProviderContext,
+  ports: LemonSqueezyRuntimePorts
+): Promise<LicenseVerificationResult> {
+  const ownerValidation = await getClient(ports, credential).validateLicenseKey(licenseKey);
+  if (ownerValidation.valid) {
+    return mapLemonSqueezyVerificationResult(ownerValidation);
+  }
+
+  let collabConnections: LemonSqueezyCollaboratorConnection[];
+  try {
+    collabConnections = await ports.listCollaboratorConnections(ctx);
+  } catch (err) {
+    ports.logger.warn('Failed to fetch collaborator connections for LS license lookup', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return mapLemonSqueezyVerificationResult(ownerValidation);
+  }
+
+  for (const collab of collabConnections) {
+    if (collab.provider !== 'lemonsqueezy' || !collab.credentialEncrypted) {
+      continue;
+    }
+
+    try {
+      const collabToken = await ports.decryptCredential(collab.credentialEncrypted, ctx);
+      const collabValidation = await getClient(ports, collabToken).validateLicenseKey(licenseKey);
+      if (collabValidation.valid) {
+        return mapLemonSqueezyVerificationResult(collabValidation);
+      }
+    } catch (err) {
+      ports.logger.warn('Failed to verify LS license with collaborator credential', {
+        collabId: collab.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return mapLemonSqueezyVerificationResult(ownerValidation);
+}
+
 async function getVariantsForAccessibleCredential(
   credential: string,
   productId: string,
@@ -215,24 +284,7 @@ export function createLemonSqueezyLicenseVerification<
         };
       }
 
-      const validation = await getClient(ports, apiToken).validateLicenseKey(licenseKey);
-
-      const licenseId =
-        validation.license_key?.id != null
-          ? String(validation.license_key.id)
-          : validation.meta?.order_item_id != null
-            ? String(validation.meta.order_item_id)
-            : undefined;
-
-      const providerProductId =
-        validation.meta?.product_id != null ? String(validation.meta.product_id) : undefined;
-
-      return {
-        valid: validation.valid,
-        externalOrderId: licenseId,
-        providerProductId,
-        error: validation.error ?? undefined,
-      };
+      return await validateLicenseWithAccessibleCredential(apiToken, licenseKey, ctx, ports);
     },
   };
 }
